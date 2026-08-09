@@ -1,3 +1,19 @@
+## [0.15.0] - 2026-08-02
+
+### Unity 6.5 PanelRenderer host - sub-root mount, rebuild dispatch, workarounds
+
+**`RootRenderer.Initialize(panelRenderer)` lands.** The component Unity's manual points new 6.5 projects at is now a first-class host; the `UIDocument` path is untouched. The mount is callback-driven, a `Render` issued before the panel exists is held and replayed, and the tree mounts into a library-owned sub-root so Unity's per-frame root rewrites never fight your UI. World-space config stays on the component. Five new samples, from hello to a router+signals+ListView dashboard.
+
+**Rebuilds dispatch on the tree's own state.** Still parented -> reuse in place; orphaned but alive -> retarget, all hook/ref/animation state preserved; released -> remount: the old tree is dropped without touching it (cleanups still run via the new `AbandonRoot`) and the last UI replays fresh.
+
+**Workarounds for open Unity 6000.5.x issues**, all symptom-gated so a fixed editor makes them inert: the mount watchdog (case IN-150082 + UUM-147875) forces the attach path when the reload callback never arrives; nested prevention and nested self-repair cover UUM-148452's release cascade into child renderers. Opt-outs `mount_watchdog`, `nested_prevention`, `nested_repair` in config.json; details on the Known Issues docs page.
+
+**Fix - pre-existing leaks.** New `IsAlive` liveness on the host seam. User refs now detach on unmount, `Animator` stops ticking when its element leaves the tree, the four list/tree row pools finally unmount their pooled rows, and retarget no longer leaks style tracking. Also: a second `RootRenderer` used to DESTROY its own GameObject via a legacy singleton guard - multi-mount scenes work now. And the uGUI leg now compiles on 6.5, where `GetInstanceID` became an error-level obsolete.
+
+**Tests.** The fiber core got its first CI suite: 76 tests over a mock backend (reconciler, retarget contract, hooks, signals). SG 1828 -> 1840 via the samples corpus.
+
+---
+
 ## [0.14.1] - 2026-08-02
 
 ### Test coverage for Shared/ - and the first bug it found
@@ -1069,3 +1085,39 @@ VS Code **1.1.5 ? 1.1.6** | VS2022 **1.1.5 ? 1.1.6**
 
 ### Extensions
 VS Code **1.0.306** | VS2022 **1.0.82**
+
+---
+
+## Intro post (Discord server description, Unity leg) - 2026-08-04
+
+Building UI in Unity shouldn't mean hand-wiring UXML, USS and C# event plumbing for every screen. **Reactive UI Toolkit - Unity** brings the React component model to Unity UI Toolkit, in plain C# - function components, hooks, a fiber reconciler, and a JSX-like markup language called **UITKX**. Write your UI in `.uitkx` files, hit save, and your running game updates in place.
+
+**What it does:**
+- Function components with hooks - useState, useEffect, useMemo, useContext, useSignal, useTweenFloat, and more
+- `.uitkx` markup compiles to plain C# by a Roslyn source generator at build time - zero runtime overhead, no custom packages pipeline
+- Hot reload - save while the game runs in the editor and the live UI hot-swaps in ~50-200 ms with hook state preserved, no domain reload
+- ~60 host elements mapping to UI Toolkit controls, typed compile-checked styling, a router, signals, portals, suspense, error boundaries
+- A second **uGUI backend** - the same components, hooks and router render into classic Canvas UI
+- Tooling on a shared language server: **VS Code**, **Visual Studio 2022** and **Rider** extensions - highlighting, live diagnostics, completion, go-to-definition, rename, formatting
+
+**A quick taste:**
+```jsx
+export VirtualNode Counter() {
+  var (count, setCount) = useState(0);
+  return (
+    <VisualElement>
+      <Label text={$"Count: {count}"} />
+      <Button text="+1" onClick={_ => setCount(count + 1)} />
+    </VisualElement>
+  );
+}
+```
+
+:book: **Repo & releases**
+https://github.com/reactive-ui-toolkit/ruitk-unity
+:book: **Documentation:**
+https://reactiveuitoolkit.info/unity/
+
+A Doom-style demo (and 40+ other samples) ships in the package - import and play.
+
+Happy to answer questions about the approach or the architecture - more to come on the road to 1.0!

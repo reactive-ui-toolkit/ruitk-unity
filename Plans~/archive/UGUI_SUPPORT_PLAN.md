@@ -1,6 +1,11 @@
 # uGUI Backend Support Plan ("Option B" — full second render target)
 
-Status: RESEARCH / PROPOSAL — not scheduled. Written 2026-07-20 after owner direction.
+Status: **EXECUTED — archived 2026-08-04.** The backend this proposal designed shipped starting
+0.11.0 (`Ugui/` — adapters incl. compound Dropdown/InputField, islands both directions, prefab
+bridge, prop groups, layout groups) and is maintained through the 6.5 wave. Deferred items live in
+`Plans~/REMAINING_WORK.md`.
+
+Original status: RESEARCH / PROPOSAL — not scheduled. Written 2026-07-20 after owner direction.
 Owner's framing (the design north star): **do not make uGUI something it is not.** No CSS,
 no flexbox emulation, no world-space chasing. uGUI users get the declarative data flow —
 components, hooks, signals, the reconciler — while keeping every habit they already have:

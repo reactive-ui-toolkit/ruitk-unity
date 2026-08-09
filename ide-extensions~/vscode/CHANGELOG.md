@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.1] - 2026-08-09
+- Fix: two live diagnostics still used pre-ES-modules name scoping, producing false errors in any workspace with same-named components in different folders (e.g. several games each with their own GameScreen or MainMenu).
+
+UITKX0113 (duplicate component) flagged any two same-named components in the same asmdef. Since the ES-modules redesign namespaces are file-keyed, so same-named components in different folders are legal and compile cleanly; the diagnostic now fires only when two files declare the same name into the same effective namespace (legacy files sharing an explicit @namespace) - the only case where the generated classes actually collide - and it now checks every component declared in the file, not just the first.
+
+UITKX0109 (unknown attribute) validated a tag against an arbitrary declarant when several components shared a name, e.g. rejecting onStartGame on one game's <MainMenu> because another game's MainMenu was checked instead. The attribute surface now resolves through the current file's imports with the build-identical specifier rule (same-file declaration first, then named/aliased/default imports, then import "@Ns" namespace visibility), and falls open to the union of all declarants when unresolvable - a wrong-file mismatch can no longer invent an error.
+
+SG suite 1828/1828, LSP suite 157/157.
+
 ## [1.9.0] - 2026-08-01
 - Feature: Unity 6.5 and 6.4 controls in UITKX markup - MaskField, Mask64Field and GUIDField.
 

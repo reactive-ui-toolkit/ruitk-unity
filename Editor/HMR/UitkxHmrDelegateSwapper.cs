@@ -140,28 +140,9 @@ namespace Ruitk.EditorSupport.HMR
         /// </summary>
         internal static void TriggerGlobalReRender()
         {
-            foreach (var renderer in EditorRootRendererUtility.GetAllRenderers())
+            foreach (var rootFiber in Ruitk.Core.Fiber.MountRegistry.EnumerateRootFibers())
             {
-                var fiberRenderer = renderer.FiberRendererInternal;
-                if (fiberRenderer?.Root?.Current == null)
-                    continue;
-                ScheduleFullTreeUpdate(fiberRenderer.Root.Current);
-            }
-
-            foreach (var rootRenderer in RootRenderer.AllInstances)
-            {
-                var vhr = rootRenderer.VNodeHostRendererInternal;
-                if (vhr?.FiberRendererInternal?.Root?.Current == null)
-                    continue;
-                ScheduleFullTreeUpdate(vhr.FiberRendererInternal.Root.Current);
-            }
-
-            foreach (var uguiRenderer in Ruitk.Ugui.UguiRootRenderer.AllInstances)
-            {
-                var root = uguiRenderer?.FiberRootInternal;
-                if (root?.Current == null)
-                    continue;
-                ScheduleFullTreeUpdate(root.Current);
+                ScheduleFullTreeUpdate(rootFiber);
             }
         }
 

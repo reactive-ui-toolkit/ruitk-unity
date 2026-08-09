@@ -362,6 +362,24 @@ namespace Ruitk.Elements
 
         public override VisualElement Create() => new MultiColumnListView();
 
+        /// <summary>
+        /// Host-removal hook (§5.4 retention cleanup): unmounts every pooled
+        /// cell renderer and drops the cached state for the deleted view.
+        /// </summary>
+        internal static void NotifyHostRemoved(VisualElement element)
+        {
+            if (element is not MultiColumnListView mclv || !TryGetState(mclv, out var parts))
+            {
+                return;
+            }
+            foreach (var entry in parts.Pool.Values)
+            {
+                entry.renderer?.Unmount();
+            }
+            parts.Pool.Clear();
+            RemoveState(mclv);
+        }
+
         public override void ApplyProperties(
             VisualElement element,
             IReadOnlyDictionary<string, object> properties

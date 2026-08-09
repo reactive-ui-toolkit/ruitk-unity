@@ -136,6 +136,18 @@ namespace Ruitk.EditorSupport
                 EditorGUILayout.Toggle("Strict Mode", BuildDefinesConfig.ResolveStrictMode());
                 EditorGUILayout.EnumPopup("Trace Level", BuildDefinesConfig.ResolveTraceLevel());
                 EditorGUILayout.Toggle("Diff Tracing", BuildDefinesConfig.ResolveEnableDiffTracing());
+                EditorGUILayout.Toggle(
+                    "6.5 Mount Watchdog",
+                    BuildDefinesConfig.ResolveMountWatchdog()
+                );
+                EditorGUILayout.Toggle(
+                    "6.5 Nested Prevention",
+                    BuildDefinesConfig.ResolveNestedPrevention()
+                );
+                EditorGUILayout.Toggle(
+                    "6.5 Nested Repair",
+                    BuildDefinesConfig.ResolveNestedRepair()
+                );
                 EditorGUILayout.TextField(
                     "Diagnostics Output",
                     RuitkDiagnosticsPaths.GetOutputRoot()
@@ -259,6 +271,35 @@ namespace Ruitk.EditorSupport
                 ),
                 _model.diffTracing
             );
+            bool mountWatchdog = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "6.5 Mount Watchdog",
+                    "mount_watchdog — Unity 6.5 PanelRenderer workaround (case IN-150082 + "
+                        + "UUM-147875): when an enabled, configured PanelRenderer never delivers "
+                        + "its UI reload callback, force the attach path via a panelSettings "
+                        + "round-trip. Symptom-gated: inert on fixed editors. Default: on."
+                ),
+                _model.mountWatchdog
+            );
+            bool nestedPrevention = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "6.5 Nested Prevention",
+                    "nested_prevention — Unity 6.5 workaround (UUM-148452): disable nested "
+                        + "child PanelRenderers around rebuilds the library itself triggers so "
+                        + "the release cascade cannot poison them. Default: on."
+                ),
+                _model.nestedPrevention
+            );
+            bool nestedRepair = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "6.5 Nested Repair",
+                    "nested_repair — Unity 6.5 workaround (UUM-148452): when a parent rebuild "
+                        + "released a nested PanelRenderer's tree and no follow-up callback "
+                        + "arrives, destroy + re-add only that nested renderer with all settings "
+                        + "copied. Symptom-gated. Default: on."
+                ),
+                _model.nestedRepair
+            );
 
             string outputFolder = _model.diagnosticsOutputFolder ?? "";
             using (new EditorGUILayout.HorizontalScope())
@@ -312,6 +353,9 @@ namespace Ruitk.EditorSupport
                 _model.strictMode = strictMode;
                 _model.traceLevel = traceLevel;
                 _model.diffTracing = diffTracing;
+                _model.mountWatchdog = mountWatchdog;
+                _model.nestedPrevention = nestedPrevention;
+                _model.nestedRepair = nestedRepair;
                 _model.diagnosticsOutputFolder = outputFolder;
                 WriteStore(_model);
                 _modelStamp = File.GetLastWriteTimeUtc(RuitkSettings.ProjectFilePath);

@@ -1,6 +1,10 @@
 # Family Settings Parity — UNITY EXECUTION PLAN
 
-**Status: EXECUTING** (campaign started 2026-07-31 on `feat/family-parity`; execution log at the
+**Status: EXECUTED — archived 2026-08-04.** The campaign completed on `feat/family-parity`
+(0.13.0 shipped; conformance waves C1–C8 ruled and fixed; gates green — see the execution log at
+the bottom of this file).
+
+Original status: **EXECUTING** (campaign started 2026-07-31 on `feat/family-parity`; execution log at the
 bottom of this file). Originally written 2026-07-31; every anchor below verified against the working
 tree on `master` HEAD `758b1588` **plus the uncommitted unified-settings pile** — see §1.1, that
 pile is the baseline, not noise. **BASELINE DRIFT (M0 finding):** the §1.1 pile has since been

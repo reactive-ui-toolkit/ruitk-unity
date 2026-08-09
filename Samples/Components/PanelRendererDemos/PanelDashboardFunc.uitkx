@@ -1,0 +1,85 @@
+import "@Ruitk.Signals"
+import "@System.Collections"
+
+export VirtualNode PanelDashboardFunc() {
+  var uptime = useMemo(() => SignalFactory.Get<int>("panelDemo.dashboard.uptime", 0), Array.Empty<object>());
+  var seconds = useSignal(uptime);
+
+  var systems = new[] {
+    "Navigation", "Life support", "Reactor", "Comms",
+    "Shields", "Sensors", "Docking", "Cargo bay",
+  };
+
+  RowRenderer BuildRowRenderer() =>
+    (index, obj) =>
+    {
+      var name = obj as string ?? "<unknown>";
+      return (<Label text={$"{index + 1}. {name} - online"} key={$"sys-{index}"} />);
+  };
+
+  var rowRenderer = useMemo<RowRenderer>(() => BuildRowRenderer(), Array.Empty<object>());
+  IList listItems = systems;
+
+  var shellStyle = new Style {
+    (StyleKeys.FlexGrow, 1f),
+    (StyleKeys.Padding, 12f),
+    (StyleKeys.FlexDirection, "column"),
+  };
+
+  var navRowStyle = new Style {
+    (StyleKeys.FlexDirection, "row"),
+    (StyleKeys.MarginBottom, 8f),
+  };
+
+  var bodyStyle = new Style {
+    (StyleKeys.FlexGrow, 1f),
+    (StyleKeys.Padding, 10f),
+    (StyleKeys.BorderColor, new Color32(90, 90, 90, 255)),
+    (StyleKeys.BorderWidth, 1f),
+    (StyleKeys.BorderRadius, 6f),
+  };
+
+  var listStyle = new Style {
+    (StyleKeys.FlexGrow, 1f),
+    (StyleKeys.Height, 180f),
+  };
+
+  return (
+    <Router>
+      <VisualElement style={shellStyle}>
+        <Label
+          text="Ship dashboard - router + signals + list on a PanelRenderer host"
+          style={new Style { WhiteSpace = WsNormal }}
+        />
+        <VisualElement style={navRowStyle}>
+          <Link
+            to="/"
+            label="Status"
+            style={new Style { (StyleKeys.MarginRight, 8f) }}
+          />
+          <Link to="/systems" label="Systems" />
+        </VisualElement>
+        <VisualElement style={bodyStyle}>
+          <Route
+            path="/"
+            exact={true}
+            element={V.Text($"All systems nominal. Uptime ticks (signal-driven): {seconds}")}
+          />
+          <Route path="/systems">
+            <ListView
+              items={listItems}
+              fixedItemHeight={22f}
+              row={rowRenderer}
+              style={listStyle}
+            />
+          </Route>
+        </VisualElement>
+        <Button
+          text="Tick uptime signal"
+          onClick={_ => uptime.Dispatch(v => v + 1)}
+          style={new Style { (StyleKeys.MarginTop, 8f) }}
+        />
+      </VisualElement>
+    </Router>
+  );
+}

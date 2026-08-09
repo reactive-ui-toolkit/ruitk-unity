@@ -33,7 +33,7 @@ namespace Ruitk.Core
         public override string ToString() => $"{Name}@{ProviderId}";
     }
 
-    public sealed class HostContext
+    public sealed partial class HostContext
     {
         internal sealed class ContextFrame
         {
@@ -84,16 +84,24 @@ namespace Ruitk.Core
         public HostContext(ElementRegistry elementRegistry)
         {
             ElementRegistry = elementRegistry;
-            HostConfig = new Fiber.UitkHostConfig(elementRegistry);
+            HostConfig = CreateDefaultHostConfig(elementRegistry);
             currentFrame = null;
         }
 
         public HostContext(ElementRegistry elementRegistry, Fiber.FiberHostConfig hostConfig)
         {
             ElementRegistry = elementRegistry;
-            HostConfig = hostConfig ?? new Fiber.UitkHostConfig(elementRegistry);
+            HostConfig = hostConfig ?? CreateDefaultHostConfig(elementRegistry);
             currentFrame = null;
         }
+
+        // The default backend is supplied per compilation flavour: the Unity build
+        // returns UitkHostConfig (HostContext.Uitk.cs); the host-agnostic test
+        // build supplies its own part. Every implementation must return non-null -
+        // FiberReconciler relies on HostConfig never being null.
+        private static partial Fiber.FiberHostConfig CreateDefaultHostConfig(
+            ElementRegistry elementRegistry
+        );
 
         public void SetContextValue(string key, object value)
         {

@@ -319,6 +319,24 @@ namespace Ruitk.Elements
 
         public override VisualElement Create() => new MultiColumnTreeView();
 
+        /// <summary>
+        /// Host-removal hook (§5.4 retention cleanup): unmounts every pooled
+        /// cell renderer and drops the cached state for the deleted view.
+        /// </summary>
+        internal static void NotifyHostRemoved(VisualElement element)
+        {
+            if (element is not MultiColumnTreeView mctv || !TryGetState(mctv, out var parts))
+            {
+                return;
+            }
+            foreach (var entry in parts.Pool.Values)
+            {
+                entry.renderer?.Unmount();
+            }
+            parts.Pool.Clear();
+            RemoveState(mctv);
+        }
+
         private static void SetRootItems(MultiColumnTreeView tv, object root)
         {
             if (tv == null || root == null)

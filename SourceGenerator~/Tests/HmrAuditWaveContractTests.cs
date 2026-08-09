@@ -7,7 +7,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests;
 
 /// <summary>
-/// ES-modules audit wave (Plans~/ES_MODULES_AUDIT_FINDINGS.md, HMR cluster H1/H3/H4/M1/M2/L3):
+/// ES-modules audit wave (Plans~/archive/ES_MODULES_AUDIT_FINDINGS.md, HMR cluster H1/H3/H4/M1/M2/L3):
 /// source-text contract pins for the HMR-side fixes (<c>Editor/HMR/</c> cannot be loaded by this
 /// runner — same approach as <see cref="HmrExportsParityContractTests"/>), plus a syntax gate
 /// that PARSES every touched Editor/HMR source so a broken edit is caught here instead of at the

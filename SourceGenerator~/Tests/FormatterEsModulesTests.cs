@@ -4,7 +4,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests
 {
     /// <summary>
-    /// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M6, U-10): the formatter's
+    /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M6, U-10): the formatter's
     /// plain-declaration path — canonical import spellings (named/as/star/default), member
     /// re-emission (the A7f data-loss guard extended to the new record fields), export
     /// default/list placement, round-trip idempotency, and the safe-untouched guarantee for

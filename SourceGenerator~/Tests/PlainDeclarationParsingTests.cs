@@ -7,7 +7,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests
 {
     /// <summary>
-    /// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M1, U-04): plain
+    /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M1, U-04): plain
     /// (wrapper-keyword-free) top-level declarations classify from the signature alone
     /// (G-03), full export surface (default/list), and the mixed-style guard (U-08/2108).
     /// </summary>

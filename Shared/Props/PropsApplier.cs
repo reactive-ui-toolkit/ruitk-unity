@@ -3564,7 +3564,50 @@ namespace Ruitk.Props
                 return;
             }
             previousStyles.Remove(element);
+
+            // Detach any user ref still pointing at the element. Both the dict
+            // and typed pipelines funnel ref assignment into
+            // NodeMetadata.AttachedRef, so this one site restores the contract
+            // the uGUI backend already honours: after unmount, a Ref reads
+            // null instead of a dead element.
+            if (element.userData is NodeMetadata meta && meta.AttachedRef != null)
+            {
+                RefUtility.Assign(meta.AttachedRef, null);
+                meta.AttachedRef = null;
+            }
         }
+
+#if UNITY_6000_5_OR_NEWER
+        private static readonly List<VisualElement> s_evictScratch = new();
+
+        /// <summary>
+        /// Drops tracking for every element Unity 6.5 has poisoned via
+        /// <c>ReleaseResources()</c>. Reads only <c>resourcesReleased</c> -
+        /// released elements throw on hierarchy access, so this never touches
+        /// them beyond the flag. Mount hosts call it after a panel rebuild
+        /// releases a subtree wholesale, where per-element
+        /// <see cref="NotifyElementRemoved"/> never ran. Returns the number of
+        /// entries evicted.
+        /// </summary>
+        public static int EvictReleasedElements()
+        {
+            s_evictScratch.Clear();
+            foreach (var entry in previousStyles)
+            {
+                if (entry.Key.resourcesReleased)
+                {
+                    s_evictScratch.Add(entry.Key);
+                }
+            }
+            for (int i = 0; i < s_evictScratch.Count; i++)
+            {
+                NotifyElementRemoved(s_evictScratch[i]);
+            }
+            int evicted = s_evictScratch.Count;
+            s_evictScratch.Clear();
+            return evicted;
+        }
+#endif
 
         private static void TrySetStyleField(
             VisualElement element,

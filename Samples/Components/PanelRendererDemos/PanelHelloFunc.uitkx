@@ -1,0 +1,22 @@
+export VirtualNode PanelHelloFunc() {
+  var (count, setCount) = useState(0);
+
+  var containerStyle = new Style {
+    (StyleKeys.Padding, 16f),
+    (StyleKeys.FlexDirection, "column"),
+  };
+
+  var noteStyle = new Style { WhiteSpace = WsNormal };
+
+  return (
+    <VisualElement style={containerStyle}>
+      <Text text="Hello PanelRenderer" />
+      <Label
+        text="This tree mounted through RootRenderer.Initialize(PanelRenderer): the panel is built by Unity a frame after enable, so the first Render was deferred and replayed automatically."
+        style={noteStyle}
+      />
+      <Text text={$"Clicks: {count}"} />
+      <Button text="Click me" onClick={_ => setCount(count + 1)} />
+    </VisualElement>
+  );
+}

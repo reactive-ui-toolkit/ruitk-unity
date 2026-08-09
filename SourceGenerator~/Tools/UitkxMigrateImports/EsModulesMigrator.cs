@@ -13,7 +13,7 @@ using Ruitk.Language.Parser;
 namespace Ruitk.SourceGenerator.Tools
 {
     /// <summary>
-    /// The ES-modules migration pass (Plans~/ES_MODULES_EXECUTION_PLAN.md §7.1, U-09): rewrites
+    /// The ES-modules migration pass (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md §7.1, U-09): rewrites
     /// legacy wrapper-keyword files to plain declarations. Pipeline per G-10 (each step a no-op
     /// on already-migrated input, so the whole is idempotent):
     /// <list type="number">

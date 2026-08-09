@@ -1,6 +1,10 @@
 # REBRAND PLAN v2 — Unity leg (`ReactiveUIToolKit` → org `reactive-ui-toolkit`, repo `ruitk-unity`)
 
-**Status: PLANNED + FULLY RATIFIED — v2. All U-Q questions resolved (2026-07-28, §5);
+**Status: EXECUTED — archived 2026-08-04.** The full breaking rename shipped as 0.12.0
+(org `reactive-ui-toolkit`, repo `ruitk-unity`, identifier root `Ruitk`); the post-rebrand audit
+ledger is `Plans~/archive/BUGS_FOUND_AFTER_RENAME.md`.
+
+Original status: **PLANNED + FULLY RATIFIED — v2. All U-Q questions resolved (2026-07-28, §5);
 census re-measured 2026-07-28 @ `dev` (`db2470a6`), tree clean. Blocked only on the §2
 gates (org transfer + Godot-first ordering).**
 **v2 supersedes v1 entirely.** v1 recommended keeping the `ReactiveUITK` identifier root; the

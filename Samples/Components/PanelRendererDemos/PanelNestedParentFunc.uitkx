@@ -1,0 +1,28 @@
+export VirtualNode PanelNestedParentFunc() {
+  var (rebuilds, setRebuilds) = useState(0);
+
+  var frameStyle = new Style {
+    (StyleKeys.Padding, 14f),
+    (StyleKeys.FlexDirection, "column"),
+    (StyleKeys.BorderColor, new Color32(120, 170, 255, 255)),
+    (StyleKeys.BorderWidth, 2f),
+    (StyleKeys.BorderRadius, 8f),
+  };
+
+  var noteStyle = new Style { WhiteSpace = WsNormal };
+
+  return (
+    <VisualElement style={frameStyle}>
+      <Text text="PARENT PanelRenderer" />
+      <Label
+        text="The child panel is a SEPARATE PanelRenderer on a child GameObject (nesting is a hierarchy property, not markup). Unity 6000.5.x has open nested-renderer issues; this scene is the live regression for the shipped workarounds: the mount watchdog gets the child mounted (case IN-150082), and if a parent rebuild releases the child's tree (UUM-148452), the child repairs itself and remounts. In the editor, toggling the parent's Panel Settings re-attaches WITHOUT releasing - state survives via retarget; the measured release trigger is saving a .uxml assigned as the parent's Source Asset."
+        style={noteStyle}
+      />
+      <Text text={$"Parent re-renders: {rebuilds}"} />
+      <Button
+        text="Re-render parent"
+        onClick={_ => setRebuilds(rebuilds + 1)}
+      />
+    </VisualElement>
+  );
+}

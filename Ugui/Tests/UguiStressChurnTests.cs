@@ -6,6 +6,11 @@ using Ruitk.Elements;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+#if UNITY_6000_5_OR_NEWER
+using StableObjectId = UnityEngine.EntityId;
+#else
+using StableObjectId = System.Int32;
+#endif
 
 namespace Ruitk.Ugui.Tests
 {
@@ -20,6 +25,15 @@ namespace Ruitk.Ugui.Tests
     {
         private const int BoxCount = 300;
         private const int Cycles = 20;
+
+        private static StableObjectId StableId(GameObject go)
+        {
+#if UNITY_6000_5_OR_NEWER
+            return go.GetEntityId();
+#else
+            return go.GetInstanceID();
+#endif
+        }
 
         private GameObject _canvasGo;
         private RectTransform _mountRect;
@@ -121,7 +135,7 @@ namespace Ruitk.Ugui.Tests
             // This test ASSUMES pooling — it is the host_node_pool=true half of the pair
             // (see StressLoop_ChurningMembership_PoolDisabled_CreatesFreshVisuals).
             CreateRenderer(hostNodePool: true);
-            var seenBoxes = new HashSet<int>();
+            var seenBoxes = new HashSet<StableObjectId>();
 
             for (int cycle = 0; cycle < Cycles; cycle++)
             {
@@ -137,7 +151,7 @@ namespace Ruitk.Ugui.Tests
                 Assert.AreEqual(count + 1, area.childCount, $"cycle {cycle}");
                 for (int i = 1; i < area.childCount; i++)
                 {
-                    seenBoxes.Add(area.GetChild(i).gameObject.GetInstanceID());
+                    seenBoxes.Add(StableId(area.GetChild(i).gameObject));
                 }
             }
 
@@ -161,7 +175,7 @@ namespace Ruitk.Ugui.Tests
             // the pooled bound, proving the knob actually disables reuse. Structure must stay
             // coherent on every cycle regardless.
             CreateRenderer(hostNodePool: false);
-            var seenBoxes = new HashSet<int>();
+            var seenBoxes = new HashSet<StableObjectId>();
 
             for (int cycle = 0; cycle < Cycles; cycle++)
             {
@@ -172,7 +186,7 @@ namespace Ruitk.Ugui.Tests
                 Assert.AreEqual(count + 1, area.childCount, $"cycle {cycle}");
                 for (int i = 1; i < area.childCount; i++)
                 {
-                    seenBoxes.Add(area.GetChild(i).gameObject.GetInstanceID());
+                    seenBoxes.Add(StableId(area.GetChild(i).gameObject));
                 }
             }
 
@@ -217,7 +231,7 @@ namespace Ruitk.Ugui.Tests
             // the strict-off pooled test (the discarded tree owns no host elements).
             CreateRenderer(hostNodePool: true);
             FiberConfig.StrictModeEnabled = true; // restored in TearDown
-            var seenBoxes = new HashSet<int>();
+            var seenBoxes = new HashSet<StableObjectId>();
 
             for (int cycle = 0; cycle < Cycles; cycle++)
             {
@@ -236,7 +250,7 @@ namespace Ruitk.Ugui.Tests
                 );
                 for (int i = 1; i < area.childCount; i++)
                 {
-                    seenBoxes.Add(area.GetChild(i).gameObject.GetInstanceID());
+                    seenBoxes.Add(StableId(area.GetChild(i).gameObject));
                 }
             }
 

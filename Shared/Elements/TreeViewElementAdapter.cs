@@ -51,6 +51,24 @@ namespace Ruitk.Elements
 
         public override VisualElement Create() => new TreeView();
 
+        /// <summary>
+        /// Host-removal hook (§5.4 retention cleanup): unmounts every pooled
+        /// row renderer and drops the cached state for the deleted TreeView.
+        /// </summary>
+        internal static void NotifyHostRemoved(VisualElement element)
+        {
+            if (element is not TreeView tv || !TryGetState(tv, out var parts))
+            {
+                return;
+            }
+            foreach (var entry in parts.Pool.Values)
+            {
+                entry.renderer?.Unmount();
+            }
+            parts.Pool.Clear();
+            RemoveState(tv);
+        }
+
         public override void ApplyProperties(
             VisualElement element,
             IReadOnlyDictionary<string, object> properties

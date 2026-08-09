@@ -1,6 +1,12 @@
 # Unity 6.5 support plan (with 6.3 / 6.4 backfill)
 
-Status: **RESEARCH COMPLETE — implementation not started.** Written 2026-08-01 against
+Status: **EXECUTED — archived 2026-08-04.** Phase 1 shipped in 0.14.0/0.14.1; Phase 2 (the
+PanelRenderer host, A3 root sources, WA1–WA4) shipped in 0.15.0 on `feat/phase2-panelrenderer-host`,
+demo-verified on 6000.5.6f1. The workaround registry §5.9 remains the WA lifecycle authority
+(referenced from `Plans~/REMAINING_WORK.md` §0 and the 0.15.0 changelog). Deferred items live in
+`Plans~/REMAINING_WORK.md`; the header below is the original research-time status, kept verbatim.
+
+Original status: **RESEARCH COMPLETE — implementation not started.** Written 2026-08-01 against
 `feat/family-parity` @ `857e495a`, package `0.13.0`, Unity floor `6000.2`.
 
 All empirical spikes (§5.8) are **done**, measured on `6000.5.6f1`. The Phase-2 gate is **green**.

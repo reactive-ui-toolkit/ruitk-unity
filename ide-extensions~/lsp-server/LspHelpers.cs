@@ -5,6 +5,7 @@ using System.Threading;
 using Microsoft.CodeAnalysis;
 using OmniSharp.Extensions.LanguageServer.Protocol;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
+using Ruitk.Language;
 using Ruitk.Language.Parser;
 using LspRange = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 
@@ -61,6 +62,22 @@ internal static class LspHelpers
         @"(?:(?!(?:if|while|for|foreach|switch|using|return|lock|var|new|else|do|case|throw|await|yield)\b)"
         + @"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*(?:<(?:[^<>]|<[^<>]*>)*>)?(?:\[[^\]]*\])*\??"
         + @"|\((?:[^()]|\([^()]*\))*\))";
+
+    // ── Import-specifier resolution ───────────────────────────────────────
+
+    /// <summary>
+    /// Resolve an <c>import</c> specifier to the absolute target <c>.uitkx</c> path, using the same
+    /// rule as the build (<see cref="ImportResolver.MapSpecifierToPath"/>). Returns <c>null</c> for
+    /// engine-native/unresolvable specifiers.
+    /// </summary>
+    internal static string? ResolveImportTarget(string localPath, string specifier)
+    {
+        string importerDir = (Path.GetDirectoryName(localPath) ?? string.Empty).Replace('\\', '/');
+        string? projectRoot = AssetPathUtil.GetProjectRoot(localPath);
+        string rootDir = projectRoot != null ? projectRoot + "/" + UitkxConfig.LoadRoot(importerDir) : importerDir;
+        // Absolute dirs in → absolute candidate path out (MapSpecifierToPath is pure path arithmetic).
+        return ImportResolver.MapSpecifierToPath(importerDir, specifier, rootDir, out _);
+    }
 
     // ── Word / identifier helpers ─────────────────────────────────────────
 

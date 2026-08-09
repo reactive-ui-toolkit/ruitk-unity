@@ -28,7 +28,10 @@ namespace Ruitk.Ugui.Tests
             + "  \"strict_mode\": false,\n"
             + "  \"trace_level\": \"none\",\n"
             + "  \"diff_tracing\": false,\n"
-            + "  \"diagnostics_output_folder\": \"\"\n"
+            + "  \"diagnostics_output_folder\": \"\",\n"
+            + "  \"mount_watchdog\": true,\n"
+            + "  \"nested_prevention\": true,\n"
+            + "  \"nested_repair\": true\n"
             + "}\n";
 
         [SetUp]
@@ -64,6 +67,9 @@ namespace Ruitk.Ugui.Tests
             Assert.AreEqual(DiagnosticsConfig.TraceLevel.None, s.traceLevel);
             Assert.IsFalse(s.diffTracing);
             Assert.AreEqual("", s.diagnosticsOutputFolder);
+            Assert.IsTrue(s.mountWatchdog);
+            Assert.IsTrue(s.nestedPrevention);
+            Assert.IsTrue(s.nestedRepair);
         }
 
         // ── Parse cases ───────────────────────────────────────────────────────
@@ -110,6 +116,9 @@ namespace Ruitk.Ugui.Tests
                 traceLevel = DiagnosticsConfig.TraceLevel.Verbose,
                 diffTracing = true,
                 diagnosticsOutputFolder = "Logs/Custom",
+                mountWatchdog = false,
+                nestedPrevention = false,
+                nestedRepair = false,
             };
 
             var parsed = RuitkSettings.Parse(settings.ToCanonicalJson());
@@ -125,6 +134,9 @@ namespace Ruitk.Ugui.Tests
             Assert.AreEqual(DiagnosticsConfig.TraceLevel.Verbose, parsed.traceLevel);
             Assert.IsTrue(parsed.diffTracing);
             Assert.AreEqual("Logs/Custom", parsed.diagnosticsOutputFolder);
+            Assert.IsFalse(parsed.mountWatchdog);
+            Assert.IsFalse(parsed.nestedPrevention);
+            Assert.IsFalse(parsed.nestedRepair);
         }
 
         [Test]
@@ -383,6 +395,46 @@ namespace Ruitk.Ugui.Tests
             Assert.IsTrue(BuildDefinesConfig.ResolveHookValidation());
             Assert.IsTrue(BuildDefinesConfig.ResolveStrictDiagnostics());
             Assert.IsFalse(BuildDefinesConfig.ResolveStrictMode());
+        }
+
+        // ── Unity 6.5 workaround knobs: keys, defaults, resolution ────────────
+
+        [Test]
+        public void Parse_WorkaroundKnobKeys_PartialDocument()
+        {
+            var parsed = RuitkSettings.Parse(
+                "{ \"mount_watchdog\": false, \"nested_prevention\": false, "
+                    + "\"nested_repair\": false }"
+            );
+            Assert.IsFalse(parsed.mountWatchdog);
+            Assert.IsFalse(parsed.nestedPrevention);
+            Assert.IsFalse(parsed.nestedRepair);
+            // Untouched keys keep their defaults:
+            Assert.AreEqual(RuitkEnvironment.Auto, parsed.environment);
+            Assert.IsTrue(parsed.timeSlicing);
+        }
+
+        [Test]
+        public void ResolutionOrder_WorkaroundKnobs_JsonStoreWins_AndDefaultOn()
+        {
+            RuitkSettings.SuppressResourceLoadForTests = true;
+            RuitkSettings.Invalidate();
+
+            // No store: all three default on.
+            RuitkSettings.SetActive(null);
+            Assert.IsTrue(BuildDefinesConfig.ResolveMountWatchdog());
+            Assert.IsTrue(BuildDefinesConfig.ResolveNestedPrevention());
+            Assert.IsTrue(BuildDefinesConfig.ResolveNestedRepair());
+
+            RuitkSettings.SetActive(
+                RuitkSettings.Parse(
+                    "{ \"mount_watchdog\": false, \"nested_prevention\": false, "
+                        + "\"nested_repair\": false }"
+                )
+            );
+            Assert.IsFalse(BuildDefinesConfig.ResolveMountWatchdog());
+            Assert.IsFalse(BuildDefinesConfig.ResolveNestedPrevention());
+            Assert.IsFalse(BuildDefinesConfig.ResolveNestedRepair());
         }
 
         [Test]

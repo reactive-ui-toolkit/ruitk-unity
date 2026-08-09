@@ -9,7 +9,7 @@ namespace Ruitk.Core.Fiber
     /// Simple renderer using Fiber reconciler
     /// Drop-in replacement for VNodeHostRenderer
     /// </summary>
-    public class FiberRenderer
+    public partial class FiberRenderer
     {
         private FiberRoot _root;
         private FiberReconciler _reconciler;
@@ -25,14 +25,13 @@ namespace Ruitk.Core.Fiber
         {
             _container = container;
 
-            if (context == null)
-            {
-                var registry = ElementRegistryProvider.GetDefaultRegistry();
-                context = new HostContext(registry);
-            }
+            context ??= CreateDefaultContext();
 
             _hostConfig = context.HostConfig;
             _reconciler = new FiberReconciler(context);
+#if UNITY_EDITOR
+            MountRegistry.Register(this);
+#endif
         }
 
         /// <summary>
@@ -43,16 +42,21 @@ namespace Ruitk.Core.Fiber
         /// </summary>
         public FiberRenderer(object container, HostContext context)
         {
-            if (context == null)
-            {
-                var registry = ElementRegistryProvider.GetDefaultRegistry();
-                context = new HostContext(registry);
-            }
+            context ??= CreateDefaultContext();
 
             _container = container;
             _hostConfig = context.HostConfig;
             _reconciler = new FiberReconciler(context);
+#if UNITY_EDITOR
+            MountRegistry.Register(this);
+#endif
         }
+
+        // The null-context default is supplied per compilation flavour (the Unity
+        // build resolves the default UI Toolkit ElementRegistry; the host-agnostic
+        // test build has no default backend and its part throws). Must never
+        // return null.
+        private static partial HostContext CreateDefaultContext();
 
         /// <summary>
         /// Render a virtual node tree (initial mount)
@@ -90,6 +94,24 @@ namespace Ruitk.Core.Fiber
             _reconciler?.UnmountRoot();
             _hostConfig.ClearChildren(_container);
             _root = null;
+#if UNITY_EDITOR
+            MountRegistry.Unregister(this);
+#endif
+        }
+
+        /// <summary>
+        /// Tear down the tree without touching the host container - the Unity
+        /// 6.5 remount path, where the container subtree is released and any
+        /// host access throws. Effect cleanups and signal disposals still run
+        /// via <see cref="FiberReconciler.AbandonRoot"/>.
+        /// </summary>
+        public void Abandon()
+        {
+            _reconciler?.AbandonRoot();
+            _root = null;
+#if UNITY_EDITOR
+            MountRegistry.Unregister(this);
+#endif
         }
 
         /// <summary>
