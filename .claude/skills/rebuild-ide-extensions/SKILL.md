@@ -156,6 +156,14 @@ parity contract tests run against the new SG.
   against a consumer project's own folder layout (its `Assets/` root, its asmdefs),
   which is where namespace derivation and import resolution actually get tested.
   Verify diagnostics, hover, completion, and formatting work end-to-end.
+- **Opening this repo's `Samples/` in the dev host shows a storm of
+  unresolved-type errors — that is expected, not a regression.** The Roslyn
+  layer resolves `Ruitk.*` and Unity engine types by walking up from the opened
+  folder to a Unity project root and loading
+  `Library/ScriptAssemblies/*.dll` (`ReferenceAssemblyLocator`). This package
+  repo has no `Library/`, so every C# splice loses its references. The same
+  files analyze clean when opened from inside a consumer project (the embedded
+  package under `UnityComponents/Packages/` includes these very samples).
 - The VS Code extension's "Output → UITKX Language Server" pane shows
   the server's stdout/stderr; any unhandled exception there means the
   rebuild produced a binary with a broken dependency graph (most often

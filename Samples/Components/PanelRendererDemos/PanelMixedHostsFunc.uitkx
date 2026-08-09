@@ -1,0 +1,44 @@
+import "@Ruitk.Signals"
+
+export VirtualNode PanelMixedHostsFunc(string hostLabel = "host") {
+  var shared = useMemo(() => SignalFactory.Get<int>("panelDemo.mixed.shared", 0), Array.Empty<object>());
+  var count = useSignal(shared);
+
+  var cardStyle = new Style {
+    (StyleKeys.Padding, 14f),
+    (StyleKeys.FlexDirection, "column"),
+    (StyleKeys.BorderColor, new Color32(200, 200, 200, 255)),
+    (StyleKeys.BorderWidth, 1f),
+    (StyleKeys.BorderRadius, 6f),
+  };
+
+  var noteStyle = new Style { WhiteSpace = WsNormal };
+
+  return (
+    <VisualElement style={cardStyle}>
+      <Text text={$"Mounted on: {hostLabel}"} />
+      <Label
+        text="UIDocument and PanelRenderer coexist in one scene, one RootRenderer each. This counter is a shared signal - click in either panel and both update, across panel boundaries."
+        style={noteStyle}
+      />
+      <Text text={$"Shared count: {count}"} />
+      <Button text="Increment (updates both hosts)" onClick={_ => shared.Dispatch(v => v + 1)} />
+    </VisualElement>
+  );
+}
+
+export VirtualNode PanelMixedHostsUiDocumentFunc() {
+  return (<PanelMixedHostsFunc hostLabel="UIDocument (screen overlay)" />);
+}
+
+export VirtualNode PanelMixedHostsPanelRendererFunc() {
+  var offsetStyle = new Style {
+    (StyleKeys.MarginTop, 210f),
+  };
+
+  return (
+    <VisualElement style={offsetStyle}>
+      <PanelMixedHostsFunc hostLabel="PanelRenderer (6.5 host)" />
+    </VisualElement>
+  );
+}

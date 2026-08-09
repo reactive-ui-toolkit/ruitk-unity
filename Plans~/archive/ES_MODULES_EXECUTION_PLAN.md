@@ -1,6 +1,10 @@
 # ES-Modules Redesign — UNITY EXECUTION PLAN (.uitkx)
 
-**Status: READY TO EXECUTE** (written 2026-07-17; anchors re-audited and corrected against the
+**Status: EXECUTED — archived 2026-08-04.** Shipped as 0.9.0 (M0–M9 complete); the post-execution
+audit ledger is `Plans~/archive/ES_MODULES_AUDIT_FINDINGS.md`, deferred items in
+`Plans~/REMAINING_WORK.md`.
+
+Original status: **READY TO EXECUTE** (written 2026-07-17; anchors re-audited and corrected against the
 working tree on branch `fix/import-diagnostic-anchors`, HEAD `05bfb47a`, post-F5-wave `43f59670` —
 baseline is now fully GREEN, see §1.6).
 **Family contract:** `Plans~/ES_MODULES_GENERAL_PLAN.md` (owner-approved 2026-07-17). This plan

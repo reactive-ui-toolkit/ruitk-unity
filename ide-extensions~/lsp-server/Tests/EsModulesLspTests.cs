@@ -11,7 +11,7 @@ using Xunit;
 namespace UitkxLanguageServer.Tests
 {
     /// <summary>
-    /// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M5): the LSP surface for
+    /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M5): the LSP surface for
     /// plain-declaration files — virtual-document __Exports scaffolding (the shape ALL editor
     /// C# diagnostics ride on), import-brace completion over member exports, and the
     /// bridge/alias handling.

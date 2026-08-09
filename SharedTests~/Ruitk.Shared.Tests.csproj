@@ -7,17 +7,13 @@
     code has had no automated coverage at all: CI runs the SourceGenerator and LSP suites,
     and the single Unity test assembly (Ugui/Tests) only runs inside the editor.
 
-    SCOPE, and why it is what it is. The original intent was to unit-test the fiber
-    reconciler through a mock FiberHostConfig - the design permits it, since host handles
-    are opaque `object`s. That is currently blocked: FiberReconciler.cs references
-    Ruitk.Props.Typed.BaseProps, which pulls in Style.cs (2887 lines) and 20+ UnityEngine
-    style types. Faking that surface would mean a large shim that silently drifts from
-    Unity's real API - worse than no test. Decoupling the reconciler from the UITK props
-    surface is Phase 2 / A3 work (it is the same "make the core actually host-agnostic"
-    goal), and the reconciler suite lands with it.
-
-    What IS covered here is the pure-logic core that links cleanly and had zero tests:
-    router path matching and location handling, and the signals runtime.
+    SCOPE. The suite covers the pure-logic core (router path matching and location
+    handling, the signals runtime) and the fiber reconciler, driven through a mock
+    FiberHostConfig over POCO handles - the seam takes opaque `object` handles by
+    design. The fiber core links cleanly because it depends on the props world only
+    through HostPropsBase and IHostTextProps (the Phase 2 decoupling); the UITK-typed
+    surface (BaseProps, Style.cs, the adapters) stays out, so nothing here shims
+    Unity's real style API.
 
     No Unity assemblies are referenced. Those DLLs bind to native ECalls that exist only
     inside the Unity runtime - probed on 6000.5.6f1, Debug.Log/LogWarning/LogError,
@@ -60,6 +56,44 @@
     <Compile Include="../Shared/Core/Signals/Signal.cs" Link="Linked/Signals/Signal.cs" />
     <Compile Include="../Shared/Core/Signals/SignalsRuntime.cs" Link="Linked/Signals/SignalsRuntime.cs" />
     <Compile Include="../Shared/Core/Util/ShallowCompare.cs" Link="Linked/Util/ShallowCompare.cs" />
+  </ItemGroup>
+
+  <!-- The fiber core. VNode.Uitk.cs (the BaseProps-typed accessor partial) and
+       UitkHostConfig.cs (the UI Toolkit backend) are deliberately NOT linked -
+       they are the UITK-flavoured halves the core was decoupled from. -->
+  <ItemGroup>
+    <Compile Include="../Shared/Core/Fiber/FiberChildReconciliation.cs" Link="Linked/Fiber/FiberChildReconciliation.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberConfig.cs" Link="Linked/Fiber/FiberConfig.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberFactory.cs" Link="Linked/Fiber/FiberFactory.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberFragment.cs" Link="Linked/Fiber/FiberFragment.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberFunctionComponent.cs" Link="Linked/Fiber/FiberFunctionComponent.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberHostConfig.cs" Link="Linked/Fiber/FiberHostConfig.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberIntrinsicComponents.cs" Link="Linked/Fiber/FiberIntrinsicComponents.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberNode.cs" Link="Linked/Fiber/FiberNode.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberReconciler.cs" Link="Linked/Fiber/FiberReconciler.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberRenderer.cs" Link="Linked/Fiber/FiberRenderer.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberRoot.cs" Link="Linked/Fiber/FiberRoot.cs" />
+    <Compile Include="../Shared/Core/Fiber/FiberSuspenseSuspendException.cs" Link="Linked/Fiber/FiberSuspenseSuspendException.cs" />
+    <Compile Include="../Shared/Core/VNode.cs" Link="Linked/Core/VNode.cs" />
+    <Compile Include="../Shared/Core/V.Core.cs" Link="Linked/Core/V.Core.cs" />
+    <Compile Include="../Shared/Core/Hooks.cs" Link="Linked/Core/Hooks.cs" />
+    <Compile Include="../Shared/Core/HookRegistry.cs" Link="Linked/Core/HookRegistry.cs" />
+    <Compile Include="../Shared/Core/HookSignatureAttribute.cs" Link="Linked/Core/HookSignatureAttribute.cs" />
+    <Compile Include="../Shared/Core/HostContext.cs" Link="Linked/Core/HostContext.cs" />
+    <Compile Include="../Shared/Core/ReactiveTypes.cs" Link="Linked/Core/ReactiveTypes.cs" />
+    <Compile Include="../Shared/Core/NodeMetadata.cs" Link="Linked/Core/NodeMetadata.cs" />
+    <Compile Include="../Shared/Core/PropTypes.cs" Link="Linked/Core/PropTypes.cs" />
+    <Compile Include="../Shared/Core/IProps.cs" Link="Linked/Core/IProps.cs" />
+    <Compile Include="../Shared/Core/IScheduler.cs" Link="Linked/Core/IScheduler.cs" />
+    <Compile Include="../Shared/Core/ColumnTypes.cs" Link="Linked/Core/ColumnTypes.cs" />
+    <Compile Include="../Shared/Core/Util/SafeAreaUtility.cs" Link="Linked/Util/SafeAreaUtility.cs" />
+    <Compile Include="../Shared/Core/Diagnostics/InternalLogOptions.cs" Link="Linked/Diagnostics/InternalLogOptions.cs" />
+    <Compile Include="../Shared/Core/Diagnostics/DiagnosticsConfig.cs" Link="Linked/Diagnostics/DiagnosticsConfig.cs" />
+    <Compile Include="../Shared/Elements/ElementRegistry.cs" Link="Linked/Elements/ElementRegistry.cs" />
+    <Compile Include="../Shared/Elements/IElementAdapter.cs" Link="Linked/Elements/IElementAdapter.cs" />
+    <Compile Include="../Shared/Props/Typed/ErrorBoundaryProps.cs" Link="Linked/Props/ErrorBoundaryProps.cs" />
+    <Compile Include="../Shared/Props/Typed/HostPropsBase.cs" Link="Linked/Props/HostPropsBase.cs" />
+    <Compile Include="../Shared/Props/Typed/IHostTextProps.cs" Link="Linked/Props/IHostTextProps.cs" />
   </ItemGroup>
 
 </Project>

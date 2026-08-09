@@ -54,6 +54,50 @@ new Style {
       setting.
     </Alert>
 
+    {/* ── Unity 6.5 PanelRenderer (delete this section wholesale when the Unity
+           bugs below are fixed and the package's Unity floor is past the fixes) ── */}
+    <Typography variant="h5" component="h2" sx={Styles.section}>
+      Unity 6.5: PanelRenderer host — known Unity issues and shipped workarounds
+    </Typography>
+    <Typography variant="body1" paragraph>
+      The library hosts Unity 6.5's <code>PanelRenderer</code> via{' '}
+      <code>RootRenderer.Initialize(panelRenderer)</code>. Unity 6000.5.x has open issues around
+      the component that the library works around automatically. Every workaround is{' '}
+      <strong>symptom-gated</strong>: it observes the failure itself (a callback that never
+      arrived, a tree Unity marked released) rather than the Unity version, so on a fixed editor
+      the code is inert with no action on your side — and each one has an opt-out key in the
+      settings file.
+    </Typography>
+    <List>
+      <ListItem disablePadding>
+        <ListItemText primary={<><strong>Nested renderer never mounts (Unity case IN-150082, editor-only).</strong> A <code>PanelRenderer</code> whose GameObject sits under another <code>PanelRenderer</code> can silently never receive its UI reload callback in the editor — the UI just never appears. The library's mount watchdog detects the missing callback and forces the attach path (a <code>panelSettings</code> round-trip, escalating if needed). Opt-out: <code>mount_watchdog</code>.</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><strong>Disabled-in-Awake renderer never inserts its root (UUM-147875, fixed in 6000.5.7f1).</strong> The common "disable all screens at startup, enable one on demand" pattern hits this on 6000.5.0–6000.5.6. Same watchdog, same mechanism, same opt-out.</>} />
+      </ListItem>
+      <ListItem disablePadding>
+        <ListItemText primary={<><strong>Parent rebuild releases nested children (UUM-148452, open — editor AND player).</strong> Rebuilding a parent panel calls <code>ReleaseResources()</code> down into nested children; a released tree throws on any touch. Around rebuilds the library itself triggers, nested child renderers are briefly disabled so the cascade cannot reach them (opt-out: <code>nested_prevention</code>). If Unity releases a nested child's tree anyway and no follow-up callback arrives, the child destroys and re-adds its own <code>PanelRenderer</code> with every setting copied — in the editor through Undo, so the repair is one Ctrl+Z (opt-out: <code>nested_repair</code>). A repair loses serialized references pointing at the old component; if you hold such references, disable the repair and avoid nesting instead. During the repair Unity's own cleanup may log an <code>InvalidOperationException</code> ("Trying to modify a released panel tree") from inside its native boundary — it is Unity's, it is harmless, and the repair completes; judge the repair by the outcome, not the log line.</>} />
+      </ListItem>
+    </List>
+    <Typography variant="body1" paragraph>
+      <strong>Remount semantics.</strong> When Unity releases the mounted tree wholesale — saving
+      a <code>.uxml</code> that is the renderer's Source Asset, or reassigning{' '}
+      <code>panelSettings</code> at runtime — nothing is salvageable, so the library drops the old
+      tree without touching it (effect cleanups still run) and remounts fresh: transient state
+      (hooks, scroll positions, focus) is lost by design. If the renderer is orphaned{' '}
+      <em>without</em> being released (disable/enable, editor panel rebuilds), the mounted tree is
+      reused or retargeted and all state survives. For a fully code-driven UI, leave{' '}
+      <strong>Source Asset empty</strong> — the frequent editor triggers then never release the
+      tree at all.
+    </Typography>
+    <Typography variant="body1" paragraph>
+      The library warns once at mount when <code>visualTreeAsset</code> is set (remount hazard)
+      and when <code>parentUI</code> is set (the nested-renderer limitations above). If these
+      issues affect you, voting on the Unity tracker entries (IN-150082, UUM-148452) helps get
+      them fixed — the workarounds are removed once Unity ships fixes and the package's Unity
+      floor moves past them.
+    </Typography>
+
     {/* ── Runtime ─────────────────────────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>
       Runtime

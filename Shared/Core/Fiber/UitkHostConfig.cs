@@ -144,8 +144,34 @@ namespace Ruitk.Core.Fiber
 
         public override void OnHostRemoved(object element)
         {
-            // Clean up previousStyles tracking to prevent memory leak (P0-5)
-            Ruitk.Props.PropsApplier.NotifyElementRemoved((VisualElement)element);
+            // The "element left the tree for good" hub: every UITK retention
+            // site releases here so a deleted element cannot be reached from
+            // static state again (§5.4 of the 6.5 plan). PropsApplier drops the
+            // previousStyles entry and detaches any user ref (both the dict and
+            // typed pipelines funnel refs into NodeMetadata.AttachedRef);
+            // Animator stops tick lambdas that captured the element; the
+            // virtualized list/tree adapters unmount their pooled row
+            // renderers, running row effect cleanups that never ran before.
+            var ve = (VisualElement)element;
+            Ruitk.Props.PropsApplier.NotifyElementRemoved(ve);
+            Animation.Animator.StopAllFor(ve);
+            ListViewElementAdapter.NotifyHostRemoved(ve);
+            TreeViewElementAdapter.NotifyHostRemoved(ve);
+            MultiColumnListViewElementAdapter.NotifyHostRemoved(ve);
+            MultiColumnTreeViewElementAdapter.NotifyHostRemoved(ve);
+        }
+
+        public override bool IsAlive(object element)
+        {
+            if (element is not VisualElement ve)
+            {
+                return element != null;
+            }
+#if UNITY_6000_5_OR_NEWER
+            return !ve.resourcesReleased;
+#else
+            return true;
+#endif
         }
 
         public override string GetDebugName(object element)

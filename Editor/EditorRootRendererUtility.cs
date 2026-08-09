@@ -15,9 +15,6 @@ namespace Ruitk.EditorSupport
         private static readonly Dictionary<VisualElement, VNodeHostRenderer> renderersByHost =
             new();
 
-        /// <summary>HMR: enumerates all active VNodeHostRenderers for fiber tree walking.</summary>
-        internal static IEnumerable<VNodeHostRenderer> GetAllRenderers() => renderersByHost.Values;
-
         /// <summary>
         /// Mounts a component tree on <paramref name="hostElement"/>.
         /// </summary>
@@ -45,32 +42,15 @@ namespace Ruitk.EditorSupport
             }
             if (!renderersByHost.TryGetValue(hostElement, out VNodeHostRenderer renderer))
             {
-                ElementRegistry registry = ElementRegistryProvider.GetDefaultRegistry();
-                HostContext hostContext = new(registry);
-                hostContext.Environment["scheduler"] = EditorRenderScheduler.Instance;
-                hostContext.Environment["isEditor"] = true;
-                SignalsRuntime.EnsureInitialized();
-
-                hostContext.Environment["env"] = BuildDefinesConfig.ResolveEnvironment();
-
-                DiagnosticsConfig.CurrentTraceLevel = BuildDefinesConfig.ResolveTraceLevel();
-                DiagnosticsConfig.EnableDiffTracing = BuildDefinesConfig.ResolveEnableDiffTracing();
-
-                // Reconciler knobs — time slicing applies wherever a scheduler slices, the
-                // editor scheduler included; frame_budget_ms does NOT apply here (the editor
-                // scheduler is unbudgeted by design — it drains fully every editor update).
-                FiberConfig.TimeSlicingEnabled = BuildDefinesConfig.ResolveTimeSlicing();
-                FiberConfig.TimeSliceMs = BuildDefinesConfig.ResolveTimeSliceMs();
-
-                // Strict knobs — in the editor the two tri-states resolve auto = on, and a
-                // stored strict_mode=true is honored (the release force-off only bites in
-                // release players).
-                Hooks.EnableHookValidation = BuildDefinesConfig.ResolveHookValidation();
-                Hooks.EnableStrictDiagnostics = BuildDefinesConfig.ResolveStrictDiagnostics();
-                FiberConfig.StrictModeEnabled = BuildDefinesConfig.ResolveStrictMode();
-
-                InternalLogOptions.EnableInternalLogs =
-                    DiagnosticsConfig.CurrentTraceLevel == DiagnosticsConfig.TraceLevel.Verbose;
+                // Note for the editor world: frame_budget_ms does NOT apply
+                // here (the editor scheduler is unbudgeted by design — it
+                // drains fully every editor update); time slicing does.
+                HostContext hostContext = RuitkBootstrap.CreateHostContext(
+                    ElementRegistryProvider.GetDefaultRegistry(),
+                    hostConfig: null,
+                    scheduler: EditorRenderScheduler.Instance,
+                    isEditor: true
+                );
 
                 // Caller-supplied environment seeding (portal slots, feature flags, etc.)
                 env?.Invoke(hostContext);

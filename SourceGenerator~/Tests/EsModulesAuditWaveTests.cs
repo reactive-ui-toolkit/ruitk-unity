@@ -12,7 +12,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests
 {
     /// <summary>
-    /// ES-modules audit wave (Plans~/ES_MODULES_AUDIT_FINDINGS.md): regression pins for the
+    /// ES-modules audit wave (Plans~/archive/ES_MODULES_AUDIT_FINDINGS.md): regression pins for the
     /// execution-verified parser/detector/formatter defects (F1-F11, P1/P2), the shared-parser
     /// dotted-closing-tag fix (H2), the payload/bridge/tag-map additions (F7b, H1/H3/H4), and
     /// the 2108 mixed-mode mirror direction (PC-6).

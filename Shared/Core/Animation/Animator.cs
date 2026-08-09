@@ -53,6 +53,27 @@ namespace Ruitk.Core.Animation
             Dictionary<string, AnimationHandle>
         > active = new();
 
+        /// <summary>
+        /// Stops every animation whose tick lambda captured
+        /// <paramref name="ve"/>. Called from the host's element-removed hub so
+        /// a deleted (or, on 6.5, released) element stops ticking instead of
+        /// looping forever behind the panel-presence gate.
+        /// </summary>
+        public static void StopAllFor(VisualElement ve)
+        {
+            if (ve == null || !active.TryGetValue(ve, out var map) || map.Count == 0)
+            {
+                return;
+            }
+            var handles = new AnimationHandle[map.Count];
+            map.Values.CopyTo(handles, 0);
+            foreach (var handle in handles)
+            {
+                handle?.Stop();
+            }
+            active.Remove(ve);
+        }
+
         public static List<AnimationHandle> PlayTracks(
             VisualElement ve,
             IReadOnlyList<AnimateTrack> tracks
@@ -115,6 +136,16 @@ namespace Ruitk.Core.Animation
 
             handle.unsubscribe = AnimationTicker.Subscribe(() =>
             {
+#if UNITY_6000_5_OR_NEWER
+                // 6.5 can release the element out from under the tree
+                // (PanelRenderer rebuild); a released element must never be
+                // touched again, so the animation self-terminates.
+                if (ve.resourcesReleased)
+                {
+                    handle.Stop();
+                    return;
+                }
+#endif
                 double now;
                 try
                 {

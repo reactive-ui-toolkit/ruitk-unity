@@ -14,5 +14,15 @@ namespace Ruitk.Elements
         {
             return StateTable.GetValue(element, _ => new TState());
         }
+
+        protected static bool TryGetState(TElement element, out TState state)
+        {
+            return StateTable.TryGetValue(element, out state);
+        }
+
+        protected static void RemoveState(TElement element)
+        {
+            StateTable.Remove(element);
+        }
     }
 }
