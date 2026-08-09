@@ -5,7 +5,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests;
 
 /// <summary>
-/// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M4): source-text contract pins for the
+/// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M4): source-text contract pins for the
 /// HMR side of the __Exports model (<c>Editor/HMR/</c> cannot be loaded by this test runner —
 /// same text-pin approach as <see cref="HmrModuleNamespaceParityContractTests"/>).
 ///

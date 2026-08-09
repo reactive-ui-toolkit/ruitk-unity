@@ -475,32 +475,14 @@ namespace Ruitk.EditorSupport.HMR
 
         // ── UITKX Fast Refresh: root-fiber enumeration ───────────────────────
         // Supplied to RefreshRuntime.RegisterRootRendererProvider in Start().
-        // Walks the two registries that hold every live FiberRenderer:
-        //   • EditorRootRendererUtility.GetAllRenderers — editor-window hosts
-        //   • RootRenderer.AllInstances — runtime MonoBehaviour hosts
-        // Mirrors the iteration the (now deleted) component trampoline
-        // swapper used. Cheap to call: O(renderers); RefreshRuntime calls
+        // MountRegistry is the single registry every FiberRenderer self-joins
+        // at construction — runtime RootRenderer, editor windows, uGUI mounts,
+        // virtualized row renderers, and any future host, with no per-host
+        // list to extend. Cheap to call: O(renderers); RefreshRuntime calls
         // it once per HMR cycle.
         private static IEnumerable<FiberNode> EnumerateRootFibers()
         {
-            foreach (var renderer in EditorRootRendererUtility.GetAllRenderers())
-            {
-                var fr = renderer?.FiberRendererInternal;
-                if (fr?.Root?.Current != null)
-                    yield return fr.Root.Current;
-            }
-            foreach (var rootRenderer in RootRenderer.AllInstances)
-            {
-                var vhr = rootRenderer?.VNodeHostRendererInternal;
-                if (vhr?.FiberRendererInternal?.Root?.Current != null)
-                    yield return vhr.FiberRendererInternal.Root.Current;
-            }
-            foreach (var uguiRenderer in Ruitk.Ugui.UguiRootRenderer.AllInstances)
-            {
-                var root = uguiRenderer?.FiberRootInternal;
-                if (root?.Current != null)
-                    yield return root.Current;
-            }
+            return MountRegistry.EnumerateRootFibers();
         }
 
         // Returns true when the path was newly queued, false when it was already

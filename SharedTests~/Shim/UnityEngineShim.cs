@@ -106,6 +106,87 @@ namespace UnityEngine
             unscaledDeltaTime = 0f;
         }
     }
+
+    public struct Vector2
+    {
+        public float x;
+        public float y;
+
+        public Vector2(float x, float y)
+        {
+            this.x = x;
+            this.y = y;
+        }
+
+        public static Vector2 zero => new Vector2(0f, 0f);
+
+        public static implicit operator Vector3(Vector2 v) => new Vector3(v.x, v.y, 0f);
+    }
+
+    public struct Vector3
+    {
+        public float x;
+        public float y;
+        public float z;
+
+        public Vector3(float x, float y, float z)
+        {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        public static Vector3 zero => new Vector3(0f, 0f, 0f);
+
+        public static implicit operator Vector2(Vector3 v) => new Vector2(v.x, v.y);
+    }
+
+    public struct Rect
+    {
+        public float x;
+        public float y;
+        public float width;
+        public float height;
+
+        public Rect(float x, float y, float width, float height)
+        {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+        }
+
+        public float xMax => x + width;
+        public float yMax => y + height;
+
+        public static Rect zero => new Rect(0f, 0f, 0f, 0f);
+    }
+
+    // Only the members the linked sources name. Values match Unity's.
+    public enum KeyCode
+    {
+        None = 0,
+        Backspace = 8,
+        Tab = 9,
+        Return = 13,
+        Escape = 27,
+        Space = 32,
+        Delete = 127,
+        UpArrow = 273,
+        DownArrow = 274,
+        RightArrow = 275,
+        LeftArrow = 276,
+    }
+
+    public static class Screen
+    {
+        // Settable so SafeAreaUtility-based assertions are deterministic.
+        public static int width { get; set; } = 1920;
+
+        public static int height { get; set; } = 1080;
+
+        public static Rect safeArea { get; set; } = new Rect(0f, 0f, 1920f, 1080f);
+    }
 }
 
 namespace UnityEngine.Profiling
@@ -160,10 +241,19 @@ namespace UnityEngine
 
 namespace UnityEngine.UIElements
 {
-    // A structural stand-in only. The reconciler never touches VisualElement in these
-    // tests - the mock FiberHostConfig hands it POCO handles - but a few linked files
-    // name the type in signatures, so it has to exist to compile.
-    public class VisualElement
+    // Structural stand-ins only. The reconciler never touches these in the tests -
+    // the mock FiberHostConfig hands it POCO handles - but the linked sources name
+    // them in signatures and event-wrapper constructors, so they must exist to
+    // compile. Shapes mirror the real UIElements API; fidelity against the real
+    // assemblies is enforced by the separate compile-only harness
+    // (scripts/unity-compile-check.mjs), so drift here cannot mask a real break.
+    public interface IEventHandler { }
+
+    public interface IPanel { }
+
+    public class Focusable : IEventHandler { }
+
+    public class VisualElement : Focusable
     {
         public string name { get; set; } = "";
 
@@ -195,6 +285,139 @@ namespace UnityEngine.UIElements
             _children.Clear();
         }
     }
+
+    public abstract class EventBase
+    {
+        public IEventHandler target { get; set; }
+
+        public IEventHandler currentTarget { get; set; }
+
+        public long timestamp { get; set; }
+
+        public bool isPropagationStopped { get; private set; }
+
+        public void StopPropagation() => isPropagationStopped = true;
+    }
+
+    public interface IPointerEvent
+    {
+        int pointerId { get; }
+        Vector3 position { get; }
+        Vector3 deltaPosition { get; }
+        int button { get; }
+        int clickCount { get; }
+        bool altKey { get; }
+        bool ctrlKey { get; }
+        bool shiftKey { get; }
+        bool commandKey { get; }
+        float pressure { get; }
+        float tangentialPressure { get; }
+        float altitudeAngle { get; }
+        float azimuthAngle { get; }
+        float twist { get; }
+        Vector2 radius { get; }
+        Vector2 radiusVariance { get; }
+    }
+
+    public interface IMouseEvent
+    {
+        Vector2 mousePosition { get; }
+        Vector2 mouseDelta { get; }
+        int button { get; }
+        int clickCount { get; }
+        bool altKey { get; }
+        bool ctrlKey { get; }
+        bool shiftKey { get; }
+        bool commandKey { get; }
+    }
+
+    public interface IKeyboardEvent
+    {
+        KeyCode keyCode { get; }
+        char character { get; }
+        bool altKey { get; }
+        bool ctrlKey { get; }
+        bool shiftKey { get; }
+        bool commandKey { get; }
+    }
+
+    public interface IFocusEvent
+    {
+        Focusable relatedTarget { get; }
+    }
+
+    public class WheelEvent : EventBase, IMouseEvent
+    {
+        public Vector3 delta { get; set; }
+        public Vector2 mousePosition { get; set; }
+        public Vector2 mouseDelta { get; set; }
+        public int button { get; set; }
+        public int clickCount { get; set; }
+        public bool altKey { get; set; }
+        public bool ctrlKey { get; set; }
+        public bool shiftKey { get; set; }
+        public bool commandKey { get; set; }
+    }
+
+    public class FocusEvent : EventBase, IFocusEvent
+    {
+        public Focusable relatedTarget { get; set; }
+    }
+
+    public class BlurEvent : EventBase, IFocusEvent
+    {
+        public Focusable relatedTarget { get; set; }
+    }
+
+    public class FocusInEvent : EventBase, IFocusEvent
+    {
+        public Focusable relatedTarget { get; set; }
+    }
+
+    public class FocusOutEvent : EventBase, IFocusEvent
+    {
+        public Focusable relatedTarget { get; set; }
+    }
+
+    public class GeometryChangedEvent : EventBase
+    {
+        public Rect oldRect { get; set; }
+        public Rect newRect { get; set; }
+    }
+
+    public class AttachToPanelEvent : EventBase
+    {
+        public IPanel destinationPanel { get; set; }
+    }
+
+    public class DetachFromPanelEvent : EventBase
+    {
+        public IPanel originPanel { get; set; }
+    }
+
+    public class ChangeEvent<T> : EventBase
+    {
+        public T previousValue { get; set; }
+        public T newValue { get; set; }
+    }
+
+    public class Tab : VisualElement { }
+
+    public class DropdownMenu { }
+
+    public struct TreeViewExpansionChangedArgs
+    {
+        public int id;
+        public bool isExpanded;
+    }
+
+    public enum SortDirection
+    {
+        Ascending,
+        Descending,
+    }
+
+    public class MeshGenerationContext { }
 }
 
 namespace UnityEngine

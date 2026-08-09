@@ -78,8 +78,10 @@ namespace Ruitk.Core.Fiber
         public FiberReconciler(HostContext hostContext)
         {
             _hostContext = hostContext;
-            _hostConfig =
-                hostContext.HostConfig ?? new UitkHostConfig(hostContext.ElementRegistry);
+            // HostContext guarantees HostConfig is non-null (both constructors fall
+            // back to the UI Toolkit backend themselves), so the backend default
+            // lives there and the reconciler stays host-agnostic.
+            _hostConfig = hostContext.HostConfig;
 
             if (
                 hostContext?.Environment != null
@@ -1342,8 +1344,8 @@ namespace Ruitk.Core.Fiber
                 string newText = null;
 
                 // Try typed path first
-                if (fiber.HostProps is Props.Typed.LabelProps oldLp)
-                    oldText = oldLp.Text;
+                if (fiber.HostProps is Props.Typed.IHostTextProps oldTp)
+                    oldText = oldTp.HostText;
                 else if (
                     fiber.Props != null
                     && fiber.Props.TryGetValue("text", out var ov)
@@ -1353,8 +1355,8 @@ namespace Ruitk.Core.Fiber
                     oldText = os;
                 }
 
-                if (fiber.PendingHostProps is Props.Typed.LabelProps newLp)
-                    newText = newLp.Text;
+                if (fiber.PendingHostProps is Props.Typed.IHostTextProps newTp)
+                    newText = newTp.HostText;
                 else if (
                     fiber.PendingProps != null
                     && fiber.PendingProps.TryGetValue("text", out var nv)
@@ -1415,6 +1417,89 @@ namespace Ruitk.Core.Fiber
         /// <summary>
         /// Commit deletion - remove element from DOM
         /// </summary>
+        // The non-host half of component deletion: effect cleanups and signal
+        // subscription disposal. Shared by CommitDeletion (live-tree deletion)
+        // and AbandonFiber (host is dead and must not be touched).
+        private static void RunComponentTeardown(FiberNode fiber)
+        {
+            if (fiber.Tag != FiberTag.FunctionComponent || fiber.ComponentState == null)
+            {
+                return;
+            }
+            var state = fiber.ComponentState;
+
+            // Run and clear passive effects (UseEffect)
+            if (state.FunctionEffects != null)
+            {
+                for (int i = 0; i < state.FunctionEffects.Count; i++)
+                {
+                    var effect = state.FunctionEffects[i];
+                    try
+                    {
+                        effect.cleanup?.Invoke();
+                    }
+                    catch { }
+                }
+                state.FunctionEffects.Clear();
+            }
+
+            // Run and clear layout effects (UseLayoutEffect)
+            if (state.FunctionLayoutEffects != null)
+            {
+                for (int i = 0; i < state.FunctionLayoutEffects.Count; i++)
+                {
+                    var effect = state.FunctionLayoutEffects[i];
+                    try
+                    {
+                        effect.cleanup?.Invoke();
+                    }
+                    catch { }
+                }
+                state.FunctionLayoutEffects.Clear();
+            }
+
+            Hooks.DisposeSignalSubscriptions(state);
+        }
+
+        /// <summary>
+        /// Tear down the mounted tree WITHOUT touching any host element. The
+        /// Unity 6.5 remount path uses this when the host subtree has been
+        /// poisoned by <c>ReleaseResources()</c> - a released element throws on
+        /// hierarchy access, so the normal <see cref="UnmountRoot"/> is not
+        /// legal. Effect cleanups run and signal subscriptions are disposed
+        /// (otherwise a later signal Set would re-render the dead tree and
+        /// throw); host removal, retention eviction and props pool returns are
+        /// deliberately skipped - the caller sweeps retention sites via the
+        /// liveness predicate instead.
+        /// </summary>
+        public void AbandonRoot()
+        {
+            if (_root?.Current == null)
+            {
+                _root = null;
+                return;
+            }
+            AbandonFiber(_root.Current);
+            _root.Current.Child = null;
+            _root = null;
+        }
+
+        private static void AbandonFiber(FiberNode fiber)
+        {
+            while (fiber != null)
+            {
+                RunComponentTeardown(fiber);
+                if (fiber.ComponentState != null)
+                {
+                    // Sever the re-render path so a stray setter on captured
+                    // state cannot schedule work against the abandoned tree.
+                    fiber.ComponentState.OnStateUpdated = null;
+                }
+                AbandonFiber(fiber.Child);
+                fiber = fiber.Sibling;
+            }
+        }
+
         private void CommitDeletion(FiberNode fiber)
         {
             if (fiber == null)
@@ -1423,43 +1508,7 @@ namespace Ruitk.Core.Fiber
             }
 
             // Depth-first delete: clean up subtree before removing the current node.
-            // If this is a function component, clean up effects and signal subscriptions.
-            if (fiber.Tag == FiberTag.FunctionComponent && fiber.ComponentState != null)
-            {
-                var state = fiber.ComponentState;
-
-                // Run and clear passive effects (UseEffect)
-                if (state.FunctionEffects != null)
-                {
-                    for (int i = 0; i < state.FunctionEffects.Count; i++)
-                    {
-                        var effect = state.FunctionEffects[i];
-                        try
-                        {
-                            effect.cleanup?.Invoke();
-                        }
-                        catch { }
-                    }
-                    state.FunctionEffects.Clear();
-                }
-
-                // Run and clear layout effects (UseLayoutEffect)
-                if (state.FunctionLayoutEffects != null)
-                {
-                    for (int i = 0; i < state.FunctionLayoutEffects.Count; i++)
-                    {
-                        var effect = state.FunctionLayoutEffects[i];
-                        try
-                        {
-                            effect.cleanup?.Invoke();
-                        }
-                        catch { }
-                    }
-                    state.FunctionLayoutEffects.Clear();
-                }
-
-                Hooks.DisposeSignalSubscriptions(state);
-            }
+            RunComponentTeardown(fiber);
 
             // Recurse into children so that all host descendants are removed.
             var child = fiber.Child;

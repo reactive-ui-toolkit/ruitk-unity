@@ -7,7 +7,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests
 {
     /// <summary>
-    /// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M2, U-01): the mode-aware
+    /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M2, U-01): the mode-aware
     /// <see cref="EffectiveNamespace.Resolve(bool, string, string, bool)"/> overload — new-syntax
     /// files are FILE-keyed (folder segments + sanitized file stem, unique per file), legacy files
     /// keep folder-keyed derivation verbatim, and the explicit <c>@namespace</c> stamp wins in

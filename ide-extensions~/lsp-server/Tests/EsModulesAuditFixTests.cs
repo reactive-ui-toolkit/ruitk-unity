@@ -13,7 +13,7 @@ using Xunit;
 namespace UitkxLanguageServer.Tests
 {
     /// <summary>
-    /// ES-modules LSP audit fixes (Plans~/ES_MODULES_AUDIT_FINDINGS.md): declaration-head
+    /// ES-modules LSP audit fixes (Plans~/archive/ES_MODULES_AUDIT_FINDINGS.md): declaration-head
     /// matching requires a type token (B1/B2/B6), import-list rename applies a single
     /// origin-decided interpretation of the renamed identifier (B3, PC-10), the workspace
     /// index ignores comment-shaped declarations (B5), the import-brace completion parses

@@ -4,7 +4,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests
 {
     /// <summary>
-    /// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M1, U-05):
+    /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M1, U-05):
     /// <see cref="MarkupTokenizer.ReadTagName"/> accepts exactly one interior <c>.</c> for
     /// namespace-import-qualified tags (<c>&lt;X.Comp/&gt;</c>). Plain (undotted) tags must keep
     /// tokenizing byte-identically — the family scanner corpus's fileScan tier is the primary

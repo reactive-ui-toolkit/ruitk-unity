@@ -9,23 +9,31 @@
 > plus doc-staleness items found during triage.
 >
 > Living references that stay in `Plans~/` (not plans, no items unless listed below):
-> `DISCORD_CHANGELOG.md` (operational log), `family-corpus.hash` (**load-bearing** — CI drift
+> `family-corpus.hash` (**load-bearing** — CI drift
 > gate + `ImportCorpusManifestTests` resolve the repo root via it), `LATENCY_TARGETS.md`,
 > `MIGRATION_GUIDE.md`, `UITKX_ARCHITECTURE_LANGUAGE_SERVER.md`, `VERSIONING_PROCESS.md`,
 > `codebase-index.json` / `repository-atlas.md` (generated references; stale, refresh-worthy).
+> The Discord changelog is NOT here: it lives at `plans/DISCORD_CHANGELOG.md` (lowercase,
+> family-canonical path — `scripts/discord-changelog.mjs` and `publish.yml`'s discord job read it).
+>
+> 2026-08-04 sweep: every executed campaign plan moved to `Plans~/archive/` (ES-modules trio,
+> rebrand + post-rename audit, family parity, extension listing, import unification, samples
+> modernization [never executed — see SAMPLES-NS], uGUI proposal, Unity 6.5 plan). This file is
+> the only live backlog.
 
 ---
 
 ## 0. Unity 6.5 support — carried over from Phase 1
 
 Phase 1 (the three new controls) shipped in **0.14.0**. These are the items it did
-**not** cover. Full detail: `Plans~/UNITY_6_5_SUPPORT_PLAN.md`.
+**not** cover. Full detail: `Plans~/archive/UNITY_6_5_SUPPORT_PLAN.md`.
 
 | Item | Why deferred | Trigger to revisit |
 |---|---|---|
-| **Phase 2 — `PanelRenderer` / `IPanelComponent` host** (A3 root-source abstraction, sub-root mount, deferred mount + replay, three-way rebuild branch, world-space parity) | Carries all the architectural risk; Phase 1 was deliberately shippable without it. Spikes are complete and the gate is green | Starts immediately after 0.14.0 publishes |
-| **Retention-site cleanup** (`PropsApplier` static element dictionary, the four row pools, `Animator`'s captured element, user `Ref`s) | Blocker **for Phase 2 only** — 6.5's `ReleaseResources()` is the first thing that makes a `VisualElement` throw on touch, so stale references stop being a silent leak | Phase 2 step 8 (first item, before the host) |
-| **Nested-`PanelRenderer` workarounds WA1–WA4** | Depend on the Phase 2 host existing | Phase 2; see plan §5.9 registry for gating and removal conditions |
+| **WA1/WA2 — PanelRenderer mount watchdog** (`Runtime/Core/PanelRendererRootSource.cs`, `TickMountWatchdog`; one mechanism, one flag `mount_watchdog`) | SHIPPED in 0.15.0 as a workaround, not a root-cause fix — the bugs are Unity's: **case IN-150082** (nested child never mounts, editor-only, filed 2026-08-01) and **UUM-147875** (disabled-in-`Awake()` never inserts its root; Unity's fix ships in 6000.5.7f1). Symptom-gated (no callback after enable), so it is inert on fixed editors | Remove when BOTH are fixed upstream AND `package.json`'s `unity` floor is past the fixes — procedure in plan §5.9.5 |
+| **WA3 — nested-release prevention** (`PanelRendererRootSource.DisableNestedChildRenderers`, flag `nested_prevention`) | SHIPPED in 0.15.0 as a workaround for **UUM-148452** (open upstream): a parent rebuild's release cascade poisons nested child renderers. Prevention (the measured N2 pattern) acts before damage, so it cannot be symptom-gated; it runs only around rebuilds the library itself triggers | Remove when UUM-148452 is fixed AND the `unity` floor is past the fix |
+| **WA4 — nested-renderer repair** (`PanelRendererRootSource.TickNestedRepair`, flag `nested_repair`) | SHIPPED in 0.15.0 as a workaround for **UUM-148452**: destroy + re-add only the nested child's renderer (measured N6), full settings copy, Undo-wrapped in edit mode. Symptom-gated on `resourcesReleased` persisting with no callback. Residual: serialized references TO the old component cannot survive (no replace-in-place API in Unity) — that case is what the opt-out covers | Remove when UUM-148452 is fixed AND the `unity` floor is past the fix |
+| **Remount-path effect-cleanup scope** (`FiberReconciler.AbandonRoot`) | The 6.5 remount runs effect cleanups and disposes signal subscriptions but deliberately skips `OnHostRemoved` retention eviction for the abandoned tree's ROW POOLS: a poisoned virtualized view's pooled row renderers are dropped to GC without `Unmount()` (touching them would throw). Their own effect cleanups therefore do not run on this one path. Bounded: remount only, virtualized views only, and the sweep + weak tables reclaim the memory | A field report of leaked external resources (audio/timers) held by ROW components across a `.uxml`-save remount would justify a row-level abandon pass |
 | **ATG measurement comparison** (§4.1) | Cannot be settled by reading — needs 6.4 and 6.5 side by side, rendering the text-heavy samples and diffing measured sizes and wrap points. The punctuation line-breaking divergence has **no UUM id at all** | Any report of layout shifting after a 6.5 upgrade, or before relying on precise text metrics. A clean repro would be new information for Unity |
 | **`add-unity-version` skill / `VERSIONING_PROCESS` runbook defects** (§9) | Six gaps found while running this wave: `TypedPropsApplier` missing from every checklist, `Style.cs` described as one edit when it is six, `IStyleCoverageTests` needing a new array per IStyle-adding release, the four-emitter alias-parity layer absent, the release surface omitted, and `-FromDll`/`-ToDll` pinning not documented as mandatory | Before the next version-add wave — none of them bit this one because it had no IStyle changes |
 | **Docs folder casing** — on disk `ReactiveUIToolKitDocs~` (capital K), tracked in git as `ReactiveUIToolkitDocs~` | Pre-existing; `core.ignorecase=true` hides it on Windows. New files were staged under the tracked casing so the tree did not split, but on a case-sensitive checkout the working dir and index disagree | Any CI docs-build oddity, or before someone adds files on Linux/macOS |
@@ -36,6 +44,8 @@ Phase 1 (the three new controls) shipped in **0.14.0**. These are the items it d
 
 | ID | Item | Evidence / anchor | Source |
 |---|---|---|---|
+| TXT-1 | `<Text>` silently drops every attribute except `text` — it compiles to the bare `V.Text(string, key)` primitive, so `style=`/`onClick=`/etc. vanish with no diagnostic (cost a demo-fix cycle: wrap styles on `<Text>` were no-ops). Add a UITKX warning for unsupported attributes on BuiltinText — needs the full parity sweep (SG diagnostic + HMR emitter + LSP/virtual doc) plus a docs note steering styled text to `<Label>` | `SourceGenerator~/Emitter/CSharpEmitter.cs:1316-1320` reads only `text` | demo sweep 2026-08-03 |
+| GEN-1 | Package-embedded `.uitkx` changes never trigger regeneration: the change-watcher covers `Assets/` only, so a git pull (or any out-of-editor edit) of `.uitkx` under `Packages/` leaves the owning assembly running STALE generated code with zero warning — cost a full day-long false debugging trail (the "6.5 no-wrap" hunt was a stale `Ruitk.Samples.dll` from before the `<Text>`→`<Label>` fix; the style pipeline was verified correct end-to-end by runtime probes). Workaround: right-click → Reimport the folder. Fix: extend the watcher/AssetPostprocessor to embedded packages, or force a script-recompile when an imported `.uitkx` differs. Only affects developers embedding the package; `Assets/`-side users are covered | watcher scope in `Editor/` (`.uitkx` change watcher); `Ruitk.Samples.dll` timestamp proof 2026-08-04 | wrap hunt 2026-08-04 |
 | U4 | Multi-root counting mismatch: `DiagnosticsAnalyzer` and `StructureValidator` count render roots with two separate implementations that can disagree — extract one shared root counter | two implementations remain (language-lib `DiagnosticsAnalyzer` vs SG `StructureValidator`) | PARITY U4 |
 | P-2 | Format-on-save silently no-ops in some VS Code sessions — needs a live repro before any change (investigation item) | no repro recorded | V1 P-2 |
 
@@ -107,8 +117,8 @@ Phase 1 (the three new controls) shipped in **0.14.0**. These are the items it d
 | TD14 | Design decision: synthetic event dispatcher for portals | open decision | V1 D-DESIGN-TD14 |
 | U7 | Decision: single-quote attribute strings | open decision | PARITY U7 |
 | RT-6 | (Optional) runtime-only package variant | not done | V1 RT-6 |
-| ~~NSIMP~~ | **DONE (v0.8.0)** — Namespace-import unification: `import "@Ns"`, UITKX2316 (editor error / build warning), UITKX2317 redundant-using Hint, quick-fixes, codemod `--tidy`, formatter round-trip. Deferred follow-ups: semantic unused-using 2317, per-segment namespace completion + hover, 2316 "did you mean" suggestion, bulk samples `--tidy` | `Plans~/IMPORT_NAMESPACE_UNIFICATION_PLAN.md` | user request 2026-07-15 |
-| SAMPLES-NS | **READY TO EXECUTE** (hand to any agent) — modernize Samples to zero `@namespace` via `namespacePrefix` config; fully-researched plan with verbatim per-file edit appendices (A: name→ns map, B: exact C# using edits, C: exact uitkx import DELETEs/ADDs) + hard verification gates | `Plans~/SAMPLES_NAMESPACE_MODERNIZATION_PLAN.md` | user request 2026-07-16 |
+| ~~NSIMP~~ | **DONE (v0.8.0)** — Namespace-import unification: `import "@Ns"`, UITKX2316 (editor error / build warning), UITKX2317 redundant-using Hint, quick-fixes, codemod `--tidy`, formatter round-trip. Deferred follow-ups: semantic unused-using 2317, per-segment namespace completion + hover, 2316 "did you mean" suggestion, bulk samples `--tidy` | `Plans~/archive/IMPORT_NAMESPACE_UNIFICATION_PLAN.md` | user request 2026-07-15 |
+| SAMPLES-NS | **OPEN — plan stale, re-inventory before executing** — modernize Samples to zero `@namespace` via `namespacePrefix` config. As of 0.15.0 (2026-08-04) the samples still carry 104 `import "@…"` lines across 65 files. The archived plan's verbatim per-file appendices predate the ES-modules redesign (0.9.0) and the rebrand (0.12.0), so redo the inventory; its method (A: name→ns map, B: exact C# using edits, C: exact uitkx import DELETEs/ADDs, hard verification gates) still applies | `Plans~/archive/SAMPLES_NAMESPACE_MODERNIZATION_PLAN.md` | user request 2026-07-16 |
 
 ## 8. Cleanup / Tech-debt
 

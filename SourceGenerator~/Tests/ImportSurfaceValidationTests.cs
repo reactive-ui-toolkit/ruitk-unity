@@ -8,7 +8,7 @@ using static Ruitk.Language.StrictImportDetector;
 namespace Ruitk.SourceGenerator.Tests
 {
     /// <summary>
-    /// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M1, U-03/U-04):
+    /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M1, U-03/U-04):
     /// <see cref="Ruitk.Language.StrictImportDetector.ValidateImports"/>'s new full-import-
     /// surface checks — alias collision (2325), default-import-without-default-export (2326),
     /// namespace/default/rename against a legacy target (2109, Unity-local), and hook-rename

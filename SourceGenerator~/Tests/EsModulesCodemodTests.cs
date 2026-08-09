@@ -6,7 +6,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests
 {
     /// <summary>
-    /// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M7, U-09/§7.1): the
+    /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M7, U-09/§7.1): the
     /// <c>--es-modules</c> codemod pass over in-memory file sets — each wrapper rewrite form,
     /// module→<c>* as</c> importer preservation, companion member-import insertion, companion-set
     /// atomicity, unmigratable-shape skip, and idempotence.

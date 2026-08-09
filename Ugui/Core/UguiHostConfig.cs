@@ -253,6 +253,14 @@ namespace Ruitk.Ugui
             return go != null ? go.name : "GameObject(destroyed)";
         }
 
+        public override bool IsAlive(object element)
+        {
+            // Unity fake-null: a destroyed GameObject compares equal to null
+            // through the engine's overloaded operator even though the managed
+            // wrapper is still reachable.
+            return element is GameObject go ? go != null : element != null;
+        }
+
         private Transform ResolveChildHostTransform(object parent)
         {
             var parentGo = (GameObject)parent;

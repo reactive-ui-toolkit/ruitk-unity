@@ -2,9 +2,11 @@ using System.Collections.Generic;
 
 namespace Ruitk.Props.Typed
 {
-    public sealed class LabelProps : BaseProps
+    public sealed class LabelProps : BaseProps, IHostTextProps
     {
         public string Text { get; set; }
+
+        string IHostTextProps.HostText => Text;
 
         public override bool ShallowEquals(BaseProps other)
         {

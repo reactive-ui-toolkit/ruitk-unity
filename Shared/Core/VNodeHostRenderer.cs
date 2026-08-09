@@ -19,11 +19,6 @@ namespace Ruitk.Core
         private VisualElement hostElement;
         private IReadOnlyDictionary<string, object> lastHostProps;
 
-#if UNITY_EDITOR
-        /// <summary>HMR: exposes the FiberRenderer for tree walking.</summary>
-        internal FiberRenderer FiberRendererInternal => fiberRenderer;
-#endif
-
         public VNodeHostRenderer(HostContext hostContext, VisualElement host)
         {
             hostElement = host;
@@ -42,21 +37,43 @@ namespace Ruitk.Core
         }
 
         /// <summary>
-        /// Repoints this renderer at a new host VisualElement. Used by
+        /// Tear down without touching the host element or its subtree - the
+        /// Unity 6.5 remount path (the host is released; even a style write
+        /// throws). Cleanups still run; see <see cref="FiberRenderer.Abandon"/>.
+        /// </summary>
+        public void Abandon()
+        {
+            lastHostProps = null;
+            fiberRenderer?.Abandon();
+        }
+
+        /// <summary>
+        /// Repoints this renderer at a new host element. Used by
         /// <see cref="RootRenderer"/> when Unity rebuilds the panel
         /// (UIDocument asset swap, undo, disable/enable, editor selection
         /// storm in playmode) so the rendered fiber tree can be moved to
-        /// the freshly-created root without unmount/remount. Re-applies
-        /// the last host props to the new element so style overrides
-        /// (flexGrow, etc.) survive the swap. The fiber tree's container
-        /// and root host pointer must be updated separately via
-        /// <see cref="FiberRenderer.RetargetContainer(VisualElement)"/>.
+        /// the freshly-created root without unmount/remount - preserving
+        /// hook, ref and animation state. Re-applies the last host props
+        /// to the new element so style overrides (flexGrow, etc.) survive
+        /// the swap. The handle is object-typed to match the host-config
+        /// seam; for this UI Toolkit renderer it must be a
+        /// <see cref="VisualElement"/>.
         /// </summary>
-        internal void RetargetHost(VisualElement nextHost)
+        public void RetargetHost(object nextHostHandle)
         {
+            var nextHost = nextHostHandle as VisualElement;
             if (nextHost == null || ReferenceEquals(nextHost, hostElement))
             {
                 return;
+            }
+            // The old root is being abandoned: drop its style tracking and
+            // detach any host-level ref (previously this leaked one
+            // previousStyles entry per retarget), and stop animations that
+            // captured it. The children move to the new root and keep theirs.
+            if (hostElement != null)
+            {
+                PropsApplier.NotifyElementRemoved(hostElement);
+                Animation.Animator.StopAllFor(hostElement);
             }
             hostElement = nextHost;
             if (lastHostProps != null)

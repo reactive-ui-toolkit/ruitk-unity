@@ -57,6 +57,27 @@ namespace Ruitk.Elements
             return new ListView();
         }
 
+        /// <summary>
+        /// Host-removal hook (§5.4 retention cleanup): unmounts every pooled
+        /// row renderer - running row effect cleanups that previously never
+        /// ran - and drops the cached-parts entry so the deleted ListView
+        /// cannot be reached from static state again.
+        /// </summary>
+        internal static void NotifyHostRemoved(VisualElement element)
+        {
+            if (element is not ListView lv || !cachedPartsByList.TryGetValue(lv, out var parts))
+            {
+                return;
+            }
+            foreach (var entry in parts.Pool.Values)
+            {
+                entry.renderer?.Unmount();
+            }
+            parts.Pool.Clear();
+            parts.BoundKeyByIndex.Clear();
+            cachedPartsByList.Remove(lv);
+        }
+
         private static IList NormalizeItems(object itemsObj)
         {
             if (itemsObj == null)

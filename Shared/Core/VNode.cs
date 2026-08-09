@@ -17,7 +17,7 @@ namespace Ruitk.Core
         Host,
     }
 
-    public sealed class VirtualNode
+    public sealed partial class VirtualNode
     {
         private static readonly IReadOnlyDictionary<string, object> EmptyPropsInstance =
             new ReadOnlyDictionary<string, object>(new Dictionary<string, object>(0));
@@ -116,14 +116,6 @@ namespace Ruitk.Core
         /// </summary>
         public IProps TypedProps => _typedProps;
 
-        /// <summary>
-        /// Typed host props for built-in UI Toolkit host elements, or null for
-        /// other backend families. Kept <c>BaseProps</c>-typed for source
-        /// compatibility; the fiber reads the family-neutral
-        /// <see cref="HostPropsRaw"/> instead.
-        /// </summary>
-        public BaseProps HostProps => _hostProps as BaseProps;
-
         /// <summary>Typed host props as the backend-neutral base (any family).</summary>
         public HostPropsBase HostPropsRaw => _hostProps;
 
@@ -160,7 +152,7 @@ namespace Ruitk.Core
             IReadOnlyList<PropTypeDefinition> propTypes = null,
             System.Func<IProps, IReadOnlyList<VirtualNode>, VirtualNode> typedFunctionRender = null,
             IProps typedProps = null,
-            BaseProps hostProps = null
+            HostPropsBase hostProps = null
         )
         {
             _generation = 0; // user-created, not from pool

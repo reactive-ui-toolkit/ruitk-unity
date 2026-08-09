@@ -53,7 +53,7 @@ Every marketplace-visible string has exactly one source; edit the source, never 
 - **Naming scheme (family-wide, 2026-07-16):** display name = `UITKX (Unity - VS Code)` /
   `UITKX (Unity - VS2022)`; body H1 = `Reactive UI - Unity - <IDE> (UITKX)`; body order =
   Title → Description → Features → Requirements → Changelog. Execution details:
-  `Plans~/EXTENSION_LISTING_PLAN.md`.
+  `Plans~/archive/EXTENSION_LISTING_PLAN.md`.
 - A LISTING-ONLY change still bumps + gets a changelog entry — shipped bytes change.
 - Where a body file is generated (`README.md`, `overview.md`): edit the TEMPLATE
   (`readme-template.md` / `overview-template.md`), re-run `extract-overview`, commit

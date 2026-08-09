@@ -1,0 +1,56 @@
+export VirtualNode PanelWorldSpaceFunc() {
+  var (power, setPower) = useState(60);
+
+  var panelStyle = new Style {
+    (StyleKeys.Padding, 20f),
+    (StyleKeys.FlexDirection, "column"),
+    (StyleKeys.BackgroundColor, new Color32(20, 26, 34, 235)),
+    (StyleKeys.BorderRadius, 10f),
+  };
+
+  var barTrackStyle = new Style {
+    (StyleKeys.Height, 14f),
+    (StyleKeys.BackgroundColor, new Color32(52, 61, 74, 255)),
+    (StyleKeys.BorderRadius, 7f),
+    (StyleKeys.MarginTop, 8f),
+    (StyleKeys.MarginBottom, 8f),
+  };
+
+  var barFillStyle = new Style {
+    (StyleKeys.Width, Pct(power)),
+    (StyleKeys.Height, Pct(100)),
+    (StyleKeys.BackgroundColor, new Color32(96, 205, 255, 255)),
+    (StyleKeys.BorderRadius, 7f),
+  };
+
+  var rowStyle = new Style {
+    (StyleKeys.FlexDirection, "row"),
+  };
+
+  var noteStyle = new Style { WhiteSpace = WsNormal };
+
+  return (
+    <VisualElement style={panelStyle}>
+      <Text text="REACTOR TERMINAL" />
+      <Label
+        text="A diegetic world-space panel. Size and placement come from the PanelRenderer component (worldSpaceSizeMode, worldSpaceSize, position, pivot) - Unity owns the root transform; this UI just renders into it."
+        style={noteStyle}
+      />
+      <Text text={$"Output: {power}%"} />
+      <VisualElement style={barTrackStyle}>
+        <VisualElement style={barFillStyle} />
+      </VisualElement>
+      <VisualElement style={rowStyle}>
+        <Button
+          text="- 10"
+          onClick={_ => setPower(Mathf.Max(0, power - 10))}
+          style={new Style { (StyleKeys.MarginRight, 6f) }}
+        />
+        <Button
+          text="+ 10"
+          onClick={_ => setPower(Mathf.Min(100, power + 10))}
+        />
+      </VisualElement>
+    </VisualElement>
+  );
+}

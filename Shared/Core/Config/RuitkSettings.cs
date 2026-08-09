@@ -76,6 +76,13 @@ namespace Ruitk.Core.Config
         public bool diffTracing = false;
         public string diagnosticsOutputFolder = "";
 
+        // Unity 6.5 PanelRenderer workaround opt-outs (plan §5.9 registry; all
+        // symptom-gated so they are inert when the underlying Unity bug is
+        // absent - see the Unity 6.5 known-issues docs page).
+        public bool mountWatchdog = true;
+        public bool nestedPrevention = true;
+        public bool nestedRepair = true;
+
         // ── The active store ──────────────────────────────────────────────────
 
         private static RuitkSettings s_override;
@@ -163,6 +170,9 @@ namespace Ruitk.Core.Config
             public string trace_level = "none";
             public bool diff_tracing = false;
             public string diagnostics_output_folder = "";
+            public bool mount_watchdog = true;
+            public bool nested_prevention = true;
+            public bool nested_repair = true;
         }
 
         /// <summary>
@@ -208,6 +218,9 @@ namespace Ruitk.Core.Config
             result.traceLevel = ParseTraceLevel(dto.trace_level);
             result.diffTracing = dto.diff_tracing;
             result.diagnosticsOutputFolder = dto.diagnostics_output_folder ?? "";
+            result.mountWatchdog = dto.mount_watchdog;
+            result.nestedPrevention = dto.nested_prevention;
+            result.nestedRepair = dto.nested_repair;
             return result;
         }
 
@@ -311,7 +324,10 @@ namespace Ruitk.Core.Config
             sb.Append("  \"diff_tracing\": ").Append(Bool(diffTracing)).Append(",\n");
             sb.Append("  \"diagnostics_output_folder\": \"")
                 .Append(EscapeJsonString(diagnosticsOutputFolder ?? ""))
-                .Append("\"\n");
+                .Append("\",\n");
+            sb.Append("  \"mount_watchdog\": ").Append(Bool(mountWatchdog)).Append(",\n");
+            sb.Append("  \"nested_prevention\": ").Append(Bool(nestedPrevention)).Append(",\n");
+            sb.Append("  \"nested_repair\": ").Append(Bool(nestedRepair)).Append("\n");
             sb.Append("}\n");
             return sb.ToString();
         }

@@ -110,6 +110,38 @@ namespace Ruitk.Core
             return settings != null ? settings.hostNodePool : true;
         }
 
+        /// <summary>
+        /// <c>mount_watchdog</c> — the Unity 6.5 PanelRenderer mount watchdog (WA1/WA2:
+        /// case IN-150082 + UUM-147875). Symptom-gated, so it is inert on fixed editors.
+        /// Default <c>true</c>.
+        /// </summary>
+        public static bool ResolveMountWatchdog()
+        {
+            var settings = RuitkSettings.ActiveOrNull;
+            return settings != null ? settings.mountWatchdog : true;
+        }
+
+        /// <summary>
+        /// <c>nested_prevention</c> — disable nested child PanelRenderers around rebuilds
+        /// the library itself triggers (WA3: UUM-148452). Default <c>true</c>.
+        /// </summary>
+        public static bool ResolveNestedPrevention()
+        {
+            var settings = RuitkSettings.ActiveOrNull;
+            return settings != null ? settings.nestedPrevention : true;
+        }
+
+        /// <summary>
+        /// <c>nested_repair</c> — destroy + re-add a nested PanelRenderer whose tree Unity
+        /// released without a follow-up callback (WA4: UUM-148452). Symptom-gated.
+        /// Default <c>true</c>.
+        /// </summary>
+        public static bool ResolveNestedRepair()
+        {
+            var settings = RuitkSettings.ActiveOrNull;
+            return settings != null ? settings.nestedRepair : true;
+        }
+
         // ── Strict knobs (0.13 additions; same no-legacy-hop chain) ───────────
 
         /// <summary>

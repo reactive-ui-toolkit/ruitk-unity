@@ -385,7 +385,7 @@ public sealed class DefinitionHandler : IDefinitionHandler
             if (imp.Line != line1)
                 continue;
 
-            string? resolved = ResolveImportTarget(localPath, imp.Specifier);
+            string? resolved = LspHelpers.ResolveImportTarget(localPath, imp.Specifier);
             if (resolved is null || !File.Exists(resolved))
                 return true; // on an import line but unresolvable — caller returns null
 
@@ -406,20 +406,6 @@ public sealed class DefinitionHandler : IDefinitionHandler
             return true;
         }
         return false;
-    }
-
-    /// <summary>
-    /// Resolve an <c>import</c> specifier to the absolute target <c>.uitkx</c> path, using the same
-    /// rule as the build (<see cref="ImportResolver.MapSpecifierToPath"/>). Returns <c>null</c> for
-    /// engine-native/unresolvable specifiers.
-    /// </summary>
-    private static string? ResolveImportTarget(string localPath, string specifier)
-    {
-        string importerDir = (Path.GetDirectoryName(localPath) ?? string.Empty).Replace('\\', '/');
-        string? projectRoot = AssetPathUtil.GetProjectRoot(localPath);
-        string rootDir = projectRoot != null ? projectRoot + "/" + UitkxConfig.LoadRoot(importerDir) : importerDir;
-        // Absolute dirs in → absolute candidate path out (MapSpecifierToPath is pure path arithmetic).
-        return ImportResolver.MapSpecifierToPath(importerDir, specifier, rootDir, out _);
     }
 
     /// <summary>1-based line of the declaration of <paramref name="name"/> in a file, or 0. BOTH

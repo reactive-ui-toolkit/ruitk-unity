@@ -278,7 +278,7 @@ namespace Ruitk.Language.Diagnostics
         // ── ES-modules family block — UITKX2320–2329 (ES-modules campaign) ────
         // Codes + messages are identical family-wide (Unreal/Godot/Unity) modulo the
         // UETKX|GUITKX|UITKX prefix. Harmonized 2026-07-17 to the family-canonical
-        // (Unreal-audited) allocation — see Plans~/ES_MODULES_EXECUTION_PLAN.md §3.1.
+        // (Unreal-audited) allocation — see Plans~/archive/ES_MODULES_EXECUTION_PLAN.md §3.1.
         // Never renumber unilaterally; a family renumber is a STOP AND ASK event.
 
         /// <summary>``the '{0}' wrapper keyword is deprecated — write a plain 'export' declaration

@@ -1,6 +1,11 @@
 # Samples Namespace Modernization — Execution Plan
 
-**Status: READY TO EXECUTE** (written 2026-07-16; inventory verified against the working tree).
+**Status: NEVER EXECUTED — archived 2026-08-04.** As of 0.15.0 the samples still carry 104
+`import "@…"` lines across 65 files, and the per-file inventory below predates both the ES-modules
+redesign (0.9.0) and the rebrand (0.12.0), so it is stale — re-inventory before executing. The live
+tracking row is SAMPLES-NS in `Plans~/REMAINING_WORK.md`.
+
+Original status: **READY TO EXECUTE** (written 2026-07-16; inventory verified against the working tree).
 **Branch:** `fix/import-diagnostic-anchors` (same branch, same PR).
 **Goal:** apply the same treatment JustStayOn received to `Samples/`: a `uitkx.config.json`
 with `namespacePrefix`, **zero `@namespace` directives**, C# `using` lines updated to the new

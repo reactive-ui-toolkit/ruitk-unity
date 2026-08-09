@@ -5,7 +5,7 @@ using Xunit;
 namespace Ruitk.SourceGenerator.Tests
 {
     /// <summary>
-    /// ES-modules campaign (Plans~/ES_MODULES_EXECUTION_PLAN.md M3, U-02/U-03/§4.2): the SG's
+    /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M3, U-02/U-03/§4.2): the SG's
     /// __Exports emission for new-mode (plain-declaration) files — member shapes, accessibility,
     /// hook trampolines + refresh companion family keys, import lowering (static container /
     /// aliases / bridges), dotted tags, and the deprecation-window guarantees (legacy files emit

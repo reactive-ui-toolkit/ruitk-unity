@@ -26,14 +26,6 @@ namespace Ruitk.Ugui
         private FiberRenderer fiberRenderer;
         private bool eventSystemChecked;
 
-#if UNITY_EDITOR
-        /// <summary>HMR: all active UguiRootRenderer instances for multi-tree walking.</summary>
-        private static readonly HashSet<UguiRootRenderer> s_allInstances = new();
-        internal static IEnumerable<UguiRootRenderer> AllInstances => s_allInstances;
-
-        /// <summary>HMR: exposes the fiber root for tree walking.</summary>
-        internal FiberRoot FiberRootInternal => fiberRenderer?.Root;
-#endif
 
         private void EnsureSetup()
         {
@@ -47,49 +39,22 @@ namespace Ruitk.Ugui
                 go.hideFlags = HideFlags.DontSave;
                 go.AddComponent<RenderScheduler>();
             }
-            SignalsRuntime.EnsureInitialized();
-
             var uguiRegistry = UguiElementRegistryProvider.GetDefaultRegistry();
-            sharedHostContext = new HostContext(
+            sharedHostContext = RuitkBootstrap.CreateHostContext(
                 ElementRegistryProvider.GetDefaultRegistry(),
-                new UguiHostConfig(uguiRegistry)
+                new UguiHostConfig(uguiRegistry),
+                RenderScheduler.Instance,
+                isEditor: false
             );
-            sharedHostContext.Environment["scheduler"] = RenderScheduler.Instance;
-            sharedHostContext.Environment["isEditor"] = false;
-
-            sharedHostContext.Environment["env"] = BuildDefinesConfig.ResolveEnvironment();
-
-            DiagnosticsConfig.CurrentTraceLevel = BuildDefinesConfig.ResolveTraceLevel();
-            DiagnosticsConfig.EnableDiffTracing = BuildDefinesConfig.ResolveEnableDiffTracing();
-
-            // Reconciler knobs — defaults reproduce the former constants exactly.
-            FiberConfig.TimeSlicingEnabled = BuildDefinesConfig.ResolveTimeSlicing();
-            FiberConfig.TimeSliceMs = BuildDefinesConfig.ResolveTimeSliceMs();
-
-            // Strict knobs — the two tri-states resolve auto = on in the editor and
-            // development builds, off in release players; strict_mode additionally
-            // force-resolves off in release players regardless of the stored value.
-            Hooks.EnableHookValidation = BuildDefinesConfig.ResolveHookValidation();
-            Hooks.EnableStrictDiagnostics = BuildDefinesConfig.ResolveStrictDiagnostics();
-            FiberConfig.StrictModeEnabled = BuildDefinesConfig.ResolveStrictMode();
-
-            InternalLogOptions.EnableInternalLogs =
-                DiagnosticsConfig.CurrentTraceLevel == DiagnosticsConfig.TraceLevel.Verbose;
         }
 
         private void Awake()
         {
-#if UNITY_EDITOR
-            s_allInstances.Add(this);
-#endif
             EnsureSetup();
         }
 
         private void OnDestroy()
         {
-#if UNITY_EDITOR
-            s_allInstances.Remove(this);
-#endif
             Unmount();
         }
 

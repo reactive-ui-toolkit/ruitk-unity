@@ -60,6 +60,17 @@ namespace Ruitk.Core.Fiber
         /// </summary>
         public virtual void OnHostRemoved(object element) { }
 
+        /// <summary>
+        /// Whether the host element is still safe to read and mutate. Backends
+        /// whose elements can die out from under the tree override this — the
+        /// UI Toolkit backend reports Unity 6.5's <c>resourcesReleased</c>
+        /// poisoning, the uGUI backend its destroyed-<c>GameObject</c>
+        /// fake-null. Mount hosts consult it before reusing, retargeting or
+        /// touching a retained element; a dead element must be dropped, never
+        /// mutated or pooled.
+        /// </summary>
+        public virtual bool IsAlive(object element) => element != null;
+
         /// <summary>Human-readable identity for fiber debug logging.</summary>
         public virtual string GetDebugName(object element) => element?.GetType().Name;
     }
