@@ -9396,13 +9396,11 @@ component Comp {
         var filePath = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(filePath))
-            return;
+        Assert.True(File.Exists(filePath), $"fixture not found at {filePath}");
 
         var source = N(File.ReadAllText(filePath));
         var vdoc = GenerateVDoc(source, filePath);
@@ -9422,10 +9420,10 @@ component Comp {
         // Key identifiers must map to their correct source lines
         var checks = new[]
         {
-            ("MctvSetChild", 271),
-            ("MctvDeleteLast", 299),
-            ("TreeViewRowState", 59),
-            ("var secondElement", 320),
+            ("MctvSetChild", 266),
+            ("MctvDeleteLast", 294),
+            ("TreeViewRowState", 61),
+            ("var secondElement", 309),
         };
         foreach (var (id, expectedLine) in checks)
         {
@@ -9540,13 +9538,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxCounterFunc",
             "UitkxCounterFunc.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
         var result = Format(source);
         Assert.Equal(source, result);
@@ -9558,17 +9554,19 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
+        // Insert a real single-line early return ahead of the main markup return.
+        // (The original mutation un-commented a specific commented-out JSX block
+        // that no longer exists in the fixture; the multi-return contract under
+        // test - formatter uses the LAST return, no corruption - is identical.)
         var modified = source.Replace(
-            "  {/* return (\n    <VisualElement>\n      <Button text=\"-5\" onClick={_ => setCount(count - 5)} />\n      <Button text=\"+5\" onClick={_ => setCount(count + 5)} />\n    </VisualElement>\n  ); */}",
-            "  return (<Box></Box>);"
+            "\n  return (\n",
+            "\n  return (<Box></Box>);\n\n  return (\n"
         );
         Assert.NotEqual(source, modified);
         // Multi-return: formatter uses last return. Verify no corruption.
@@ -9839,13 +9837,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert a blank line right before the main "return ("
@@ -9869,13 +9865,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert many blank lines right before the main "return ("
@@ -9938,13 +9932,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert blank lines between return ( and <ScrollView
@@ -9967,13 +9959,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         // Read with CRLF line endings
         var source = File.ReadAllText(file).Replace("\r\n", "\n").Replace("\n", "\r\n");
 
@@ -9997,13 +9987,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         // Read the raw file (CRLF on Windows)
         var source = File.ReadAllText(file);
         var diags = new System.Collections.Generic.List<Ruitk.Language.ParseDiagnostic>();
@@ -10024,13 +10012,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert a dummy var assignment before the main return
@@ -10053,13 +10039,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert a fragment var assignment before the main return (user's exact pattern)
@@ -10082,13 +10066,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Round 1: add var + format
@@ -10161,20 +10143,20 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // User's exact reproduction: add blank lines between the ternary and return (
+        // Re-anchored mutation (see RealFile_BlankLineSweep_CRLFEdits_NoCorruption):
+        // blanks after the markup-return open paren, which the formatter always removes.
         var blanks = new string('\n', extraBlanks);
         var modified = source.Replace(
-            ": string.Join(\", \", options);\n\n  return (",
-            ": string.Join(\", \", options);\n" + blanks + "\n  return ("
+            "\n  return (\n",
+            "\n  return (\n" + blanks
         );
         Assert.NotEqual(source, modified);
 
@@ -10404,20 +10386,22 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var sourceLF = N(File.ReadAllText(file));
 
-        // Add extra blank lines (LF)
+        // Add extra blank lines (LF) right after the component's markup-return
+        // open paren - a spot the formatter always normalizes, so the per-line
+        // edit machinery is genuinely exercised. (The previous anchor tied the
+        // string.Join line directly to the return; the fixture has since grown
+        // content between them.)
         var blanks = new string('\n', extraBlanks);
         var modifiedLF = sourceLF.Replace(
-            ": string.Join(\", \", options);\n\n  return (",
-            ": string.Join(\", \", options);\n" + blanks + "\n  return ("
+            "\n  return (\n",
+            "\n  return (\n" + blanks
         );
         Assert.NotEqual(sourceLF, modifiedLF);
 
@@ -10497,13 +10481,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var sourceLF = N(File.ReadAllText(file));
         var formatted = FormatWithRoslyn(sourceLF);
 
@@ -10597,19 +10579,19 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
+        // Re-anchored mutation (see RealFile_BlankLineSweep_CRLFEdits_NoCorruption):
+        // blanks after the markup-return open paren, which the formatter always removes.
         var blanks = new string('\n', extraBlanks);
         var modified = source.Replace(
-            ": string.Join(\", \", options);\n\n  return (",
-            ": string.Join(\", \", options);\n" + blanks + "\n  return ("
+            "\n  return (\n",
+            "\n  return (\n" + blanks
         );
         Assert.NotEqual(source, modified);
 
@@ -10903,13 +10885,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.hooks.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
 
         var source = N(File.ReadAllText(file));
         var first = Format(source);
@@ -10923,13 +10903,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.style.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
 
         var source = N(File.ReadAllText(file));
         var first = Format(source);
@@ -10943,13 +10921,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.hooks.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
 
         var source = N(File.ReadAllText(file));
         var result = Format(source);
@@ -10965,13 +10941,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.style.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
 
         var source = N(File.ReadAllText(file));
         var result = Format(source);

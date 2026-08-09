@@ -21,13 +21,12 @@ public sealed class ParseFileTest
         var filePath = Path.GetFullPath(
             Path.Combine(
                 Directory.GetCurrentDirectory(),
-                @"..\..\..\..\..\..\Samples\UITKX\Components\UitkxTestFileDoNotTouch\UitkxTestFileDoNotTouch.uitkx"));
+                @"..\..\..\..\..\..\Samples\Components\UitkxTestFileDoNotTouch\UitkxTestFileDoNotTouch.uitkx"));
 
-        if (!File.Exists(filePath))
-        {
-            _out.WriteLine($"Skipping: file not found at {filePath}");
-            return;
-        }
+        // The fixture is tracked in this repo; a missing file means the path
+        // regressed again (this test silently no-opped for months on a stale
+        // Samples/UITKX/ layout) - fail loudly instead of skipping.
+        Assert.True(File.Exists(filePath), $"fixture not found at {filePath}");
 
         var source = File.ReadAllText(filePath);
         var diags = new List<ParseDiagnostic>();
