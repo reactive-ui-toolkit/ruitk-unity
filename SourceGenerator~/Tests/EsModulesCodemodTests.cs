@@ -153,6 +153,66 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
+        public void CompanionModule_NonPublicMembers_AutoExport()
+        {
+            // T15: modifier-less companion members were reachable through the partial-class
+            // merge; migration must keep them reachable (auto-export + warning), not strand
+            // the base file at CS0103.
+            var comp = F("Card.uitkx",
+                "import { CardStyles } from \"./Card.style\"\ncomponent Card {\n    return (\n        <Box />\n    );\n}\n");
+            var style = F("Card.style.uitkx",
+                "export module CardStyles {\n    static readonly int Gap = 8;\n}\n");
+            var changed = Run(out var errors, comp, style);
+
+            string styleOut = changed[style.AbsPath];
+            Assert.Contains("export int Gap = 8;", styleOut);
+            Assert.Contains(errors, e => e.Message.Contains("auto-exported"));
+        }
+
+        [Fact]
+        public void NonCompanionModule_NonPublicMembers_StayInternal()
+        {
+            var tokens = F("Tokens.uitkx",
+                "export module Tokens {\n    static readonly int Hidden = 1;\n    public static readonly int Gap = 8;\n}\n");
+            var changed = Run(out var errors, tokens);
+
+            string outText = changed[tokens.AbsPath];
+            Assert.Contains("export int Gap = 8;", outText);
+            Assert.Contains("int Hidden = 1;", outText);
+            Assert.DoesNotContain("export int Hidden", outText);
+        }
+
+        [Fact]
+        public void GenericModuleMethod_MigratesToGenericDeclarationHead()
+        {
+            var utils = F("Utils.uitkx",
+                "export module Utils {\n    public static T Pick<T>(T a, T b, bool first) { return first ? a : b; }\n}\n");
+            var changed = Run(out var errors, utils);
+
+            Assert.Empty(errors.Where(e => e.Message.Contains("generic")));
+            string outText = changed[utils.AbsPath];
+            Assert.Contains("export T Pick<T>(T a, T b, bool first)", outText);
+        }
+
+        [Fact]
+        public void DeadNamespaceImport_GetsPc12bWarning()
+        {
+            // Widgets/ is folder-keyed pre-migration; Screen imports "@Game.Widgets" and also
+            // migrates. Post-migration the folder namespace has no members left - the surviving
+            // namespace import draws the PC-12b warning (never a silent rewrite).
+            var widget = new MigratorFile("C:/proj/Assets/UI/Widgets/Chip.uitkx", "Game",
+                "component Chip {\n    return (\n        <Box />\n    );\n}\n");
+            string oldNs = Ruitk.Language.EffectiveNamespace.Resolve(
+                hasExplicitNamespace: false, null, widget.AbsPath, fileKeyed: false)!;
+            var screen = F("Screen.uitkx",
+                $"import \"@{oldNs}\"\ncomponent Screen {{\n    return (\n        <Chip />\n    );\n}}\n");
+            var changed = Run(out var errors, widget, screen);
+
+            Assert.Contains(errors, e =>
+                e.FilePath == screen.AbsPath && e.Message.Contains("pre-migration folder namespace"));
+        }
+
+        [Fact]
         public void GenericHook_MigratesToGenericDeclarationHead()
         {
             // F9 closed (0.16.0): the plain dialect has generic declaration heads, so the

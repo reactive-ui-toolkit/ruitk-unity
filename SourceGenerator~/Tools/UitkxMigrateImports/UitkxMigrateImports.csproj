@@ -9,10 +9,16 @@
         (fresh reference scan — component tags, useX() calls, Module. member access);
       • stamp the CURRENT effective @namespace so existing companion-.cs identity is frozen.
 
-    Idempotent + re-runnable. Runs BEFORE strictness flips on, so the added imports are
-    inert (the flag-off emit ignores them) and the tree keeps compiling at every step.
+    Idempotent + re-runnable.
 
-    Not shipped to Unity (under a `~` tools folder). References the shared language lib.
+    The primary mode is now `--es-modules` (0.16.0 legacy-removal wave): rewrites legacy
+    wrapper-keyword files (component/hook/module, companion partial-merging) to plain
+    typed declarations with explicit imports and a namespace-move ledger; see Program.cs
+    for the CLI contract and exit codes.
+
+    Ships in the package as SOURCE (SourceGenerator~ is part of the published tree; the
+    `~` suffix only hides it from Unity's asset importer). Users run it with the .NET 8
+    SDK, or via scripts/migrate-uitkx.mjs in this repo. References the shared language lib.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
