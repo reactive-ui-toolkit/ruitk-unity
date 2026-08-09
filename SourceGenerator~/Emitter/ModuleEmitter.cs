@@ -176,15 +176,12 @@ namespace Ruitk.SourceGenerator.Emitter
                         Location.None));
                 }
 
-                // Accessibility gated behind StrictImports (additive-then-flip): flag OFF → legacy
-                // `public ` always; flag ON → no-modifier when merging with a same-named component
-                // partial (that part is the authority), else export → public, else internal.
+                // Accessibility: no-modifier when merging with a same-named component partial
+                // (that part is the authority), else export → public, else internal.
                 string moduleAccess =
-                    !Ruitk.Language.UitkxFeatureFlags.StrictImports
-                        ? "public "
-                        : mergesWithComponent
-                            ? string.Empty
-                            : (module.IsExported ? "public " : "internal ");
+                    mergesWithComponent
+                        ? string.Empty
+                        : (module.IsExported ? "public " : "internal ");
                 sb.AppendLine($"    {moduleAccess}partial class {module.Name}");
                 sb.AppendLine("    {");
                 if (rewriteResult.ParseFailed)

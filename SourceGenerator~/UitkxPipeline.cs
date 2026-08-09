@@ -70,17 +70,16 @@ namespace Ruitk.SourceGenerator
 
             // ── Stage 1b2: cross-backend import guard (UITKX2113) ─────────────
             // A file renders through exactly one backend; importing across the
-            // @backend boundary produces code that cannot mount. Unconditional
-            // (not gated on StrictImports) — this is a correctness error.
+            // @backend boundary produces code that cannot mount — this is a
+            // correctness error.
             AppendCrossBackendImportDiags(directives, filePath, peerExports, parseDiags);
 
-            // ── Stage 1c: strict import diagnostics (StrictImports seam, §6) ──
+            // ── Stage 1c: strict import diagnostics (§6) ──
             // Import validation (2300/2301/2308/2314) + reference detector (2305/2307) + unused import
             // (2304) + value-import cycle (2306). Runs for ALL files (component AND hook/module) BEFORE
             // the short-circuit below, because hook/module files are the usual value-cycle members and
             // can reference peer hooks/modules in their bodies. Appended to the parse-diag bag so errors
-            // flow through the same #error path Unity relies on. Dormant with the flag off.
-            if (UitkxFeatureFlags.StrictImports)
+            // flow through the same #error path Unity relies on.
             {
                 AppendImportValidationDiags(
                     directives, filePath,
@@ -149,13 +148,12 @@ namespace Ruitk.SourceGenerator
                     return new UitkxPipelineResult(hintName, errSb.ToString(), exportsDiags.ToImmutableArray());
                 }
 
-                if (UitkxFeatureFlags.StrictImports)
-                    directives = directives with
-                    {
-                        Usings = ResolveInjectedUsings(
-                            directives, peerHookContainers, filePath, strict: true, peerModules,
-                            peerComponents, peerExports)
-                    };
+                directives = directives with
+                {
+                    Usings = ResolveInjectedUsings(
+                        directives, peerHookContainers, filePath, peerModules,
+                        peerComponents, peerExports)
+                };
 
                 int exDiagStart = exportsDiags.Count;
                 string exportsSource = ExportsEmitter.Emit(
@@ -206,17 +204,12 @@ namespace Ruitk.SourceGenerator
                 // the component injection seam (Stage 3d), so without this an imported
                 // useX()/module member resolves to nothing → CS0103/CS0246 even though the
                 // strict reference detector is satisfied (the name IS imported).
-                // Gated behind StrictImports: with the flag OFF a hook/module-only file got
-                // NO injection historically (there was no import syntax), and the flag-OFF
-                // ResolveInjectedUsings exposes EVERY container — injecting them here would
-                // change legacy output and risk CS0121 in the body. Flag ON only.
-                if (UitkxFeatureFlags.StrictImports)
-                    directives = directives with
-                    {
-                        Usings = ResolveInjectedUsings(
-                            directives, peerHookContainers, filePath, strict: true, peerModules,
-                            peerComponents, peerExports)
-                    };
+                directives = directives with
+                {
+                    Usings = ResolveInjectedUsings(
+                        directives, peerHookContainers, filePath, peerModules,
+                        peerComponents, peerExports)
+                };
 
                 // Emit hooks and modules as SEPARATE compilation units (each merges as a
                 // partial across CUs). Concatenating them — as this path used to — places
@@ -395,13 +388,11 @@ namespace Ruitk.SourceGenerator
             // Asmdef ownership is already enforced one layer up in UitkxGenerator's
             // pre-scan via IsOwnedByCompilation, so every entry in peerHookContainers
             // belongs to the current Unity assembly.
-            // Injection form is the StrictImports seam (§6.2): flag OFF exposes every container
-            // (legacy, byte-identical); flag ON exposes only imported containers. See
-            // ResolveInjectedUsings.
+            // Injection exposes only imported containers (§6.2). See ResolveInjectedUsings.
             directives = directives with
             {
                 Usings = ResolveInjectedUsings(
-                    directives, peerHookContainers, filePath, UitkxFeatureFlags.StrictImports, peerModules,
+                    directives, peerHookContainers, filePath, peerModules,
                     peerComponents, peerExports)
             };
 
@@ -718,25 +709,19 @@ namespace Ruitk.SourceGenerator
 
         /// <summary>
         /// The full <c>using</c> list for a component file after hook-container injection (§6.2).
-        /// The single seam controlling which hook containers a component sees:
-        /// <list type="bullet">
-        ///   <item><description>Flag OFF (<paramref name="strict"/> = false) → the legacy behavior:
-        ///   every hook container in the asmdef is exposed via <c>using static</c> (the pre-feature,
-        ///   CS0121-prone form). Byte-identical to prior output.</description></item>
-        ///   <item><description>Flag ON → only the container(s) whose source file is named by one of
-        ///   this file's <c>import</c> declarations (specifier → path via <see cref="ImportResolver"/>,
-        ///   matched against the peer <see cref="PeerHookContainerInfo.SourceFilePath"/>). C# has no
-        ///   per-method static import, so the whole matched container is exposed; per-NAME strictness
-        ///   stays a uitkx diagnostic.</description></item>
-        /// </list>
-        /// Returns <see cref="DirectiveSet.Usings"/> plus the injected <c>static …</c> entries, order-
-        /// and dedup-preserving. Pure/host-agnostic so both modes are directly unit-testable.
+        /// The single seam controlling which hook containers a component sees: only the
+        /// container(s) whose source file is named by one of this file's <c>import</c>
+        /// declarations (specifier → path via <see cref="ImportResolver"/>, matched against the
+        /// peer <see cref="PeerHookContainerInfo.SourceFilePath"/>). C# has no per-method static
+        /// import, so the whole matched container is exposed; per-NAME strictness stays a uitkx
+        /// diagnostic. Returns <see cref="DirectiveSet.Usings"/> plus the injected
+        /// <c>static …</c> entries, order- and dedup-preserving. Pure/host-agnostic and directly
+        /// unit-testable.
         /// </summary>
         public static ImmutableArray<string> ResolveInjectedUsings(
             DirectiveSet directives,
             ImmutableArray<PeerHookContainerInfo>? peerHookContainers,
             string filePath,
-            bool strict,
             ImmutableArray<PeerModuleInfo>? peerModules = null,
             ImmutableArray<PeerComponentInfo>? peerComponents = null,
             ImmutableArray<PeerExportsInfo>? peerExports = null)
@@ -749,19 +734,7 @@ namespace Ruitk.SourceGenerator
 
             bool haveHooks = peerHookContainers != null && !peerHookContainers.Value.IsDefaultOrEmpty;
 
-            if (!strict)
-            {
-                if (haveHooks)
-                    foreach (var phc in peerHookContainers.Value)
-                    {
-                        string fqn = $"static {phc.Namespace}.{phc.ClassName}";
-                        if (seen.Add(fqn))
-                            result.Add(fqn);
-                    }
-                return result.ToImmutable();
-            }
-
-            // Strict: expose only what this file actually imports.
+            // Expose only what this file actually imports.
             if (directives.Imports.IsDefaultOrEmpty)
                 return result.ToImmutable();
 
@@ -1221,8 +1194,8 @@ namespace Ruitk.SourceGenerator
         /// <summary>
         /// Validates each <c>import</c> declaration (resolves the specifier + checks the imported
         /// names are exported by the target) and appends 2300/2301/2308/2314 to
-        /// <paramref name="parseDiags"/>. Only invoked when <see cref="UitkxFeatureFlags.StrictImports"/>
-        /// is on. Uses the real filesystem + asmdef walk; export membership comes from the peer tables.
+        /// <paramref name="parseDiags"/>. Uses the real filesystem + asmdef walk; export
+        /// membership comes from the peer tables.
         /// </summary>
         private static void AppendImportValidationDiags(
             DirectiveSet directives,
@@ -1400,8 +1373,7 @@ namespace Ruitk.SourceGenerator
         /// <summary>
         /// Runs <see cref="StrictImportDetector"/> over <paramref name="source"/> and appends its
         /// 2305/2307 findings to <paramref name="parseDiags"/>. The peer export table is built from
-        /// the pre-scan peer arrays (exported names only — the frozen "exported-names ledger"). Only
-        /// invoked when <see cref="UitkxFeatureFlags.StrictImports"/> is on.
+        /// the pre-scan peer arrays (exported names only — the frozen "exported-names ledger").
         /// </summary>
         private static void AppendStrictReferenceDiags(
             DirectiveSet directives,

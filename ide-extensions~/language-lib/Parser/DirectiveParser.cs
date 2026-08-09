@@ -24,10 +24,10 @@ namespace Ruitk.Language.Parser
     /// </summary>
     public static class DirectiveParser
     {
-        // The default namespace for a function-style .uitkx file that has no @namespace.
-        // Under StrictImports the pipeline OVERRIDES this with the path-derived namespace
-        // (see UitkxPipeline.ResolveEffectiveNamespace); it survives only as the flag-off /
-        // no-project-root fallback. The generator no longer reads a companion .cs to infer the
+        // The default namespace for a .uitkx file that has no @namespace. The pipeline
+        // OVERRIDES this with the path-derived namespace (see
+        // UitkxPipeline.ResolveEffectiveNamespace); it survives only as the no-project-root
+        // fallback. The generator no longer reads a companion .cs to infer the
         // namespace — a target's identity must never flip on a .cs edit (plan §4).
         private const string FunctionStyleDefaultNamespace = "Ruitk.FunctionStyle";
 

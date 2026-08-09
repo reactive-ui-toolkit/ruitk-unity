@@ -284,18 +284,14 @@ namespace Ruitk.SourceGenerator.Emitter
                 }
             }
 
-            // Accessibility (§6), GATED behind StrictImports for the additive-then-flip contract:
-            //   • flag OFF → always `public partial class` (byte-identical legacy output).
-            //   • flag ON  → `export` → public, else `internal`.
-            // Under strict this DOES emit an explicit `internal` for a non-exported component, so a
-            // companion `.cs` declaring `public partial class Foo` becomes CS0262, and a cross-asmdef
-            // reference becomes CS0122. That is the intended strict contract — expose across files only
-            // what you `export`; keep the companion `internal` or add `export`. (The prior comment here
-            // claimed CS0262 "was already true before this change" — that was wrong: pre-feature the
-            // generated part was always `public`, so a public companion was safe.)
+            // Accessibility (§6): `export` → public, else `internal`. This DOES emit an explicit
+            // `internal` for a non-exported component, so a companion `.cs` declaring
+            // `public partial class Foo` becomes CS0262, and a cross-asmdef reference becomes
+            // CS0122. That is the intended contract — expose across files only what you `export`;
+            // keep the companion `internal` or add `export`. The IsDefaultOrEmpty disjunct covers
+            // declaration-less parses (error recovery), which stay public.
             bool componentExported =
-                !UitkxFeatureFlags.StrictImports
-                || _directives.ComponentDeclarations.IsDefaultOrEmpty
+                _directives.ComponentDeclarations.IsDefaultOrEmpty
                 || _directives.ComponentDeclarations[0].IsExported;
             L($"    {(componentExported ? "public" : "internal")} partial class {_directives.ComponentName}");
             L("    {");

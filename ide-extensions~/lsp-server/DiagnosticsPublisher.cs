@@ -199,14 +199,14 @@ public sealed class DiagnosticsPublisher
     /// <summary>
     /// Strict import diagnostics for the live editor (import/export grammar, leg 3): the reference
     /// detector (2305/2307) + import validation (2300/2301/2308/2314), fed by the workspace export
-    /// table (<see cref="WorkspaceIndex.GetPeerExports"/>). Returns empty unless
-    /// <see cref="UitkxFeatureFlags.StrictImports"/> is on and the file is on disk under an asmdef.
+    /// table (<see cref="WorkspaceIndex.GetPeerExports"/>). Returns empty unless the file is on
+    /// disk under an asmdef.
     /// </summary>
     private List<ParseDiagnostic> ComputeStrictImportDiagnostics(
         DirectiveSet directives, string localPath, string text)
     {
         var diags = new List<ParseDiagnostic>();
-        if (!UitkxFeatureFlags.StrictImports || string.IsNullOrEmpty(localPath))
+        if (string.IsNullOrEmpty(localPath))
             return diags;
         if (!_index.HasCompletedInitialScan)
             return diags; // avoid false 2305 before peers are indexed
@@ -518,7 +518,7 @@ public sealed class DiagnosticsPublisher
 
         // ── Strict import diagnostics (2300/2301/2305/2307/2308/2314) ────────
         // Live editor parity with the build: reference detector + import validation, fed by the
-        // workspace export table. Only when StrictImports is on and the file is on disk.
+        // workspace export table. Only when the file is on disk.
         var strictDiags = ComputeStrictImportDiagnostics(directives, localPath, text);
 
         // ── UITKX2107 — deprecated companion partial-class merge ─────────────

@@ -198,9 +198,8 @@ namespace Ruitk.SourceGenerator
                         peerModulesBuilder.ToImmutable();
                     ImmutableArray<PeerExportsInfo> peerExports =
                         peerExportsBuilder.ToImmutable();
-                    var valueCycles = UitkxFeatureFlags.StrictImports
-                        ? BuildValueCycleMap(importsByFile, peerHookContainers, peerModules, peerExports)
-                        : null;
+                    var valueCycles = BuildValueCycleMap(
+                        importsByFile, peerHookContainers, peerModules, peerExports);
 
                     // ── Primary path: use AdditionalTexts (incremental-cache-aware) ─
                     // The .uitkx files are injected as <AdditionalFiles> by
@@ -284,9 +283,8 @@ namespace Ruitk.SourceGenerator
                                 diskModuleBuilder.ToImmutable();
                             ImmutableArray<PeerExportsInfo> diskPeerExports =
                                 diskExportsBuilder.ToImmutable();
-                            var diskValueCycles = UitkxFeatureFlags.StrictImports
-                                ? BuildValueCycleMap(diskImportsByFile, diskPeerHookContainers, diskPeerModules, diskPeerExports)
-                                : null;
+                            var diskValueCycles = BuildValueCycleMap(
+                                diskImportsByFile, diskPeerHookContainers, diskPeerModules, diskPeerExports);
 
                             foreach (string filePath in diskFiles)
                             {
