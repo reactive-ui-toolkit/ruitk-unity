@@ -11,13 +11,13 @@
 
     Idempotent + re-runnable.
 
-    The primary mode is now `--es-modules` (0.16.0 legacy-removal wave): rewrites legacy
-    wrapper-keyword files (component/hook/module, companion partial-merging) to plain
-    typed declarations with explicit imports and a namespace-move ledger; see Program.cs
-    for the CLI contract and exit codes.
+    The primary mode is now the es-modules pass (0.16.0 legacy-removal wave): rewrites
+    legacy wrapper-keyword files (component/hook/module, companion partial-merging) to
+    plain typed declarations with explicit imports and a namespace-move ledger; see
+    Program.cs for the CLI contract, flags, and exit codes.
 
     Ships in the package as SOURCE (SourceGenerator~ is part of the published tree; the
-    `~` suffix only hides it from Unity's asset importer). Users run it with the .NET 8
+    tilde suffix only hides it from Unity's asset importer). Users run it with the .NET 8
     SDK, or via scripts/migrate-uitkx.mjs in this repo. References the shared language lib.
   -->
   <PropertyGroup>

@@ -1,21 +1,10 @@
-@namespace Ruitk.Samples.UITKXComponents
 import { IntroCounterFunc } from "../../Shared/IntroCounterFunc"
 import { UitkxTestSubFileDoNotTouch } from "./UitkxTestSubFileDoNotTouch"
-@using System
-@using System.Collections.Generic
-@using UnityEngine
-@using UnityEngine.UIElements
-@using Ruitk.Signals
-@using Ruitk.Router
-@using Ruitk.Samples.UITKXShared
+import "@UnityEngine.UIElements"
+import "@Ruitk.Signals"
+import "@Ruitk.Samples.UITKXShared"
 
-export component UitkxTestFileDoNotTouch(
-  IReadOnlyList<ListViewRowState>? items = null,
-  Action? addItem = null,
-  Action? setTopItem = null,
-  Action? deleteLast = null,
-  Action<int>? onCountChanged = null
-) {
+export VirtualNode UitkxTestFileDoNotTouch(IReadOnlyList<ListViewRowState>? items = null, Action? addItem = null, Action? setTopItem = null, Action? deleteLast = null, Action<int>? onCountChanged = null) {
   var myRef = useRef(false);
   var val = myRef.Current;
   {/*

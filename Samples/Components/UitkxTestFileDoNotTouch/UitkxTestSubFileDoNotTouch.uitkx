@@ -1,7 +1,4 @@
-@namespace Ruitk.Samples.UITKXComponents
-@using UnityEngine
-
-export component UitkxTestSubFileDoNotTouch(string message = "Footer") {
+export VirtualNode UitkxTestSubFileDoNotTouch(string message = "Footer") {
   var footerStyle = new Style {
     (StyleKeys.PaddingTop, 8f),
     (StyleKeys.PaddingBottom, 8f),

@@ -9420,10 +9420,10 @@ component Comp {
         // Key identifiers must map to their correct source lines
         var checks = new[]
         {
-            ("MctvSetChild", 266),
-            ("MctvDeleteLast", 294),
-            ("TreeViewRowState", 61),
-            ("var secondElement", 309),
+            ("MctvSetChild", 255),
+            ("MctvDeleteLast", 283),
+            ("TreeViewRowState", 50),
+            ("var secondElement", 298),
         };
         foreach (var (id, expectedLine) in checks)
         {
@@ -10930,8 +10930,9 @@ component Comp {
         var source = N(File.ReadAllText(file));
         var result = Format(source);
 
-        Assert.Contains("hook useTestCounter()", result);
-        Assert.Contains("hook useTestFormState(", result);
+        Assert.Contains("useTestCounter()", result);
+        Assert.Contains("useTestFormState(", result);
+        Assert.Contains("export (", result);
         Assert.DoesNotContain("component Component", result);
     }
 
@@ -10950,8 +10951,7 @@ component Comp {
         var source = N(File.ReadAllText(file));
         var result = Format(source);
 
-        Assert.Contains("module UitkxTestFileDoNotTouch {", result);
-        Assert.Contains("ContainerStyle", result);
+        Assert.Contains("export Style ContainerStyle", result);
         Assert.DoesNotContain("component Component", result);
     }
 
