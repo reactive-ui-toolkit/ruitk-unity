@@ -493,7 +493,7 @@ public sealed class DiagnosticsPublisher
             ? BuildProjectElements(directives.ComponentName, directives.Backend)
             : null;
         var knownAttributes = projectElements != null
-            ? BuildKnownAttributes(projectElements, directives.Backend)
+            ? BuildKnownAttributes(projectElements, directives, localPath, directives.Backend)
             : null;
         var t2Diags = _analyzer.Analyze(parseResult, localPath, projectElements, knownAttributes, text);
 
@@ -508,13 +508,13 @@ public sealed class DiagnosticsPublisher
             parsedNodes, roslynHost?.DetectedUnityVersion ?? UnityVersion.Unknown,
             directives.Backend);
 
-        // ── UITKX0113 — duplicate `component <Name>` in same asmdef ──────────
+        // ── UITKX0113 — duplicate component declaration, same namespace ──────
         // The multi-valued WorkspaceIndex (TECH_DEBT_V2 #21 fix, 2026-05-18) keeps
         // every declarant alive so this analyzer can surface the ambiguity to the
-        // user. Fires only when 2+ declarants share the same asmdef — across
-        // asmdefs the same component name is legal (separate compilation units).
-        var duplicateDiags = ComputeDuplicateComponentDiagnostics(
-            directives, parseResult, localPath, text);
+        // user. Fires only when 2+ declarants land in the same asmdef AND the same
+        // effective namespace — file-keyed namespaces (ES modules) make same-named
+        // components in different folders legal.
+        var duplicateDiags = ComputeDuplicateComponentDiagnostics(directives, localPath);
 
         // ── Strict import diagnostics (2300/2301/2305/2307/2308/2314) ────────
         // Live editor parity with the build: reference detector + import validation, fed by the
@@ -856,83 +856,135 @@ public sealed class DiagnosticsPublisher
         }
     }
 
-    // ── UITKX0113 — duplicate `component <Name>` in same asmdef ────────────
+    // ── UITKX0113 — duplicate component declaration in the same namespace ──
 
     /// <summary>
-    /// Emits UITKX0113 against the current file's <c>component &lt;Name&gt;</c>
-    /// declaration when another <c>.uitkx</c> in the SAME asmdef declares the
-    /// same name. Fires per-declarant (each duplicate file gets its own
-    /// diagnostic) so the user sees the warning regardless of which file they
-    /// open. Suppressed when the workspace scan hasn't completed (transient
-    /// state). Asmdef-scoped because cross-asmdef name collisions are legal in
-    /// Unity.
+    /// Emits UITKX0113 against this file's component declaration(s) when
+    /// another <c>.uitkx</c> in the SAME asmdef declares the same name into
+    /// the SAME effective namespace — the only case where the generated
+    /// classes actually collide. Since the ES-modules redesign namespaces are
+    /// FILE-keyed (folder segments + file stem), so same-named components in
+    /// different folders are legal and must not be flagged; legacy files
+    /// colliding via a shared explicit <c>@namespace</c> still are. The
+    /// namespace comparison mirrors the SG seam exactly
+    /// (<see cref="EffectiveNamespace.Resolve"/>), same as
+    /// <see cref="ComputeCompanionMergeDiagnostics"/>. Fires per-declarant
+    /// (each duplicate file gets its own diagnostic) so the user sees the
+    /// warning regardless of which file they open. Suppressed when the
+    /// workspace scan hasn't completed (transient state).
     /// </summary>
-    private List<ParseDiagnostic> ComputeDuplicateComponentDiagnostics(
+    internal List<ParseDiagnostic> ComputeDuplicateComponentDiagnostics(
         DirectiveSet directives,
-        ParseResult parseResult,
-        string localPath,
-        string text)
+        string localPath)
     {
         var diags = new List<ParseDiagnostic>();
-        if (!_index.HasCompletedInitialScan)
+        if (!_index.HasCompletedInitialScan || string.IsNullOrEmpty(localPath))
             return diags;
 
-        string? componentName = directives.ComponentName;
-        if (string.IsNullOrEmpty(componentName) || string.IsNullOrEmpty(localPath))
+        var ownNames = new List<string>();
+        if (!directives.ComponentDeclarations.IsDefaultOrEmpty)
+        {
+            foreach (var comp in directives.ComponentDeclarations)
+                if (!string.IsNullOrEmpty(comp.Name) && !ownNames.Contains(comp.Name))
+                    ownNames.Add(comp.Name);
+        }
+        else if (!string.IsNullOrEmpty(directives.ComponentName))
+        {
+            ownNames.Add(directives.ComponentName!);
+        }
+        if (ownNames.Count == 0)
             return diags;
 
-        var declarants = _index.GetAllElementInfo(componentName);
-        if (declarants.Count < 2)
-            return diags;
-
-        // Filter to same-asmdef declarants. Cross-asmdef duplicates are legal
-        // (separate compilation units), so we only warn within an asmdef.
         string ownAsmdef = AsmdefResolver.OwningAsmdefName(localPath);
-        var otherPaths = new List<string>();
-        foreach (var d in declarants)
+        string? ownNsResolved = EffectiveNamespace.Resolve(
+            directives.HasExplicitNamespace, directives.Namespace, localPath,
+            fileKeyed: !directives.UsesLegacySyntax);
+        string ownNs = string.IsNullOrEmpty(ownNsResolved) ? "Ruitk.Generated" : ownNsResolved!;
+
+        foreach (var componentName in ownNames)
         {
-            if (string.Equals(d.FilePath, localPath, StringComparison.OrdinalIgnoreCase))
+            var declarants = _index.GetAllElementInfo(componentName);
+            if (declarants.Count < 2)
                 continue;
-            if (string.Equals(
-                AsmdefResolver.OwningAsmdefName(d.FilePath), ownAsmdef, StringComparison.Ordinal))
+
+            // A duplicate is real only when the peer is a .uitkx in the same
+            // asmdef (cross-asmdef duplicates are separate compilation units)
+            // that declares the same component name into the same effective
+            // namespace. Peer directives are parsed only for same-named
+            // declarants, so the cost is bounded by genuine collisions.
+            var otherPaths = new List<string>();
+            foreach (var d in declarants)
             {
-                otherPaths.Add(d.FilePath);
-            }
-        }
-        if (otherPaths.Count == 0)
-            return diags;
+                if (string.Equals(d.FilePath, localPath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!d.FilePath.EndsWith(".uitkx", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!string.Equals(
+                        AsmdefResolver.OwningAsmdefName(d.FilePath), ownAsmdef,
+                        StringComparison.Ordinal))
+                    continue;
 
-        // Locate the declaration line for the squiggle. Pull the FileLine from
-        // the index entry for THIS file (always populated by IndexUitkxFile).
-        int line = 1;
-        foreach (var d in declarants)
-        {
-            if (string.Equals(d.FilePath, localPath, StringComparison.OrdinalIgnoreCase))
+                var peerDs = TryParsePeerDirectives(d.FilePath);
+                if (peerDs == null || !PeerDeclaresComponent(peerDs, componentName))
+                    continue;
+
+                string? peerNsResolved = EffectiveNamespace.Resolve(
+                    peerDs.HasExplicitNamespace, peerDs.Namespace, d.FilePath,
+                    fileKeyed: !peerDs.UsesLegacySyntax);
+                string peerNs = string.IsNullOrEmpty(peerNsResolved)
+                    ? "Ruitk.Generated"
+                    : peerNsResolved!;
+                if (string.Equals(peerNs, ownNs, StringComparison.Ordinal))
+                    otherPaths.Add(d.FilePath);
+            }
+            if (otherPaths.Count == 0)
+                continue;
+
+            // Locate the declaration line for the squiggle. Pull the FileLine from
+            // the index entry for THIS file (always populated by IndexUitkxFile).
+            int line = 1;
+            foreach (var d in declarants)
             {
-                line = d.FileLine > 0 ? d.FileLine : 1;
-                break;
+                if (string.Equals(d.FilePath, localPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    line = d.FileLine > 0 ? d.FileLine : 1;
+                    break;
+                }
             }
+
+            string others = otherPaths.Count == 1
+                ? System.IO.Path.GetFileName(otherPaths[0])
+                : $"{otherPaths.Count} other files";
+
+            diags.Add(new ParseDiagnostic
+            {
+                Code = DiagnosticCodes.DuplicateComponent,
+                Severity = ParseSeverity.Warning,
+                Message =
+                    $"Component '{componentName}' is also declared in {others} with the same "
+                    + $"effective namespace ('{ownNs}'); the generated classes collide. "
+                    + "Duplicate declarations are almost always a copy-paste refactor that "
+                    + "forgot to rename. Pick a unique name or move one file to a different folder.",
+                SourceLine = line,
+                SourceColumn = 0,
+                EndLine = line,
+                EndColumn = 9999,
+            });
         }
-
-        string others = otherPaths.Count == 1
-            ? System.IO.Path.GetFileName(otherPaths[0])
-            : $"{otherPaths.Count} other files";
-
-        diags.Add(new ParseDiagnostic
-        {
-            Code = DiagnosticCodes.DuplicateComponent,
-            Severity = ParseSeverity.Warning,
-            Message =
-                $"Component '{componentName}' is declared in {others} within the same asmdef "
-                + $"('{ownAsmdef}'). Duplicate declarations are almost always a copy-paste "
-                + "refactor that forgot to rename. Pick a unique name.",
-            SourceLine = line,
-            SourceColumn = 0,
-            EndLine = line,
-            EndColumn = 9999,
-        });
 
         return diags;
+    }
+
+    private static bool PeerDeclaresComponent(DirectiveSet peer, string name)
+    {
+        if (!peer.ComponentDeclarations.IsDefaultOrEmpty)
+        {
+            foreach (var pc in peer.ComponentDeclarations)
+                if (pc.Name == name)
+                    return true;
+            return false;
+        }
+        return string.Equals(peer.ComponentName, name, StringComparison.Ordinal);
     }
 
     // ── UITKX2107 — deprecated companion partial-class merge ────────────────
@@ -1174,8 +1226,10 @@ public sealed class DiagnosticsPublisher
     /// opts in by declaring the parameter explicitly. This mirrors React/Vue/
     /// Svelte (typed) component-prop semantics.</para>
     /// </summary>
-    private IReadOnlyDictionary<string, IReadOnlyCollection<string>> BuildKnownAttributes(
+    internal IReadOnlyDictionary<string, IReadOnlyCollection<string>> BuildKnownAttributes(
         HashSet<string> projectElements,
+        DirectiveSet? directives = null,
+        string? localPath = null,
         string? backend = null
     )
     {
@@ -1194,12 +1248,18 @@ public sealed class DiagnosticsPublisher
         }
 
         // User components (workspace elements) — declared params + structural ONLY.
+        // Same-named components in different files are DIFFERENT components since
+        // the ES-modules redesign (file-keyed namespaces), so a name with multiple
+        // declarants must resolve per the CURRENT file's view, not first-wins.
         foreach (var tagName in _index.KnownElements)
         {
             if (result.ContainsKey(tagName))
                 continue; // schema wins if there's a conflict
 
-            var props = _index.GetProps(tagName);
+            var declarants = _index.GetAllElementInfo(tagName);
+            IReadOnlyList<WorkspaceIndex.PropInfo> props = declarants.Count > 1
+                ? ResolveVisibleProps(tagName, declarants, directives, localPath)
+                : declarants.Count == 1 ? declarants[0].Props : _index.GetProps(tagName);
             var attrs = props.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var sa in _schema.Root.StructuralAttributes)
                 attrs.Add(sa.Name);
@@ -1207,5 +1267,126 @@ public sealed class DiagnosticsPublisher
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Picks the declarant of <paramref name="tagName"/> that the CURRENT file
+    /// actually sees, mirroring the SG's resolution order: the same file's own
+    /// declaration, then a named/aliased/default <c>import</c> whose specifier
+    /// resolves to a declarant (build-identical path rule via
+    /// <see cref="LspHelpers.ResolveImportTarget"/>), then namespace visibility
+    /// (the file's own effective namespace plus its <c>import "@Ns"</c> /
+    /// <c>@using</c> lines). When resolution is ambiguous or impossible, the
+    /// UNION of all declarants' props is returned — attribute validation must
+    /// fail open, never invent an unknown-attribute error against the wrong
+    /// file's component (the strict-import diagnostics own the missing-import
+    /// case).
+    /// </summary>
+    private IReadOnlyList<WorkspaceIndex.PropInfo> ResolveVisibleProps(
+        string tagName,
+        IReadOnlyList<WorkspaceIndex.ElementInfo> declarants,
+        DirectiveSet? directives,
+        string? localPath)
+    {
+        if (!string.IsNullOrEmpty(localPath))
+        {
+            foreach (var d in declarants)
+                if (PathsEqual(d.FilePath, localPath!))
+                    return d.Props;
+        }
+
+        if (directives != null && !string.IsNullOrEmpty(localPath))
+        {
+            foreach (var imp in directives.Imports)
+            {
+                bool bindsTag = false;
+                if (imp.IsDefault)
+                {
+                    bindsTag = string.Equals(imp.DefaultAlias, tagName, StringComparison.Ordinal);
+                }
+                else if (!imp.IsStar)
+                {
+                    for (int i = 0; i < imp.Names.Length; i++)
+                    {
+                        string local = imp.Aliases.Length > i && imp.Aliases[i] != null
+                            ? imp.Aliases[i]!
+                            : imp.Names[i];
+                        if (string.Equals(local, tagName, StringComparison.Ordinal))
+                        {
+                            bindsTag = true;
+                            break;
+                        }
+                    }
+                }
+                if (!bindsTag)
+                    continue;
+
+                string? target = LspHelpers.ResolveImportTarget(localPath!, imp.Specifier);
+                if (target == null)
+                    continue;
+                foreach (var d in declarants)
+                    if (PathsEqual(d.FilePath, target))
+                        return d.Props;
+            }
+
+            var visibleNs = new HashSet<string>(StringComparer.Ordinal);
+            string? ownNs = EffectiveNamespace.Resolve(
+                directives.HasExplicitNamespace, directives.Namespace, localPath!,
+                fileKeyed: !directives.UsesLegacySyntax);
+            if (!string.IsNullOrEmpty(ownNs))
+                visibleNs.Add(ownNs!);
+            foreach (var u in directives.Usings)
+            {
+                if (u.StartsWith("static ", StringComparison.Ordinal) || u.Contains('='))
+                    continue;
+                visibleNs.Add(u);
+            }
+
+            WorkspaceIndex.ElementInfo? single = null;
+            bool ambiguous = false;
+            foreach (var d in declarants)
+            {
+                if (!d.FilePath.EndsWith(".uitkx", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var peer = TryParsePeerDirectives(d.FilePath);
+                if (peer == null)
+                    continue;
+                string? peerNs = EffectiveNamespace.Resolve(
+                    peer.HasExplicitNamespace, peer.Namespace, d.FilePath,
+                    fileKeyed: !peer.UsesLegacySyntax);
+                if (string.IsNullOrEmpty(peerNs) || !visibleNs.Contains(peerNs!))
+                    continue;
+                if (single == null)
+                    single = d;
+                else
+                {
+                    ambiguous = true;
+                    break;
+                }
+            }
+            if (single != null && !ambiguous)
+                return single.Props;
+        }
+
+        var union = new List<WorkspaceIndex.PropInfo>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in declarants)
+            foreach (var p in d.Props)
+                if (seen.Add(p.Name))
+                    union.Add(p);
+        return union;
+    }
+
+    private static bool PathsEqual(string a, string b)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception)
+        {
+            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }
