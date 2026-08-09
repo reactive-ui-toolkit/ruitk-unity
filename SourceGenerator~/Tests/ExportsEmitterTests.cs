@@ -34,6 +34,41 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
+        public void GenericHook_EmitsMethodInfoTrampoline()
+        {
+            // F9 (0.16.0): a generic hook flows through the same MethodInfo-cache trampoline
+            // the legacy generic-hook path used — open MethodInfo field + per-closed-type
+            // delegate cache + MakeGenericMethod, with the generic suffix on the public head.
+            var result = GeneratorTestHelper.Run(
+                "export (T value, System.Action<T> set) useSlot<T>(T seed) {\n" +
+                "  return (seed, _ => {});\n" +
+                "}\n",
+                "Slot.hooks.uitkx");
+
+            Assert.True(result.SourceWasProduced);
+            Assert.True(result.SourceContains("useSlot<T>(T seed)"));
+            Assert.True(result.SourceContains("__hmr_useSlot_cache"));
+            Assert.True(result.SourceContains("MakeGenericMethod"));
+            Assert.Empty(result.SyntaxErrors());
+        }
+
+        [Fact]
+        public void GenericUtil_EmitsGenericMethod()
+        {
+            var result = GeneratorTestHelper.Run(
+                "export System.Collections.Generic.List<T> repeat<T>(T item, int count) {\n" +
+                "  var list = new System.Collections.Generic.List<T>();\n" +
+                "  for (int i = 0; i < count; i++) list.Add(item);\n" +
+                "  return list;\n" +
+                "}\n",
+                "Utils.uitkx");
+
+            Assert.True(result.SourceWasProduced);
+            Assert.True(result.SourceContains("repeat<T>(T item, int count)"));
+            Assert.Empty(result.SyntaxErrors());
+        }
+
+        [Fact]
         public void ValueExport_GetsUitkxHmrSwapAttribute()
         {
             // U-02: values synthesize as `static readonly` and route through the

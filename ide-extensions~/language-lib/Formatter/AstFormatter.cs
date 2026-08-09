@@ -572,13 +572,14 @@ namespace Ruitk.Language.Formatter
 
                 string ret = m.ReturnTypeText ?? "void";
                 string paramsText = m.ParamsText ?? string.Empty;
+                string typeParams = m.TypeParamsText ?? string.Empty;
                 if (m.IsExpressionBodied)
                 {
-                    Ln($"{prefix}{ret} {m.Name}({paramsText}) => {m.BodyText};");
+                    Ln($"{prefix}{ret} {m.Name}{typeParams}({paramsText}) => {m.BodyText};");
                 }
                 else
                 {
-                    Ln($"{prefix}{ret} {m.Name}({paramsText}) {{");
+                    Ln($"{prefix}{ret} {m.Name}{typeParams}({paramsText}) {{");
                     _indent++;
                     EmitSetupCodeNormalized(m.BodyText.Trim(), tabExp);
                     _indent--;

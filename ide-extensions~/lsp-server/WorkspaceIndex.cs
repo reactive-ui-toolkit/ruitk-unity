@@ -174,7 +174,7 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
     // Multiline so `^` matches each logical line start; both grammars prohibit leading
     // whitespace before a top-level declaration head.
     private static readonly Regex s_uitkxModuleOrHookPattern = new(
-        @"^(?:export\s+)?(?:module\s+[A-Za-z_]\w*\s*\{|hook\s+[A-Za-z_]\w*\s*[<\(])|^export\s+(?![A-Za-z_]\w*\s+from\b)[\w<>\[\],\s\.\?\(\)]+?\s[A-Za-z_]\w*\s*[=\(]",
+        @"^(?:export\s+)?(?:module\s+[A-Za-z_]\w*\s*\{|hook\s+[A-Za-z_]\w*\s*[<\(])|^export\s+(?![A-Za-z_]\w*\s+from\b)[\w<>\[\],\s\.\?\(\)]+?\s[A-Za-z_]\w*\s*(?:<[\w,\s]+>)?\s*[=\(]",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline
     );
 

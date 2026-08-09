@@ -153,15 +153,18 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
-        public void GenericHook_FileStaysLegacy_WithError()
+        public void GenericHook_MigratesToGenericDeclarationHead()
         {
+            // F9 closed (0.16.0): the plain dialect has generic declaration heads, so the
+            // codemod migrates generic hooks instead of freezing the file legacy.
             var file = F("Gen.hooks.uitkx",
                 "export hook useGen<T>(T seed) -> T {\n    return seed;\n}\n");
             var changed = Run(out var errors, file);
 
-            Assert.Contains(errors, e => e.Message.Contains("generic hook"));
-            string outText = changed.TryGetValue(file.AbsPath, out var t) ? t : file.Text;
-            Assert.Contains("hook useGen", outText);
+            Assert.Empty(errors);
+            string outText = changed[file.AbsPath];
+            Assert.Contains("export T useGen<T>(T seed) {", outText);
+            Assert.DoesNotContain("hook useGen", outText);
         }
 
         // ── Idempotence (the §7.1 acceptance) ────────────────────────────────
@@ -387,16 +390,18 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void FailedSetImporter_OfMigratedModule_GetsStarImport_WithNote()
         {
+            // The failed set is forced by a module with a nested type (still unmigratable);
+            // generic hooks migrate since F9 closed, so they can no longer play this role.
             var tokens = F("Tokens.uitkx",
                 "export module Tokens {\n    public static readonly int Gap = 8;\n}\n");
-            var broken = F("Broken.hooks.uitkx",
-                "import { Tokens } from \"./Tokens\"\nexport hook useGen<T>(T seed) -> T {\n    var g = Tokens.Gap;\n    return seed;\n}\n");
+            var broken = F("Broken.style.uitkx",
+                "import { Tokens } from \"./Tokens\"\nexport module BrokenStyles {\n    public enum Kind { A, B }\n    public static readonly int Pad = Tokens.Gap;\n}\n");
             var changed = Run(out var errors, tokens, broken);
 
-            Assert.Contains(errors, e => e.Message.Contains("generic hook"));
+            Assert.Contains(errors, e => e.Message.Contains("BrokenStyles"));
             string outText = changed[broken.AbsPath];
             Assert.Contains("import * as Tokens from \"./Tokens\"", outText);
-            Assert.Contains("hook useGen", outText);
+            Assert.Contains("module BrokenStyles", outText);
             Assert.DoesNotContain("import { Tokens }", outText);
             Assert.Contains(errors, e => e.Message.Contains("import * as"));
         }

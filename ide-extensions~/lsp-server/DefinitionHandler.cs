@@ -423,7 +423,7 @@ public sealed class DefinitionHandler : IDefinitionHandler
             string n = Regex.Escape(name);
             var re = new Regex(
                 $@"^(?:(?:export\s+)?(?:component|hook|module)\s+{n}\b"
-                + $@"|(?:export\s+)?{LspHelpers.DeclTypePattern}\s+{n}\s*[=\(]"
+                + $@"|(?:export\s+)?{LspHelpers.DeclTypePattern}\s+{n}\s*(?:<[\w,\s]+>)?\s*[=\(]"
                 + $@"|export\s+{n}\s*=(?!=))");
             string[] lines = File.ReadAllLines(filePath);
             for (int i = 0; i < lines.Length; i++)
@@ -675,7 +675,7 @@ public sealed class DefinitionHandler : IDefinitionHandler
     }
 
     private static readonly Regex s_plainDeclHeadRe = new(
-        @"^(?:export\s+)?" + LspHelpers.DeclTypePattern + @"\s+(?<name>[A-Za-z_]\w*)\s*[=\(]"
+        @"^(?:export\s+)?" + LspHelpers.DeclTypePattern + @"\s+(?<name>[A-Za-z_]\w*)\s*(?:<[\w,\s]+>)?\s*[=\(]"
         + @"|^export\s+(?<name>[A-Za-z_]\w*)\s*=(?!=)",
         RegexOptions.CultureInvariant);
 }

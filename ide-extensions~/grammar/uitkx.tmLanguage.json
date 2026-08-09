@@ -165,14 +165,15 @@
     "plain-declaration": {
       "comment": "Plain typed declaration head (ES-modules campaign, U-04/G-03): [export] VirtualNode Name( => component (entity.name.class); [export] <Type> useName( => hook (entity.name.function). Value/util heads fall through to #code-block-body (ordinary C# coloring). Must run BEFORE the wrapper-keyword patterns' fallback but AFTER the import patterns.",
       "name": "meta.declaration.plain.uitkx",
-      "match": "^(\\s*)(export)?\\s*((?:global::)?(?:[A-Za-z_][\\w.]*\\.)?VirtualNode)\\s+([A-Z][A-Za-z0-9_]*)\\s*(?=\\()|^(\\s*)(export)?\\s*((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+(use[A-Z][A-Za-z0-9_]*)\\s*(?=\\()",
+      "match": "^(\\s*)(export)?\\s*((?:global::)?(?:[A-Za-z_][\\w.]*\\.)?VirtualNode)\\s+([A-Z][A-Za-z0-9_]*)\\s*(?=\\()|^(\\s*)(export)?\\s*((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+(use[A-Z][A-Za-z0-9_]*)\\s*(<[\\w,\\s]+>)?\\s*(?=\\()",
       "captures": {
         "2": { "name": "keyword.control.export.uitkx" },
         "3": { "name": "entity.name.type.uitkx" },
         "4": { "name": "entity.name.class.uitkx" },
         "6": { "name": "keyword.control.export.uitkx" },
         "7": { "patterns": [ { "include": "#expression-content" } ] },
-        "8": { "name": "entity.name.function.uitkx" }
+        "8": { "name": "entity.name.function.uitkx" },
+        "9": { "name": "entity.name.type.uitkx" }
       }
     },
     "comment": {

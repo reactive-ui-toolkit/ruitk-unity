@@ -217,14 +217,15 @@ namespace Ruitk.SourceGenerator.Tools
             if (!ds.HookDeclarations.IsDefaultOrEmpty)
                 foreach (var h in ds.HookDeclarations)
                 {
-                    if (!string.IsNullOrEmpty(h.GenericParams))
-                        return $"generic hook '{h.Name}' — the plain dialect has no generic declaration heads";
                     // BodyEndOffset is the exact index of the closing `}` (parser contract), so
                     // its line IS the last line of the declaration — never scan the text for a
                     // `}`-first line: when the brace shares a line with the last statement, a
                     // scan latches onto the NEXT declaration's brace and deletes it wholesale.
                     int closeLine = LineAt(src, h.BodyEndOffset);
                     string ret = string.IsNullOrEmpty(h.ReturnType) ? "void" : h.ReturnType!;
+                    // F9: generic hooks migrate to generic declaration heads verbatim
+                    // (`export (T v, Action<T> set) useSel<T>(…)`).
+                    string typeParams = h.GenericParams ?? string.Empty;
                     string paramList = string.Join(", ", h.Params.IsDefaultOrEmpty
                         ? Enumerable.Empty<string>()
                         : h.Params.Select(p => p.DefaultValue != null
@@ -233,7 +234,7 @@ namespace Ruitk.SourceGenerator.Tools
                     var body = SliceLines(src, h.BodyStartOffset, h.BodyEndOffset);
                     var repl = new List<string>
                     {
-                        $"{(h.IsExported ? "export " : "")}{ret} {h.Name}({paramList}) {{"
+                        $"{(h.IsExported ? "export " : "")}{ret} {h.Name}{typeParams}({paramList}) {{"
                     };
                     repl.AddRange(body);
                     repl.Add("}");

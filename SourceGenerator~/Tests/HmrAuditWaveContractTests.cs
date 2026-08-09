@@ -73,8 +73,8 @@ public class HmrAuditWaveContractTests
         var shared = LangSrc("ImportScopeFacts.cs");
         Assert.Contains("internal static {type} {alias} => global::{targetNs}.__Exports.{target.Name};", sg);
         Assert.Contains("internal static {type} {alias} => global::{tns}.__Exports.{m.Name};", shared);
-        Assert.Contains("internal static {ret} {alias}({paramList}) => global::{targetNs}.__Exports.{target.Name}({argNames});", sg);
-        Assert.Contains("internal static {ret} {alias}({pl}) => global::{tns}.__Exports.{m.Name}({an});", shared);
+        Assert.Contains("internal static {ret} {alias}{typeParams}({paramList}) => global::{targetNs}.__Exports.{target.Name}{typeParams}({argNames});", sg);
+        Assert.Contains("internal static {ret} {alias}{typeParams}({pl}) => global::{tns}.__Exports.{m.Name}{typeParams}({an});", shared);
     }
 
     [Fact]

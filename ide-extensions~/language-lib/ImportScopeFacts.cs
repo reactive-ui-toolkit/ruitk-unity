@@ -245,10 +245,10 @@ namespace Ruitk.Language
         /// pipeline) — shape parity is pinned by tests. Filesystem-parses each target like
         /// <see cref="ComputeInjectedUsingPayloads"/>; degrades silently on unresolvable targets.
         /// </summary>
-        public static IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue)>
+        public static IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue, string? TypeParams)>
             ComputeImportedMemberBridges(DirectiveSet directives, string uitkxFilePath)
         {
-            var result = new List<(string, string?, string?, bool)>();
+            var result = new List<(string, string?, string?, bool, string?)>();
             if (directives.Imports.IsDefaultOrEmpty || string.IsNullOrEmpty(uitkxFilePath))
                 return result;
 
@@ -296,7 +296,7 @@ namespace Ruitk.Language
                         if (dm != null)
                             result.Add((imp.DefaultAlias,
                                 dm.ReturnTypeText ?? ExtractNewInitializerTypeName(dm.BodyText),
-                                dm.ParamsText, dm.Kind == DeclKind.Value));
+                                dm.ParamsText, dm.Kind == DeclKind.Value, dm.TypeParamsText));
                     }
                 }
 
@@ -310,7 +310,7 @@ namespace Ruitk.Language
                     if (m != null)
                         result.Add((alias,
                             m.ReturnTypeText ?? ExtractNewInitializerTypeName(m.BodyText),
-                            m.ParamsText, m.Kind == DeclKind.Value));
+                            m.ParamsText, m.Kind == DeclKind.Value, m.TypeParamsText));
                 }
             }
             return result;
@@ -457,6 +457,9 @@ namespace Ruitk.Language
                         return;
                     }
                     string ret = m.ReturnTypeText ?? "void";
+                    // F9: a generic member forwards through a generic bridge — the bridge's
+                    // own type parameters close the target's (`alias<T>(…) => target.Name<T>(…)`).
+                    string typeParams = m.TypeParamsText ?? string.Empty;
                     var ps = m.Params;
                     var pl = new StringBuilder();
                     var an = new StringBuilder();
@@ -471,7 +474,7 @@ namespace Ruitk.Language
                             else if (ps[i].Type.StartsWith("out ", StringComparison.Ordinal)) an.Append("out ");
                             an.Append(ps[i].Name);
                         }
-                    lines.Add($"        internal static {ret} {alias}({pl}) => global::{tns}.__Exports.{m.Name}({an});");
+                    lines.Add($"        internal static {ret} {alias}{typeParams}({pl}) => global::{tns}.__Exports.{m.Name}{typeParams}({an});");
                 }
 
                 // No exclusive branching — combined imports need default AND named bridges.

@@ -1863,10 +1863,14 @@ namespace Ruitk.Language.Parser
         }
 
         /// <summary>
-        /// Reads a plain declaration HEAD: <c>[Type] Name</c> immediately followed by <c>(</c>
-        /// (function-shaped) or <c>=</c> (value-shaped) — U-04 point 3. <paramref name="typeText"/>
-        /// is <c>null</c> when the head has no separate type token before the name (legal only for
-        /// value declarations using inference sugar, checked by the caller). Does NOT consume the
+        /// Reads a plain declaration HEAD: <c>[Type] Name[&lt;T, U&gt;]</c> immediately followed by
+        /// <c>(</c> (function-shaped) or <c>=</c> (value-shaped) — U-04 point 3.
+        /// <paramref name="typeText"/> is <c>null</c> when the head has no separate type token
+        /// before the name (legal only for value declarations using inference sugar, checked by
+        /// the caller). <paramref name="typeParamsText"/> carries a generic type-parameter list
+        /// verbatim including the angle brackets (F9 — generic declaration heads,
+        /// <c>export (T v, Action&lt;T&gt; set) useSel&lt;T&gt;(…)</c>), or <c>null</c>; generics
+        /// require a typed head and a function shape (<c>(</c> delimiter). Does NOT consume the
         /// delimiter itself — the cursor is left pointing AT <c>(</c>/<c>=</c> so the caller can
         /// dispatch on it (mirrors how the legacy component header leaves the cursor at <c>{</c>).
         /// Cursor-restore discipline matches the other readers in this file: returns false with
@@ -1875,14 +1879,14 @@ namespace Ruitk.Language.Parser
         private static bool TryReadDeclarationHead(
             string source, ref int i, ref int line,
             out string? typeText, out string name, out int nameLine, out int nameColumn, out char delimiter,
-            out bool genericHead)
+            out string? typeParamsText)
         {
             typeText = null;
             name = string.Empty;
             nameLine = line;
             nameColumn = -1;
             delimiter = '\0';
-            genericHead = false;
+            typeParamsText = null;
 
             int savedI = i, savedLine = line;
 
@@ -1917,6 +1921,41 @@ namespace Ruitk.Language.Parser
                 nameLine = line;
                 if (!TryReadIdentifier(source, ref i, out name))
                 { i = savedI; line = savedLine; return false; }
+
+                // F9 (family grammar): optional generic type-parameter list between the name
+                // and the parameter list. Only identifiers and commas are legal in declaration
+                // position (C# rules — no nested generics, no constraints here); a malformed
+                // list falls through to the normal not-a-head failure below.
+                if (i < source.Length && source[i] == '<')
+                {
+                    int tpStart = i;
+                    int p = i + 1;
+                    bool valid = true;
+                    bool expectIdent = true;
+                    while (p < source.Length && source[p] != '>')
+                    {
+                        char c = source[p];
+                        if (char.IsWhiteSpace(c)) { p++; continue; }
+                        if (expectIdent)
+                        {
+                            if (!(char.IsLetter(c) || c == '_')) { valid = false; break; }
+                            while (p < source.Length
+                                   && (char.IsLetterOrDigit(source[p]) || source[p] == '_'))
+                                p++;
+                            expectIdent = false;
+                            continue;
+                        }
+                        if (c == ',') { expectIdent = true; p++; continue; }
+                        valid = false;
+                        break;
+                    }
+                    if (valid && p < source.Length && source[p] == '>' && !expectIdent)
+                    {
+                        typeParamsText = source.Substring(tpStart, p + 1 - tpStart);
+                        i = p + 1;
+                    }
+                }
+
                 SkipSpaces(source, ref i);
             }
             else
@@ -1932,11 +1971,13 @@ namespace Ruitk.Language.Parser
                 typeText = null;
             }
 
+            // Generics are function-shaped only: a generic head followed by anything but '('
+            // (e.g. a would-be generic value declaration) is not a declaration head.
+            if (typeParamsText != null && (i >= source.Length || source[i] != '('))
+            { typeParamsText = null; i = savedI; line = savedLine; return false; }
+
             if (i >= source.Length || (source[i] != '(' && source[i] != '='))
-            {
-                genericHead = i < source.Length && source[i] == '<' && name.Length > 0;
-                i = savedI; line = savedLine; return false;
-            }
+            { i = savedI; line = savedLine; return false; }
             // Reject `==` — an equality expression starting right after the head is not a
             // declaration (defensive; well-formed input never reaches this in practice).
             if (source[i] == '=' && i + 1 < source.Length && source[i + 1] == '=')
@@ -2258,25 +2299,8 @@ namespace Ruitk.Language.Parser
 
                 if (!TryReadDeclarationHead(source, ref i, ref line,
                         out string? typeText, out string declName, out int declLine, out int declNameCol, out char delimiter,
-                        out bool genericHead))
+                        out string? typeParamsText))
                 {
-                    if (genericHead)
-                    {
-                        // `export T Identity<T>(…)` / `hook useX<T>` shapes: the plain dialect has
-                        // no generic-declaration form (family grammar, G-03). A precise error beats
-                        // the misleading whole-file line-1 fallback; generic hooks stay legacy
-                        // through the deprecation window (the codemod reports them).
-                        diagnosticBag.Add(new ParseDiagnostic
-                        {
-                            Code = "UITKX2105",
-                            Severity = ParseSeverity.Error,
-                            SourceLine = line,
-                            Message = "generic declarations are not supported in plain-declaration syntax — keep the generic in a legacy 'hook' file or in ambient C#",
-                        });
-                        parsedAnyDeclaration = true;
-                        break;
-                    }
-
                     if (!parsedAnyDeclaration)
                     {
                         i = declStart; line = declStartLine;
@@ -2357,6 +2381,24 @@ namespace Ruitk.Language.Parser
 
                 if (isVirtualNodeReturn)
                 {
+                    if (typeParamsText != null)
+                    {
+                        // F9 covers hooks and utility functions only: a component is a generated
+                        // class + Props pair, and neither the registry nor the reconciler has a
+                        // generic-component concept. Precise error, then best-effort recovery
+                        // (the body still parses so downstream diagnostics stay anchored).
+                        diagnosticBag.Add(new ParseDiagnostic
+                        {
+                            Code = "UITKX2105",
+                            Severity = ParseSeverity.Error,
+                            SourceLine = declLine,
+                            SourceColumn = declNameCol,
+                            EndLine = declLine,
+                            EndColumn = declNameCol + declName.Length,
+                            Message = $"component '{declName}' cannot be generic — generic declaration heads apply to hooks and utility functions",
+                        });
+                    }
+
                     if (looksLikeHook)
                     {
                         diagnosticBag.Add(new ParseDiagnostic
@@ -2425,7 +2467,7 @@ namespace Ruitk.Language.Parser
                         BodyStartLine: LineAtPos(source, exprStart),
                         BodyStartOffset: exprStart,
                         BodyEndOffset: exprEndExclusive)
-                    { Params = declParams });
+                    { Params = declParams, TypeParamsText = typeParamsText });
                     continue;
                 }
 
@@ -2475,7 +2517,7 @@ namespace Ruitk.Language.Parser
                     BodyStartLine: declBodyStartLine,
                     BodyStartOffset: declActualBodyStart,
                     BodyEndOffset: declBodyEnd)
-                { Params = declParams });
+                { Params = declParams, TypeParamsText = typeParamsText });
 
                 i = declBodyCloseExclusive;
                 line = LineAtPos(source, i);

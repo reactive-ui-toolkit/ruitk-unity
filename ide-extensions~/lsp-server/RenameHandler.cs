@@ -1265,7 +1265,7 @@ public sealed class RenameHandler : IRenameHandler, IPrepareRenameHandler
         // and multi-line verbatim strings stay untouched.
         var hookDeclPattern = new Regex(
             $@"^(?:export\s+)?(?:hook\s+(?<name>{Regex.Escape(oldName)})\b"
-            + $@"|{LspHelpers.DeclTypePattern}\s+(?<name>{Regex.Escape(oldName)})(?=\s*\())",
+            + $@"|{LspHelpers.DeclTypePattern}\s+(?<name>{Regex.Escape(oldName)})(?=\s*(?:<[\w,\s]+>\s*)?\())",
             RegexOptions.CultureInvariant | RegexOptions.Multiline
         );
         foreach (Match m in hookDeclPattern.Matches(fileText))

@@ -57,7 +57,7 @@ public class HmrExportsParityContractTests
         var src = HmrHookEmitterSource();
         Assert.Contains("public static string EmitExports(object directives, string filePath,", src);
         Assert.Contains("[global::Ruitk.UitkxHmrSwap]", src);
-        Assert.Contains("__{name}_body({paramsText})", src);
+        Assert.Contains("__{name}_body{typeParams}({paramsText})", src);
     }
 
     [Fact]

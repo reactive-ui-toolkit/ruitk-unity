@@ -351,8 +351,8 @@ namespace Ruitk.Language.Roslyn
             // NOT enough for static-class members).
             bool hasMembers = !d.UsesLegacySyntax && !d.MemberDeclarations.IsDefaultOrEmpty;
             var bridges = d.UsesLegacySyntax
-                ? (IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue)>)
-                    System.Array.Empty<(string, string?, string?, bool)>()
+                ? (IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue, string? TypeParams)>)
+                    System.Array.Empty<(string, string?, string?, bool, string?)>()
                 : ImportScopeFacts.ComputeImportedMemberBridges(d, uitkxFilePath);
             if (hasMembers || bridges.Count > 0)
             {
@@ -423,7 +423,7 @@ namespace Ruitk.Language.Roslyn
         private static void EmitExportsScaffold(
             VirtualDocBuilder b,
             DirectiveSet d,
-            IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue)> bridges,
+            IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue, string? TypeParams)> bridges,
             string escapedPath)
         {
             b.Scaffold("    static partial class __Exports\n    {\n");
@@ -451,10 +451,11 @@ namespace Ruitk.Language.Roslyn
                         || string.IsNullOrEmpty(m.ReturnTypeText)
                         ? "void" : m.ReturnTypeText!;
                     string paramsText = m.ParamsText ?? string.Empty;
+                    string typeParams = m.TypeParamsText ?? string.Empty;
                     var kind = m.Kind == DeclKind.Hook ? SourceRegionKind.HookBody : SourceRegionKind.ModuleBody;
                     if (m.IsExpressionBodied)
                     {
-                        b.Scaffold($"        {access} static {ret} {m.Name}({paramsText}) => ");
+                        b.Scaffold($"        {access} static {ret} {m.Name}{typeParams}({paramsText}) => ");
                         b.Scaffold($"\n#line {m.BodyStartLine} \"{escapedPath}\"\n");
                         b.Mapped(m.BodyText, m.BodyStartOffset, kind, m.BodyStartLine);
                         b.Scaffold("\n#line hidden\n");
@@ -462,7 +463,7 @@ namespace Ruitk.Language.Roslyn
                     }
                     else
                     {
-                        b.Scaffold($"        {access} static {ret} {m.Name}({paramsText})\n");
+                        b.Scaffold($"        {access} static {ret} {m.Name}{typeParams}({paramsText})\n");
                         b.Scaffold("        {\n");
                         b.Scaffold($"#line {m.BodyStartLine} \"{escapedPath}\"\n");
                         b.Mapped(m.BodyText, m.BodyStartOffset, kind, m.BodyStartLine);
@@ -472,7 +473,7 @@ namespace Ruitk.Language.Roslyn
                 }
             }
 
-            foreach (var (alias, retType, paramsText, isValue) in bridges)
+            foreach (var (alias, retType, paramsText, isValue, bridgeTypeParams) in bridges)
             {
                 if (isValue)
                 {
@@ -483,7 +484,7 @@ namespace Ruitk.Language.Roslyn
                     || string.Equals(retType!.Trim(), "void", StringComparison.Ordinal)
                     ? "void" : retType!;
                 string bridgeBody = bridgeRet == "void" ? "{ }" : "=> default!;";
-                b.Scaffold($"        internal static {bridgeRet} {alias}({paramsText ?? string.Empty}) {bridgeBody}\n");
+                b.Scaffold($"        internal static {bridgeRet} {alias}{bridgeTypeParams ?? string.Empty}({paramsText ?? string.Empty}) {bridgeBody}\n");
             }
 
             b.Scaffold("    }\n\n");

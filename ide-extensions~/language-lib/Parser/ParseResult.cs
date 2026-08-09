@@ -278,6 +278,12 @@ namespace Ruitk.Language.Parser
         /// or <c>export default</c> marking — no inline <c>export</c> prefix exists in source, so
         /// the formatter must not synthesize one.</summary>
         public bool IsExportImplied { get; init; }
+        /// <summary>Generic type-parameter list text verbatim including the angle brackets
+        /// (e.g. <c>&lt;T&gt;</c>, <c>&lt;TKey, TValue&gt;</c>), or <c>null</c> for non-generic
+        /// members (F9 — generic declaration heads). Function-shaped members only; values never
+        /// carry one. Emitters append it to the emitted method name; the formatter re-emits it
+        /// between the name and the parameter list.</summary>
+        public string? TypeParamsText { get; init; }
     };
 
     // ── Directive data ────────────────────────────────────────────────────────

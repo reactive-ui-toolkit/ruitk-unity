@@ -201,6 +201,23 @@ namespace Ruitk.SourceGenerator.Tests
             Assert.Contains("export int t = 2;", formatted);
         }
 
+        // ── F9: generic declaration heads round-trip ────────────────────────
+
+        [Fact]
+        public void GenericHead_FormatIsIdempotent_AndKeepsTypeParams()
+        {
+            string src =
+                "export (T value, System.Action<T> set) useSlot<T>(T seed) {\n" +
+                "  return (seed, _ => {});\n" +
+                "}\n" +
+                "\n" +
+                "export T identity<T>(T v) => v;\n";
+            string once = Format(src);
+            Assert.Contains("useSlot<T>(T seed)", once);
+            Assert.Contains("identity<T>(T v)", once);
+            Assert.Equal(once, Format(once));
+        }
+
         // ── Legacy formatting is byte-untouched by this campaign ────────────
 
         [Fact]

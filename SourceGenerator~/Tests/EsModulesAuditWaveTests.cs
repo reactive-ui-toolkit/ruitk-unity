@@ -62,13 +62,38 @@ namespace Ruitk.SourceGenerator.Tests
         // ── F9: generic declarations get a targeted diagnostic ───────────────
 
         [Fact]
-        public void F9_GenericDeclaration_GetsTargetedError_NotWholeFileFallback()
+        public void F9_GenericDeclaration_ParsesAsGenericUtil()
         {
-            var (_, diags) = Parse("export T Identity<T>(T v) { return v; }\n");
+            // F9 closed (0.16.0): generic declaration heads are first-class.
+            var (ds, diags) = Parse("export T Identity<T>(T v) { return v; }\n");
+            Assert.DoesNotContain(diags, d => d.Severity == ParseSeverity.Error);
+            var m = Assert.Single(ds.MemberDeclarations);
+            Assert.Equal("Identity", m.Name);
+            Assert.Equal("<T>", m.TypeParamsText);
+            Assert.Equal("T", m.ReturnTypeText);
+        }
+
+        [Fact]
+        public void F9_GenericHook_TupleReturn_Parses()
+        {
+            var (ds, diags) = Parse(
+                "export (T selected, System.Action<T> select) useSelection<T, TExtra>(System.Collections.Generic.List<T> items) {\n" +
+                "  return (default, _ => {});\n" +
+                "}\n");
+            Assert.DoesNotContain(diags, d => d.Severity == ParseSeverity.Error);
+            var m = Assert.Single(ds.MemberDeclarations);
+            Assert.Equal("useSelection", m.Name);
+            Assert.Equal("<T, TExtra>", m.TypeParamsText);
+            Assert.Equal(DeclKind.Hook, m.Kind);
+        }
+
+        [Fact]
+        public void F9_GenericComponent_GetsTargetedError()
+        {
+            var (_, diags) = Parse(
+                "export VirtualNode Card<T>(T item) {\n  return (<VisualElement />);\n}\n");
             Assert.Contains(diags, d =>
-                d.Code == "UITKX2105" && d.Message.Contains("generic declarations are not supported"));
-            Assert.DoesNotContain(diags, d =>
-                d.Message.Contains("does not contain a valid function-style component"));
+                d.Code == "UITKX2105" && d.Message.Contains("cannot be generic"));
         }
 
         // ── F10: multi-line heads keep the line counter in sync ──────────────

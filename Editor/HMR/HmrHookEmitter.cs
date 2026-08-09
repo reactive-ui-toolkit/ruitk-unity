@@ -417,6 +417,9 @@ namespace Ruitk.EditorSupport.HMR
                 string body = (string)GetProp(m, "BodyText") ?? string.Empty;
                 bool exprBodied = GetProp(m, "IsExpressionBodied") is bool eb && eb;
                 int bodyStartLine = GetProp(m, "BodyStartLine") is int bsl ? bsl : 1;
+                // F9 generic declaration heads: verbatim `<T, U>` (or empty). Reflective read
+                // tolerates an older Language.dll without the property (null -> non-generic).
+                string typeParams = GetProp(m, "TypeParamsText") as string ?? string.Empty;
 
                 body = HmrCSharpEmitter.ResolveAssetPaths(body, filePath);
 
@@ -438,7 +441,7 @@ namespace Ruitk.EditorSupport.HMR
                     string hookBody = exprBodied ? "return " + body + ";" : body;
                     hookBody = ApplyHookAliases(hookBody);
                     sb.AppendLine();
-                    sb.AppendLine($"        public static {hookRet} __{name}_body({paramsText})");
+                    sb.AppendLine($"        public static {hookRet} __{name}_body{typeParams}({paramsText})");
                     sb.AppendLine("        {");
                     sb.AppendLine($"#line {bodyStartLine} \"{linePath}\"");
                     sb.AppendLine($"            {hookBody}");
@@ -454,12 +457,12 @@ namespace Ruitk.EditorSupport.HMR
                 if (exprBodied)
                 {
                     sb.AppendLine($"#line {bodyStartLine} \"{linePath}\"");
-                    sb.AppendLine($"        public static {utilRet} {name}({paramsText}) => {body};");
+                    sb.AppendLine($"        public static {utilRet} {name}{typeParams}({paramsText}) => {body};");
                     sb.AppendLine("#line hidden");
                 }
                 else
                 {
-                    sb.AppendLine($"        public static {utilRet} {name}({paramsText})");
+                    sb.AppendLine($"        public static {utilRet} {name}{typeParams}({paramsText})");
                     sb.AppendLine("        {");
                     sb.AppendLine($"#line {bodyStartLine} \"{linePath}\"");
                     sb.AppendLine($"            {body}");
