@@ -148,6 +148,7 @@ Phase 1 (the three new controls) shipped in **0.14.0**. These are the items it d
 | G-1..G-7 | Release engineering: RC branch, regression record, runbook dry-run, upgrade-path check, clean-env publish, release gates, post-release monitoring | process work, not done | V1 G-* |
 | Store-1 | Asset Store: create package draft + first upload from a 6.2 editor + Submit (**paused by owner**; price switched to ~$5 → payout/tax setup required first) | no submission occurred | ASSET_STORE |
 | RUNTIME-V | Unity-in-editor runtime verification of the 0.7.x import/export wave: the 5 HMR hook-family-key scenarios + F5 pass over migrated samples + JustStayOn | pending user | triage |
+| CORPUS-DIV | Family-corpus hash DIVERGED by design (0.16.0 legacy removal, ruling D4): Unity re-froze `Plans~/family-corpus.hash` + `FrozenFamilyHash` at `f8c06ee6…` after modernizing the 16 wrapper-scaffolded `fileScan` cases (plain heads; the two module-subject cases became exported-value subjects with the new `values`/`value:Name` expect vocabulary). Unreal/Godot still pin `917dd8cd…` and their scanner tests still consume the legacy shapes | staged case edits: `Plans~/family-corpus-0.16-legacy-removal.patch` (reference diff — sibling prefixes differ, adopt-equivalent not raw-apply) | Trigger: each sibling's own legacy-removal wave adopts the case edits + re-pins; release-time TD-009 hash-match resumes once all three agree |
 
 ## 11. uGUI backend (adding-uGUI wave, 2026-07-25)
 
