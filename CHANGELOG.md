@@ -50,6 +50,19 @@ resolves `dotnet` via `$RUITK_DOTNET` → `.ruitk-local.json` → PATH. The lega
 survives in exactly one quarantined entry point (`ParseLegacyForMigration`) that only
 the codemod uses — everything else parses legacy files straight to the 2320 error.
 
+### Fixed — package-embedded `.uitkx` edits recompile their owning assembly
+
+Editing a `.uitkx` inside an embedded (or local `file:`) package changed nothing in
+Unity: the change-watcher's ancestor-asmdef walk covered `Assets/` only, classified
+every package-resident file as Assembly-CSharp, and dirtied the wrong assembly — the
+package assembly kept running stale generated code with zero warning (GEN-1, the
+2026-08-04 "wrap hunt" false trail). The walk now resolves `Packages/…` paths through
+`PackageInfo` (embedded and local layouts map to their real location; immutable
+packages are excluded — read-only content cannot change and the cache is never written
+to) and drops the recompile trigger into the owning package folder. Remaining
+`Assets/`-only siblings (asset-registry scan, csproj AdditionalFiles injection) are
+tracked as GEN-2/GEN-3 in `Plans~/REMAINING_WORK.md`.
+
 ### Fixed — the formatter's long-head wrapping, restored
 
 Plain-declaration heads longer than the print width wrap again (parameters one per
