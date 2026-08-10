@@ -75,15 +75,17 @@ export VirtualNode Screen() {
                                // add: import { StatusChip } from "./StatusChip"
 }`
 
-export const EXAMPLE_CODEMOD = `# Migrate legacy wrapper-keyword files to plain declarations (0.9.0 ES modules):
-dotnet run --project SourceGenerator~/Tools/UitkxMigrateImports -- Assets --es-modules
+export const EXAMPLE_CODEMOD = `# Migrate wrapper-keyword files to plain declarations (the wrappers were
+# removed in 0.16.0 — un-migrated files raise UITKX2320):
+node scripts/migrate-uitkx.mjs Assets --es-modules
 
 # Dry run / idempotence gate — reports which files WOULD change, exits non-zero if any:
-dotnet run --project SourceGenerator~/Tools/UitkxMigrateImports -- Assets --es-modules --check
+node scripts/migrate-uitkx.mjs Assets --es-modules --check
 
-# Companion sets (X.uitkx + X.*.uitkx) migrate atomically; shapes the plain dialect
-# cannot express (generic hooks, modules with nested types/properties) are reported
-# and stay legacy under the deprecation window.`
+# Companion sets (X.uitkx + X.*.uitkx) migrate atomically. Generic hooks migrate
+# too (first-class since 0.16.0); the one shape the plain dialect cannot express —
+# type definitions (enums/classes/structs) — is reported: move those to a
+# hand-written .cs beside the components.`
 
 export const EXAMPLE_NAMESPACE = `// No @namespace? The default derives from the file's path INCLUDING its stem
 // (a file IS a module):  Samples/Components/Board/Board.uitkx  (asmdef at Samples/)

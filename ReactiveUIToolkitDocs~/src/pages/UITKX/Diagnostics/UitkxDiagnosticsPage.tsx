@@ -282,10 +282,10 @@ export const UitkxDiagnosticsPage: FC = () => (
             <TableCell>The field is generator-managed for HMR re-initialization. Move the assignment into a <code>static</code> constructor or field initializer. The HMR pipeline will overwrite any external write on the next save. Suppress with <code>#pragma warning disable UITKX0210</code> if intentional.</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><Chip label="UITKX0211" size="small" color="warning" variant="outlined" /></TableCell>
-            <TableCell><Chip label="Warning" size="small" color="warning" /></TableCell>
-            <TableCell><code>const</code> field inside <code>module &#123; &#125;</code> body</TableCell>
-            <TableCell>Const fields are inlined into every consumer's IL at compile time and do not propagate under HMR — editing the value during a session leaves callers reading the cold-build constant until a full domain reload. Use <code>static readonly</code> instead; the source generator strips <code>readonly</code> on module fields and the HMR static-swapper refreshes the value on every save.</TableCell>
+            <TableCell><Chip label="UITKX0211" size="small" color="default" variant="outlined" /></TableCell>
+            <TableCell><Chip label="Reserved" size="small" /></TableCell>
+            <TableCell><code>const</code> field inside a legacy <code>module</code> body — retired</TableCell>
+            <TableCell>Retired in 0.16.0 with the legacy module grammar: plain-declaration member bodies have no field-position <code>const</code>, so the HMR-invisibility hazard this warned about no longer exists. The ID stays reserved.</TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -486,7 +486,7 @@ export const UitkxDiagnosticsPage: FC = () => (
             <TableCell><Chip label="UITKX2306" size="small" color="error" variant="outlined" /></TableCell>
             <TableCell><Chip label="Error" size="small" color="error" /></TableCell>
             <TableCell>Value-import cycle</TableCell>
-            <TableCell>Hooks and modules load eagerly, so a cycle among their imports is an error (components are exempt). Break the chain or move to a component reference.</TableCell>
+            <TableCell>Hooks and member values load eagerly, so a cycle among their imports is an error (components are exempt). Break the chain or move to a component reference.</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><Chip label="UITKX2307" size="small" color="warning" variant="outlined" /></TableCell>
@@ -549,10 +549,10 @@ export const UitkxDiagnosticsPage: FC = () => (
             <TableCell>The namespace is auto-injected into every generated file (e.g. <code>@using UnityEngine</code>, <code>@using System</code>), so the line is dead weight. Editor Hint (faded); the &ldquo;Remove redundant using&rdquo; quick-fix or the codemod <code>--tidy</code> strips it.</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><Chip label="UITKX2320" size="small" color="warning" variant="outlined" /></TableCell>
-            <TableCell><Chip label="Warning" size="small" color="warning" /></TableCell>
-            <TableCell>Deprecated wrapper keyword (<code>component</code>/<code>hook</code>/<code>module</code>)</TableCell>
-            <TableCell>0.9.0 ES modules: write a plain <code>export</code> declaration instead — the <code>UitkxMigrateImports --es-modules</code> codemod rewrites whole trees. The wrapper is removed in a later minor. Family code (identical in all three engines).</TableCell>
+            <TableCell><Chip label="UITKX2320" size="small" color="error" variant="outlined" /></TableCell>
+            <TableCell><Chip label="Error" size="small" color="error" /></TableCell>
+            <TableCell>Removed wrapper keyword (<code>component</code>/<code>hook</code>/<code>module</code>)</TableCell>
+            <TableCell>The wrapper keywords were removed in <strong>0.16.0</strong> (deprecated since 0.9.0). Write a plain <code>export</code> declaration instead — the <code>UitkxMigrateImports --es-modules</code> codemod (<code>node scripts/migrate-uitkx.mjs &lt;dir&gt; --es-modules</code>) rewrites whole trees automatically. Family code (identical in all three engines).</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><Chip label="UITKX2321" size="small" color="error" variant="outlined" /></TableCell>
@@ -597,22 +597,22 @@ export const UitkxDiagnosticsPage: FC = () => (
             <TableCell>A file has at most one default export.</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><Chip label="UITKX2107" size="small" color="warning" variant="outlined" /></TableCell>
-            <TableCell><Chip label="Warning" size="small" color="warning" /></TableCell>
-            <TableCell>Deprecated companion partial-class merge (Unity-local)</TableCell>
-            <TableCell>A legacy <code>module</code> is merging into a component declared in another file via shared folder namespaces. Migrate the companion set to plain declarations + file imports.</TableCell>
+            <TableCell><Chip label="UITKX2107" size="small" color="default" variant="outlined" /></TableCell>
+            <TableCell><Chip label="Reserved" size="small" /></TableCell>
+            <TableCell>Companion partial-class merge — retired</TableCell>
+            <TableCell>Retired in 0.16.0: the legacy <code>module</code>-into-component merge mechanism was removed with the wrapper grammar, so there is nothing left to warn about. The ID stays reserved.</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><Chip label="UITKX2108" size="small" color="error" variant="outlined" /></TableCell>
-            <TableCell><Chip label="Error" size="small" color="error" /></TableCell>
-            <TableCell>Mixed declaration styles in one file (Unity-local)</TableCell>
-            <TableCell>Legacy wrapper declarations and plain declarations cannot coexist — the file&rsquo;s FIRST declaration sets its style (it also selects folder-keyed vs file-keyed namespace derivation, which is why Unity errors where the sibling engines only warn). Migrate the whole file.</TableCell>
+            <TableCell><Chip label="UITKX2108" size="small" color="default" variant="outlined" /></TableCell>
+            <TableCell><Chip label="Reserved" size="small" /></TableCell>
+            <TableCell>Mixed declaration styles — retired</TableCell>
+            <TableCell>Retired in 0.16.0: with the wrapper grammar removed there is only one declaration style, so a file can no longer mix two. The ID stays reserved (recorded family divergence — sibling engines retire it on their own removal waves).</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><Chip label="UITKX2109" size="small" color="error" variant="outlined" /></TableCell>
-            <TableCell><Chip label="Error" size="small" color="error" /></TableCell>
-            <TableCell>Import form needs a migrated target (Unity-local)</TableCell>
-            <TableCell>Namespace (<code>* as</code>), default, and renamed imports require the TARGET file to use plain-declaration syntax. Migrate the target first — named imports of legacy targets stay fine.</TableCell>
+            <TableCell><Chip label="UITKX2109" size="small" color="default" variant="outlined" /></TableCell>
+            <TableCell><Chip label="Reserved" size="small" /></TableCell>
+            <TableCell>Import form needs a migrated target — retired</TableCell>
+            <TableCell>Retired in 0.16.0: a legacy target now fails its own parse with <code>UITKX2320</code>, so the migrate-the-target-first gate has no subject. The ID stays reserved.</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><Chip label="UITKX2110" size="small" color="error" variant="outlined" /></TableCell>

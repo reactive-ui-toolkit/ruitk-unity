@@ -34,15 +34,17 @@ export const FAQPage: FC = () => (
     </Typography>
 
     <Typography variant="body1" sx={Styles.question}>
-      How do I migrate an existing project to the 0.9.0 ES-modules syntax?
+      How do I migrate a project that still uses the old wrapper keywords?
     </Typography>
     <Typography variant="body2" paragraph>
-      Run the bundled <code>UitkxMigrateImports</code> codemod once:{' '}
-      <code>dotnet run --project SourceGenerator~/Tools/UitkxMigrateImports -- Assets --es-modules</code>{' '}
-      (add <code>--check</code> for a dry run). It rewrites legacy <code>component</code>/
-      <code>hook</code>/<code>module</code> wrappers to plain <code>export</code> declarations,
-      inserts the <code>import</code> lines each file needs, and stamps <code>@namespace</code>{' '}
-      where needed so nothing changes identity. It is idempotent and formatter-stable. Details:{' '}
+      The <code>component</code>/<code>hook</code>/<code>module</code> wrappers were{' '}
+      <strong>removed in 0.16.0</strong> — un-migrated files raise the <code>UITKX2320</code>{' '}
+      error. Run the bundled codemod once:{' '}
+      <code>node scripts/migrate-uitkx.mjs Assets --es-modules</code>{' '}
+      (add <code>--check</code> for a dry run). It rewrites the wrappers to plain{' '}
+      <code>export</code> declarations, inserts the <code>import</code> lines each file needs,
+      and stamps <code>@namespace</code> where needed so nothing changes identity. It is
+      idempotent and formatter-stable. Details:{' '}
       <MuiLink component={RouterLink} to="/imports">Imports &amp; Exports → Migrating an existing project</MuiLink>.
     </Typography>
 

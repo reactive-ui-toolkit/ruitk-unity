@@ -14,14 +14,6 @@ import {
 import { CodeBlock } from '../../../components/CodeBlock/CodeBlock'
 import Styles from './UitkxReferencePage.style'
 
-const DIRECTIVE_HEADER_EXAMPLE = `// LEGACY directive-header form (deprecated — write plain declarations instead)
-@namespace My.Game.UI
-@using System.Collections.Generic
-@component MyButton
-@props MyButtonProps
-@key "root-key"
-@inject ILogger logger`
-
 const FUNCTION_STYLE_EXAMPLE = `export VirtualNode Counter(string label = "Count") {
   var (count, setCount) = useState(0);
 
@@ -102,9 +94,10 @@ export const UitkxReferencePage: FC = () => (
       <code>import &quot;@Ns&quot;</code> spelling is the recommended form — see{' '}
       <MuiLink component={RouterLink} to="/imports">Imports &amp; Exports</MuiLink>) and{' '}
       <code>@uss</code>. <code>@namespace</code> is an optional interop override (the namespace is
-      file-keyed when omitted). <code>@component</code>, <code>@props</code>, <code>@key</code>,
-      and <code>@inject</code> belong to the <strong>legacy directive-header form</strong>, kept
-      only for un-migrated files — new files use plain <code>export</code> declarations instead.
+      file-keyed when omitted), and <code>@backend</code> selects the render backend. The legacy
+      directive-header form (<code>@component</code>/<code>@props</code>/<code>@key</code>/
+      <code>@inject</code>) was <strong>removed in 0.16.0</strong> together with the wrapper
+      keywords — run <code>UitkxMigrateImports --es-modules</code> to convert old files.
     </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>
@@ -132,29 +125,13 @@ export const UitkxReferencePage: FC = () => (
             <TableCell>Attaches a USS stylesheet to the file&rsquo;s components (repeatable; applied in order). See <MuiLink component={RouterLink} to="/styling">Styling</MuiLink>.</TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><code>@component</code> <em>(legacy)</em></TableCell>
-            <TableCell><code>@component MyButton</code></TableCell>
-            <TableCell>Component class name in the deprecated directive-header form. New files declare <code>export VirtualNode MyButton() {'{ … }'}</code> instead.</TableCell>
-          </TableRow>
-          <TableRow>
-            <TableCell><code>@props</code> <em>(legacy)</em></TableCell>
-            <TableCell><code>@props MyButtonProps</code></TableCell>
-            <TableCell>Props type in the directive-header form. New files declare typed parameters on the component instead.</TableCell>
-          </TableRow>
-          <TableRow>
-            <TableCell><code>@key</code> <em>(legacy)</em></TableCell>
-            <TableCell><code>@key "root-key"</code></TableCell>
-            <TableCell>Static key on the root element (directive-header form).</TableCell>
-          </TableRow>
-          <TableRow>
-            <TableCell><code>@inject</code> <em>(legacy)</em></TableCell>
-            <TableCell><code>@inject ILogger logger</code></TableCell>
-            <TableCell>Dependency-injected field (directive-header form).</TableCell>
+            <TableCell><code>@backend</code></TableCell>
+            <TableCell><code>@backend ugui</code></TableCell>
+            <TableCell>Selects the file&rsquo;s render backend: <code>ugui</code> (Unity UI) or <code>uitk</code> (UI Toolkit, the default — the directive can be omitted). One per file, before any declaration. See <MuiLink component={RouterLink} to="/ugui">uGUI Backend</MuiLink>.</TableCell>
           </TableRow>
         </TableBody>
       </Table>
     </TableContainer>
-    <CodeBlock language="jsx" code={DIRECTIVE_HEADER_EXAMPLE} />
 
     {/* ── Function-Style Components ──────────────────────────────────────── */}
     <Typography variant="h5" component="h2" sx={Styles.section}>
@@ -163,8 +140,8 @@ export const UitkxReferencePage: FC = () => (
     <Typography variant="body2" paragraph>
       Components are plain typed declarations — <code>export VirtualNode Name(...) {'{ ... }'}</code>{' '}
       with optional typed parameters. The legacy <code>component Name {'{ ... }'}</code> wrapper
-      still parses through the deprecation window, with a <code>UITKX2320</code> warning; the{' '}
-      <code>UitkxMigrateImports --es-modules</code> codemod rewrites it.
+      was <strong>removed in 0.16.0</strong> — it now raises the <code>UITKX2320</code> error, and
+      the <code>UitkxMigrateImports --es-modules</code> codemod rewrites old files automatically.
     </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>
@@ -327,8 +304,7 @@ export const UitkxReferencePage: FC = () => (
         <code>@if</code>, <code>@else</code>, <code>@for</code>, <code>@foreach</code>,{' '}
         <code>@while</code>, <code>@switch</code>, <code>@case</code>,{' '}
         <code>@default</code>, <code>@using</code>, <code>@namespace</code>,{' '}
-        <code>@component</code>, <code>@props</code>, <code>@key</code>,{' '}
-        <code>@inject</code>, <code>@uss</code>.
+        <code>@uss</code>, <code>@backend</code>.
       </Typography>
       <Typography variant="body2" sx={{ mb: 1 }}>
         Migration is mechanical:
@@ -410,7 +386,7 @@ var dict = new Dictionary<string, VirtualNode> { { "header", (<Label text="Title
       Rules & Gotchas
     </Typography>
     <Typography component="ul" variant="body2">
-      <li><code>@namespace</code> must appear before <code>@component</code> in the legacy directive-header form.</li>
+      <li>Preamble directives (<code>@namespace</code>, <code>@using</code>, <code>@uss</code>, <code>@backend</code>) and <code>import</code> lines must appear before the first declaration.</li>
       <li>Hook calls must be unconditional at component top level — not inside <code>@if</code>, <code>@foreach</code>, etc.</li>
       <li>Each control block body must wrap its markup in <code>return (...);</code>. Setup code (variable declarations, computations) goes before <code>return</code>. Use <code>return null;</code> to skip rendering.</li>
       <li>Direct children of <code>@foreach</code> need a <code>key</code> attribute for stable reconciliation.</li>
