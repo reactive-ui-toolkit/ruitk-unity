@@ -103,6 +103,7 @@ Phase 1 (the three new controls) shipped in **0.14.0**. These are the items it d
 | VP-7 | Add `sinceUnity` annotations to `uitkx-schema.json` for 6.3 additions | `VERSIONING_PROCESS.md` unchecked | VERSIONING VP-7 |
 | VP-15 | Gap analyzer for the version-diff script (reads the compat matrix) | `VERSIONING_PROCESS.md` unchecked | VERSIONING VP-15 |
 | Store-3 | OpenUPM registration (worth doing regardless of Asset Store) | no OpenUPM config | ASSET_STORE |
+| MIG-UX | Unity MenuItem for the migration codemod (Tools → Reactive UI Toolkit → Migrate…): today's delivery UX is `node scripts/migrate-uitkx.mjs` from a repo clone, which UPM/Asset-Store users must discover; a MenuItem that shells the tool (probing dotnet per the standard chain) would make it one click. Also the plan's never-implemented "zero-diagnostics" post-migration gate (re-run the SG pipeline over the tree, non-zero on new errors) | `Plans~/LEGACY_SYNTAX_REMOVAL_PLAN.md` §5.7 | 0.16.0 removal wave |
 
 ## 7. Features / Design decisions
 
@@ -116,6 +117,7 @@ Phase 1 (the three new controls) shipped in **0.14.0**. These are the items it d
 | TD11 | Design decision: hook ownership model | open decision | V1 D-DESIGN-TD11 |
 | TD14 | Design decision: synthetic event dispatcher for portals | open decision | V1 D-DESIGN-TD14 |
 | U7 | Decision: single-quote attribute strings | open decision | PARITY U7 |
+| EXP-ENUM | `export enum` (and by extension exported type definitions) — parked on the FAMILY agenda per ruling D2 of the 0.16.0 removal wave: the plain dialect exports values/functions/hooks but does not define types; today's answer is a hand-written `.cs` beside the components. Revisit as a family-synchronized grammar addition if field demand appears | `Plans~/LEGACY_SYNTAX_REMOVAL_PLAN.md` §2 D2 | 0.16.0 removal wave |
 | RT-6 | (Optional) runtime-only package variant | not done | V1 RT-6 |
 | ~~NSIMP~~ | **DONE (v0.8.0)** — Namespace-import unification: `import "@Ns"`, UITKX2316 (editor error / build warning), UITKX2317 redundant-using Hint, quick-fixes, codemod `--tidy`, formatter round-trip. Deferred follow-ups: semantic unused-using 2317, per-segment namespace completion + hover, 2316 "did you mean" suggestion, bulk samples `--tidy` | `Plans~/archive/IMPORT_NAMESPACE_UNIFICATION_PLAN.md` | user request 2026-07-15 |
 | SAMPLES-NS | **OPEN — plan stale, re-inventory before executing** — modernize Samples to zero `@namespace` via `namespacePrefix` config. As of 0.15.0 (2026-08-04) the samples still carry 104 `import "@…"` lines across 65 files. The archived plan's verbatim per-file appendices predate the ES-modules redesign (0.9.0) and the rebrand (0.12.0), so redo the inventory; its method (A: name→ns map, B: exact C# using edits, C: exact uitkx import DELETEs/ADDs, hard verification gates) still applies | `Plans~/archive/SAMPLES_NAMESPACE_MODERNIZATION_PLAN.md` | user request 2026-07-16 |

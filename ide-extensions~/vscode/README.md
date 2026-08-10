@@ -19,6 +19,9 @@ Syntax highlighting + language intelligence for `.uitkx` markup (ReactiveUIToolk
 
 ## Changelog
 
+### [1.10.0] - 2026-08-10
+- Breaking: the legacy `component`/`hook`/`module` wrapper keywords and the `@component`/`@props`/`@key`/`@inject` directives were removed (package 0.16.0) — `UITKX2320` is now an error naming the `UitkxMigrateImports --es-modules` codemod. Completions, hover, references, rename, semantic tokens, the TextMate grammar, and the embedded schema now speak only the plain-declaration dialect (`@namespace`/`@using` still parse but left completions); references/rename regexes learned the modern heads including generic hooks (`useSel<T>(...)`), and retired diagnostics `UITKX2107`/`2108`/`2109`/`0211` no longer fire. Feature: generic declaration heads are first-class across the LSP (parse, virtual docs, bridges, formatter, highlighting). Fix: the formatter wraps over-width plain declaration heads again (parameters one per line, tuple returns ahead of the name). SG suite 1819/1819, LSP suite 155/155.
+
 ### [1.9.1] - 2026-08-09
 - Fix: two live diagnostics still used pre-ES-modules name scoping, producing false errors in any workspace with same-named components in different folders (e.g. several games each with their own GameScreen or MainMenu).
 

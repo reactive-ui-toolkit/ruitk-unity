@@ -1,7 +1,12 @@
 # Legacy syntax removal — UNITY EXECUTION PLAN (0.16.0)
 
-Status: **EXECUTING** — all §2 rulings made by the owner 2026-08-10; campaign started
-2026-08-10 on `feat/legacy-syntax-removal` (off `dev` @ `168dfddf`, post-v0.15.0 publish).
+Status: **EXECUTED** — all phases landed on `feat/legacy-syntax-removal` 2026-08-10,
+staged for 0.16.0 (2320 error flip + D5 quarantine; SG/HMR/LSP/grammar/schema legacy
+machinery deleted; F9 generic hooks first-class; corpus D4 re-freeze + CORPUS-DIV
+divergence record; JustStayOn verified already-modern; docs overhaul + Mounting page;
+version/changelog wave). Deferred items carry REMAINING_WORK rows: MIG-UX (MenuItem +
+zero-diagnostics gate), EXP-ENUM (family agenda), CORPUS-DIV (sibling re-convergence).
+Campaign started 2026-08-10 off `dev` @ `168dfddf`, post-v0.15.0 publish.
 Target: package **0.16.0**. Written 2026-08-10 from five parallel read-only research
 sweeps (parser, SG+HMR, LSP, codemod, content surface) against `d219b7fd`; anchors
 re-verified during execution.

@@ -6,6 +6,77 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.16.0] - 2026-08-10
+
+### Removed — the legacy wrapper grammar (BREAKING)
+
+The `component` / `hook` / `module` wrapper keywords and the `@component` / `@props` /
+`@key` / `@inject` directive-header form — deprecated since 0.9.0 — are removed. A file
+that still uses them fails to compile with **UITKX2320** (now an Error), whose message
+names the fix. **Upgrade order: codemod first, then bump the package** — the codemod runs
+from the repository against your project regardless of the installed package version:
+
+```bash
+node scripts/migrate-uitkx.mjs <YourProject>/Assets --es-modules          # rewrite
+node scripts/migrate-uitkx.mjs <YourProject>/Assets --es-modules --check  # dry run / CI gate
+```
+
+With the grammar gone, the mechanisms built on it are gone too: the companion
+partial-class merge (a companion file is an ordinary module reached via `import`), the
+folder-keyed namespace mode (every file is file-keyed; `@namespace` stays as the interop
+escape hatch), and the blanket peer-hook-container injection in HMR and the LSP
+(cross-file scope is import-driven everywhere). Diagnostics **UITKX2107** (companion
+merge), **UITKX2108** (mixed styles), **UITKX2109** (migrate-target-first import gate)
+and **UITKX0211** (const in module body) retired with their subjects; the IDs stay
+reserved. `@using` keeps parsing indefinitely — the unified `import "@Ns"` spelling
+remains the recommended form.
+
+### Added — generic hooks as first-class plain declarations
+
+`export (T value, Action<T> set) useSel<T>(...) { ... }` — generic declaration heads
+parse, emit, hot-reload (the existing `MethodInfo`-cache trampoline), bridge across
+aliased imports, format, and highlight. The codemod migrates legacy generic hooks
+instead of skipping them; where-constrained generics are rejected with a message (move
+the constrained helper to ambient C#, like type definitions — the one shape the plain
+dialect deliberately does not express).
+
+### Added — codemod hardening for the removal wave
+
+Companion auto-export (dotted-stem files export their members so the parent's imports
+resolve), a namespace-move ledger (`--report` records every rewrite and every generated
+namespace that moved), a strict CLI (unknown flags are fatal, `--help`, distinct exit
+codes, BOM + line-ending round-trip), and the `scripts/migrate-uitkx.mjs` wrapper that
+resolves `dotnet` via `$RUITK_DOTNET` → `.ruitk-local.json` → PATH. The legacy grammar
+survives in exactly one quarantined entry point (`ParseLegacyForMigration`) that only
+the codemod uses — everything else parses legacy files straight to the 2320 error.
+
+### Fixed — the formatter's long-head wrapping, restored
+
+Plain-declaration heads longer than the print width wrap again (parameters one per
+line; tuple returns wrap ahead of the name) — the legacy formatter had this contract
+and the plain path silently lost it. 59 sample files reformatted to the restored canon.
+
+### Changed — internals and record-keeping
+
+The dead legacy emission machinery is deleted wholesale: the SG's ModuleEmitter/peer
+module tables and every legacy pipeline branch behind the new early gate; HMR's legacy
+container emitter, `EmitModules`, the companion→parent save redirect (every file
+compiles itself; parents recompile via the import fan-out), the workspace hook-container
+registry, and the static-readonly stripper; the LSP's legacy document generators,
+formatter paths, and reference/rename keyword regexes (retaught the modern heads, with
+generic-call tolerance). The mirrored family corpus modernized its 16
+wrapper-scaffolded cases and re-froze the family hash — the cross-repo match diverges
+by design until the Unreal/Godot legs run their own removal waves (staged reference
+patch + trigger recorded in `Plans~/REMAINING_WORK.md`).
+
+Docs: full removal follow-through (Reference, Diagnostics, Companion Files, Imports,
+FAQ, Getting Started, HMR), a dedicated **Migrating to 0.16** page, and the previously
+missing **Mounting & Roots** page (all three `RootRenderer.Initialize` hosts including
+the Unity 6.5 `PanelRenderer` path, `env` seeding, editor mounting).
+
+Tests: SG suite 1819, LSP suite 155, shared fiber suite unchanged; family corpus hash
+gate green on the re-frozen value.
+
 ## [0.15.0] - 2026-08-02
 
 ### Added — Unity 6.5 `PanelRenderer` host
