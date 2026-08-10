@@ -90,7 +90,13 @@ the Unity 6.5 `PanelRenderer` path, `env` seeding, editor mounting).
 Samples: the game samples' style companions moved from ambient `.cs` static classes to
 `.style.uitkx` modules (11 files, 50 style exports across Galaga, Mario, Snake) — each
 consumer star-imports the module under the old class name, so every call site is
-unchanged; the one non-style member (`GalagaScreen`) moved to `GalagaTypes.cs`.
+unchanged; the one non-style member (`GalagaScreen`) moved to `GalagaTypes.cs`. The
+Galaga simulation followed (`GameLogic.cs` → a `GameLogic.uitkx` module of 2 exported +
+9 internal utils, the DoomGame pattern; the consumer star-imports it as `Tick`, call
+sites unchanged). What deliberately stays ambient C#: type definitions
+(`GalagaTypes.cs`, `MarioGameTypes.cs`, `SpriteAtlas.cs`'s `SpriteFrame`) — the one
+shape the plain dialect does not express — plus their `const` tables and
+`ref`-parameter helpers, which demonstrate the intended interop split.
 
 Tests: SG suite 1844, LSP suite 164, shared fiber suite unchanged; family corpus hash
 gate green on the re-frozen value.

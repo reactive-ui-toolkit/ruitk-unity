@@ -1,7 +1,7 @@
+import * as Tick from "../../GameLogic"
 import "@UnityEngine.UIElements"
 import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes"
 import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes.C"
-import "@static Ruitk.Samples.Components.GalagaGame.GameLogic"
 import "@GameState = Ruitk.Samples.Components.GalagaGame.GalagaTypes.GameState"
 
 export (
