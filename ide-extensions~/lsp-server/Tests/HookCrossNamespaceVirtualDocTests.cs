@@ -50,13 +50,14 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
         // scan picks the hook up without any WorkspaceIndex priming.
         var hookContent =
             "@namespace MyApp.Hooks\n\n"
-            + "hook useFlag() -> bool {\n"
+            + "export bool useFlag() {\n"
             + "  var (v, _) = useState(false);\n"
             + "  return v;\n"
             + "}\n";
         var consumerContent =
-            "@namespace MyApp.UI\n\n"
-            + "component ConsumerComp {\n"
+            "import { useFlag } from \"./UseFlag.hooks\"\n"
+            + "@namespace MyApp.UI\n\n"
+            + "VirtualNode ConsumerComp() {\n"
             + "  return (\n"
             + "    <VisualElement />\n"
             + "  );\n"
@@ -72,8 +73,9 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
 
         var vdoc = _host.GetVirtualDocument(consumerPath);
         Assert.NotNull(vdoc);
-        // FQN must use the HOOK file's namespace, not the consumer's.
-        Assert.Contains("using static MyApp.Hooks.UseFlagHooks;", vdoc!.Text);
+        // FQN must use the HOOK file's namespace, not the consumer's; the container
+        // is the per-file __Exports (0.16.0 - the legacy {Stem}Hooks container is gone).
+        Assert.True(vdoc!.Text.Contains("MyApp.Hooks.__Exports"), vdoc.Text);
     }
 
     [Fact]
@@ -91,12 +93,13 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
         File.WriteAllText(Path.Combine(_tempDir, "uitkx.config.json"),
             "{ \"namespacePrefix\": \"TestApp.Derived\" }\n");
         var hookContent =
-            "hook useFlag() -> bool {\n"
+            "export bool useFlag() {\n"
             + "  var (v, _) = useState(false);\n"
             + "  return v;\n"
             + "}\n";
         var consumerContent =
-            "component ConsumerComp {\n"
+            "import { useFlag } from \"./UseFlag.hooks\"\n"
+            + "VirtualNode ConsumerComp() {\n"
             + "  return (\n"
             + "    <VisualElement />\n"
             + "  );\n"
@@ -112,8 +115,10 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
 
         var vdoc = _host.GetVirtualDocument(consumerPath);
         Assert.NotNull(vdoc);
-        Assert.Contains("using static TestApp.Derived.UseFlagHooks;", vdoc!.Text);
-        Assert.DoesNotContain("Ruitk.FunctionStyle.UseFlagHooks", vdoc.Text);
+        // Effective (derived) namespace + the per-file __Exports container (0.16.0).
+        Assert.Contains("TestApp.Derived.", vdoc!.Text);
+        Assert.Contains("__Exports", vdoc.Text);
+        Assert.DoesNotContain("Ruitk.FunctionStyle.", vdoc.Text);
     }
 
     [Fact]
@@ -125,13 +130,13 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
         // the hook method's signature is scaffold (no source-map entry), so the peer
         // text-search fallback was the only route — and it only knew bare `hook `.
         var hookContent =
-            "export hook useFlag() -> bool {\n"
+            "export bool useFlag() {\n"
             + "  var (v, _) = useState(false);\n"
             + "  return v;\n"
             + "}\n";
         var consumerContent =
             "import { useFlag } from \"./UseFlag.hooks\"\n\n"
-            + "component ConsumerComp {\n"
+            + "VirtualNode ConsumerComp() {\n"
             + "  var flag = useFlag();\n"
             + "  return (\n"
             + "    <VisualElement />\n"
@@ -189,13 +194,13 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
         // the rename leaves the file broken (import binds a name that no longer
         // exists → UITKX2300).
         var hookContent =
-            "export hook useFlag() -> bool {\n"
+            "export bool useFlag() {\n"
             + "  var (v, _) = useState(false);\n"
             + "  return v;\n"
             + "}\n";
         var consumerContent =
             "import { useFlag } from \"./UseFlag.hooks\"\n\n"
-            + "component ConsumerComp {\n"
+            + "VirtualNode ConsumerComp() {\n"
             + "  var flag = useFlag();\n"
             + "  return (\n"
             + "    <VisualElement />\n"
@@ -249,16 +254,14 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
     [Fact]
     public async Task Formatting_ModuleCompanionFile_FixesIndentation()
     {
-        // Style-module companion with a misindented closing `};` — the formatting
-        // handler must return an edit that canonicalizes it (field-reported as
-        // "formatting doesn't work" on a .style.uitkx).
+        // Style companion (modern export value, 0.16.0) with a misindented closing
+        // `};` — the formatting handler must return an edit that canonicalizes it
+        // (field-reported as "formatting doesn't work" on a .style.uitkx).
         var styleContent =
-            "export module HmrTests {\n"
-            + "  public static readonly Style container = new Style {\n"
-            + "    BackgroundColor = ColorGray,\n"
-            + "    Padding = 10f,\n"
-            + "      };\n"
-            + "}\n";
+            "export Style container = new Style {\n"
+            + "  BackgroundColor = ColorGray,\n"
+            + "  Padding = 10f,\n"
+            + "    };\n";
         string stylePathRaw = Path.Combine(_tempDir, "HmrTests.style.uitkx");
         File.WriteAllText(stylePathRaw, styleContent);
         var uri = OmniSharp.Extensions.LanguageServer.Protocol.DocumentUri

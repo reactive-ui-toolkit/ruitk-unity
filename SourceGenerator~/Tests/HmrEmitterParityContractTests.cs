@@ -127,7 +127,7 @@ public class HmrEmitterParityContractTests
                     @namespace Ruitk.HmrParity
                     @using Ruitk.Core
 
-                    component MyTextField(Ref<object> inputRef = null) {
+                    VirtualNode MyTextField(Ref<object> inputRef = null) {
                         return (<TextField />);
                     }
                     """
@@ -139,7 +139,7 @@ public class HmrEmitterParityContractTests
                     @using Ruitk.Core
                     @using Ruitk.HmrParity
 
-                    component App {
+                    VirtualNode App() {
                         var myRef = Hooks.UseRef<object>();
                         return (
                             <VisualElement>
@@ -185,7 +185,7 @@ public class HmrEmitterParityContractTests
                     @namespace Ruitk.HmrParity
                     @using Ruitk.Core
 
-                    component Wrapper(VirtualNode header = null) {
+                    VirtualNode Wrapper(VirtualNode header = null) {
                         return (<VisualElement />);
                     }
                     """
@@ -196,7 +196,7 @@ public class HmrEmitterParityContractTests
                     @namespace Ruitk.HmrParity
                     @using Ruitk.HmrParity
 
-                    component Page {
+                    VirtualNode Page() {
                         return (
                             <Wrapper header={<Label text="Hi" />} />
                         );
@@ -239,7 +239,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component Conditional {
+            VirtualNode Conditional() {
                 bool flag = true;
                 return (
                     <box>{flag ? <label text="A" /> : <label text="B" />}</box>
@@ -273,7 +273,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component Dup {
+            VirtualNode Dup() {
                 return (
                     <VisualElement>
                         <Label key="a" text="one" />
@@ -299,7 +299,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component Distinct {
+            VirtualNode Distinct() {
                 return (
                     <VisualElement>
                         <Label key="a" text="one" />
@@ -333,7 +333,7 @@ public class HmrEmitterParityContractTests
                     """
                     @namespace Ruitk.HmrParity
 
-                    component Greeter(string name = "world") {
+                    VirtualNode Greeter(string name = "world") {
                         return (<Label text={"hi " + name} />);
                     }
                     """
@@ -344,7 +344,7 @@ public class HmrEmitterParityContractTests
                     @namespace Ruitk.HmrParity
                     @using Ruitk.HmrParity
 
-                    component Host {
+                    VirtualNode Host() {
                         return (<Greeter name="copilot" />);
                     }
                     """
@@ -391,7 +391,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component MyComponent {
+            VirtualNode MyComponent() {
                 return (<VisualElement />);
             }
             """
@@ -440,7 +440,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component Counter(int initial = 0) {
+            VirtualNode Counter(int initial = 0) {
                 var (count, setCount) = useState(initial);
                 return (
                     <Button text={count.ToString()} />
@@ -489,10 +489,8 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            module Calculator {
-                public static int Add(int a, int b) {
-                    return a + b;
-                }
+            export int Add(int a, int b) {
+                return a + b;
             }
             """
         );
@@ -521,10 +519,8 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            module RefHolder {
-                public static void Bump(ref int value) {
-                    value++;
-                }
+            export void Bump(ref int value) {
+                value++;
             }
             """
         );
@@ -554,10 +550,8 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            module Overloaded {
-                public static int Foo(int x) => x;
-                public static string Foo(string x) => x;
-            }
+            export int Foo(int x) => x;
+            export string Foo(string x) => x;
             """
         );
 
@@ -595,10 +589,8 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            module Box {
-                public static T Identity<T>(T x) {
-                    return x;
-                }
+            export T Identity<T>(T x) {
+                return x;
             }
             """
         );
@@ -650,24 +642,20 @@ public class HmrEmitterParityContractTests
     [Fact]
     public void Sg_ModuleGenericMethod_GeneratedCodeCompiles_NoCS0119_NoCS8625()
     {
-        // Multi-type-parameter generic with constraints — exercises the
-        // exact shape that broke in JustStayOn (Dialogs.utils.uitkx Register,
-        // RegisterComponent, Open, TryResolve, TryClose, IsRegistered).
+        // Multi-type-parameter generics — the exact emit shape that broke in
+        // JustStayOn (Dialogs.utils.uitkx Register/Open). Generic CONSTRAINTS have
+        // no plain-dialect form (0.16.0, ruling D2 — constrained members live in
+        // ambient C#); the CS0119/CS8625 regression pins are constraint-independent.
         var output = GeneratorTestHelper.Run(
             """
             @namespace Ruitk.HmrParity
 
-            module Dialogs {
-                public static int Register<TProps, TResult>(TProps props, TResult result)
-                    where TProps : class
-                {
-                    return 1;
-                }
+            export int Register<TProps, TResult>(TProps props, TResult result) {
+                return 1;
+            }
 
-                public static TResult Open<TResult>(string id)
-                {
-                    return default(TResult);
-                }
+            export TResult Open<TResult>(string id) {
+                return default(TResult);
             }
             """
         );
@@ -757,65 +745,10 @@ public class HmrEmitterParityContractTests
     /// across edit-save cycles. Anything else would be a regression on
     /// existing module behaviour.
     /// </summary>
-    [Fact]
-    public void Sg_ModuleNonMethodMembers_StayVerbatim()
-    {
-        var output = GeneratorTestHelper.Run(
-            """
-            @namespace Ruitk.HmrParity
-            @using System
-
-            module Mixed {
-                public const int VERSION = 7;
-                public static readonly string Tag = "abc";
-                private static int _counter;
-                public enum Color { Red, Green, Blue }
-                public struct Pair { public int A; public int B; }
-            }
-            """
-        );
-
-        Assert.NotNull(output.GeneratedSource);
-        // No __hmr_ prefix should appear at all — there are no static methods.
-        Assert.DoesNotContain("__hmr_", output.GeneratedSource);
-        // Original member declarations preserved (substring matches the source).
-        Assert.Contains("public const int VERSION = 7", output.GeneratedSource);
-        // `static readonly` is rewritten to `[UitkxHmrSwap] static` for HMR
-        // re-initialisation. The `readonly` keyword must be GONE from the
-        // emitted output and the attribute must be present.
-        Assert.Contains("[global::Ruitk.UitkxHmrSwap]", output.GeneratedSource);
-        Assert.Contains("public static string Tag", output.GeneratedSource);
-        Assert.DoesNotContain("public static readonly string Tag", output.GeneratedSource);
-        Assert.Contains("private static int _counter", output.GeneratedSource);
-        Assert.Contains("public enum Color", output.GeneratedSource);
-        Assert.Contains("public struct Pair", output.GeneratedSource);
-    }
-
-    /// <summary>
-    /// Instance methods inside a module are not hot-swappable (modules are
-    /// static-utility containers; instance dispatch needs a <c>this</c>-bound
-    /// delegate per receiver). They must emit verbatim.
-    /// </summary>
-    [Fact]
-    public void Sg_ModuleInstanceMethod_NotRewritten()
-    {
-        var output = GeneratorTestHelper.Run(
-            """
-            @namespace Ruitk.HmrParity
-
-            module HasInstanceMethod {
-                public void Foo() { }
-                public static void Bar() { }
-            }
-            """
-        );
-
-        Assert.NotNull(output.GeneratedSource);
-        // Only `Bar` is rewritten — `Foo` must stay verbatim.
-        Assert.Contains("__hmr_Bar_h", output.GeneratedSource);
-        Assert.DoesNotContain("__hmr_Foo_h", output.GeneratedSource);
-        Assert.Contains("public void Foo()", output.GeneratedSource);
-    }
+    // (Sg_ModuleNonMethodMembers_StayVerbatim and Sg_ModuleInstanceMethod_NotRewritten
+    // removed with the legacy module grammar — 0.16.0. Value static-readonly rewriting
+    // is pinned by ExportsEmitterTests.ValueExport_GetsUitkxHmrSwapAttribute; nested
+    // types and instance members have no plain-dialect form (ruling D2 — ambient C#).)
 
     /// <summary>
     /// Default parameter values must survive on the public trampoline
@@ -829,10 +762,8 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            module Defaults {
-                public static int Add(int a, int b = 5) {
-                    return a + b;
-                }
+            export int Add(int a, int b = 5) {
+                return a + b;
             }
             """
         );
@@ -861,7 +792,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component MusicPlayer {
+            VirtualNode MusicPlayer() {
                 return (<Audio Autoplay={true} Loop={true} Volume={0.5f} />);
             }
             """
@@ -891,7 +822,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component VideoPanel {
+            VirtualNode VideoPanel() {
                 return (<Video Url="https://example.com/clip.mp4" Autoplay={true} Muted={true} />);
             }
             """
@@ -917,7 +848,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component VideoWithOverlay {
+            VirtualNode VideoWithOverlay() {
                 return (
                     <Video Loop={true}>
                         <Button text="Play" />
@@ -947,7 +878,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component SfxButton {
+            VirtualNode SfxButton() {
                 var playSfx = useSfx();
                 return (<Button text="Click" />);
             }
@@ -973,7 +904,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component SfxButtonPascal {
+            VirtualNode SfxButtonPascal() {
                 var playSfx = Hooks.UseSfx();
                 return (<Button text="Click" />);
             }
@@ -999,7 +930,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component SafeAreaUser {
+            VirtualNode SafeAreaUser() {
                 var insets = useSafeArea();
                 return (<Box />);
             }
@@ -1017,7 +948,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component StableFuncUser {
+            VirtualNode StableFuncUser() {
                 var f = useStableFunc<int>(() => 42);
                 return (<Box />);
             }
@@ -1035,7 +966,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component StableActionUser {
+            VirtualNode StableActionUser() {
                 var a = useStableAction<int>(v => { });
                 return (<Box />);
             }
@@ -1053,7 +984,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component StableCallbackUser {
+            VirtualNode StableCallbackUser() {
                 var cb = useStableCallback(() => { });
                 return (<Box />);
             }
@@ -1071,7 +1002,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component ImperativeHandleUser {
+            VirtualNode ImperativeHandleUser() {
                 var h = useImperativeHandle<object>(() => null);
                 return (<Box />);
             }
@@ -1089,7 +1020,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component AnimateUser {
+            VirtualNode AnimateUser() {
                 useAnimate(null, false);
                 return (<Box />);
             }
@@ -1107,7 +1038,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component TweenFloatUser {
+            VirtualNode TweenFloatUser() {
                 useTweenFloat(0f, 1f, 1f, default, 0f, v => { }, null);
                 return (<Box />);
             }
@@ -1125,7 +1056,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component TransitionUser {
+            VirtualNode TransitionUser() {
                 var (isPending, startTransition) = useTransition();
                 return (<Box />);
             }
@@ -1153,7 +1084,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component BadgeUser {
+            VirtualNode BadgeUser() {
                 var isOn = true;
                 var x = (isOn && <Label text="on" />);
                 return (<Box>{x}</Box>);
@@ -1183,7 +1114,7 @@ public class HmrEmitterParityContractTests
     public void Sg_HookRegistration_UsesPathQualifiedFamilyKey_HmrMustMirror()
     {
         var output = GeneratorTestHelper.Run(
-            "@namespace Ruitk.HmrParity\nhook useThing() {\n  return 0;\n}");
+            "@namespace Ruitk.HmrParity\nvoid useThing() {\n  return 0;\n}");
 
         Assert.NotNull(output.GeneratedSource);
         Assert.Contains("RegisterHook(\"Ruitk.HmrParity.", output.GeneratedSource);
@@ -1213,7 +1144,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            export component Widget {
+            export VirtualNode Widget() {
                 return (<Box />);
             }
             """
@@ -1225,7 +1156,7 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component Widget {
+            VirtualNode Widget() {
                 return (<Box />);
             }
             """
@@ -1247,10 +1178,10 @@ public class HmrEmitterParityContractTests
             """
             @namespace Ruitk.HmrParity
 
-            component First {
+            VirtualNode First() {
                 return (<Box />);
             }
-            component Second {
+            VirtualNode Second() {
                 return (<Label text="x" />);
             }
             """

@@ -1,4 +1,8 @@
-export VirtualNode EffectPanel(string label = "Panel", int generation = 0, List<string>? log = null) {
+export VirtualNode EffectPanel(
+  string label = "Panel",
+  int generation = 0,
+  List<string>? log = null
+) {
   useEffect(() => {
     log?.Add($"  setup   [{label}]  gen={generation}  ({DateTime.Now:HH:mm:ss.fff})");
     return () => {

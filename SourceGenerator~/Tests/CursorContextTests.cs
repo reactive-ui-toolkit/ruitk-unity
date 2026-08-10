@@ -65,21 +65,21 @@ public sealed class CursorContextTests
     [Fact]
     public void TagName_AfterOpenAngle()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <|Label/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <|Label/>\n  );\n}");
         Assert.Equal(CursorKind.TagName, ctx.Kind);
     }
 
     [Fact]
     public void TagName_MidElement()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Lab|el/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Lab|el/>\n  );\n}");
         Assert.Equal(CursorKind.TagName, ctx.Kind);
     }
 
     [Fact]
     public void TagName_AtEnd()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Label| />\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Label| />\n  );\n}");
         Assert.Equal(CursorKind.TagName, ctx.Kind);
     }
 
@@ -88,21 +88,21 @@ public sealed class CursorContextTests
     [Fact]
     public void AttributeName_AfterSpace()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Label |text=\"hi\"/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Label |text=\"hi\"/>\n  );\n}");
         Assert.Equal(CursorKind.AttributeName, ctx.Kind);
     }
 
     [Fact]
     public void AttributeName_MidWord()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Label te|xt=\"hi\"/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Label te|xt=\"hi\"/>\n  );\n}");
         Assert.Equal(CursorKind.AttributeName, ctx.Kind);
     }
 
     [Fact]
     public void AttributeName_TagNamePreserved()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Label te|xt=\"hi\"/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Label te|xt=\"hi\"/>\n  );\n}");
         Assert.Equal("Label", ctx.TagName);
     }
 
@@ -111,14 +111,14 @@ public sealed class CursorContextTests
     [Fact]
     public void AttributeValue_InsideQuotes()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Label text=\"h|i\"/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Label text=\"h|i\"/>\n  );\n}");
         Assert.Equal(CursorKind.AttributeValue, ctx.Kind);
     }
 
     [Fact]
     public void AttributeValue_InsideBraces()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Label text={|val}/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Label text={|val}/>\n  );\n}");
         Assert.Equal(CursorKind.AttributeValue, ctx.Kind);
     }
 
@@ -127,14 +127,14 @@ public sealed class CursorContextTests
     [Fact]
     public void ControlFlowName_AfterAtInMarkup()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Box>\n    @|if (true) {\n      <Label/>\n    }\n    </Box>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Box>\n    @|if (true) {\n      <Label/>\n    }\n    </Box>\n  );\n}");
         Assert.Equal(CursorKind.ControlFlowName, ctx.Kind);
     }
 
     [Fact]
     public void ControlFlowName_MidKeyword()
     {
-        var ctx = FindAtPipe("component C {\n  return (\n    <Box>\n    @fore|ach (var x in items) {\n      <Label key={x}/>\n    }\n    </Box>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Box>\n    @fore|ach (var x in items) {\n      <Label key={x}/>\n    }\n    </Box>\n  );\n}");
         Assert.Equal(CursorKind.ControlFlowName, ctx.Kind);
     }
 
@@ -144,7 +144,7 @@ public sealed class CursorContextTests
     public void CSharpExpression_InlineAtExpr()
     {
         // {expr} in markup body — an inline C# expression
-        var ctx = FindAtPipe("component C {\n  return (\n    <Box>\n      {my|Var}\n    </Box>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode C() {\n  return (\n    <Box>\n      {my|Var}\n    </Box>\n  );\n}");
         Assert.Equal(CursorKind.CSharpExpression, ctx.Kind);
     }
 
@@ -158,7 +158,7 @@ public sealed class CursorContextTests
         // the ExpressionNode's tracked ExpressionOffset/ExpressionLength span,
         // not a text-based brace scan.
         var ctx = FindAtPipe(
-            "component C {\n  return (\n    <Box>\n      {\n        fl|ag\n          ? <Label/>\n          : null\n      }\n    </Box>\n  );\n}");
+            "VirtualNode C() {\n  return (\n    <Box>\n      {\n        fl|ag\n          ? <Label/>\n          : null\n      }\n    </Box>\n  );\n}");
         Assert.Equal(CursorKind.CSharpExpression, ctx.Kind);
     }
 
@@ -167,7 +167,7 @@ public sealed class CursorContextTests
     {
         // Cursor on the line containing the closing '}' — still inside the span.
         var ctx = FindAtPipe(
-            "component C {\n  return (\n    <Box>\n      {\n        flag\n          ? <Label/>\n          : nu|ll\n      }\n    </Box>\n  );\n}");
+            "VirtualNode C() {\n  return (\n    <Box>\n      {\n        flag\n          ? <Label/>\n          : nu|ll\n      }\n    </Box>\n  );\n}");
         Assert.Equal(CursorKind.CSharpExpression, ctx.Kind);
     }
 
@@ -178,7 +178,7 @@ public sealed class CursorContextTests
         // inside the enclosing <Box>'s own body) must not be swept in by an
         // overbroad match — regression guard for the reverted brace-depth attempt.
         var ctx = FindAtPipe(
-            "component C {\n  return (\n    <Box>\n      {\n        flag\n          ? <Label/>\n          : null\n      }\n      <La|bel/>\n    </Box>\n  );\n}");
+            "VirtualNode C() {\n  return (\n    <Box>\n      {\n        flag\n          ? <Label/>\n          : null\n      }\n      <La|bel/>\n    </Box>\n  );\n}");
         Assert.NotEqual(CursorKind.CSharpExpression, ctx.Kind);
     }
 
@@ -187,14 +187,14 @@ public sealed class CursorContextTests
     [Fact]
     public void CSharpCodeBlock_FunctionSetup()
     {
-        var ctx = FindAtPipe("component Foo {\n  int x| = 5;\n  return (\n    <Label/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode Foo() {\n  int x| = 5;\n  return (\n    <Label/>\n  );\n}");
         Assert.Equal(CursorKind.CSharpCodeBlock, ctx.Kind);
     }
 
     [Fact]
     public void TagName_FunctionReturnMarkup()
     {
-        var ctx = FindAtPipe("component Foo {\n  return (\n    <Lab|el/>\n  );\n}");
+        var ctx = FindAtPipe("VirtualNode Foo() {\n  return (\n    <Lab|el/>\n  );\n}");
         Assert.Equal(CursorKind.TagName, ctx.Kind);
     }
 }

@@ -128,7 +128,7 @@ namespace UitkxLanguageServer.Tests
         public void Vdoc_LegacyFile_Unchanged_NoExportsContainer()
         {
             string p = F("Legacy.uitkx",
-                "component Legacy {\n  return (<VisualElement />);\n}\n");
+                "VirtualNode Legacy() {\n  return (<VisualElement />);\n}\n");
             var vdoc = GenerateVdoc(p);
 
             Assert.DoesNotContain("__Exports", vdoc.Text);

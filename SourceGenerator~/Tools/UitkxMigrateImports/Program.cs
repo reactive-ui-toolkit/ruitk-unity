@@ -247,7 +247,7 @@ namespace Ruitk.SourceGenerator.Tools
             {
                 try
                 {
-                    var ds = DirectiveParser.Parse(f.Text, f.AbsPath, new List<ParseDiagnostic>());
+                    var ds = DirectiveParser.ParseLegacyForMigration(f.Text, f.AbsPath, new List<ParseDiagnostic>());
                     string? ns = EffectiveNamespace.Resolve(
                         ds.HasExplicitNamespace, ds.Namespace, f.AbsPath, fileKeyed);
                     if (!string.IsNullOrEmpty(ns))

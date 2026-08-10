@@ -10,7 +10,11 @@ export (
   PointerEventHandler onPointerMove,
   PointerEventHandler onPointerDown,
   PointerEventHandler onPointerUp
-) useDoomGame(Ref<VisualElement?> viewRef, int level, Difficulty difficulty) {
+) useDoomGame(
+  Ref<VisualElement?> viewRef,
+  int level,
+  Difficulty difficulty
+) {
   var initialState = useMemo(() => GameLogic.NewGame(level, difficulty), level + (int)difficulty * 100);
   var (state, setState) = useState<GameState>(initialState);
   var stateRef = useRef<GameState>(initialState);

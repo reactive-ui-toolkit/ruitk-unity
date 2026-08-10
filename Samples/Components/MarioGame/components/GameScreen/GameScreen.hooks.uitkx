@@ -6,7 +6,9 @@ export (
   GameState state,
   Action restart,
   KeyboardEventHandler onKeyDown
-) useMarioGame(Ref<VisualElement?> boardRef) {
+) useMarioGame(
+  Ref<VisualElement?> boardRef
+) {
   var initialState = useMemo(() => LevelGenerator.GenerateLevel(), 0);
   var (state, setState) = useState<GameState>(initialState);
   var stateRef = useRef<GameState>(initialState);

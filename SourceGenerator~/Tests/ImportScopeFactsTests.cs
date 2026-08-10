@@ -52,7 +52,7 @@ namespace Ruitk.SourceGenerator.Tests
             // (Ruitk.Uitkx.shared), not the raw parsed default.
             F("shared/Tokens.types.uitkx", "export module Tokens {\n  public const int Gap = 8;\n}\n");
             string screen = F("screens/Home.uitkx",
-                "import { Tokens } from \"../shared/Tokens.types\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { Tokens } from \"../shared/Tokens.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             var payloads = Payloads(screen);
 
@@ -62,36 +62,45 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void CrossFolderComponentImport_GetsAlias()
         {
-            F("widgets/Card.uitkx", "export component Card(string title = \"\") {\n  return (<Box />);\n}\n");
+            F("widgets/Card.uitkx", "export VirtualNode Card(string title = \"\") {\n  return (<Box />);\n}\n");
             string screen = F("screens/Home.uitkx",
-                "import { Card } from \"../widgets/Card\"\ncomponent Home {\n  return (<Card title=\"x\" />);\n}\n");
+                "import { Card } from \"../widgets/Card\"\nVirtualNode Home() {\n  return (<Card title=\"x\" />);\n}\n");
 
             var payloads = Payloads(screen);
 
-            Assert.Contains("Card = Ruitk.Uitkx.widgets.Card", payloads);
+            // File-keyed target namespace (0.16.0): {prefix}.widgets.Card is the FILE module,
+            // and the alias binds its component class inside it.
+            Assert.Contains("Card = Ruitk.Uitkx.widgets.Card.Card", payloads);
         }
 
         [Fact]
-        public void SameFolderImport_SameNamespace_NoAlias()
+        public void SameFolderMemberImport_GetsExportsPayload()
         {
-            // Same folder → same derived namespace → alias would be CS0576; must be skipped.
-            F("screens/Home.style.uitkx", "export module HomeStyles {\n  public const int Gap = 8;\n}\n");
+            // 0.16.0: same-folder files no longer share a namespace (file-keyed), so a
+            // same-folder member import gets the target's __Exports payload like any other.
+            F("screens/Home.style.uitkx", "export int Gap = 8;\n");
             string screen = F("screens/Home.uitkx",
-                "import { HomeStyles } from \"./Home.style\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { Gap } from \"./Home.style\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
-            Assert.Empty(Payloads(screen));
+            Assert.Contains(Payloads(screen), p =>
+                p.StartsWith("static ", System.StringComparison.Ordinal)
+                && p.EndsWith(".__Exports", System.StringComparison.Ordinal));
         }
 
         [Fact]
         public void CrossFolderHookImport_GetsUsingStaticContainer()
         {
-            F("shared/Counter.hooks.uitkx", "export hook useCounter() {\n  return 0;\n}\n");
+            F("shared/Counter.hooks.uitkx", "export void useCounter() {\n  return 0;\n}\n");
             string screen = F("screens/Home.uitkx",
-                "import { useCounter } from \"../shared/Counter.hooks\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { useCounter } from \"../shared/Counter.hooks\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             var payloads = Payloads(screen);
 
-            Assert.Contains("static Ruitk.Uitkx.shared.CounterHooks", payloads);
+            // 0.16.0: the legacy {Stem}Hooks container is gone - member imports expose the
+            // target's per-file __Exports container.
+            Assert.Contains(payloads, p =>
+                p.StartsWith("static ", System.StringComparison.Ordinal)
+                && p.EndsWith(".__Exports", System.StringComparison.Ordinal));
         }
 
         [Fact]
@@ -100,7 +109,7 @@ namespace Ruitk.SourceGenerator.Tests
             F("shared/Tokens.types.uitkx",
                 "@namespace My.Stamped.Ns\nexport module Tokens {\n  public const int Gap = 8;\n}\n");
             string screen = F("screens/Home.uitkx",
-                "import { Tokens } from \"../shared/Tokens.types\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { Tokens } from \"../shared/Tokens.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             Assert.Contains("Tokens = My.Stamped.Ns.Tokens", Payloads(screen));
         }
@@ -111,7 +120,7 @@ namespace Ruitk.SourceGenerator.Tests
             // A module deliberately named after a built-in style alias must not inject (CS1537).
             F("shared/Color.types.uitkx", "export module Color {\n  public const int X = 1;\n}\n");
             string screen = F("screens/Home.uitkx",
-                "import { Color } from \"../shared/Color.types\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { Color } from \"../shared/Color.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             Assert.DoesNotContain(Payloads(screen), p => p.StartsWith("Color ="));
         }
@@ -130,7 +139,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             F("shared/Scoring.uitkx", "export string FormatScore(int s) { return $\"{s}\"; }\n");
             string screen = F("screens/Home.uitkx",
-                "import { FormatScore } from \"../shared/Scoring\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { FormatScore } from \"../shared/Scoring\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             Assert.Contains("static Ruitk.Uitkx.shared.Scoring.__Exports", Payloads(screen));
         }
@@ -141,7 +150,7 @@ namespace Ruitk.SourceGenerator.Tests
             F("shared/Countdown.uitkx",
                 "export (int value, Action reset) useCountdown(int start) {\n  return (start, null);\n}\n");
             string screen = F("screens/Home.uitkx",
-                "import { useCountdown } from \"../shared/Countdown\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { useCountdown } from \"../shared/Countdown\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             var payloads = Payloads(screen);
             Assert.Contains("static Ruitk.Uitkx.shared.Countdown.__Exports", payloads);
@@ -153,7 +162,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             F("widgets/Card.uitkx", "export VirtualNode Card(string title) {\n  return (<Box />);\n}\n");
             string screen = F("screens/Home.uitkx",
-                "import { Card } from \"../widgets/Card\"\ncomponent Home {\n  return (<Card title=\"x\" />);\n}\n");
+                "import { Card } from \"../widgets/Card\"\nVirtualNode Home() {\n  return (<Card title=\"x\" />);\n}\n");
 
             Assert.Contains("Card = Ruitk.Uitkx.widgets.Card.Card", Payloads(screen));
         }
@@ -163,7 +172,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             F("widgets/Card.uitkx", "export VirtualNode Card(string title) {\n  return (<Box />);\n}\n");
             string screen = F("screens/Home.uitkx",
-                "import { Card as Tile } from \"../widgets/Card\"\ncomponent Home {\n  return (<Tile title=\"x\" />);\n}\n");
+                "import { Card as Tile } from \"../widgets/Card\"\nVirtualNode Home() {\n  return (<Tile title=\"x\" />);\n}\n");
 
             var payloads = Payloads(screen);
             Assert.Contains("Tile = Ruitk.Uitkx.widgets.Card.Card", payloads);
@@ -175,7 +184,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             F("shared/Tokens.uitkx", "export int Gap = 8;\nexport int Pad = 4;\n");
             string screen = F("screens/Home.uitkx",
-                "import * as Tokens from \"../shared/Tokens\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import * as Tokens from \"../shared/Tokens\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             Assert.Contains("Tokens = Ruitk.Uitkx.shared.Tokens.__Exports", Payloads(screen));
         }
@@ -186,7 +195,7 @@ namespace Ruitk.SourceGenerator.Tests
             F("widgets/Panel.uitkx",
                 "VirtualNode ScorePanel(string t) {\n  return (<Box />);\n}\nexport default ScorePanel;\n");
             string screen = F("screens/Home.uitkx",
-                "import Panel from \"../widgets/Panel\"\ncomponent Home {\n  return (<Panel t=\"x\" />);\n}\n");
+                "import Panel from \"../widgets/Panel\"\nVirtualNode Home() {\n  return (<Panel t=\"x\" />);\n}\n");
 
             Assert.Contains("Panel = Ruitk.Uitkx.widgets.Panel.ScorePanel", Payloads(screen));
         }
@@ -196,7 +205,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             F("shared/Scoring.uitkx", "export string FormatScore(int s) { return $\"{s}\"; }\n");
             string screen = F("screens/Home.uitkx",
-                "import { FormatScore as fmt } from \"../shared/Scoring\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { FormatScore as fmt } from \"../shared/Scoring\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             // Aliased member imports lower to typed bridges (consumer's __Exports, M3 emit) — the
             // payload list must stay clean of both a static-container line and any alias line.
@@ -210,7 +219,7 @@ namespace Ruitk.SourceGenerator.Tests
             // legacy same-ns skip never suppresses a new-mode member payload.
             F("screens/Home.style.uitkx", "export Style bg = new Style { };\n");
             string screen = F("screens/Home.uitkx",
-                "import { bg } from \"./Home.style\"\ncomponent Home {\n  return (<Box />);\n}\n");
+                "import { bg } from \"./Home.style\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             Assert.Contains("static Ruitk.Uitkx.screens.Home_style.__Exports", Payloads(screen));
         }

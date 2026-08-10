@@ -27,7 +27,7 @@ public class NullOnlyComponentTests
         + "}\n";
 
     private const string LegacySource =
-        "component Gone {\n"
+        "VirtualNode Gone() {\n"
         + "  useEffect(() => {\n"
         + "    Fire();\n"
         + "    return null;\n"

@@ -1,7 +1,10 @@
 import { Content, Root } from "./PageShell.style"
 import "@UnityEngine.UIElements"
 
-export VirtualNode PageShell(VirtualNode? sidebar = null, VirtualNode? content = null) {
+export VirtualNode PageShell(
+  VirtualNode? sidebar = null,
+  VirtualNode? content = null
+) {
   return (
     <VisualElement style={Root}>
       {sidebar}

@@ -79,7 +79,7 @@ public sealed class LspProtocolTests : LanguageProtocolTestBase
                 Uri = uri,
                 LanguageId = "uitkx",
                 Version = 1,
-                Text = "component MyComp {\n  return (\n    <Label text=\"hello\"/>\n  )\n}"
+                Text = "VirtualNode MyComp() {\n  return (\n    <Label text=\"hello\"/>\n  )\n}"
             }
         });
 
@@ -111,7 +111,7 @@ public sealed class LspProtocolTests : LanguageProtocolTestBase
                 Uri = uri,
                 LanguageId = "uitkx",
                 Version = 1,
-                Text = "component Tags {\n  return (\n    <\n  )\n}"
+                Text = "VirtualNode Tags() {\n  return (\n    <\n  )\n}"
             }
         });
 
@@ -144,7 +144,7 @@ public sealed class LspProtocolTests : LanguageProtocolTestBase
                 Uri = uri,
                 LanguageId = "uitkx",
                 Version = 1,
-                Text = "component Change {\n  return (\n    <Label/>\n  )\n}"
+                Text = "VirtualNode Change() {\n  return (\n    <Label/>\n  )\n}"
             }
         });
 
@@ -154,7 +154,7 @@ public sealed class LspProtocolTests : LanguageProtocolTestBase
         {
             TextDocument = new OptionalVersionedTextDocumentIdentifier { Uri = uri, Version = 2 },
             ContentChanges = new Container<TextDocumentContentChangeEvent>(
-                new TextDocumentContentChangeEvent { Text = "component Change {\n  return (\n    <Box>\n      <Label/>\n    </Box>\n  )\n}" }
+                new TextDocumentContentChangeEvent { Text = "VirtualNode Change() {\n  return (\n    <Box>\n      <Label/>\n    </Box>\n  )\n}" }
             )
         });
 
@@ -180,7 +180,7 @@ public sealed class LspProtocolTests : LanguageProtocolTestBase
 
         var uri = DocumentUri.From("file:///test/Format.uitkx");
         // Badly-formatted: missing indentation inside <Box>
-        var inputText = "component Format {\nreturn (\n<Box>\n<Label/>\n</Box>\n)\n}";
+        var inputText = "VirtualNode Format() {\nreturn (\n<Box>\n<Label/>\n</Box>\n)\n}";
         client.DidOpenTextDocument(new DidOpenTextDocumentParams
         {
             TextDocument = new TextDocumentItem
@@ -217,7 +217,7 @@ public sealed class LspProtocolTests : LanguageProtocolTestBase
         var (client, _) = await StartServer();
 
         var uri = DocumentUri.From("file:///test/FormatCrlf.uitkx");
-        var inputText = "component Format {\r\nreturn (\r\n<Box>\r\n<Label/>\r\n</Box>\r\n)\r\n}";
+        var inputText = "VirtualNode Format() {\r\nreturn (\r\n<Box>\r\n<Label/>\r\n</Box>\r\n)\r\n}";
         client.DidOpenTextDocument(new DidOpenTextDocumentParams
         {
             TextDocument = new TextDocumentItem
@@ -259,7 +259,7 @@ public sealed class LspProtocolTests : LanguageProtocolTestBase
         var (client, _) = await StartServer();
 
         var uri = DocumentUri.From("file:///test/Counter.uitkx");
-        var inputText = "component Counter {\n  return (\n    <Label text=\"hi\" />\n  );\n}";
+        var inputText = "VirtualNode Counter() {\n  return (\n    <Label text=\"hi\" />\n  );\n}";
         client.DidOpenTextDocument(new DidOpenTextDocumentParams
         {
             TextDocument = new TextDocumentItem

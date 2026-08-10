@@ -322,7 +322,7 @@ namespace UitkxLanguageServer.Tests
         public void ComponentDeclRename_IgnoresIndentedLocalAndParenlessLine()
         {
             string text =
-                "component Other {\n" +
+                "VirtualNode Other() {\n" +
                 "  VirtualNode Foo = MakeIt();\n" +
                 "  return (<VisualElement />);\n" +
                 "}\n" +
@@ -348,7 +348,7 @@ namespace UitkxLanguageServer.Tests
             changes.Clear();
             RenameHandler.RenameComponentDeclarationInFile(
                 Path.Combine(_uiDir, "Legacy.uitkx"),
-                "component Foo {\n  return (<VisualElement />);\n}\n",
+                "VirtualNode Foo() {\n  return (<VisualElement />);\n}\n",
                 "Foo", "Bar", changes);
             Assert.Single(changes);
         }
@@ -360,7 +360,7 @@ namespace UitkxLanguageServer.Tests
         {
             string p = F("Real.uitkx",
                 "/*\n" +
-                "component Phantom {\n" +
+                "VirtualNode Phantom() {\n" +
                 "export VirtualNode Ghost() {\n" +
                 "*/\n" +
                 "export VirtualNode Real() {\n" +
@@ -421,42 +421,7 @@ namespace UitkxLanguageServer.Tests
             Assert.DoesNotContain("isSomethingEven", names);
         }
 
-        // ── PC-7: UITKX2107 surfaces live on the merging legacy module file ─────
-
-        [Fact]
-        public void CompanionMerge_LegacyModuleWithPeerComponent_Gets2107Warning()
-        {
-            F("Foo.uitkx", "component Foo {\n  return (<VisualElement />);\n}\n");
-            string stylePath = F("Foo.style.uitkx",
-                "export module Foo {\n  public static readonly int Gap = 8;\n}\n");
-
-            var index = new WorkspaceIndex();
-            index.EnsureScanned(_root);
-            var publisher = new DiagnosticsPublisher(null!, new UitkxSchema(), index, new DocumentStore());
-
-            var ds = Parse(File.ReadAllText(stylePath), stylePath);
-            var diags = publisher.ComputeCompanionMergeDiagnostics(ds, stylePath);
-
-            var d = Assert.Single(diags);
-            Assert.Equal("UITKX2107", d.Code);
-            Assert.Equal(ParseSeverity.Warning, d.Severity);
-            Assert.Equal(1, d.SourceLine);
-            Assert.Contains("Foo.uitkx", d.Message);
-        }
-
-        [Fact]
-        public void CompanionMerge_NamespaceDivergence_No2107()
-        {
-            F("Bar.uitkx", "@namespace Other.Ns\ncomponent Bar {\n  return (<VisualElement />);\n}\n");
-            string stylePath = F("Bar.style.uitkx",
-                "export module Bar {\n  public static readonly int Gap = 8;\n}\n");
-
-            var index = new WorkspaceIndex();
-            index.EnsureScanned(_root);
-            var publisher = new DiagnosticsPublisher(null!, new UitkxSchema(), index, new DocumentStore());
-
-            var ds = Parse(File.ReadAllText(stylePath), stylePath);
-            Assert.Empty(publisher.ComputeCompanionMergeDiagnostics(ds, stylePath));
-        }
+        // (The PC-7 UITKX2107 companion-merge facts were removed with companion
+        // partial-class merging — 0.16.0 legacy removal.)
     }
 }

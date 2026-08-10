@@ -31,6 +31,48 @@ namespace Ruitk.Language.Parser
         // namespace — a target's identity must never flip on a .cs edit (plan §4).
         private const string FunctionStyleDefaultNamespace = "Ruitk.FunctionStyle";
 
+        // D5 (0.16.0 legacy removal): the migration codemod is the ONLY caller allowed to
+        // parse legacy syntax without the removal error — it still has to READ the files it
+        // rewrites. Set exclusively by ParseLegacyForMigration; builds and IDEs always go
+        // through Parse and get UITKX2320 as an ERROR on every wrapper keyword.
+        [ThreadStatic] private static bool t_parseLegacyForMigration;
+
+        /// <summary>
+        /// Migration-only entry point (0.16.0 legacy removal, D5): identical to
+        /// <see cref="Parse"/> except wrapper keywords produce the historical deprecation
+        /// WARNING instead of the removal ERROR, so the migration codemod's own
+        /// error-freeze gate does not freeze every legacy file it exists to convert.
+        /// Reserved for <c>UitkxMigrateImports</c>; every build/IDE path uses
+        /// <see cref="Parse"/>.
+        /// </summary>
+        public static DirectiveSet ParseLegacyForMigration(
+            string source, string filePath, List<ParseDiagnostic> diagnosticBag)
+        {
+            t_parseLegacyForMigration = true;
+            try { return Parse(source, filePath, diagnosticBag); }
+            finally { t_parseLegacyForMigration = false; }
+        }
+
+        /// <summary>The UITKX2320 diagnostic for a wrapper-keyword declaration: the 0.16.0
+        /// removal ERROR on every normal parse, the historical deprecation WARNING under
+        /// <see cref="ParseLegacyForMigration"/>.</summary>
+        private static ParseDiagnostic WrapperKeywordDiag(string keyword, int line) =>
+            t_parseLegacyForMigration
+                ? new ParseDiagnostic
+                {
+                    Code = "UITKX2320",
+                    Severity = ParseSeverity.Warning,
+                    SourceLine = line,
+                    Message = $"the '{keyword}' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it)",
+                }
+                : new ParseDiagnostic
+                {
+                    Code = "UITKX2320",
+                    Severity = ParseSeverity.Error,
+                    SourceLine = line,
+                    Message = $"the '{keyword}' wrapper keyword was removed in 0.16.0 — run the UitkxMigrateImports codemod with --es-modules (scripts/migrate-uitkx.mjs) to migrate this file",
+                };
+
         private static readonly HashSet<string> s_topLevelKeywords = new HashSet<string>(
             StringComparer.Ordinal
         )
@@ -337,13 +379,7 @@ namespace Ruitk.Language.Parser
 
             // UITKX2320 (deprecation, G-10): every wrapper-keyword declaration in a legacy-mode
             // file warns. This is the file's FIRST declaration — it also sets the file's mode.
-            diagnosticBag.Add(new ParseDiagnostic
-            {
-                Code = "UITKX2320",
-                Severity = ParseSeverity.Warning,
-                SourceLine = line,
-                Message = "the 'component' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-            });
+            diagnosticBag.Add(WrapperKeywordDiag("component", line));
 
             int componentLine = line;
 
@@ -666,13 +702,7 @@ namespace Ruitk.Language.Parser
 
                 if (TryReadKeywordAt(source, i, "component"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'component' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("component", line));
                     var tailDecl = ParseSingleComponent(
                         source, filePath, diagnosticBag,
                         ref i, ref line, tailExported, useLastReturn, out bool tailHardStop);
@@ -683,25 +713,13 @@ namespace Ruitk.Language.Parser
                 }
                 else if (TryReadKeywordAt(source, i, "hook"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'hook' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("hook", line));
                     TryReadKeyword(source, ref i, "hook");
                     ParseSingleHook(source, filePath, diagnosticBag, tailHooks, ref i, ref line, tailExported);
                 }
                 else if (TryReadKeywordAt(source, i, "module"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'module' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("module", line));
                     TryReadKeyword(source, ref i, "module");
                     ParseSingleModule(source, filePath, diagnosticBag, tailModules, ref i, ref line, tailExported);
                 }
@@ -1515,25 +1533,13 @@ namespace Ruitk.Language.Parser
 
                 if (TryReadKeywordAt(source, i, "hook"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'hook' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("hook", line));
                     TryReadKeyword(source, ref i, "hook");
                     ParseSingleHook(source, filePath, diagnosticBag, hooks, ref i, ref line, declExported);
                 }
                 else if (TryReadKeywordAt(source, i, "module"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'module' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("module", line));
                     TryReadKeyword(source, ref i, "module");
                     ParseSingleModule(source, filePath, diagnosticBag, modules, ref i, ref line, declExported);
                 }
@@ -2305,6 +2311,20 @@ namespace Ruitk.Language.Parser
                     {
                         i = declStart; line = declStartLine;
                         return false;
+                    }
+
+                    // Precise-code parity with the retired legacy tail: an `import` after a
+                    // declaration is 2309 (imports are preamble-only), not a generic 2105.
+                    if (TryReadKeywordAt(source, i, "import"))
+                    {
+                        diagnosticBag.Add(new ParseDiagnostic
+                        {
+                            Code = "UITKX2309",
+                            Severity = ParseSeverity.Error,
+                            SourceLine = LineAtPos(source, i),
+                            Message = "import declarations must appear in the file preamble, before the first declaration.",
+                        });
+                        break;
                     }
 
                     diagnosticBag.Add(new ParseDiagnostic

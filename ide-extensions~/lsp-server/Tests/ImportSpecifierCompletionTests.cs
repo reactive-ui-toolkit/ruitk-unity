@@ -23,8 +23,8 @@ namespace UitkxLanguageServer.Tests
             Directory.CreateDirectory(Path.Combine(uiDir, "sub"));
             _importer = Path.Combine(uiDir, "Screen.uitkx");
             File.WriteAllText(_importer, "import { W } from \"\"\n");
-            File.WriteAllText(Path.Combine(uiDir, "StatusChip.uitkx"), "export component StatusChip { return (<Box />); }\n");
-            File.WriteAllText(Path.Combine(uiDir, "sub", "Deep.uitkx"), "export component Deep { return (<Box />); }\n");
+            File.WriteAllText(Path.Combine(uiDir, "StatusChip.uitkx"), "export VirtualNode StatusChip() { return (<Box />); }\n");
+            File.WriteAllText(Path.Combine(uiDir, "sub", "Deep.uitkx"), "export VirtualNode Deep() { return (<Box />); }\n");
         }
 
         [Fact]

@@ -23,7 +23,7 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void ImportLine_PopulatesImports()
         {
-            var (ds, _) = Parse("import { A, B } from \"./X\"\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, _) = Parse("import { A, B } from \"./X\"\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Single(ds.Imports);
             Assert.Equal(new[] { "A", "B" }, ds.Imports[0].Names.ToArray());
             Assert.Equal("./X", ds.Imports[0].Specifier);
@@ -34,7 +34,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             // import { A, B } from "./X"
             // 0123456789...        ^ col 21 = opening quote
-            var (ds, _) = Parse("import { A, B } from \"./X\"\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, _) = Parse("import { A, B } from \"./X\"\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             var imp = ds.Imports[0];
             Assert.Equal(21, imp.SpecifierColumn);
             Assert.Equal(new[] { 9, 12 }, imp.NameColumns.ToArray());
@@ -49,7 +49,7 @@ namespace Ruitk.SourceGenerator.Tests
             // rest of the line (parity with the namespace-import and @using readers) —
             // without it the preamble loop stalls on the `;` and the entire file fails
             // with a misleading UITKX2105 instead of parsing.
-            var (ds, diags) = Parse("import { container } from \"./Foo.style\";\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, diags) = Parse("import { container } from \"./Foo.style\";\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Single(ds.Imports);
             Assert.Equal(new[] { "container" }, ds.Imports[0].Names.ToArray());
             Assert.Equal("./Foo.style", ds.Imports[0].Specifier);
@@ -60,7 +60,7 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void ImportLine_TrailingSemicolonWithSpaces_Tolerated()
         {
-            var (ds, diags) = Parse("import { A } from \"./A\"  ;  \nimport { B } from \"../B\";\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, diags) = Parse("import { A } from \"./A\"  ;  \nimport { B } from \"../B\";\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Equal(2, ds.Imports.Length);
             Assert.Equal("./A", ds.Imports[0].Specifier);
             Assert.Equal("../B", ds.Imports[1].Specifier);
@@ -72,7 +72,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             // Pin the pre-existing lenience of the namespace-import reader so the three
             // preamble readers can never drift apart on line termination again.
-            var (ds, diags) = Parse("import \"@UnityEngine.UIElements\";\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, diags) = Parse("import \"@UnityEngine.UIElements\";\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains("UnityEngine.UIElements", ds.Usings);
             Assert.Single(ds.ComponentDeclarations);
             Assert.DoesNotContain(diags, d => d.Code == "UITKX2105");
@@ -83,7 +83,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             var (ds, _) = Parse(
                 "import { A } from \"./A\"\nimport { B } from \"../B\"\nimport { C } from \"~/C\"\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n");
+                "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Equal(3, ds.Imports.Length);
             Assert.Equal("./A", ds.Imports[0].Specifier);
             Assert.Equal("../B", ds.Imports[1].Specifier);
@@ -93,7 +93,7 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void ExportComponent_SetsIsExported()
         {
-            var (ds, _) = Parse("export component Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, _) = Parse("export VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Equal("Foo", ds.ComponentName);
             Assert.Single(ds.ComponentDeclarations);
             Assert.True(ds.ComponentDeclarations[0].IsExported);
@@ -103,7 +103,7 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void PrivateComponent_IsNotExported()
         {
-            var (ds, _) = Parse("component Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, _) = Parse("VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Single(ds.ComponentDeclarations);
             Assert.False(ds.ComponentDeclarations[0].IsExported);
         }
@@ -111,9 +111,10 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void ExportHook_SetsIsExported()
         {
-            var (ds, _) = Parse("export hook useThing() { }\n");
-            Assert.Single(ds.HookDeclarations);
-            Assert.True(ds.HookDeclarations[0].IsExported);
+            var (ds, _) = Parse("export void useThing() { }\n");
+            var m = Assert.Single(ds.MemberDeclarations);
+            Assert.Equal(DeclKind.Hook, m.Kind);
+            Assert.True(m.IsExported);
         }
 
         [Fact]
@@ -129,7 +130,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             var (_, diags) = Parse(
                 "import { A } from \"./X\"\nimport { A } from \"./Y\"\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n");
+                "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains(diags, d => d.Code == "UITKX2303");
         }
 
@@ -137,7 +138,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void ImportAfterDeclaration_Emits2309()
         {
             var (_, diags) = Parse(
-                "component Foo {\n  return ( <Spacer /> );\n}\nimport { A } from \"./X\"\n");
+                "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\nimport { A } from \"./X\"\n");
             Assert.Contains(diags, d => d.Code == "UITKX2309");
         }
 
@@ -150,7 +151,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             // @using Ruitk.Router
             // @ col 0, `using` 1-5, space 6, payload `R` col 7
-            var (ds, _) = Parse("@using Ruitk.Router\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, _) = Parse("@using Ruitk.Router\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains("Ruitk.Router", ds.Usings);          // back-compat string view intact
             var u = Assert.Single(ds.UsingDirectives);
             Assert.Equal("Ruitk.Router", u.Payload);
@@ -165,7 +166,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             // import "@UnityEngine.Audio"
             // `import ` 0-6, `"` col 7, `@` col 8, payload `U` col 9
-            var (ds, diags) = Parse("import \"@UnityEngine.Audio\"\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, diags) = Parse("import \"@UnityEngine.Audio\"\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             // Legacy `component` wrapper keyword deprecation warning (ES-modules campaign, G-10)
             // is expected here — this test is about namespace-import desugaring, not that.
             Assert.DoesNotContain(diags, d => d.Code != "UITKX2320");
@@ -181,7 +182,7 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void NamespaceImport_StaticPayload_Preserved()
         {
-            var (ds, _) = Parse("import \"@static DoomGame.DoomTypes\"\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, _) = Parse("import \"@static DoomGame.DoomTypes\"\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains("static DoomGame.DoomTypes", ds.Usings);
             Assert.True(Assert.Single(ds.UsingDirectives).FromImportSyntax);
         }
@@ -189,7 +190,7 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void NamespaceImport_AliasPayload_Preserved()
         {
-            var (ds, _) = Parse("import \"@UColor = UnityEngine.Color\"\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, _) = Parse("import \"@UColor = UnityEngine.Color\"\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains("UColor = UnityEngine.Color", ds.Usings);
         }
 
@@ -198,7 +199,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             var (ds, _) = Parse(
                 "import { Chip } from \"./Chip\"\nimport \"@Ruitk.Router\"\n@using UnityEngine\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n");
+                "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Single(ds.Imports);                                  // file import
             Assert.Equal("./Chip", ds.Imports[0].Specifier);
             Assert.Equal(new[] { "Ruitk.Router", "UnityEngine" }, ds.Usings.ToArray());
@@ -211,14 +212,14 @@ namespace Ruitk.SourceGenerator.Tests
         public void NamespaceImport_MissingAtSigil_NotTreatedAsUsing()
         {
             // `import "Ns"` (no @) is reserved/ambiguous — must NOT silently become a using.
-            var (ds, _) = Parse("import \"Foo.Bar\"\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+            var (ds, _) = Parse("import \"Foo.Bar\"\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.DoesNotContain("Foo.Bar", ds.Usings);
         }
 
         [Fact]
         public void NamespaceImport_InHookFile_PopulatesUsingDirectives()
         {
-            var (ds, _) = Parse("import \"@UnityEngine.Audio\"\nexport hook useThing() { }\n");
+            var (ds, _) = Parse("import \"@UnityEngine.Audio\"\nexport void useThing() { }\n");
             Assert.Contains("UnityEngine.Audio", ds.Usings);
             Assert.True(Assert.Single(ds.UsingDirectives).FromImportSyntax);
         }

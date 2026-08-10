@@ -64,21 +64,22 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
-        public void TwoSameFolderLegacyFiles_StillShareTheFolderNamespace()
+        public void TwoSameFolderFiles_GetDistinctFileKeyedNamespaces()
         {
-            string a = File_("Widgets/Board.uitkx", "component Board { return (<Box/>); }");
-            string b = File_("Widgets/Panel.uitkx", "component Panel { return (<Box/>); }");
+            // 0.16.0: folder-keyed sharing died with legacy mode — every file is its own module.
+            string a = File_("Widgets/Board.uitkx", "export VirtualNode Board() { return (<Box/>); }");
+            string b = File_("Widgets/Panel.uitkx", "export VirtualNode Panel() { return (<Box/>); }");
 
             string? nsA = ResolveFor(a);
             string? nsB = ResolveFor(b);
-            Assert.Equal("Ruitk.Uitkx.Widgets", nsA);
-            Assert.Equal(nsA, nsB);
+            Assert.Equal("Ruitk.Uitkx.Widgets.Board", nsA);
+            Assert.Equal("Ruitk.Uitkx.Widgets.Panel", nsB);
         }
 
         [Fact]
         public void ExplicitNamespaceStamp_WinsInBothModes()
         {
-            string legacy = File_("Widgets/L.uitkx", "@namespace My.Stamp\ncomponent L { return (<Box/>); }");
+            string legacy = File_("Widgets/L.uitkx", "@namespace My.Stamp\nVirtualNode L() { return (<Box/>); }");
             string plain = File_("Widgets/P.uitkx", "@namespace My.Stamp\nexport VirtualNode P() { return (<Box/>); }");
 
             Assert.Equal("My.Stamp", ResolveFor(legacy));

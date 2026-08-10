@@ -48,7 +48,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void ImportLine_TokenizesImportFromAndSpecifier()
     {
-        var source = "import { useCounter } from \"./Counter.hooks\"\nexport component Screen {\n    return (<Box />);\n}";
+        var source = "import { useCounter } from \"./Counter.hooks\"\nexport VirtualNode Screen() {\n    return (<Box />);\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Keyword, "import"));
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Keyword, "from"));
@@ -58,7 +58,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void ExportPrefix_TokenizedAsKeyword()
     {
-        var source = "export component Screen {\n    return (<Box />);\n}";
+        var source = "export VirtualNode Screen() {\n    return (<Box />);\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Keyword, "export"));
     }
@@ -68,7 +68,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void ElementName_IsElement()
     {
-        var source = "component C {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Element, "Label"),
             "Expected Label to be a uitkxElement token");
@@ -77,7 +77,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void AttributeName_IsAttribute()
     {
-        var source = "component C {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Attribute, "text"),
             "Expected text to be a uitkxAttribute token");
@@ -86,7 +86,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void NestedElement_BothTagged()
     {
-        var source = "component C {\n  return (\n    <Box>\n      <Label text=\"hi\"/>\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      <Label text=\"hi\"/>\n    </Box>\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Element, "Box"),
             "Expected Box to be a uitkxElement token");
@@ -102,7 +102,7 @@ public sealed class SemanticTokenTests
         // Before U-31 both "Label" tokens resolved via FindOnLine, which always
         // finds the FIRST occurrence — so the second element's tag-name token
         // collided with the first element's column instead of its own.
-        var source = "component C {\n  return (\n    <Label text=\"a\"/><Label text=\"b\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"a\"/><Label text=\"b\"/>\n  );\n}";
         var tokens = GetTokens(source);
         var lines = source.Split('\n');
         int lineIdx = 2;
@@ -127,7 +127,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void IfDirective_IsDirective()
     {
-        var source = "component C {\n  return (\n    @if (true) {\n      <Label/>\n    }\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    @if (true) {\n      <Label/>\n    }\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Directive, "@if"),
             "Expected @if to be a uitkxDirective token");
@@ -136,7 +136,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void ElseDirective_IsDirective()
     {
-        var source = "component C {\n  return (\n    @if (true) {\n      <Label/>\n    } @else {\n      <Box/>\n    }\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    @if (true) {\n      <Label/>\n    } @else {\n      <Box/>\n    }\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Directive, "@else"),
             "Expected @else to be a uitkxDirective token");
@@ -145,7 +145,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void ForeachDirective_IsDirective()
     {
-        var source = "component C {\n  return (\n    @foreach (var x in items) {\n      <Label key={x}/>\n    }\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    @foreach (var x in items) {\n      <Label key={x}/>\n    }\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Directive, "@foreach"),
             "Expected @foreach to be a uitkxDirective token");
@@ -154,7 +154,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void ForDirective_IsDirective()
     {
-        var source = "component C {\n  return (\n    @for (int i = 0; i < 5; i++) {\n      <Label key={i}/>\n    }\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    @for (int i = 0; i < 5; i++) {\n      <Label key={i}/>\n    }\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Directive, "@for"),
             "Expected @for to be a uitkxDirective token");
@@ -163,7 +163,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void SwitchDirective_IsDirective()
     {
-        var source = "component C {\n  return (\n    @switch (mode) {\n      @case \"a\":\n        <Label/>\n    }\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    @switch (mode) {\n      @case \"a\":\n        <Label/>\n    }\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Directive, "@switch"),
             "Expected @switch to be a uitkxDirective token");
@@ -172,18 +172,20 @@ public sealed class SemanticTokenTests
     // ── Function-style component tests ─────────────────────────────────────
 
     [Fact]
-    public void FunctionStyle_ComponentKeyword_IsDirective()
+    public void PlainDeclaration_NoLegacyKeywordToken()
     {
-        var source = "component Counter {\n  return (\n    <Label text=\"0\"/>\n  );\n}";
+        // 0.16.0: the `component` keyword colorization died with the wrapper grammar;
+        // a plain head must not surface any legacy directive token.
+        var source = "VirtualNode Counter() {\n  return (\n    <Label text=\"0\"/>\n  );\n}";
         var tokens = GetTokens(source);
-        Assert.True(HasToken(tokens, source, SemanticTokenTypes.Directive, "component"),
-            "Expected component to be a uitkxDirective token");
+        Assert.False(HasToken(tokens, source, SemanticTokenTypes.Directive, "component"),
+            "No legacy component keyword token expected on a plain declaration head");
     }
 
     [Fact]
     public void FunctionStyle_ElementInReturn_IsElement()
     {
-        var source = "component Counter {\n  return (\n    <Label text=\"0\"/>\n  );\n}";
+        var source = "VirtualNode Counter() {\n  return (\n    <Label text=\"0\"/>\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(HasToken(tokens, source, SemanticTokenTypes.Element, "Label"),
             "Expected Label inside return to be a uitkxElement token");
@@ -194,7 +196,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void LineComment_IsComment()
     {
-        var source = "component C {\n  return (\n    <Box>\n      // hello\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      // hello\n    </Box>\n  );\n}";
         var tokens = GetTokens(source);
         Assert.True(tokens.Any(t => t.TokenType == SemanticTokenTypes.Comment),
             "Expected a comment token for //");
@@ -205,7 +207,7 @@ public sealed class SemanticTokenTests
     {
         // function-style component with useState and a commented-out setter call
         var source =
-            "component Counter {\n" +
+            "VirtualNode Counter() {\n" +
             "  var (count, setCount) = useState(0);\n" +
             "  return (\n" +
             "    <Box>\n" +
@@ -226,7 +228,7 @@ public sealed class SemanticTokenTests
     public void BlockComment_MultiLine_SettersSuppressed()
     {
         var source =
-            "component Counter {\n" +
+            "VirtualNode Counter() {\n" +
             "  var (count, setCount) = useState(0);\n" +
             "  return (\n" +
             "    <Box>\n" +
@@ -259,7 +261,7 @@ public sealed class SemanticTokenTests
     [Fact]
     public void PlainStringAttribute_NoExpressionToken()
     {
-        var source = "component C {\n  return (\n    <Label text=\"hello\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"hello\"/>\n  );\n}";
         var tokens = GetTokens(source);
         Assert.False(tokens.Any(t => t.TokenType == SemanticTokenTypes.Expression),
             "Plain string attribute should not produce expression tokens");

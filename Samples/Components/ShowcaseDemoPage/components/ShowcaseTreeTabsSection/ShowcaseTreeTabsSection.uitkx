@@ -4,7 +4,11 @@ import { TreeViewStatefulDemoFunc } from "../../../../Shared/TreeViewStatefulDem
 import "@UnityEngine.UIElements"
 import "@Ruitk.Samples.UITKXShared"
 
-export VirtualNode ShowcaseTreeTabsSection(Action<int>? onTreeCountChanged = null, Action<int>? onMctvCountChanged = null, Action<int>? onTreeTabIndexChanged = null) {
+export VirtualNode ShowcaseTreeTabsSection(
+  Action<int>? onTreeCountChanged = null,
+  Action<int>? onMctvCountChanged = null,
+  Action<int>? onTreeTabIndexChanged = null
+) {
   // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   var (treeTabIndex, setTreeTabIndex) = useState(0);
   var (showTabs, setShowTabs) = useState(true);

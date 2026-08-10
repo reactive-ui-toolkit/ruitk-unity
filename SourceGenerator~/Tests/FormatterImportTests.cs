@@ -17,7 +17,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void ImportLines_SurviveFormat()
         {
             string outp = Fmt(
-                "import { A, B } from \"./X\"\n\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+                "import { A, B } from \"./X\"\n\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains("import { A, B } from \"./X\"", outp);
         }
 
@@ -26,7 +26,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             string outp = Fmt(
                 "import { A } from \"./A\"\nimport { B } from \"~/B\"\n\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n");
+                "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             int a = outp.IndexOf("import { A } from \"./A\"", System.StringComparison.Ordinal);
             int b = outp.IndexOf("import { B } from \"~/B\"", System.StringComparison.Ordinal);
             Assert.True(a >= 0 && b > a, "both imports must survive, in source order");
@@ -39,23 +39,23 @@ namespace Ruitk.SourceGenerator.Tests
             // model, so the formatter re-emits the canonical, semicolon-less line. The
             // second pass pins idempotency of the canonical output.
             string once = Fmt(
-                "import { container } from \"./Foo.style\";\n\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+                "import { container } from \"./Foo.style\";\n\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains("import { container } from \"./Foo.style\"\n", once);
             Assert.DoesNotContain("\"./Foo.style\";", once);
-            Assert.Contains("component Foo", once); // the file parsed as a component, not a 2105 wreck
+            Assert.Contains("VirtualNode Foo", once); // the file parsed as a component, not a 2105 wreck
             Assert.Equal(once, Fmt(once));
         }
 
         [Fact]
         public void ExportComponent_PrefixSurvives()
         {
-            Assert.Contains("export component Foo", Fmt("export component Foo {\n  return ( <Spacer /> );\n}\n"));
+            Assert.Contains("export VirtualNode Foo", Fmt("export VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n"));
         }
 
         [Fact]
         public void ExportHook_PrefixSurvives()
         {
-            Assert.Contains("export hook useThing", Fmt("export hook useThing() { }\n"));
+            Assert.Contains("export void useThing", Fmt("export void useThing() { }\n"));
         }
 
         [Fact]
@@ -67,7 +67,7 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void FormatIsIdempotent_WithImportsAndExport()
         {
-            string src = "import { A } from \"./X\"\n\nexport component Foo {\n  return ( <Spacer /> );\n}\n";
+            string src = "import { A } from \"./X\"\n\nexport VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n";
             string once = Fmt(src);
             string twice = Fmt(once);
             Assert.Equal(once, twice);
@@ -81,7 +81,7 @@ namespace Ruitk.SourceGenerator.Tests
             // The formatter must preserve the authored spelling — NOT silently rewrite
             // import "@X" back to @using X (that would be a data-losing round-trip).
             string outp = Fmt(
-                "import \"@Ruitk.Router\"\n\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+                "import \"@Ruitk.Router\"\n\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains("import \"@Ruitk.Router\"", outp);
             Assert.DoesNotContain("@using Ruitk.Router", outp);
         }
@@ -90,7 +90,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void AtUsing_RoundTrips_NotConvertedToImport()
         {
             string outp = Fmt(
-                "@using Ruitk.Router\n\ncomponent Foo {\n  return ( <Spacer /> );\n}\n");
+                "@using Ruitk.Router\n\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains("@using Ruitk.Router", outp);
             Assert.DoesNotContain("import \"@", outp);
         }
@@ -100,7 +100,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             string outp = Fmt(
                 "import \"@Ruitk.Router\"\n@using UnityEngine\n\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n");
+                "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
             int imp = outp.IndexOf("import \"@Ruitk.Router\"", System.StringComparison.Ordinal);
             int use = outp.IndexOf("@using UnityEngine", System.StringComparison.Ordinal);
             Assert.True(imp >= 0 && use > imp, "both using forms survive, in source order");
@@ -109,7 +109,7 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void FormatIsIdempotent_WithNamespaceImports()
         {
-            string src = "import \"@Ruitk.Router\"\n@using UnityEngine\n\ncomponent Foo {\n  return ( <Spacer /> );\n}\n";
+            string src = "import \"@Ruitk.Router\"\n@using UnityEngine\n\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n";
             string once = Fmt(src);
             Assert.Equal(once, Fmt(once));
         }
@@ -122,7 +122,7 @@ namespace Ruitk.SourceGenerator.Tests
             // Author order is deliberately jumbled: file import, @namespace, namespace import.
             string outp = Fmt(
                 "import { Chip } from \"./Chip\"\n@namespace My.Ns\nimport \"@Ruitk.Router\"\n\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n");
+                "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
 
             int ns   = outp.IndexOf("@namespace My.Ns", System.StringComparison.Ordinal);
             int file = outp.IndexOf("import { Chip } from \"./Chip\"", System.StringComparison.Ordinal);
@@ -138,7 +138,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             string src =
                 "import { Chip } from \"./Chip\"\n@namespace My.Ns\nimport \"@Ruitk.Router\"\n\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n";
+                "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n";
             string once = Fmt(src);
             Assert.Equal(once, Fmt(once));
             // Second pass must keep @namespace on top (not re-jumble).

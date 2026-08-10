@@ -281,17 +281,21 @@ namespace Ruitk.SourceGenerator.Tests
             Assert.Empty(result.SyntaxErrors());
         }
 
-        // ── Deprecation window (matrix rows 1-2) ─────────────────────────────
+        // ── Legacy removal (0.16.0, ruling D3) ───────────────────────────────
 
         [Fact]
-        public void LegacyFile_Emits2320Warning_AndStillCompiles()
+        public void LegacyFile_Emits2320Error_NamingTheCodemod()
         {
+            // Keyword split across concatenation: deliberately-legacy fixture, must
+            // survive any future fixture-modernizer sweep.
             var result = GeneratorTestHelper.Run(
-                "component Foo {\n  return (<VisualElement />);\n}\n", "Foo.uitkx");
+                "compo" + "nent Foo {\n  return (<VisualElement />);\n}\n", "Foo.uitkx");
 
             Assert.True(result.HasDiagnostic("UITKX2320"));
-            Assert.True(result.SourceWasProduced);
-            Assert.Empty(result.SyntaxErrors());
+            Assert.Contains(result.Diagnostics, d =>
+                d.Id == "UITKX2320"
+                && d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+                && d.GetMessage().Contains("UitkxMigrateImports"));
         }
 
         [Fact]

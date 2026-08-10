@@ -1,10 +1,6 @@
 import "@UnityEngine.UIElements"
 
-export (
-  int count,
-  Action increment,
-  Action decrement
-) useTestCounter() {
+export ( int count, Action increment, Action decrement ) useTestCounter() {
   var (count, setCount) = useState(0);
   Action increment = () => setCount(c => c + 1);
   Action decrement = () => setCount(c => c - 1);
@@ -24,7 +20,14 @@ export (
   Hooks.StateSetter<int> setAge,
   Hooks.StateSetter<bool> setSubscribed,
   Hooks.StateSetter<string> setCountry
-) useTestFormState(string initialFirstName, string initialLastName, string initialEmail, int initialAge, bool initialSubscribed, string initialCountry) {
+) useTestFormState(
+  string initialFirstName,
+  string initialLastName,
+  string initialEmail,
+  int initialAge,
+  bool initialSubscribed,
+  string initialCountry
+) {
   var (firstName, setFirstName) = useState(initialFirstName);
   var (lastName, setLastName) = useState(initialLastName);
   var (email, setEmail) = useState(initialEmail);

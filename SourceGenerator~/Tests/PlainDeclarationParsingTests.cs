@@ -194,12 +194,17 @@ namespace Ruitk.SourceGenerator.Tests
         // ── Mixed-style guard (U-08 / Unity-local 2108) ─────────────────────
 
         [Fact]
-        public void MixedFile_PlainFirst_ThenWrapperKeyword_Emits2108()
+        public void MixedFile_PlainFirst_ThenWrapperKeyword_IsAnError()
         {
+            // 0.16.0: a wrapper keyword anywhere is an error (2108 mixed-mode detection
+            // still anchors it inside a plain file; retires to the 2320 removal error
+            // with the phase-4 parser deletions).
             var (ds, diags) = Parse(
                 "int MaxItems = 5;\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n");
-            Assert.Contains(diags, d => d.Code == "UITKX2108");
+                "compo" + "nent Foo {\n  return ( <Spacer /> );\n}\n");
+            Assert.Contains(diags, d =>
+                d.Severity == ParseSeverity.Error
+                && (d.Code == "UITKX2108" || d.Code == "UITKX2320"));
             Assert.False(ds.UsesLegacySyntax);
         }
 
@@ -264,7 +269,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void EmptyFile_KeepsBaselineDiagnostics_NotAnEmptyNewModeModule()
         {
             // Audit F3: committing an empty/imports-only file as a zero-declaration new-mode
-            // set let the formatter fabricate `component Component { … }` out of nothing.
+            // set let the formatter fabricate `VirtualNode Component() { … }` out of nothing.
             // An empty file falls back to the legacy dispatch and its baseline 2105.
             var (ds, diags) = Parse("");
             Assert.Contains(diags, d => d.Code == "UITKX2105");

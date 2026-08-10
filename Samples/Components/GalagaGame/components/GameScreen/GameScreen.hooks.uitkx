@@ -8,7 +8,9 @@ export (
   GameState state,
   Action restart,
   KeyboardEventHandler onKeyDown
-) useGalagaGame(Ref<VisualElement?> boardRef) {
+) useGalagaGame(
+  Ref<VisualElement?> boardRef
+) {
   var initialState = useMemo(() => Tick.CreateInitialState(), 0);
   var (state, setState) = useState<GameState>(initialState);
   var stateRef = useRef<GameState>(initialState);

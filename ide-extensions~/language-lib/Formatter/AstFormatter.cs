@@ -515,6 +515,31 @@ namespace Ruitk.Language.Formatter
             string ExportPrefix(string name, bool isExported, bool exportImplied)
                 => isExported && !exportImplied && !listExported.Contains(name) ? "export " : "";
 
+            // A previously-wrapped head carries embedded newlines/indent in its raw text.
+            static string CollapseHeadWhitespace(string s)
+                => System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim();
+
+            // Top-level comma split of a tuple TYPE's items ("(a, b<c,d>, e)" -> 3 items).
+            static string[] SplitTupleItems(string tupleText)
+            {
+                string inner = tupleText.Substring(1, tupleText.Length - 2);
+                var parts = new List<string>();
+                int depth = 0, start = 0;
+                for (int k = 0; k < inner.Length; k++)
+                {
+                    char ch = inner[k];
+                    if (ch == '(' || ch == '<' || ch == '[') depth++;
+                    else if (ch == ')' || ch == '>' || ch == ']') depth--;
+                    else if (ch == ',' && depth == 0)
+                    {
+                        parts.Add(inner.Substring(start, k - start).Trim());
+                        start = k + 1;
+                    }
+                }
+                parts.Add(inner.Substring(start).Trim());
+                return parts.ToArray();
+            }
+
             // Merge members + the single component in source order. OrderBy (stable) — a
             // same-line tie must never reorder declarations (audit F2).
             var entries = new List<(int Line, int MemberIndex, bool IsComponent)>();
@@ -546,16 +571,30 @@ namespace Ruitk.Language.Formatter
                 if (entry.IsComponent)
                 {
                     var c = directives.ComponentDeclarations[0];
-                    string paramList = "";
-                    if (!c.FunctionParams.IsDefaultOrEmpty)
-                    {
-                        var parts = c.FunctionParams.Select(p =>
+                    string[] compParams = c.FunctionParams.IsDefaultOrEmpty
+                        ? System.Array.Empty<string>()
+                        : c.FunctionParams.Select(p =>
                             p.DefaultValue != null
                                 ? $"{p.Type} {p.Name} = {p.DefaultValue}"
-                                : $"{p.Type} {p.Name}");
-                        paramList = string.Join(", ", parts);
+                                : $"{p.Type} {p.Name}").ToArray();
+                    string compPrefix = ExportPrefix(c.Name, c.IsExported, c.IsExportImplied);
+                    string compHeader =
+                        $"{compPrefix}VirtualNode {c.Name}({string.Join(", ", compParams)}) {{";
+                    if (compParams.Length > 0 && compHeader.Length > _opts.PrintWidth)
+                    {
+                        // Long-head wrap: params one-per-line, one level in — the same
+                        // shape the legacy component head used.
+                        _sb.Append($"{compPrefix}VirtualNode {c.Name}(\n");
+                        _indent++;
+                        for (int pi = 0; pi < compParams.Length; pi++)
+                            Ln(pi == compParams.Length - 1 ? compParams[pi] : compParams[pi] + ",");
+                        _indent--;
+                        Ln(") {");
                     }
-                    Ln($"{ExportPrefix(c.Name, c.IsExported, c.IsExportImplied)}VirtualNode {c.Name}({paramList}) {{");
+                    else
+                    {
+                        Ln(compHeader);
+                    }
                     _indent++;
                     EmitFunctionStyleComponentBodyAndClose(directives, nodes);
                     continue;
@@ -570,16 +609,70 @@ namespace Ruitk.Language.Formatter
                     continue;
                 }
 
-                string ret = m.ReturnTypeText ?? "void";
-                string paramsText = m.ParamsText ?? string.Empty;
+                // Canonicalize the head pieces: a previously-wrapped tuple return or param
+                // list carries embedded newlines/indent in its raw text — collapse so the
+                // wrap decision (and the emitted single-line form) is deterministic.
+                string ret = CollapseHeadWhitespace(m.ReturnTypeText ?? "void");
                 string typeParams = m.TypeParamsText ?? string.Empty;
+                string[] memberParams = m.Params.IsDefaultOrEmpty
+                    ? System.Array.Empty<string>()
+                    : m.Params.Select(p =>
+                        p.DefaultValue != null
+                            ? $"{p.Type} {p.Name} = {p.DefaultValue}"
+                            : $"{p.Type} {p.Name}").ToArray();
+                string paramsText = memberParams.Length > 0
+                    ? string.Join(", ", memberParams)
+                    : CollapseHeadWhitespace(m.ParamsText ?? string.Empty);
                 if (m.IsExpressionBodied)
                 {
                     Ln($"{prefix}{ret} {m.Name}{typeParams}({paramsText}) => {m.BodyText};");
                 }
                 else
                 {
-                    Ln($"{prefix}{ret} {m.Name}{typeParams}({paramsText}) {{");
+                    string headerLine = $"{prefix}{ret} {m.Name}{typeParams}({paramsText}) {{";
+                    bool tooLong = headerLine.Length > _opts.PrintWidth;
+                    bool retIsTuple = ret.StartsWith("(", System.StringComparison.Ordinal) && ret.Contains(',');
+                    // Wrap the tuple RETURN when even the pre-params head is over budget;
+                    // wrap PARAMS whenever the single-line head is over budget.
+                    bool wrapRet = tooLong && retIsTuple
+                        && $"{prefix}{ret} {m.Name}{typeParams}(".Length > _opts.PrintWidth;
+                    bool wrapParams = tooLong && memberParams.Length > 0;
+                    if (!wrapRet && !wrapParams)
+                    {
+                        Ln(headerLine);
+                    }
+                    else
+                    {
+                        if (wrapRet)
+                        {
+                            var items = SplitTupleItems(ret);
+                            _sb.Append($"{prefix}(\n");
+                            _indent++;
+                            for (int ti = 0; ti < items.Length; ti++)
+                                Ln(ti == items.Length - 1 ? items[ti] : items[ti] + ",");
+                            _indent--;
+                            if (wrapParams)
+                            {
+                                Ln($") {m.Name}{typeParams}(");
+                            }
+                            else
+                            {
+                                Ln($") {m.Name}{typeParams}({paramsText}) {{");
+                            }
+                        }
+                        else
+                        {
+                            _sb.Append($"{prefix}{ret} {m.Name}{typeParams}(\n");
+                        }
+                        if (wrapParams)
+                        {
+                            _indent++;
+                            for (int pi = 0; pi < memberParams.Length; pi++)
+                                Ln(pi == memberParams.Length - 1 ? memberParams[pi] : memberParams[pi] + ",");
+                            _indent--;
+                            Ln(") {");
+                        }
+                    }
                     _indent++;
                     EmitSetupCodeNormalized(m.BodyText.Trim(), tabExp);
                     _indent--;

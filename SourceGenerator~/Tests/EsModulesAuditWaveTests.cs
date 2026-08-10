@@ -126,32 +126,39 @@ namespace Ruitk.SourceGenerator.Tests
         // ── PC-6: 2108 fires in BOTH mixed-mode directions ──────────────────
 
         [Fact]
-        public void PC6_PlainDeclarationAfterLegacyComponent_Emits2108()
+        public void PC6_WrapperKeywordAfterPlainDeclaration_IsAnError()
         {
+            // 0.16.0: the wrapper keyword is a removal ERROR wherever it appears
+            // (2108 mixed-mode anchoring until the phase-4 deletions, 2320 after).
+            // Keyword split across concatenation: deliberately-legacy fixture, must
+            // survive any future fixture-modernizer sweep.
             var (_, diags) = Parse(
-                "component Foo {\n" +
+                "export int Gap = 8;\n" +
+                "compo" + "nent Foo {\n" +
                 "  return (<Box/>);\n" +
-                "}\n" +
-                "export int Gap = 8;\n");
-            Assert.Contains(diags, d => d.Code == "UITKX2108");
+                "}\n");
+            Assert.Contains(diags, d =>
+                d.Severity == ParseSeverity.Error
+                && (d.Code == "UITKX2108" || d.Code == "UITKX2320"));
         }
 
         [Fact]
-        public void PC6_PlainDeclarationAfterLegacyHook_Emits2108()
+        public void PC6_LegacyFirstDeclaration_GetsRemovalError()
         {
             var (_, diags) = Parse(
-                "export hook useThing() -> (int) {\n" +
+                "ho" + "ok useThing() -> (int) {\n" +
                 "  return (1);\n" +
-                "}\n" +
-                "export int Gap = 8;\n");
-            Assert.Contains(diags, d => d.Code == "UITKX2108");
+                "}\n");
+            Assert.Contains(diags, d =>
+                d.Code == "UITKX2320" && d.Severity == ParseSeverity.Error
+                && d.Message.Contains("UitkxMigrateImports"));
         }
 
         [Fact]
         public void PC6_BareStatementAfterLegacyComponent_Stays2105()
         {
             var (_, diags) = Parse(
-                "component Foo {\n" +
+                "VirtualNode Foo() {\n" +
                 "  return (<Box/>);\n" +
                 "}\n" +
                 "DoThing();\n");
@@ -335,7 +342,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             using var tmp = new TempUitkxDir();
             tmp.Write("LegacyHooks.uitkx",
-                "export hook useThing() -> (int) {\n  return (1);\n}\n");
+                "export (int) useThing() {\n  return (1);\n}\n");
             string importer = tmp.Write("Screen.uitkx",
                 "import { useThing as useOther } from \"./LegacyHooks\"\n" +
                 "export VirtualNode Screen() {\n  return (<Box/>);\n}\n");
@@ -346,18 +353,20 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
-        public void F7b_UnaliasedImportFromLegacyTarget_KeepsPayload()
+        public void F7b_UnaliasedMemberImport_GetsExportsContainerPayload()
         {
+            // 0.16.0: legacy {Stem}Hooks containers are gone - every member target is a
+            // per-file __Exports container.
             using var tmp = new TempUitkxDir();
             tmp.Write("LegacyHooks.uitkx",
-                "export hook useThing() -> (int) {\n  return (1);\n}\n");
+                "export (int) useThing() {\n  return (1);\n}\n");
             string importer = tmp.Write("Screen.uitkx",
                 "import { useThing } from \"./LegacyHooks\"\n" +
                 "export VirtualNode Screen() {\n  return (<Box/>);\n}\n");
 
             var (ds, _) = Parse(File.ReadAllText(importer), importer);
             var payloads = ImportScopeFacts.ComputeInjectedUsingPayloads(ds, importer);
-            Assert.Contains(payloads, p => p.StartsWith("static ") && p.Contains("LegacyHooksHooks"));
+            Assert.Contains(payloads, p => p.StartsWith("static ") && p.Contains("__Exports"));
         }
 
         [Fact]
@@ -842,16 +851,17 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
-        public void P2_LegacyMixedFile_IsLeftUntouched()
+        public void P2_MixedModernFile_FormatsIdempotently()
         {
             string src =
-                "component Foo {\n" +
+                "VirtualNode Foo() {\n" +
                 "  return (<Box/>);\n" +
                 "}\n" +
-                "export hook useThing() -> (int) {\n" +
+                "export (int) useThing() {\n" +
                 "  return (1);\n" +
                 "}\n";
-            Assert.Equal(N(src), N(s_fmt.Format(src)));
+            string once = N(s_fmt.Format(src));
+            Assert.Equal(once, N(s_fmt.Format(once)));
         }
 
         [Fact]

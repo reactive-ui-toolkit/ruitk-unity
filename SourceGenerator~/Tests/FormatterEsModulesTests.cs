@@ -223,9 +223,9 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void LegacySingleComponent_FormatUnchangedShape()
         {
-            string src = "component Foo {\n  return (\n    <Box />\n  );\n}\n";
+            string src = "VirtualNode Foo() {\n  return (\n    <Box />\n  );\n}\n";
             string formatted = Format(src);
-            Assert.Contains("component Foo {", formatted);
+            Assert.Contains("VirtualNode Foo() {", formatted);
             Assert.Equal(formatted, Format(formatted));
         }
     }

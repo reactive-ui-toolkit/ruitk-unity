@@ -27,9 +27,9 @@ namespace UitkxLanguageServer.Tests
             _importer = Path.Combine(uiDir, "Screen.uitkx");
             _target = Path.Combine(uiDir, "StatusChip.uitkx");
             File.WriteAllText(_importer,
-                "import { StatusChip } from \"./StatusChip\"\n\nexport component Screen {\n    return (<StatusChip />);\n}\n");
+                "import { StatusChip } from \"./StatusChip\"\n\nexport VirtualNode Screen() {\n    return (<StatusChip />);\n}\n");
             File.WriteAllText(_target,
-                "\nexport component StatusChip {\n    return (<Label text=\"x\" />);\n}\n");
+                "\nexport VirtualNode StatusChip() {\n    return (<Label text=\"x\" />);\n}\n");
         }
 
         private ImmutableArray<ImportDeclaration> Imports() => ImmutableArray.Create(

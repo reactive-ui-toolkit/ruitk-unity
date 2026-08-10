@@ -1,4 +1,9 @@
-export VirtualNode RouterNavLink(string path = "/", string label = "", bool exact = false, bool replace = false) {
+export VirtualNode RouterNavLink(
+  string path = "/",
+  string label = "",
+  bool exact = false,
+  bool replace = false
+) {
   var displayLabel = string.IsNullOrEmpty(label) ? path : label;
   var normalizedPath = RouterPath.Normalize(path);
   var location = RouterHooks.UseLocation();

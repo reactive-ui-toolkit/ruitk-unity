@@ -37,7 +37,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             // An asmdef with a NAME but no rootNamespace must NOT re-root (name is ignored).
             File_("Asm.asmdef", "{ \"name\": \"MyGame.UI\" }");
-            string uitkx = File_("Screen.uitkx", "component Screen { return (<Box/>); }");
+            string uitkx = File_("Screen.uitkx", "VirtualNode Screen() { return (<Box/>); }");
 
             Assert.Equal(NamespaceDerivation.Root, EffectiveNamespace.ResolveNamespacePrefix(uitkx));
         }
@@ -46,7 +46,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void AsmdefRootNamespace_Wins_OverDefault()
         {
             File_("Asm.asmdef", "{ \"name\": \"MyGame.UI\", \"rootNamespace\": \"MyGame\" }");
-            string uitkx = File_("Screen.uitkx", "component Screen { return (<Box/>); }");
+            string uitkx = File_("Screen.uitkx", "VirtualNode Screen() { return (<Box/>); }");
 
             Assert.Equal("MyGame", EffectiveNamespace.ResolveNamespacePrefix(uitkx));
         }
@@ -56,7 +56,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             File_("Asm.asmdef", "{ \"name\": \"MyGame.UI\", \"rootNamespace\": \"MyGame\" }");
             File_("uitkx.config.json", "{ \"namespacePrefix\": \"UI.App\" }");
-            string uitkx = File_("Screen.uitkx", "component Screen { return (<Box/>); }");
+            string uitkx = File_("Screen.uitkx", "VirtualNode Screen() { return (<Box/>); }");
 
             Assert.Equal("UI.App", EffectiveNamespace.ResolveNamespacePrefix(uitkx));
         }
@@ -65,7 +65,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void EmptyRootNamespace_FallsThroughToDefault()
         {
             File_("Asm.asmdef", "{ \"name\": \"MyGame.UI\", \"rootNamespace\": \"\" }");
-            string uitkx = File_("Screen.uitkx", "component Screen { return (<Box/>); }");
+            string uitkx = File_("Screen.uitkx", "VirtualNode Screen() { return (<Box/>); }");
 
             Assert.Equal(NamespaceDerivation.Root, EffectiveNamespace.ResolveNamespacePrefix(uitkx));
         }

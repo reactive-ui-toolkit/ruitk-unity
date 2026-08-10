@@ -74,7 +74,7 @@ namespace Ruitk.SourceGenerator.Tools
             foreach (var f in files)
             {
                 var probeDiags = new List<ParseDiagnostic>();
-                var dsProbe = DirectiveParser.Parse(f.Text, f.AbsPath, probeDiags);
+                var dsProbe = DirectiveParser.ParseLegacyForMigration(f.Text, f.AbsPath, probeDiags);
                 if (!dsProbe.UsesLegacySyntax)
                 {
                     newMode.Add(f.AbsPath);
@@ -116,7 +116,7 @@ namespace Ruitk.SourceGenerator.Tools
 
             foreach (var f in current)
             {
-                var ds = DirectiveParser.Parse(f.Text, f.AbsPath, new List<ParseDiagnostic>());
+                var ds = DirectiveParser.ParseLegacyForMigration(f.Text, f.AbsPath, new List<ParseDiagnostic>());
                 if (!ds.UsesLegacySyntax)
                 {
                     rewritten[f.AbsPath] = f.Text; // already migrated — pass through (idempotence)
@@ -403,6 +403,9 @@ namespace Ruitk.SourceGenerator.Tools
                     {
                         if (method.AttributeLists.Count > 0)
                             return $"member '{method.Identifier.Text}' has attributes — the plain dialect has no attribute form";
+                        if (method.ConstraintClauses.Count > 0)
+                            return $"generic method '{method.Identifier.Text}' has where-constraints — the plain "
+                                + "dialect has no constraint form (move it to ambient C#)";
                         bool isPublic = method.Modifiers.Any(SyntaxKind.PublicKeyword);
                         bool methodExports = isPublic || exportAll;
                         string prefix = methodExports ? "export " : "";
@@ -505,7 +508,7 @@ namespace Ruitk.SourceGenerator.Tools
             bool importerRemainsLegacy,
             List<UitkxMigrator.MigrationError> notes)
         {
-            var ds = DirectiveParser.Parse(text, absPath, new List<ParseDiagnostic>());
+            var ds = DirectiveParser.ParseLegacyForMigration(text, absPath, new List<ParseDiagnostic>());
             if (ds.Imports.IsDefaultOrEmpty && memberNamesByFile.Count == 0)
                 return text;
 
@@ -560,7 +563,7 @@ namespace Ruitk.SourceGenerator.Tools
             {
                 string setKey = SetKey(absPath);
                 var selfNames = new HashSet<string>(StringComparer.Ordinal);
-                var dsSelf = DirectiveParser.Parse(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
+                var dsSelf = DirectiveParser.ParseLegacyForMigration(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
                 foreach (var c in dsSelf.ComponentDeclarations) selfNames.Add(c.Name);
                 foreach (var md in dsSelf.MemberDeclarations) selfNames.Add(md.Name);
                 var neededBySpec = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
@@ -573,7 +576,7 @@ namespace Ruitk.SourceGenerator.Tools
                         continue;
 
                     var already = new HashSet<string>(StringComparer.Ordinal);
-                    var dsNow = DirectiveParser.Parse(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
+                    var dsNow = DirectiveParser.ParseLegacyForMigration(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
                     if (!dsNow.Imports.IsDefaultOrEmpty)
                         foreach (var imp in dsNow.Imports)
                             foreach (var n in imp.Names)
@@ -592,7 +595,7 @@ namespace Ruitk.SourceGenerator.Tools
                 if (neededBySpec.Count > 0)
                 {
                     int insertAt = 0;
-                    var dsNow = DirectiveParser.Parse(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
+                    var dsNow = DirectiveParser.ParseLegacyForMigration(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
                     if (!dsNow.Imports.IsDefaultOrEmpty)
                         insertAt = dsNow.Imports.Max(i => i.Line); // after the last import line (1-based → insert index)
                     var newLines = neededBySpec

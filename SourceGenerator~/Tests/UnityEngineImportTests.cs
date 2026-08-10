@@ -28,7 +28,7 @@ public class UnityEngineImportTests
     {
         var src =
             "@namespace TestNs\n"
-            + "component MyComp {\n"
+            + "VirtualNode MyComp() {\n"
             + "  return (<VisualElement />);\n"
             + "}";
 
@@ -49,7 +49,7 @@ public class UnityEngineImportTests
         // emit CS0246 at runtime; post-fix the wildcard import resolves it.
         var src =
             "@namespace TestNs\n"
-            + "component MyComp {\n"
+            + "VirtualNode MyComp() {\n"
             + "  Texture2D? icon = null;\n"
             + "  return (<VisualElement />);\n"
             + "}";
@@ -73,7 +73,7 @@ public class UnityEngineImportTests
         // alias would surface CS0104 ambiguity on bare `Color` references.
         var src =
             "@namespace TestNs\n"
-            + "component MyComp {\n"
+            + "VirtualNode MyComp() {\n"
             + "  return (<VisualElement />);\n"
             + "}";
 

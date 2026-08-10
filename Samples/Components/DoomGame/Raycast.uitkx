@@ -6,8 +6,15 @@
 // hits the segment from the right of V1→V2 direction).
 import "@static Ruitk.Samples.Components.DoomGame.DoomTypes"
 
-export bool RaySegment(Vector2 origin, Vector2 dir, Vector2 a, Vector2 b,
-out float t, out float u, out bool backside) {
+export bool RaySegment(
+  Vector2 origin,
+  Vector2 dir,
+  Vector2 a,
+  Vector2 b,
+  out float t,
+  out float u,
+  out bool backside
+) {
   t = 0f; u = 0f; backside = false;
   Vector2 sd = b - a;
   float denom = dir.x * sd.y - dir.y * sd.x;
@@ -77,7 +84,13 @@ export int PointInSectorFromHint(MapData map, Vector2 p, int hint) {
 // lower portal segs at each portal crossing and the final wall on close.
 //
 // `out hits` is a fresh List<WallHit> so callers can pool if needed.
-export void Cast(MapData map, Vector2 origin, int originSector, Vector2 dir, out List<WallHit> hits) {
+export void Cast(
+  MapData map,
+  Vector2 origin,
+  int originSector,
+  Vector2 dir,
+  out List<WallHit> hits
+) {
   hits = new List<WallHit>(C.MAX_RAY_HOPS);
   if (!map.IsValid || originSector < 0) return;
 
@@ -156,7 +169,12 @@ export void Cast(MapData map, Vector2 origin, int originSector, Vector2 dir, out
 //  Convenience helpers
 // ──────────────────────────────────────────────────────────────────────────
 // Distance from point P to segment AB (squared, plus the parameter u).
-export float DistPointToSegmentSq(Vector2 p, Vector2 a, Vector2 b, out float u) {
+export float DistPointToSegmentSq(
+  Vector2 p,
+  Vector2 a,
+  Vector2 b,
+  out float u
+) {
   Vector2 ab = b - a;
   float lenSq = ab.sqrMagnitude;
   if (lenSq < 1e-9f) { u = 0f; return (p - a).sqrMagnitude; }
@@ -168,7 +186,12 @@ export float DistPointToSegmentSq(Vector2 p, Vector2 a, Vector2 b, out float u) 
 
 // Test whether a circle at center with radius collides with any solid
 // linedef of `sectorId` (or any one-sided line). Used by Phase 5+ collision.
-export bool CircleHitsSolidLine(MapData map, int sectorId, Vector2 center, float radius) {
+export bool CircleHitsSolidLine(
+  MapData map,
+  int sectorId,
+  Vector2 center,
+  float radius
+) {
   if (sectorId < 0) return true;
   var s = map.Sectors[sectorId];
   float r2 = radius * radius;

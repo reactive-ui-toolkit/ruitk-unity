@@ -2,7 +2,13 @@ import { IntroCounterFunc } from "./IntroCounterFunc"
 import "@System.Collections"
 import "@Ruitk.Samples.UITKXShared"
 
-export VirtualNode ListViewStatefulDemoFunc(IReadOnlyList<ListViewRowState>? items = null, Action? addItem = null, Action? setTopItem = null, Action? deleteLast = null, Action<int>? onCountChanged = null) {
+export VirtualNode ListViewStatefulDemoFunc(
+  IReadOnlyList<ListViewRowState>? items = null,
+  Action? addItem = null,
+  Action? setTopItem = null,
+  Action? deleteLast = null,
+  Action<int>? onCountChanged = null
+) {
   var safeItems = items ?? Array.Empty<ListViewRowState>();
 
   RowRenderer BuildRowRenderer() =>

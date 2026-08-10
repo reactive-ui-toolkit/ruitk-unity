@@ -49,22 +49,25 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void ImportedHook_LowersToUsingStaticContainer()
         {
-            Write("Counter.hooks.uitkx", "@namespace My.Ns\nexport hook useCounter() {\n    return 0;\n}\n");
+            Write("Counter.hooks.uitkx", "@namespace My.Ns\nexport void useCounter() {\n}\n");
             string vdoc = Generate("Screen.uitkx",
-                "import { useCounter } from \"./Counter.hooks\"\n@namespace My.Ns\ncomponent Screen {\n    var c = useCounter();\n    return (<Box />);\n}\n");
+                "import { useCounter } from \"./Counter.hooks\"\n@namespace My.Other\nVirtualNode Screen() {\n    var c = useCounter();\n    return (<Box />);\n}\n");
 
-            Assert.Contains("using static My.Ns.CounterHooks;", vdoc);
+            // 0.16.0: member imports lower to the target's per-file __Exports container
+            // (inside-namespace, global::-qualified).
+            Assert.Contains("using static global::My.Ns.__Exports;", vdoc);
         }
 
         [Fact]
-        public void ImportedModule_LowersToAlias()
+        public void StarImportOfMemberFile_LowersToExportsAlias()
         {
-            // Cross-namespace → alias (with the target's EFFECTIVE namespace).
-            Write("Palette.uitkx", "@namespace My.Shared\nexport module Palette {\n    public const int Gap = 4;\n}\n");
+            // 0.16.0: the legacy module-name alias became the star-import alias onto the
+            // target's per-file __Exports container (call sites Palette.Gap unchanged).
+            Write("Palette.uitkx", "@namespace My.Shared\nexport int Gap = 4;\n");
             string vdoc = Generate("Screen.uitkx",
-                "import { Palette } from \"./Palette\"\n@namespace My.Ns\ncomponent Screen {\n    var g = Palette.Gap;\n    return (<Box />);\n}\n");
+                "import * as Palette from \"./Palette\"\n@namespace My.Ns\nVirtualNode Screen() {\n    var g = Palette.Gap;\n    return (<Box />);\n}\n");
 
-            Assert.Contains("using Palette = My.Shared.Palette;", vdoc);
+            Assert.Contains("using Palette = global::My.Shared.__Exports;", vdoc);
         }
 
         [Fact]
@@ -74,7 +77,7 @@ namespace Ruitk.SourceGenerator.Tests
             // resolves through the shared namespace; the SG skips it to avoid CS0576).
             Write("Palette.uitkx", "@namespace My.Ns\nexport module Palette {\n    public const int Gap = 4;\n}\n");
             string vdoc = Generate("Screen.uitkx",
-                "import { Palette } from \"./Palette\"\n@namespace My.Ns\ncomponent Screen {\n    var g = Palette.Gap;\n    return (<Box />);\n}\n");
+                "import { Palette } from \"./Palette\"\n@namespace My.Ns\nVirtualNode Screen() {\n    var g = Palette.Gap;\n    return (<Box />);\n}\n");
 
             Assert.DoesNotContain("using Palette =", vdoc);
         }
@@ -84,7 +87,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             Write("Priv.uitkx", "@namespace My.Ns\nmodule Priv {\n    public const int X = 1;\n}\n");
             string vdoc = Generate("Screen.uitkx",
-                "import { Priv } from \"./Priv\"\n@namespace My.Ns\ncomponent Screen {\n    return (<Box />);\n}\n");
+                "import { Priv } from \"./Priv\"\n@namespace My.Ns\nVirtualNode Screen() {\n    return (<Box />);\n}\n");
 
             Assert.DoesNotContain("using Priv =", vdoc);
         }
