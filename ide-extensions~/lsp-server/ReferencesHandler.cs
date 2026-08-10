@@ -528,9 +528,12 @@ public sealed class ReferencesHandler : IReferencesHandler
         // name must be preceded by a REAL type token (audit B2, same guard as the
         // rename scan) — a whitespace-tolerant prefix would let an indented,
         // `=`-free call statement classify as a declaration and be dropped from
-        // includeDeclaration=false results.
+        // includeDeclaration=false results. The `)` alternative is the wrapped
+        // tuple-return continuation line the formatter emits for over-width heads
+        // (`) useX(…` at column 0) — the type-token alternative only spans such
+        // heads by accident and gives up past one level of tuple nesting.
         var hookDeclPattern = new Regex(
-            $@"^(?:export\s+)?{LspHelpers.DeclTypePattern}\s+({Regex.Escape(hookName)})(?=\s*(?:<[\w,\s]+>\s*)?\()",
+            $@"^(?:(?:export\s+)?{LspHelpers.DeclTypePattern}\s+|\)\s*)({Regex.Escape(hookName)})(?=\s*(?:<[\w,\s]+>\s*)?\()",
             RegexOptions.CultureInvariant | RegexOptions.Multiline);
         var declNameOffsets = new HashSet<int>();
         foreach (Match m in hookDeclPattern.Matches(fileText))
@@ -657,9 +660,10 @@ public sealed class ReferencesHandler : IReferencesHandler
         // Declaration head: `[export] <Type> name = …` (value) or
         // `[export] <ret> name[<T>](…)` (util). The name must be preceded by a REAL
         // type token (audit B2, same guard as the rename scan) so statement-shaped
-        // lines can never classify as declarations.
+        // lines can never classify as declarations. The `)` alternative is a
+        // wrapped tuple-return util head's continuation line (column 0).
         var declPattern = new Regex(
-            $@"^(?:export\s+)?{LspHelpers.DeclTypePattern}\s+({Regex.Escape(memberName)})(?=\s*(?:=(?!=)|(?:<[\w,\s]+>\s*)?\())",
+            $@"^(?:(?:export\s+)?{LspHelpers.DeclTypePattern}\s+|\)\s*)({Regex.Escape(memberName)})(?=\s*(?:=(?!=)|(?:<[\w,\s]+>\s*)?\())",
             RegexOptions.CultureInvariant | RegexOptions.Multiline);
         var declNameOffsets = new HashSet<int>();
         foreach (Match m in declPattern.Matches(fileText))

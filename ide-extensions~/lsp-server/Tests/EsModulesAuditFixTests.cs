@@ -213,6 +213,36 @@ namespace UitkxLanguageServer.Tests
         }
 
         [Fact]
+        public void HookReferences_WrappedDoublyNestedTupleHead_DeclarationIsNotACallSite()
+        {
+            // The wrapped tuple-return continuation line (`) useX(` at column 0) must be
+            // recognized as the DECLARATION even when the tuple nests two paren levels —
+            // past DeclTypePattern's accidental cross-line tolerance. Pre-fix, the name on
+            // that line was counted as a call site and polluted includeDeclaration=false.
+            string text =
+                "export (\n" +
+                "  List<(string id, (float x, float y) pos)> boxes,\n" +
+                "  bool finished\n" +
+                ") useDeepLoop(int count) {\n" +
+                "  return (null, false);\n" +
+                "}\n" +
+                "export VirtualNode Panel() {\n" +
+                "  useDeepLoop(3);\n" +
+                "  return (<VisualElement />);\n" +
+                "}\n";
+            var uri = DocumentUri.FromFileSystemPath(Path.Combine(_uiDir, "Deep.uitkx"));
+
+            var callsOnly = new List<Location>();
+            ReferencesHandler.CollectHookReferencesInText(text, uri, "useDeepLoop", includeDeclaration: false, callsOnly);
+            Assert.Single(callsOnly);
+            Assert.Equal(7, (int)callsOnly[0].Range.Start.Line);
+
+            var withDecl = new List<Location>();
+            ReferencesHandler.CollectHookReferencesInText(text, uri, "useDeepLoop", includeDeclaration: true, withDecl);
+            Assert.Equal(2, withDecl.Count);
+        }
+
+        [Fact]
         public void HookReferences_GenericCallSite_IsCollected()
         {
             string text =

@@ -1261,8 +1261,10 @@ public sealed class RenameHandler : IRenameHandler, IPrepareRenameHandler
         // lookbehind let indented statement-shaped `oldName(…)` lines match), and
         // declaration matches get the same comment/string guard the call pattern has, so
         // occurrences inside block comments and multi-line verbatim strings stay untouched.
+        // The `)` alternative is the wrapped tuple-return continuation line the formatter
+        // emits for over-width heads (`) useX(…` at column 0).
         var hookDeclPattern = new Regex(
-            $@"^(?:export\s+)?{LspHelpers.DeclTypePattern}\s+(?<name>{Regex.Escape(oldName)})(?=\s*(?:<[\w,\s]+>\s*)?\()",
+            $@"^(?:(?:export\s+)?{LspHelpers.DeclTypePattern}\s+|\)\s*)(?<name>{Regex.Escape(oldName)})(?=\s*(?:<[\w,\s]+>\s*)?\()",
             RegexOptions.CultureInvariant | RegexOptions.Multiline
         );
         foreach (Match m in hookDeclPattern.Matches(fileText))

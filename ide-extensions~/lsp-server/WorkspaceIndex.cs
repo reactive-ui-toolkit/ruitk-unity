@@ -170,11 +170,14 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
 
     // Matches a top-level declaration that contributes non-component symbols:
     //   export <Type> useX( / export <Type> Name = ...    (plain hook/util/value declarations)
+    //   ) useX(                                           (wrapped tuple-return head continuation)
     // Multiline so `^` matches each logical line start; the grammar prohibits leading
-    // whitespace before a top-level declaration head. (The legacy module/hook wrapper
-    // alternates were dropped with the grammar in 0.16.0.)
+    // whitespace before a top-level declaration head, so a column-0 `)` can only be the
+    // continuation line of a formatter-wrapped over-width head. (The legacy module/hook
+    // wrapper alternates were dropped with the grammar in 0.16.0.)
     private static readonly Regex s_uitkxModuleOrHookPattern = new(
-        @"^export\s+(?![A-Za-z_]\w*\s+from\b)[\w<>\[\],\s\.\?\(\)]+?\s[A-Za-z_]\w*\s*(?:<[\w,\s]+>)?\s*[=\(]",
+        @"^export\s+(?![A-Za-z_]\w*\s+from\b)[\w<>\[\],\s\.\?\(\)]+?\s[A-Za-z_]\w*\s*(?:<[\w,\s]+>)?\s*[=\(]"
+        + @"|^\)\s*[A-Za-z_]\w*\s*(?:<[\w,\s]+>)?\s*\(",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline
     );
 
