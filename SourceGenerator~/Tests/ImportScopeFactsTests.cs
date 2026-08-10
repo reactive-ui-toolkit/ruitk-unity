@@ -46,17 +46,19 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
-        public void CrossFolderModuleImport_AliasUsesDerivedEffectiveNamespace()
+        public void CrossFolderStarImport_AliasUsesDerivedEffectiveNamespace()
         {
-            // NO @namespace anywhere — the alias must use the PATH-DERIVED namespace
-            // (Ruitk.Uitkx.shared), not the raw parsed default.
-            F("shared/Tokens.types.uitkx", "export module Tokens {\n  public const int Gap = 8;\n}\n");
+            // NO @namespace anywhere — the star alias must bind the PATH-DERIVED
+            // namespace's __Exports (Ruitk.Uitkx.shared.*), not the raw parsed default.
+            F("shared/Tokens.types.uitkx", "export int Gap = 8;\n");
             string screen = F("screens/Home.uitkx",
-                "import { Tokens } from \"../shared/Tokens.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
+                "import * as Tokens from \"../shared/Tokens.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             var payloads = Payloads(screen);
 
-            Assert.Contains("Tokens = Ruitk.Uitkx.shared.Tokens", payloads);
+            Assert.Contains(payloads, p =>
+                p.StartsWith("Tokens = Ruitk.Uitkx.shared.", System.StringComparison.Ordinal)
+                && p.EndsWith(".__Exports", System.StringComparison.Ordinal));
         }
 
         [Fact]
@@ -107,20 +109,20 @@ namespace Ruitk.SourceGenerator.Tests
         public void ExplicitNamespaceOnTarget_WinsOverDerivation()
         {
             F("shared/Tokens.types.uitkx",
-                "@namespace My.Stamped.Ns\nexport module Tokens {\n  public const int Gap = 8;\n}\n");
+                "@namespace My.Stamped.Ns\nexport int Gap = 8;\n");
             string screen = F("screens/Home.uitkx",
-                "import { Tokens } from \"../shared/Tokens.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
+                "import * as Tokens from \"../shared/Tokens.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
-            Assert.Contains("Tokens = My.Stamped.Ns.Tokens", Payloads(screen));
+            Assert.Contains("Tokens = My.Stamped.Ns.__Exports", Payloads(screen));
         }
 
         [Fact]
         public void ReservedAliasName_Skipped()
         {
-            // A module deliberately named after a built-in style alias must not inject (CS1537).
-            F("shared/Color.types.uitkx", "export module Color {\n  public const int X = 1;\n}\n");
+            // A star alias deliberately named after a built-in style alias must not inject (CS1537).
+            F("shared/Color.types.uitkx", "export int X = 1;\n");
             string screen = F("screens/Home.uitkx",
-                "import { Color } from \"../shared/Color.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
+                "import * as Color from \"../shared/Color.types\"\nVirtualNode Home() {\n  return (<Box />);\n}\n");
 
             Assert.DoesNotContain(Payloads(screen), p => p.StartsWith("Color ="));
         }

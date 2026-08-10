@@ -11,7 +11,7 @@ namespace Ruitk.Language.Diagnostics
     ///   UITKX0120         T2 — Asset path validation; language-lib
     ///   UITKX0200–0200   T2v — Version compatibility; lsp-server
     ///   UITKX0210         T2 — HMR-swap field writes; SourceGenerator analyzer
-    ///   UITKX0211         T2 — `const` in module body breaks HMR; SourceGenerator analyzer
+    ///   UITKX0211         RETIRED 0.16.0 — `const` in legacy module body (grammar removed)
     ///   UITKX0300–0306   T1 — Parser syntax errors; emitted by UitkxParser /
     ///                         DirectiveParser into ParseResult.Diagnostics
     ///   UITKX0112         T3 — Roslyn data-flow; lsp-server (unused variable)
@@ -165,8 +165,8 @@ namespace Ruitk.Language.Diagnostics
         /// never propagate to consumers until a full domain reload. Use
         /// <c>static readonly</c> instead — the SG strips <c>readonly</c> and
         /// the HMR static-swapper refreshes the slot on every edit.
-        /// Severity: Warning. Emitted by the language-lib
-        /// <see cref="DiagnosticsAnalyzer"/>.
+        /// RETIRED 0.16.0 with the legacy module grammar (plain-dialect member
+        /// bodies have no field-position const); the ID stays reserved.
         /// </summary>
         public const string ConstInModule = "UITKX0211";
 
@@ -326,7 +326,9 @@ namespace Ruitk.Language.Diagnostics
 
         /// <summary>``companion partial-class merging is deprecated — '{0}' merges into '{1}' via
         /// legacy folder namespaces; migrate the companion set to plain declarations and file
-        /// imports``. Severity: Warning.</summary>
+        /// imports``. Severity: Warning.
+        /// RETIRED 0.16.0 with the legacy module grammar (the merge mechanism is gone);
+        /// the ID stays reserved.</summary>
         public const string DeprecatedCompanionMerge = "UITKX2107";
 
         /// <summary>``legacy wrapper declarations and plain declarations cannot be mixed in one
@@ -335,7 +337,9 @@ namespace Ruitk.Language.Diagnostics
         public const string MixedDeclarationStyles = "UITKX2108";
 
         /// <summary>``namespace/default/renamed import of '{0}' requires the target file to use
-        /// plain-declaration syntax — migrate '{1}' first``. Severity: Error.</summary>
+        /// plain-declaration syntax — migrate '{1}' first``. Severity: Error.
+        /// RETIRED 0.16.0 with the wrapper grammar (a legacy target now errors at
+        /// parse, so the migrate-first gate has no subject); the ID stays reserved.</summary>
         public const string ImportFormNeedsMigratedTarget = "UITKX2109";
 
         /// <summary>``renaming hook '{0}' to '{1}' drops the 'use' prefix — hook bindings must stay

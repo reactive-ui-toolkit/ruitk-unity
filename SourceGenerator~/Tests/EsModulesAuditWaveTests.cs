@@ -269,51 +269,10 @@ namespace Ruitk.SourceGenerator.Tests
                 ds, "C:/p/Assets/UI", "C:/p/Assets", "Game",
                 _ => true, _ => "Game", (_, _) => true, parseTargetFile);
 
-        [Fact]
-        public void F7_RenameImport_AgainstLegacyTarget_Emits2109()
-        {
-            var ds = DetectorDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray.Create("useThing"), "./LegacyHooks", 1, 0, ImmutableArray<int>.Empty,
-                    Aliases: ImmutableArray.Create<string?>("useOther"))),
-            };
-            var target = DetectorDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, _ => target);
-            Assert.Contains(findings, f => f.Code == "UITKX2109");
-        }
-
-        [Fact]
-        public void F11_DefaultImport_AgainstLegacyTarget_Only2109_No2326()
-        {
-            var ds = DetectorDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray<string>.Empty, "./Legacy", 1, 0, ImmutableArray<int>.Empty,
-                    IsDefault: true, DefaultAlias: "Thing")),
-            };
-            var target = DetectorDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, _ => target);
-            Assert.Contains(findings, f => f.Code == "UITKX2109");
-            Assert.DoesNotContain(findings, f => f.Code == "UITKX2326");
-        }
-
-        [Fact]
-        public void PC2_FamilyMessages_UseSingleQuotes()
-        {
-            var ds = DetectorDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray<string>.Empty, "./Shapes", 1, 0, ImmutableArray<int>.Empty,
-                    IsStar: true, StarAlias: "Shapes")),
-            };
-            var target = DetectorDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, _ => target);
-            var f2109 = findings.Find(f => f.Code == "UITKX2109");
-            Assert.NotNull(f2109);
-            Assert.Contains("'Shapes.uitkx'", f2109!.Message);
-            Assert.DoesNotContain("`", f2109.Message);
-        }
+        // (The F7/F11/PC-2 UITKX2109 tests were removed with the legacy grammar — 0.16.0.
+        // A legacy target now errors at parse, so the migrate-first import gate has no
+        // subject; 2326/2110 behavior on modern targets is pinned by
+        // ImportSurfaceValidationTests.)
 
         // ── F7b/star-gap/bridges/tag-maps: ImportScopeFacts against real files ──
 

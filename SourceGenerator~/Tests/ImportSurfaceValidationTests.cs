@@ -101,50 +101,9 @@ namespace Ruitk.SourceGenerator.Tests
             Assert.DoesNotContain(findings, f => f.Code == "UITKX2326");
         }
 
-        // ── 2109 (Unity-local): star/default/rename against a legacy target ─
-
-        [Fact]
-        public void StarImport_AgainstLegacyTarget_Emits2109()
-        {
-            var ds = EmptyDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray<string>.Empty, "./Shapes", 1, 0, ImmutableArray<int>.Empty,
-                    IsStar: true, StarAlias: "Shapes")),
-            };
-            var target = EmptyDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, p => p.EndsWith("Shapes.uitkx"), _ => target);
-            Assert.Single(findings, f => f.Code == "UITKX2109");
-        }
-
-        [Fact]
-        public void DefaultImport_AgainstLegacyTarget_Emits2109()
-        {
-            var ds = EmptyDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray<string>.Empty, "./ScorePanel", 1, 0, ImmutableArray<int>.Empty,
-                    IsDefault: true, DefaultAlias: "ScorePanel")),
-            };
-            var target = EmptyDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, p => p.EndsWith("ScorePanel.uitkx"), _ => target);
-            Assert.Contains(findings, f => f.Code == "UITKX2109");
-        }
-
-        [Fact]
-        public void NamedImport_AgainstLegacyTarget_NoFinding()
-        {
-            // Named imports (no alias/star/default) against a legacy target are the UNCHANGED
-            // legacy import form (row 6 of the deprecation matrix) — never 2109.
-            var ds = EmptyDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray.Create("Foo"), "./Foo", 1, 0, ImmutableArray<int>.Empty)),
-            };
-            var target = EmptyDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, p => p.EndsWith("Foo.uitkx"), _ => target);
-            Assert.DoesNotContain(findings, f => f.Code == "UITKX2109");
-        }
+        // (The UITKX2109 legacy-target tests were removed with the wrapper grammar —
+        // 0.16.0. A legacy target now errors at parse, so the migrate-first gate has
+        // no subject.)
 
         // ── 2110 (Unity-local): renaming a hook drops the 'use' prefix ──────
 

@@ -363,82 +363,9 @@ public sealed class DiagnosticsAnalyzerTests
         Assert.Equal(ParseSeverity.Warning, mk.Severity);
     }
 
-    // ── UITKX0211: const in module body breaks HMR ─────────────────────────
-    //
-    // Module-scope `const` is inlined into every consumer's IL at C# emit
-    // time, so HMR edits to the constant's value never propagate. The
-    // analyzer must flag it as a Warning so the user notices BEFORE shipping
-    // a value into prod that won't refresh on save during dev. See
-    // TECH_DEBT_20_21_22_RESOLUTION_PLAN.md §6.
-
-    [Fact]
-    public void UITKX0211_ConstInModule_Fires()
-    {
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  public const int X = 42;\n"
-            + "}";
-        var diags = Analyze(source);
-        Assert.True(HasDiag(diags, DiagnosticCodes.ConstInModule));
-    }
-
-    [Fact]
-    public void UITKX0211_ConstInModule_IsWarningSeverity()
-    {
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  public const float Pi = 3.14f;\n"
-            + "}";
-        var diags = Analyze(source);
-        var d = diags.FirstOrDefault(x => x.Code == DiagnosticCodes.ConstInModule);
-        Assert.NotNull(d);
-        Assert.Equal(ParseSeverity.Warning, d!.Severity);
-    }
-
-    [Fact]
-    public void UITKX0211_StaticReadonlyInModule_NoWarning()
-    {
-        // The recommended replacement: static readonly fields survive HMR via
-        // UitkxHmrModuleStaticSwapper. Must NOT fire UITKX0211.
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  public static readonly int X = 42;\n"
-            + "}";
-        var diags = Analyze(source);
-        Assert.False(HasDiag(diags, DiagnosticCodes.ConstInModule));
-    }
-
-    [Fact]
-    public void UITKX0211_CommentedConstInModule_NoWarning()
-    {
-        // The regex-based detector is line-aware and must skip lines whose
-        // const declaration sits behind a `//` comment. Regression guard.
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  // const int X = 42;\n"
-            + "  public static readonly int Y = 1;\n"
-            + "}";
-        var diags = Analyze(source);
-        Assert.False(HasDiag(diags, DiagnosticCodes.ConstInModule));
-    }
-
-    [Fact]
-    public void UITKX0211_MultipleConstsInModule_FiresPerDecl()
-    {
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  public const int A = 1;\n"
-            + "  public const int B = 2;\n"
-            + "}";
-        var diags = Analyze(source);
-        int count = diags.Count(d => d.Code == DiagnosticCodes.ConstInModule);
-        Assert.Equal(2, count);
-    }
+    // (The UITKX0211 const-in-module tests were removed with the legacy module
+    // grammar — 0.16.0. Plain-dialect member bodies have no field-position const,
+    // so the check has no subject.)
 
     // ── UITKX0120: Asset not found ─────────────────────────────────────────
 

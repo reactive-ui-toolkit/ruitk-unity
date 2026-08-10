@@ -101,10 +101,6 @@ namespace Ruitk.Language
             if (!directives.ComponentDeclarations.IsDefaultOrEmpty)
                 foreach (var c in directives.ComponentDeclarations) selfNames.Add(c.Name);
             if (!string.IsNullOrEmpty(directives.ComponentName)) selfNames.Add(directives.ComponentName!);
-            if (!directives.HookDeclarations.IsDefaultOrEmpty)
-                foreach (var h in directives.HookDeclarations) selfNames.Add(h.Name);
-            if (!directives.ModuleDeclarations.IsDefaultOrEmpty)
-                foreach (var m in directives.ModuleDeclarations) selfNames.Add(m.Name);
             if (!directives.MemberDeclarations.IsDefaultOrEmpty)
                 foreach (var m in directives.MemberDeclarations) selfNames.Add(m.Name);
 
@@ -286,22 +282,9 @@ namespace Ruitk.Language
                             var target = parseTargetFile(res.ProjectRelativePath!);
                             if (target != null)
                             {
-                                // Matrix §6 row 5: star, default, AND rename forms all require a
-                                // migrated target — a renamed binding has no legacy payload shape
-                                // (ImportScopeFacts withholds it), so without this gate the alias
-                                // silently never materializes and the build dies with CS0103.
-                                bool legacyTargetGate = target.UsesLegacySyntax
-                                    && (imp.IsStar || imp.IsDefault || aliases.Any(a => a != null));
-                                if (legacyTargetGate)
-                                {
-                                    findings.Add(new Finding("UITKX2109",
-                                        $"namespace/default/renamed import of '{ShortName(res.ProjectRelativePath!)}' requires the target file to use plain-declaration syntax — migrate '{ShortName(res.ProjectRelativePath!)}' first",
-                                        imp.Line, Column: specCol, EndColumn: specEnd));
-                                }
-
-                                // A legacy target never has a default export — 2109 already says
-                                // "migrate first"; stacking 2326 on the same line is noise.
-                                if (imp.IsDefault && target.DefaultExportName == null && !legacyTargetGate)
+                                // (The UITKX2109 legacy-target gate retired with the wrapper
+                                // grammar in 0.16.0 — a legacy target now errors at parse.)
+                                if (imp.IsDefault && target.DefaultExportName == null)
                                 {
                                     string suggested = target.ComponentDeclarations.Length > 0
                                         ? target.ComponentDeclarations[0].Name
@@ -311,22 +294,19 @@ namespace Ruitk.Language
                                         imp.Line, Column: specCol, EndColumn: specEnd));
                                 }
 
-                                if (!target.UsesLegacySyntax)
+                                for (int k = 0; k < imp.Names.Length && k < aliases.Length; k++)
                                 {
-                                    for (int k = 0; k < imp.Names.Length && k < aliases.Length; k++)
+                                    string? alias = aliases[k];
+                                    if (alias == null) continue;
+                                    string original = imp.Names[k];
+                                    bool originalIsHook = !target.MemberDeclarations.IsDefaultOrEmpty
+                                        && target.MemberDeclarations.Any(m => m.Name == original && m.Kind == DeclKind.Hook);
+                                    if (originalIsHook && !(alias.Length > 3 && alias[0] == 'u' && alias[1] == 's' && alias[2] == 'e' && char.IsUpper(alias[3])))
                                     {
-                                        string? alias = aliases[k];
-                                        if (alias == null) continue;
-                                        string original = imp.Names[k];
-                                        bool originalIsHook = !target.MemberDeclarations.IsDefaultOrEmpty
-                                            && target.MemberDeclarations.Any(m => m.Name == original && m.Kind == DeclKind.Hook);
-                                        if (originalIsHook && !(alias.Length > 3 && alias[0] == 'u' && alias[1] == 's' && alias[2] == 'e' && char.IsUpper(alias[3])))
-                                        {
-                                            int nameCol = k < imp.NameColumns.Length ? imp.NameColumns[k] : imp.Column;
-                                            findings.Add(new Finding("UITKX2110",
-                                                $"renaming hook '{original}' to '{alias}' drops the 'use' prefix — hook bindings must stay 'use'-prefixed",
-                                                imp.Line, Column: nameCol, EndColumn: nameCol >= 0 ? nameCol + alias.Length : -1));
-                                        }
+                                        int nameCol = k < imp.NameColumns.Length ? imp.NameColumns[k] : imp.Column;
+                                        findings.Add(new Finding("UITKX2110",
+                                            $"renaming hook '{original}' to '{alias}' drops the 'use' prefix — hook bindings must stay 'use'-prefixed",
+                                            imp.Line, Column: nameCol, EndColumn: nameCol >= 0 ? nameCol + alias.Length : -1));
                                     }
                                 }
                             }

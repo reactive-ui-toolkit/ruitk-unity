@@ -200,30 +200,18 @@ public sealed class DefinitionHandler : IDefinitionHandler
             }
         }
 
-        // ── Case 4b: hook / module declaration name ─────────────────────────
-        // When the cursor is on a hook or module declaration name, return the
-        // same position.  VS Code detects "definition == current location"
-        // and shows Find All References — matching JSX/TSX behaviour.
-        if (!parseResult.Directives.HookDeclarations.IsDefaultOrEmpty)
+        // ── Case 4b: member declaration name ────────────────────────────────
+        // When the cursor is on a member (value/util/hook) declaration name,
+        // return the same position.  VS Code detects "definition == current
+        // location" and shows Find All References — matching JSX/TSX behaviour.
+        if (!parseResult.Directives.MemberDeclarations.IsDefaultOrEmpty)
         {
-            foreach (var hook in parseResult.Directives.HookDeclarations)
+            foreach (var member in parseResult.Directives.MemberDeclarations)
             {
-                if (word == hook.Name)
+                if (word == member.Name)
                 {
                     ServerLog.Log(
-                        $"definition: '{word}' is own hook declaration – returning cursor pos for references fallback");
-                    return MakeLocation(localPath, line1, col0);
-                }
-            }
-        }
-        if (!parseResult.Directives.ModuleDeclarations.IsDefaultOrEmpty)
-        {
-            foreach (var mod in parseResult.Directives.ModuleDeclarations)
-            {
-                if (word == mod.Name)
-                {
-                    ServerLog.Log(
-                        $"definition: '{word}' is own module declaration – returning cursor pos for references fallback");
+                        $"definition: '{word}' is own member declaration – returning cursor pos for references fallback");
                     return MakeLocation(localPath, line1, col0);
                 }
             }

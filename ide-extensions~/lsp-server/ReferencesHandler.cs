@@ -154,35 +154,26 @@ public sealed class ReferencesHandler : IReferencesHandler
                 return new LocationContainer(locations);
             }
 
-            // ── Hook-name path: cursor on a hook declaration ─────────────
-            if (!parseResult.Directives.HookDeclarations.IsDefaultOrEmpty)
+            // ── Member-name path: cursor on a value/util/hook declaration ──
+            if (!parseResult.Directives.MemberDeclarations.IsDefaultOrEmpty)
             {
-                foreach (var hook in parseResult.Directives.HookDeclarations)
+                foreach (var member in parseResult.Directives.MemberDeclarations)
                 {
-                    if (word == hook.Name)
+                    if (word != member.Name)
+                        continue;
+                    var locations = new List<LspLocation>();
+                    if (member.Kind == DeclKind.Hook)
                     {
-                        ServerLog.Log($"[References] Hook: '{word}'");
-                        var locations = new List<LspLocation>();
+                        ServerLog.Log($"[References] Hook member: '{word}'");
                         CollectHookReferences(word, localPath, includeDeclaration, locations);
-                        ServerLog.Log($"[References] Hook path: {locations.Count} location(s)");
-                        return new LocationContainer(locations);
                     }
-                }
-            }
-
-            // ── Module-name path: cursor on a module declaration name ────
-            if (!parseResult.Directives.ModuleDeclarations.IsDefaultOrEmpty)
-            {
-                foreach (var mod in parseResult.Directives.ModuleDeclarations)
-                {
-                    if (word == mod.Name)
+                    else
                     {
-                        ServerLog.Log($"[References] Module: '{word}'");
-                        var locations = new List<LspLocation>();
-                        CollectModuleReferences(word, localPath, includeDeclaration, locations);
-                        ServerLog.Log($"[References] Module path: {locations.Count} location(s)");
-                        return new LocationContainer(locations);
+                        ServerLog.Log($"[References] Member: '{word}'");
+                        CollectMemberReferences(word, localPath, includeDeclaration, locations);
                     }
+                    ServerLog.Log($"[References] Member path: {locations.Count} location(s)");
+                    return new LocationContainer(locations);
                 }
             }
         }
@@ -520,28 +511,29 @@ public sealed class ReferencesHandler : IReferencesHandler
                 catch { continue; }
             }
 
-            // Hook declaration: `hook hookName(`
-            if (includeDeclaration)
+            // Hook declaration head (plain dialect): a top-level (column-0)
+            // `[export] <ret> useX[<T>](…)` line — the name sits before the
+            // param list with no `=` anywhere ahead of it on the line.
+            var hookDeclPattern = new Regex(
+                $@"^(?:export\s+)?[^\r\n=]*?\b({Regex.Escape(hookName)})(?=\s*(?:<[\w,\s]+>)?\s*\()",
+                RegexOptions.CultureInvariant | RegexOptions.Multiline);
+            var declNameOffsets = new HashSet<int>();
+            foreach (Match m in hookDeclPattern.Matches(fileText))
             {
-                var hookDeclPattern = new Regex(
-                    $@"(?<=\bhook\s+){Regex.Escape(hookName)}\b",
-                    RegexOptions.CultureInvariant);
-                foreach (Match m in hookDeclPattern.Matches(fileText))
-                {
-                    AddLocationDedup(locations, fileUri, fileText, m.Index, m.Length);
-                }
+                var g = m.Groups[1];
+                declNameOffsets.Add(g.Index);
+                if (includeDeclaration)
+                    AddLocationDedup(locations, fileUri, fileText, g.Index, g.Length);
             }
 
-            // Call sites: `hookName(` — whole-word followed by `(`
+            // Call sites: `hookName(` / `hookName<T>(` — whole-word
             var callPattern = new Regex(
-                $@"\b{Regex.Escape(hookName)}(?=\s*\()",
+                $@"\b{Regex.Escape(hookName)}(?=\s*(?:<[\w,\s]+>)?\s*\()",
                 RegexOptions.CultureInvariant);
             foreach (Match m in callPattern.Matches(fileText))
             {
-                // Skip hook declaration lines (already handled above)
-                int lineStart = fileText.LastIndexOf('\n', Math.Max(0, m.Index - 1)) + 1;
-                var linePrefix = fileText.Substring(lineStart, m.Index - lineStart).TrimStart();
-                if (linePrefix.StartsWith("hook ", StringComparison.Ordinal))
+                // Skip declaration heads (handled above, gated on includeDeclaration)
+                if (declNameOffsets.Contains(m.Index))
                     continue;
 
                 AddLocationDedup(locations, fileUri, fileText, m.Index, m.Length);
@@ -604,15 +596,16 @@ public sealed class ReferencesHandler : IReferencesHandler
         }
     }
 
-    // ── Module reference collection ───────────────────────────────────────────
+    // ── Member reference collection (values/utils) ────────────────────────────
 
     /// <summary>
-    /// Collects module declaration and usage references across .uitkx files
-    /// in the same directory.  Finds <c>module Name { }</c> declarations and
-    /// bare identifier usages of the module name.
+    /// Collects value/util member declaration and usage references across
+    /// .uitkx files in the same directory.  Finds the plain declaration head
+    /// (<c>[export] &lt;Type&gt; name = …</c> / <c>[export] &lt;ret&gt; name(…)</c>)
+    /// and bare identifier usages of the member name.
     /// </summary>
-    private void CollectModuleReferences(
-        string moduleName,
+    private void CollectMemberReferences(
+        string memberName,
         string originFilePath,
         bool includeDeclaration,
         List<LspLocation> locations)
@@ -634,30 +627,33 @@ public sealed class ReferencesHandler : IReferencesHandler
                 catch { continue; }
             }
 
-            // Module declaration: `module Name {`
-            if (includeDeclaration)
+            // Declaration head: a top-level (column-0) plain declaration — the
+            // name followed by `=` (value) or a param list (util), with no `=`
+            // ahead of it on the line.
+            var declPattern = new Regex(
+                $@"^(?:export\s+)?[^\r\n=]*?\b({Regex.Escape(memberName)})(?=\s*(?:=(?!=)|(?:<[\w,\s]+>)?\s*\())",
+                RegexOptions.CultureInvariant | RegexOptions.Multiline);
+            var declNameOffsets = new HashSet<int>();
+            foreach (Match m in declPattern.Matches(fileText))
             {
-                var declPattern = new Regex(
-                    $@"(?<=\bmodule\s+){Regex.Escape(moduleName)}\b",
-                    RegexOptions.CultureInvariant);
-                foreach (Match m in declPattern.Matches(fileText))
-                {
-                    AddLocationDedup(locations, fileUri, fileText, m.Index, m.Length);
-                }
+                var g = m.Groups[1];
+                declNameOffsets.Add(g.Index);
+                if (includeDeclaration)
+                    AddLocationDedup(locations, fileUri, fileText, g.Index, g.Length);
             }
 
-            // Usages of the module name as an identifier (e.g. `ModuleName.field`)
+            // Usages of the member name as an identifier
             var usagePattern = new Regex(
-                $@"\b{Regex.Escape(moduleName)}\b",
+                $@"\b{Regex.Escape(memberName)}\b",
                 RegexOptions.CultureInvariant);
             foreach (Match m in usagePattern.Matches(fileText))
             {
-                // Skip the declaration keyword line itself
-                int lineStart = fileText.LastIndexOf('\n', Math.Max(0, m.Index - 1)) + 1;
-                var linePrefix = fileText.Substring(lineStart, m.Index - lineStart).TrimStart();
-                if (linePrefix.StartsWith("module ", StringComparison.Ordinal))
+                // Skip the declaration head (handled above, gated on includeDeclaration)
+                if (declNameOffsets.Contains(m.Index))
                     continue;
                 // Skip directives and comments
+                int lineStart = fileText.LastIndexOf('\n', Math.Max(0, m.Index - 1)) + 1;
+                var linePrefix = fileText.Substring(lineStart, m.Index - lineStart).TrimStart();
                 if (linePrefix.StartsWith("@", StringComparison.Ordinal))
                     continue;
                 if (linePrefix.StartsWith("//", StringComparison.Ordinal))

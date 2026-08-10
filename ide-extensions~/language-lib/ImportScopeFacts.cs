@@ -60,13 +60,6 @@ namespace Ruitk.Language
             string importerDir = (Path.GetDirectoryName(uitkxFilePath) ?? string.Empty).Replace('\\', '/');
             string rootDir = EffectiveNamespace.UiSourceRootDir(uitkxFilePath) ?? importerDir;
 
-            // The importer's EFFECTIVE namespace drives the same-namespace guards — raw would be
-            // wrong for every stamp-less (path-derived) file. Mode-aware (U-01): a new-syntax
-            // importer is file-keyed.
-            string? importerNs = EffectiveNamespace.Resolve(
-                directives.HasExplicitNamespace, directives.Namespace, uitkxFilePath,
-                fileKeyed: !directives.UsesLegacySyntax);
-
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var imp in directives.Imports)
             {
@@ -83,35 +76,17 @@ namespace Ruitk.Language
                 catch { continue; }
 
                 // EFFECTIVE namespace of the target — the namespace its generated types actually
-                // land in (explicit @namespace wins, else path-derived + config prefix). Mode from
-                // the TARGET's own parse (U-01): a migrated target is file-keyed even when the
-                // importer is legacy.
+                // land in (explicit @namespace wins, else path-derived + config prefix).
                 string? tns = EffectiveNamespace.Resolve(
-                    tds.HasExplicitNamespace, tds.Namespace, target,
-                    fileKeyed: !tds.UsesLegacySyntax);
+                    tds.HasExplicitNamespace, tds.Namespace, target, fileKeyed: true);
                 if (string.IsNullOrEmpty(tns))
                     continue;
 
-                // Legacy-branch name table: UN-aliased names only. A renamed import against a
-                // legacy target has NO payload shape (matrix §6 row 5 — `* as`/default/rename
-                // require a migrated target, UITKX2109); emitting the container/alias keyed on
-                // the ORIGINAL name would bind the wrong identifier and mask the diagnostic.
-                var importedNames = new HashSet<string>(StringComparer.Ordinal);
+                // ── U-03 lowering table ──
+                // Members (values/utils/hooks) live on the target's per-file `__Exports`
+                // container. Aliased member imports get typed BRIDGES (emitter-side, not
+                // usings); aliased component imports are plain alias-renames.
                 {
-                    var aliasesL = imp.Aliases.IsDefaultOrEmpty
-                        ? System.Collections.Immutable.ImmutableArray<string?>.Empty : imp.Aliases;
-                    for (int k = 0; k < imp.Names.Length; k++)
-                        if (!(k < aliasesL.Length && aliasesL[k] != null))
-                            importedNames.Add(imp.Names[k]);
-                }
-                bool sameNs = string.Equals(tns, importerNs, StringComparison.Ordinal);
-
-                if (!tds.UsesLegacySyntax)
-                {
-                    // ── New-mode target (ES-modules campaign, U-03 lowering table) ──
-                    // Members (values/utils/hooks) live on the target's per-file `__Exports`
-                    // container. Aliased member imports get typed BRIDGES (emitter-side, not
-                    // usings); aliased component imports are plain alias-renames.
                     var aliasesN = imp.Aliases.IsDefaultOrEmpty
                         ? System.Collections.Immutable.ImmutableArray<string?>.Empty : imp.Aliases;
                     bool AliasedAt(int k) => k < aliasesN.Length && aliasesN[k] != null;
@@ -195,43 +170,7 @@ namespace Ruitk.Language
                         }
                         // Aliased members → bridge emission (M3, consumer's __Exports) — no using.
                     }
-                    continue;
                 }
-
-                // ── Legacy-mode target: today's payloads exactly (deprecation window) ──
-
-                // Hook: expose the whole owning container. No same-ns skip — a redundant
-                // `using static` is harmless (CS0105 is suppressed in generated output).
-                if (!tds.HookDeclarations.IsDefaultOrEmpty)
-                    foreach (var h in tds.HookDeclarations)
-                        if (h.IsExported && importedNames.Contains(h.Name))
-                        {
-                            string line = $"static {tns}.{DeriveHookContainerClassName(target)}";
-                            if (seen.Add(line))
-                                result.Add(line);
-                            break;
-                        }
-
-                // Module + component aliases (same guards as the SG's ResolveInjectedUsings).
-                if (!sameNs && !tds.ModuleDeclarations.IsDefaultOrEmpty)
-                    foreach (var m in tds.ModuleDeclarations)
-                        if (m.IsExported && importedNames.Contains(m.Name)
-                            && !ReservedTypeAliases.Contains(m.Name))
-                        {
-                            string line = $"{m.Name} = {tns}.{m.Name}";
-                            if (seen.Add(line))
-                                result.Add(line);
-                        }
-
-                if (!sameNs && !tds.ComponentDeclarations.IsDefaultOrEmpty)
-                    foreach (var c in tds.ComponentDeclarations)
-                        if (c.IsExported && importedNames.Contains(c.Name)
-                            && !ReservedTypeAliases.Contains(c.Name))
-                        {
-                            string line = $"{c.Name} = {tns}.{c.Name}";
-                            if (seen.Add(line))
-                                result.Add(line);
-                        }
             }
             return result;
         }
@@ -271,7 +210,7 @@ namespace Ruitk.Language
                     tds = DirectiveParser.Parse(File.ReadAllText(target), target, new List<ParseDiagnostic>());
                 }
                 catch { continue; }
-                if (tds.UsesLegacySyntax || tds.MemberDeclarations.IsDefaultOrEmpty)
+                if (tds.MemberDeclarations.IsDefaultOrEmpty)
                     continue;
 
                 MemberDeclaration? Find(string name)
@@ -389,8 +328,6 @@ namespace Ruitk.Language
                     tds = DirectiveParser.Parse(File.ReadAllText(target), target, new List<ParseDiagnostic>());
                 }
                 catch { continue; }
-                if (tds.UsesLegacySyntax)
-                    continue;
                 string? tns = EffectiveNamespace.Resolve(
                     tds.HasExplicitNamespace, tds.Namespace, target, fileKeyed: true);
                 if (!string.IsNullOrEmpty(tns))
@@ -433,7 +370,7 @@ namespace Ruitk.Language
                     tds = DirectiveParser.Parse(File.ReadAllText(target), target, new List<ParseDiagnostic>());
                 }
                 catch { continue; }
-                if (tds.UsesLegacySyntax || tds.MemberDeclarations.IsDefaultOrEmpty)
+                if (tds.MemberDeclarations.IsDefaultOrEmpty)
                     continue;
                 string? tns = EffectiveNamespace.Resolve(
                     tds.HasExplicitNamespace, tds.Namespace, target, fileKeyed: true);
@@ -568,25 +505,7 @@ namespace Ruitk.Language
             return name.Length > 0 ? name : null;
         }
 
-        /// <summary>
-        /// Mode-aware container name (ES-modules campaign, U-06): a NEW-mode target's members all
-        /// live on the per-file <c>__Exports</c> container; a legacy target keeps the historical
-        /// <c>{Stem}Hooks</c> naming. Additive overload (U-12) — the 1-arg form below stays for
-        /// legacy callers and the HMR reflection seam.
-        /// </summary>
-        public static string DeriveHookContainerClassName(string filePath, bool targetUsesLegacySyntax)
-            => targetUsesLegacySyntax ? DeriveHookContainerClassName(filePath) : "__Exports";
-
-        /// <summary>Container class name from a hook file path — mirror of <c>HookEmitter.DeriveContainerClassName</c> (part before the first dot, PascalCased, + <c>Hooks</c>).</summary>
-        public static string DeriveHookContainerClassName(string filePath)
-        {
-            string fileName = Path.GetFileNameWithoutExtension(filePath);
-            int dot = fileName.IndexOf('.');
-            if (dot > 0)
-                fileName = fileName.Substring(0, dot);
-            if (fileName.Length > 0 && char.IsLower(fileName[0]))
-                fileName = char.ToUpper(fileName[0]) + fileName.Substring(1);
-            return fileName + "Hooks";
-        }
+        // (DeriveHookContainerClassName was removed in the 0.16.0 legacy wave — every
+        // member-bearing file's container is the per-file __Exports.)
     }
 }

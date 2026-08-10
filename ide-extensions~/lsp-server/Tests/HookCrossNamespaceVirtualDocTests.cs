@@ -13,11 +13,11 @@ using Xunit;
 
 namespace UitkxLanguageServer.Tests;
 
-// LSP-side parity for SG Stage 3d cross-namespace hook resolution (Issue #18).
-// The host's EnrichWithPeerHookUsings must inject `using static <HookNs>.<X>Hooks;`
-// into the virtual document for any peer hook file that belongs to the same
-// asmdef as the consumer .uitkx, regardless of whether it shares the consumer's
-// namespace. This mirrors the SG fix in UitkxPipeline Stage 3d.
+// LSP-side parity for SG cross-namespace hook resolution (Issue #18, reshaped by
+// the 0.16.0 legacy wave): the virtual document must carry the import-driven
+// `using static <HookNs>.__Exports;` payload (shared ImportScopeFacts route) for
+// every peer hook file the consumer explicitly imports, regardless of whether it
+// shares the consumer's namespace. Mirrors the SG's ResolveInjectedUsings.
 [Collection("Roslyn")]
 public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposable
 {

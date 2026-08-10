@@ -133,12 +133,11 @@ namespace Ruitk.SourceGenerator
                 // mainstream no-asmdef Assembly-CSharp setup would have been a false positive.
             }
 
-            // ── Short-circuit: new-mode member-only files (no components, no markup) ──
+            // ── Short-circuit: member-only files (no components, no markup) ──
             // ES-modules campaign (U-02): a plain-declaration file with only values/utils/hooks
-            // emits its per-file __Exports container and nothing else. Mirrors the legacy
-            // hook/module short-circuit below (same guards, same #error surfacing).
-            if (!directives.UsesLegacySyntax
-                && directives.ComponentName == null
+            // emits its per-file __Exports container and nothing else (same guards and #error
+            // surfacing as the component path).
+            if (directives.ComponentName == null
                 && directives.ComponentDeclarations.IsDefaultOrEmpty
                 && !directives.MemberDeclarations.IsDefaultOrEmpty)
             {
@@ -609,21 +608,16 @@ namespace Ruitk.SourceGenerator
 
         /// <summary>
         /// The effective C# namespace for a parsed <c>.uitkx</c> file (import/export grammar, leg 3, §4).
-        /// The single seam controlling namespace identity:
-        /// <list type="bullet">
-        ///   <item><description>Flag OFF (default) → the legacy value the parser already produced
-        ///   (explicit <c>@namespace</c>, else companion-<c>.cs</c> inference / hard-coded fallback).
-        ///   Byte-identical to pre-feature output.</description></item>
-        ///   <item><description>Flag ON → explicit <c>@namespace</c> wins; otherwise the path-derived
-        ///   default anchored at the owning asmdef. A <c>null</c> derivation (no owning asmdef) is the
-        ///   UITKX2310 condition — the caller reports it; this falls back to the legacy value so the
-        ///   emit never produces a null namespace.</description></item>
-        /// </list>
+        /// The single seam controlling namespace identity — always FILE-keyed since 0.16.0:
+        /// explicit <c>@namespace</c> wins; otherwise the path-derived default anchored at the
+        /// owning asmdef. A <c>null</c> derivation (no owning asmdef) is the UITKX2310 condition —
+        /// the caller reports it; this falls back to the parsed value so the emit never produces
+        /// a null namespace.
         /// </summary>
         internal static string? ResolveEffectiveNamespace(DirectiveSet directives, string filePath)
             => EffectiveNamespace.Resolve(
                 directives.HasExplicitNamespace, directives.Namespace, filePath,
-                fileKeyed: !directives.UsesLegacySyntax);
+                fileKeyed: true);
 
         /// <summary>
         /// The full <c>using</c> list for a component file after hook-container injection (§6.2).
