@@ -1,3 +1,4 @@
+import * as HudStyles from "./HudStyles.style"
 import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes.C"
 import "@static Ruitk.Samples.Components.GalagaGame.SpriteAtlas"
 

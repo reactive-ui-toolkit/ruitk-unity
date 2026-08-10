@@ -74,7 +74,12 @@ FAQ, Getting Started, HMR), a dedicated **Migrating to 0.16** page, and the prev
 missing **Mounting & Roots** page (all three `RootRenderer.Initialize` hosts including
 the Unity 6.5 `PanelRenderer` path, `env` seeding, editor mounting).
 
-Tests: SG suite 1819, LSP suite 155, shared fiber suite unchanged; family corpus hash
+Samples: the game samples' style companions moved from ambient `.cs` static classes to
+`.style.uitkx` modules (11 files, 50 style exports across Galaga, Mario, Snake) — each
+consumer star-imports the module under the old class name, so every call site is
+unchanged; the one non-style member (`GalagaScreen`) moved to `GalagaTypes.cs`.
+
+Tests: SG suite 1844, LSP suite 164, shared fiber suite unchanged; family corpus hash
 gate green on the re-frozen value.
 
 ## [0.15.0] - 2026-08-02

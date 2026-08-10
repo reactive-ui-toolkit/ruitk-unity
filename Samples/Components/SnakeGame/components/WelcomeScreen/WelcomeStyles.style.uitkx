@@ -1,0 +1,32 @@
+export Style Container = new Style {
+  (StyleKeys.Display, "flex"),
+  (StyleKeys.FlexGrow, 1f),
+  (StyleKeys.FlexDirection, "column"),
+  (StyleKeys.JustifyContent, "center"),
+  (StyleKeys.AlignItems, "center"),
+};
+
+export Style Title = new Style {
+  (StyleKeys.FontSize, 36f),
+  (StyleKeys.Color, new Color(0.4f, 0.9f, 0.4f, 1f)),
+  (StyleKeys.MarginBottom, 16f),
+};
+
+export Style Description = new Style {
+  (StyleKeys.FontSize, 14f),
+  (StyleKeys.Color, new Color(0.7f, 0.7f, 0.7f, 1f)),
+  (StyleKeys.MarginBottom, 32f),
+  (StyleKeys.MaxWidth, 400f),
+  (StyleKeys.TextAlign, "center"),
+  (StyleKeys.WhiteSpace, "normal"),
+};
+
+export Style StartButton = new Style {
+  (StyleKeys.Height, 44f),
+  (StyleKeys.Width, 200f),
+  (StyleKeys.BackgroundColor, new Color(0.2f, 0.6f, 0.3f, 1f)),
+  (StyleKeys.Color, Color.white),
+  (StyleKeys.FontSize, 16f),
+  (StyleKeys.BorderRadius, 6f),
+  (StyleKeys.BorderWidth, 0f),
+};
