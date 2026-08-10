@@ -319,7 +319,7 @@ namespace Ruitk.Language.Roslyn
                 b.Scaffold($"namespace {ns}\n{{\n");
                 AppendImportUsingsInsideNamespace(b, d, uitkxFilePath, seen);
                 b.Scaffold($"    using static global::{ns}.__Exports;\n\n");
-                EmitExportsScaffold(b, d, bridges, escapedPath);
+                EmitExportsScaffold(b, d, bridges, escapedPath, source);
                 if (string.IsNullOrEmpty(d.ComponentName))
                 {
                     b.Scaffold("}\n");
@@ -383,7 +383,8 @@ namespace Ruitk.Language.Roslyn
             VirtualDocBuilder b,
             DirectiveSet d,
             IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue, string? TypeParams)> bridges,
-            string escapedPath)
+            string escapedPath,
+            string source)
         {
             b.Scaffold("    static partial class __Exports\n    {\n");
             b.Scaffold("#line hidden\n");
@@ -398,7 +399,9 @@ namespace Ruitk.Language.Roslyn
                     {
                         string type = m.ReturnTypeText
                             ?? ImportScopeFacts.ExtractNewInitializerTypeName(m.BodyText) ?? "object";
-                        b.Scaffold($"        {access} static {type} {m.Name} = ");
+                        b.Scaffold($"        {access} static {type} ");
+                        EmitMemberName(b, m, source);
+                        b.Scaffold(" = ");
                         b.Scaffold($"\n#line {m.BodyStartLine} \"{escapedPath}\"\n");
                         b.Mapped(m.BodyText, m.BodyStartOffset, SourceRegionKind.ModuleBody, m.BodyStartLine);
                         b.Scaffold("\n#line hidden\n");
@@ -414,7 +417,9 @@ namespace Ruitk.Language.Roslyn
                     var kind = m.Kind == DeclKind.Hook ? SourceRegionKind.HookBody : SourceRegionKind.ModuleBody;
                     if (m.IsExpressionBodied)
                     {
-                        b.Scaffold($"        {access} static {ret} {m.Name}{typeParams}({paramsText}) => ");
+                        b.Scaffold($"        {access} static {ret} ");
+                        EmitMemberName(b, m, source);
+                        b.Scaffold($"{typeParams}({paramsText}) => ");
                         b.Scaffold($"\n#line {m.BodyStartLine} \"{escapedPath}\"\n");
                         b.Mapped(m.BodyText, m.BodyStartOffset, kind, m.BodyStartLine);
                         b.Scaffold("\n#line hidden\n");
@@ -422,7 +427,9 @@ namespace Ruitk.Language.Roslyn
                     }
                     else
                     {
-                        b.Scaffold($"        {access} static {ret} {m.Name}{typeParams}({paramsText})\n");
+                        b.Scaffold($"        {access} static {ret} ");
+                        EmitMemberName(b, m, source);
+                        b.Scaffold($"{typeParams}({paramsText})\n");
                         b.Scaffold("        {\n");
                         b.Scaffold($"#line {m.BodyStartLine} \"{escapedPath}\"\n");
                         b.Mapped(m.BodyText, m.BodyStartOffset, kind, m.BodyStartLine);
@@ -447,6 +454,41 @@ namespace Ruitk.Language.Roslyn
             }
 
             b.Scaffold("    }\n\n");
+        }
+
+        /// <summary>
+        /// Emits a member declaration's NAME token. The name is user-authored source
+        /// text, not scaffold — mapping it makes Roslyn authoritative for cursor-on-name
+        /// (semantic tokens, definition, references, rename) instead of falling to the
+        /// text-scan/TextMate heuristics. Emitted bytes are identical on both paths;
+        /// the position is verified against the source before mapping so a stale
+        /// <c>NameColumn</c> degrades to scaffold rather than mapping a wrong span.
+        /// </summary>
+        private static void EmitMemberName(VirtualDocBuilder b, MemberDeclaration m, string source)
+        {
+            if (m.DeclarationLine > 0 && m.NameColumn >= 0)
+            {
+                int offset = 0;
+                for (int line = 1; line < m.DeclarationLine && offset >= 0; line++)
+                {
+                    offset = source.IndexOf('\n', offset);
+                    if (offset >= 0)
+                        offset++;
+                }
+                if (offset >= 0)
+                {
+                    int nameOffset = offset + m.NameColumn;
+                    if (nameOffset + m.Name.Length <= source.Length
+                        && string.CompareOrdinal(source, nameOffset, m.Name, 0, m.Name.Length) == 0)
+                    {
+                        b.Mapped(m.Name, nameOffset,
+                            m.Kind == DeclKind.Hook ? SourceRegionKind.HookBody : SourceRegionKind.ModuleBody,
+                            m.DeclarationLine);
+                        return;
+                    }
+                }
+            }
+            b.Scaffold(m.Name);
         }
 
         // -- Function-style component ------------------------------------------

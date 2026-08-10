@@ -323,22 +323,20 @@ public sealed class RenameHandler : IRenameHandler, IPrepareRenameHandler
                         }
 
                         // If the symbol is a method matching a peer hook
-                        // declaration, also rename the hook keyword line
+                        // declaration, also rename the hook declaration line
                         // and call sites across .uitkx files.
                         // Skip the current file — Roslyn already renamed call sites there.
+                        // Anchored on the ORIGIN file's own directory, not on a peer
+                        // virtual document: peer vdocs only exist for files that were
+                        // opened/ensured, and gating on them made the cross-file half
+                        // of the rename depend on which tabs happened to be open.
                         if (symbol is IMethodSymbol)
                         {
-                            var peerVDocs = _roslynHost.GetPeerVirtualDocuments(localPath);
-                            if (peerVDocs != null && peerVDocs.Count > 0)
-                            {
-                                // Pick any peer path to anchor the directory scan
-                                var firstPeerPath = peerVDocs.Values.First().PeerPath;
-                                ServerLog.Log(
-                                    $"[Rename] Hook method rename from consumer: '{symbol.Name}' → '{newName}', scanning peers from {Path.GetFileName(firstPeerPath)}");
-                                CollectHookRenameEdits(
-                                    firstPeerPath, symbol.Name, newName, changes,
-                                    skipFilePath: localPath);
-                            }
+                            ServerLog.Log(
+                                $"[Rename] Hook method rename: '{symbol.Name}' → '{newName}', scanning same-dir peers");
+                            CollectHookRenameEdits(
+                                localPath, symbol.Name, newName, changes,
+                                skipFilePath: localPath);
                         }
 
                         // If the symbol is a field/property (e.g. module style),

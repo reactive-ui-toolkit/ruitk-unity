@@ -238,6 +238,80 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
     }
 
     [Fact]
+    public async Task References_OnStyleFileExports_FindConsumerUsages()
+    {
+        // Field repro (TicTacToe.style.uitkx): Find All References on the FIRST
+        // export of a member-only style file returned nothing while later exports
+        // worked. Mirrors the real server flow — the handler ensures the Roslyn
+        // vdoc itself, so the C# path (not just the text fallback) is exercised,
+        // with the consumer present as a same-dir peer.
+        var styleContent =
+            "import \"@static Ruitk.Props.Typed.StyleKeys\"\n"
+            + "\n"
+            + "export Style containerStyle = new Style\n"
+            + "{\n"
+            + "  FlexGrow = 1,\n"
+            + "};\n"
+            + "\n"
+            + "export Style ButtonStyles = new Style\n"
+            + "{\n"
+            + "  Padding = 10f,\n"
+            + "};\n";
+        var consumerContent =
+            "import { ButtonStyles, containerStyle } from \"./Board.style\"\n"
+            + "\n"
+            + "export VirtualNode Board() {\n"
+            + "  return (\n"
+            + "    <VisualElement style={containerStyle}>\n"
+            + "      <Button style={ButtonStyles} />\n"
+            + "    </VisualElement>\n"
+            + "  );\n"
+            + "}\n";
+
+        string stylePathRaw = Path.Combine(_tempDir, "Board.style.uitkx");
+        string consumerPathRaw = Path.Combine(_tempDir, "Board.uitkx");
+        File.WriteAllText(stylePathRaw, styleContent);
+        File.WriteAllText(consumerPathRaw, consumerContent);
+
+        var styleUri = OmniSharp.Extensions.LanguageServer.Protocol.DocumentUri
+            .FromFileSystemPath(stylePathRaw);
+        var consumerUri = OmniSharp.Extensions.LanguageServer.Protocol.DocumentUri
+            .FromFileSystemPath(consumerPathRaw);
+
+        var store = new DocumentStore();
+        store.Set(styleUri, styleContent);
+        store.Set(consumerUri, consumerContent);
+        var handler = new ReferencesHandler(store, new WorkspaceIndex(), _host);
+
+        foreach (var name in new[] { "containerStyle", "ButtonStyles" })
+        {
+            int declOffset = styleContent.IndexOf(name, StringComparison.Ordinal);
+            int line0 = styleContent.Substring(0, declOffset).Count(c => c == '\n');
+            int lineStart = styleContent.LastIndexOf('\n', declOffset - 1) + 1;
+            int char0 = declOffset - lineStart + 2;
+
+            var result = await handler.Handle(
+                new OmniSharp.Extensions.LanguageServer.Protocol.Models.ReferenceParams
+                {
+                    TextDocument = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .TextDocumentIdentifier(styleUri),
+                    Position = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .Position(line0, char0),
+                    Context = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .ReferenceContext { IncludeDeclaration = true },
+                },
+                CancellationToken.None);
+
+            int inConsumer = result == null ? 0 : result.Count(l =>
+                l.Uri.GetFileSystemPath().EndsWith(
+                    "Board.uitkx", StringComparison.OrdinalIgnoreCase));
+            Assert.True(inConsumer > 0,
+                $"{name}: expected consumer references, got "
+                + (result == null ? "null" : $"{result.Count()} location(s), none in Board.uitkx"));
+        }
+    }
+
+    [Fact]
     public async Task Rename_HookFromCallSite_AlsoRenamesImportListName()
     {
         // F2 on the CALL site renames the declaration (hook path) and every C#

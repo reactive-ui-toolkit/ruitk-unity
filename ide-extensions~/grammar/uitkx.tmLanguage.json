@@ -154,9 +154,9 @@
       }
     },
     "plain-declaration": {
-      "comment": "Plain typed declaration head (ES-modules campaign, U-04/G-03): [export] VirtualNode Name( => component (entity.name.class); [export] <Type> useName( => hook (entity.name.function). Value/util heads fall through to #code-block-body (ordinary C# coloring). Must run AFTER the import patterns.",
+      "comment": "Plain typed declaration head (ES-modules campaign, U-04/G-03): [export] VirtualNode Name( => component (entity.name.class); [export] <Type> useName( => hook (entity.name.function); [export] <Type> name = => value (variable.other.constant); [export] <Type> name( => util (entity.name.function); a column-0 `) name(` is the wrapped tuple-return continuation the formatter emits for over-width heads. Declared names get a deterministic scope here so they never fall to the case-split identifier heuristics (#cs-type-name / #identifier). Value/util/wrapped alternatives are column-0-anchored so body statements cannot false-match. Must run AFTER the import patterns.",
       "name": "meta.declaration.plain.uitkx",
-      "match": "^(\\s*)(export)?\\s*((?:global::)?(?:[A-Za-z_][\\w.]*\\.)?VirtualNode)\\s+([A-Z][A-Za-z0-9_]*)\\s*(?=\\()|^(\\s*)(export)?\\s*((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+(use[A-Z][A-Za-z0-9_]*)\\s*(<[\\w,\\s]+>)?\\s*(?=\\()",
+      "match": "^(\\s*)(export)?\\s*((?:global::)?(?:[A-Za-z_][\\w.]*\\.)?VirtualNode)\\s+([A-Z][A-Za-z0-9_]*)\\s*(?=\\()|^(\\s*)(export)?\\s*((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+(use[A-Z][A-Za-z0-9_]*)\\s*(<[\\w,\\s]+>)?\\s*(?=\\()|^(export\\s+)?(?![<\\s])((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?==(?!=))|^(export\\s+)?(?![<\\s])((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(<[\\w,\\s]+>)?\\s*(?=\\()|^(\\))\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(<[\\w,\\s]+>)?\\s*(?=\\()",
       "captures": {
         "2": { "name": "keyword.control.export.uitkx" },
         "3": { "name": "entity.name.type.uitkx" },
@@ -164,7 +164,17 @@
         "6": { "name": "keyword.control.export.uitkx" },
         "7": { "patterns": [ { "include": "#expression-content" } ] },
         "8": { "name": "entity.name.function.uitkx" },
-        "9": { "name": "entity.name.type.uitkx" }
+        "9": { "name": "entity.name.type.uitkx" },
+        "10": { "name": "keyword.control.export.uitkx" },
+        "11": { "patterns": [ { "include": "#expression-content" } ] },
+        "12": { "name": "variable.other.constant.uitkx" },
+        "13": { "name": "keyword.control.export.uitkx" },
+        "14": { "patterns": [ { "include": "#expression-content" } ] },
+        "15": { "name": "entity.name.function.uitkx" },
+        "16": { "name": "entity.name.type.uitkx" },
+        "17": { "name": "punctuation.section.group.end.uitkx" },
+        "18": { "name": "entity.name.function.uitkx" },
+        "19": { "name": "entity.name.type.uitkx" }
       }
     },
     "comment": {

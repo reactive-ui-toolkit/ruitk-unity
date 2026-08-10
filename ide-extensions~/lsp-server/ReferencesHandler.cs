@@ -106,18 +106,19 @@ public sealed class ReferencesHandler : IReferencesHandler
                             roslynDoc, symbol, localPath, text, vdoc,
                             includeDeclaration, ct, peerVDocs);
 
-                        // For methods that match a peer hook, also collect
-                        // text-based hook references across peer .uitkx files.
-                        if (symbol is IMethodSymbol && peerVDocs != null && peerVDocs.Count > 0)
+                        // Text-based supplements over same-dir peer .uitkx files
+                        // (deduped against the Roslyn results). NOT gated on peer
+                        // virtual documents existing: a peer vdoc only exists once
+                        // the peer file has been opened/ensured, but the usages
+                        // live in the FILES — gating on vdocs made results depend
+                        // on which tabs happened to be open.
+                        if (symbol is IMethodSymbol)
                         {
                             CollectHookReferences(
                                 symbol.Name, localPath, includeDeclaration, locations);
                         }
 
-                        // For fields/properties (module styles), also collect
-                        // text-based references across peer .uitkx files.
-                        if ((symbol is IFieldSymbol || symbol is IPropertySymbol)
-                            && peerVDocs != null && peerVDocs.Count > 0)
+                        if (symbol is IFieldSymbol || symbol is IPropertySymbol)
                         {
                             CollectPeerSymbolReferences(
                                 symbol.Name, localPath, includeDeclaration, locations);
