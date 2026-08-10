@@ -217,6 +217,41 @@ public sealed class DefinitionHandler : IDefinitionHandler
             }
         }
 
+        // ── Case 4c: call site of an IMPORTED member ─────────────────────────
+        // Ctrl+click on `useX(...)` / a value name whose binding came from an
+        // import: navigate straight to the declaration in the target file
+        // (aliases navigate to the target's ORIGINAL name). Deterministic — no
+        // dependence on the Roslyn workspace being warm — and wrapped-head
+        // aware via FindDeclarationLine, which the Roslyn peer fallback below
+        // is not once the head sits in unmapped scaffold.
+        if (!parseResult.Directives.Imports.IsDefaultOrEmpty)
+        {
+            foreach (var imp in parseResult.Directives.Imports)
+            {
+                var aliases = imp.Aliases.IsDefaultOrEmpty
+                    ? ImmutableArray<string?>.Empty
+                    : imp.Aliases;
+                for (int k = 0; k < imp.Names.Length; k++)
+                {
+                    string bound = k < aliases.Length && aliases[k] != null
+                        ? aliases[k]!
+                        : imp.Names[k];
+                    if (word != bound)
+                        continue;
+                    string? target = LspHelpers.ResolveImportTarget(localPath, imp.Specifier);
+                    if (target is null || !File.Exists(target))
+                        break;
+                    int declLine = FindDeclarationLine(target, imp.Names[k]);
+                    if (declLine > 0)
+                    {
+                        ServerLog.Log($"definition: imported member '{word}' → {target}:{declLine}");
+                        return MakeLocation(target, declLine);
+                    }
+                    break;
+                }
+            }
+        }
+
         // ── Case 5: Roslyn symbol resolution ─────────────────────────────────
         // Covers symbols defined in companion .cs files and declarations that
         // the text-regex heuristic above cannot find.
@@ -396,11 +431,13 @@ public sealed class DefinitionHandler : IDefinitionHandler
         return false;
     }
 
-    /// <summary>1-based line of the declaration of <paramref name="name"/> in a file, or 0. BOTH
-    /// grammars (ES-modules campaign, M5): the legacy wrapper head
-    /// (<c>[export] component|hook|module Name</c>) and the plain-declaration head
-    /// (<c>[export] &lt;Type&gt; Name(</c> / <c>[export] [&lt;Type&gt;] Name =</c>).</summary>
-    private static int FindDeclarationLine(string filePath, string name)
+    /// <summary>1-based line of the declaration of <paramref name="name"/> in a file, or 0.
+    /// Matches the plain-declaration head (<c>[export] &lt;Type&gt; Name(</c> /
+    /// <c>[export] [&lt;Type&gt;] Name =</c>) AND the wrapped tuple-return continuation line
+    /// (<c>) Name[&lt;T&gt;](</c> at column 0) that the formatter emits for over-width hook
+    /// heads — the name of a long hook lives on that continuation line, not on the
+    /// <c>export (</c> line the head starts on.</summary>
+    internal static int FindDeclarationLine(string filePath, string name)
     {
         try
         {
@@ -408,11 +445,13 @@ public sealed class DefinitionHandler : IDefinitionHandler
             // the previous optional-prefix shape let a statement-shaped `name(…)` call line
             // above the real declaration win the top-down scan. Untyped value declarations
             // (`export theme = …`) are the only type-less form and always carry `export`.
+            // A column-0 `)` can only be a wrapped head's continuation — statements are
+            // never top-level in the plain grammar.
             string n = Regex.Escape(name);
             var re = new Regex(
-                $@"^(?:(?:export\s+)?(?:component|hook|module)\s+{n}\b"
-                + $@"|(?:export\s+)?{LspHelpers.DeclTypePattern}\s+{n}\s*(?:<[\w,\s]+>)?\s*[=\(]"
-                + $@"|export\s+{n}\s*=(?!=))");
+                $@"^(?:(?:export\s+)?{LspHelpers.DeclTypePattern}\s+{n}\s*(?:<[\w,\s]+>)?\s*[=\(]"
+                + $@"|export\s+{n}\s*=(?!=)"
+                + $@"|\)\s*{n}\s*(?:<[\w,\s]+>)?\s*\()");
             string[] lines = File.ReadAllLines(filePath);
             for (int i = 0; i < lines.Length; i++)
                 if (re.IsMatch(lines[i]))
@@ -606,9 +645,10 @@ public sealed class DefinitionHandler : IDefinitionHandler
     }
 
     /// <summary>
-    /// Searches a .uitkx source for a <c>hook</c> or <c>module</c> declaration
-    /// whose name matches <paramref name="symbolName"/>.  Returns the 1-based
-    /// line and 0-based column of the name, or (0, 0) if not found.
+    /// Searches a .uitkx source for a plain member declaration whose name matches
+    /// <paramref name="symbolName"/> — including the wrapped tuple-return
+    /// continuation line the formatter emits for over-width hook heads.
+    /// Returns the 1-based line and 0-based column of the name, or (0, 0).
     /// </summary>
     internal static (int Line, int Col) FindDeclarationInUitkx(string source, string symbolName)
     {
@@ -617,41 +657,13 @@ public sealed class DefinitionHandler : IDefinitionHandler
         {
             lineNum++;
             var line = rawLine.TrimEnd('\r');
-            var trimmed = line.TrimStart();
-
-            // Optional `export ` prefix (import/export grammar, 0.7.0+) — every
-            // consumable hook/module carries it now; without stripping it the
-            // StartsWith below never matches and go-to-definition on any exported
-            // hook/module silently dead-ends.
-            if (trimmed.StartsWith("export ", StringComparison.Ordinal))
-                trimmed = trimmed.Substring("export ".Length).TrimStart();
-
-            // Match:  hook symbolName(...)  or  module symbolName(...)
-            foreach (var keyword in new[] { "hook ", "module " })
-            {
-                if (!trimmed.StartsWith(keyword, StringComparison.Ordinal))
-                    continue;
-
-                int nameStart = trimmed.IndexOf(symbolName, keyword.Length, StringComparison.Ordinal);
-                if (nameStart < 0)
-                    continue;
-
-                // Whole-word check
-                int nameEnd = nameStart + symbolName.Length;
-                bool rightOk = nameEnd >= trimmed.Length
-                    || !char.IsLetterOrDigit(trimmed[nameEnd]) && trimmed[nameEnd] != '_';
-                if (!rightOk)
-                    continue;
-
-                int col = line.IndexOf(symbolName, StringComparison.Ordinal);
-                return (lineNum, col >= 0 ? col : 0);
-            }
 
             // Plain-declaration head (ES-modules campaign, M5): `[export] <Type> Name(` /
-            // `[export] [<Type>] Name =`. A declaration head requires a type token before
-            // the name (audit B1 — statement-shaped `name(…)` lines must never match), and
-            // is checked on the RAW line: top-level declarations start at column 0, so
-            // indented body statements never match.
+            // `[export] [<Type>] Name =` / the `) Name(` wrapped-head continuation. A
+            // declaration head requires a type token before the name (audit B1 —
+            // statement-shaped `name(…)` lines must never match), and is checked on the
+            // RAW line: top-level declarations start at column 0, so indented body
+            // statements never match.
             if (s_plainDeclHeadRe.Match(line) is { Success: true } pm
                 && string.Equals(pm.Groups["name"].Value, symbolName, StringComparison.Ordinal))
             {
@@ -664,6 +676,9 @@ public sealed class DefinitionHandler : IDefinitionHandler
 
     private static readonly Regex s_plainDeclHeadRe = new(
         @"^(?:export\s+)?" + LspHelpers.DeclTypePattern + @"\s+(?<name>[A-Za-z_]\w*)\s*(?:<[\w,\s]+>)?\s*[=\(]"
-        + @"|^export\s+(?<name>[A-Za-z_]\w*)\s*=(?!=)",
+        + @"|^export\s+(?<name>[A-Za-z_]\w*)\s*=(?!=)"
+        // The wrapped tuple-return continuation line the formatter emits for over-width
+        // hook heads: `) name[<T>](` at column 0 (a top-level `)` can only be this).
+        + @"|^\)\s*(?<name>[A-Za-z_]\w*)\s*(?:<[\w,\s]+>)?\s*\(",
         RegexOptions.CultureInvariant);
 }
