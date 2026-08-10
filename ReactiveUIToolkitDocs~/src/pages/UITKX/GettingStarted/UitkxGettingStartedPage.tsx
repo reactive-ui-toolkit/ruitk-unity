@@ -60,9 +60,10 @@ export const UitkxGettingStartedPage: FC = () => (
     </Typography>
     <Typography variant="body2" paragraph>
       Upgrading an existing project? The old wrapper keywords were removed in 0.16.0 — the
-      bundled codemod (<code>node scripts/migrate-uitkx.mjs Assets --es-modules</code>) migrates
-      wrapper-keyword files to plain <code>export</code> declarations in one pass — see{' '}
-      <MuiLink component={RouterLink} to="/imports">Imports &amp; Exports → Migrating an existing project</MuiLink>.
+      codemod (run from a clone of the repository:{' '}
+      <code>node scripts/migrate-uitkx.mjs &lt;YourProject&gt;/Assets --es-modules</code>)
+      migrates wrapper-keyword files to plain <code>export</code> declarations in one pass — see{' '}
+      <MuiLink component={RouterLink} to="/migration-0-16">Migrating to 0.16</MuiLink>.
     </Typography>
 
     <Typography variant="h5" component="h2" gutterBottom>

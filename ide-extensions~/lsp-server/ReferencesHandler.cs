@@ -511,33 +511,47 @@ public sealed class ReferencesHandler : IReferencesHandler
                 catch { continue; }
             }
 
-            // Hook declaration head (plain dialect): a top-level (column-0)
-            // `[export] <ret> useX[<T>](…)` line — the name sits before the
-            // param list with no `=` anywhere ahead of it on the line.
-            var hookDeclPattern = new Regex(
-                $@"^(?:export\s+)?[^\r\n=]*?\b({Regex.Escape(hookName)})(?=\s*(?:<[\w,\s]+>)?\s*\()",
-                RegexOptions.CultureInvariant | RegexOptions.Multiline);
-            var declNameOffsets = new HashSet<int>();
-            foreach (Match m in hookDeclPattern.Matches(fileText))
-            {
-                var g = m.Groups[1];
-                declNameOffsets.Add(g.Index);
-                if (includeDeclaration)
-                    AddLocationDedup(locations, fileUri, fileText, g.Index, g.Length);
-            }
+            CollectHookReferencesInText(fileText, fileUri, hookName, includeDeclaration, locations);
+        }
+    }
 
-            // Call sites: `hookName(` / `hookName<T>(` — whole-word
-            var callPattern = new Regex(
-                $@"\b{Regex.Escape(hookName)}(?=\s*(?:<[\w,\s]+>)?\s*\()",
-                RegexOptions.CultureInvariant);
-            foreach (Match m in callPattern.Matches(fileText))
-            {
-                // Skip declaration heads (handled above, gated on includeDeclaration)
-                if (declNameOffsets.Contains(m.Index))
-                    continue;
+    /// <summary>Per-file text scan of <see cref="CollectHookReferences"/> (pure — directly
+    /// unit-testable): the plain declaration head plus call sites.</summary>
+    internal static void CollectHookReferencesInText(
+        string fileText,
+        DocumentUri fileUri,
+        string hookName,
+        bool includeDeclaration,
+        List<LspLocation> locations)
+    {
+        // Hook declaration head (plain dialect): `[export] <ret> useX[<T>](…)`. The
+        // name must be preceded by a REAL type token (audit B2, same guard as the
+        // rename scan) — a whitespace-tolerant prefix would let an indented,
+        // `=`-free call statement classify as a declaration and be dropped from
+        // includeDeclaration=false results.
+        var hookDeclPattern = new Regex(
+            $@"^(?:export\s+)?{LspHelpers.DeclTypePattern}\s+({Regex.Escape(hookName)})(?=\s*(?:<[\w,\s]+>\s*)?\()",
+            RegexOptions.CultureInvariant | RegexOptions.Multiline);
+        var declNameOffsets = new HashSet<int>();
+        foreach (Match m in hookDeclPattern.Matches(fileText))
+        {
+            var g = m.Groups[1];
+            declNameOffsets.Add(g.Index);
+            if (includeDeclaration)
+                AddLocationDedup(locations, fileUri, fileText, g.Index, g.Length);
+        }
 
-                AddLocationDedup(locations, fileUri, fileText, m.Index, m.Length);
-            }
+        // Call sites: `hookName(` / `hookName<T>(` — whole-word
+        var callPattern = new Regex(
+            $@"\b{Regex.Escape(hookName)}(?=\s*(?:<[\w,\s]+>\s*)?\()",
+            RegexOptions.CultureInvariant);
+        foreach (Match m in callPattern.Matches(fileText))
+        {
+            // Skip declaration heads (handled above, gated on includeDeclaration)
+            if (declNameOffsets.Contains(m.Index))
+                continue;
+
+            AddLocationDedup(locations, fileUri, fileText, m.Index, m.Length);
         }
     }
 
@@ -627,40 +641,53 @@ public sealed class ReferencesHandler : IReferencesHandler
                 catch { continue; }
             }
 
-            // Declaration head: a top-level (column-0) plain declaration — the
-            // name followed by `=` (value) or a param list (util), with no `=`
-            // ahead of it on the line.
-            var declPattern = new Regex(
-                $@"^(?:export\s+)?[^\r\n=]*?\b({Regex.Escape(memberName)})(?=\s*(?:=(?!=)|(?:<[\w,\s]+>)?\s*\())",
-                RegexOptions.CultureInvariant | RegexOptions.Multiline);
-            var declNameOffsets = new HashSet<int>();
-            foreach (Match m in declPattern.Matches(fileText))
-            {
-                var g = m.Groups[1];
-                declNameOffsets.Add(g.Index);
-                if (includeDeclaration)
-                    AddLocationDedup(locations, fileUri, fileText, g.Index, g.Length);
-            }
+            CollectMemberReferencesInText(fileText, fileUri, memberName, includeDeclaration, locations);
+        }
+    }
 
-            // Usages of the member name as an identifier
-            var usagePattern = new Regex(
-                $@"\b{Regex.Escape(memberName)}\b",
-                RegexOptions.CultureInvariant);
-            foreach (Match m in usagePattern.Matches(fileText))
-            {
-                // Skip the declaration head (handled above, gated on includeDeclaration)
-                if (declNameOffsets.Contains(m.Index))
-                    continue;
-                // Skip directives and comments
-                int lineStart = fileText.LastIndexOf('\n', Math.Max(0, m.Index - 1)) + 1;
-                var linePrefix = fileText.Substring(lineStart, m.Index - lineStart).TrimStart();
-                if (linePrefix.StartsWith("@", StringComparison.Ordinal))
-                    continue;
-                if (linePrefix.StartsWith("//", StringComparison.Ordinal))
-                    continue;
+    /// <summary>Per-file text scan of <see cref="CollectMemberReferences"/> (pure — directly
+    /// unit-testable): the plain declaration head plus bare identifier usages.</summary>
+    internal static void CollectMemberReferencesInText(
+        string fileText,
+        DocumentUri fileUri,
+        string memberName,
+        bool includeDeclaration,
+        List<LspLocation> locations)
+    {
+        // Declaration head: `[export] <Type> name = …` (value) or
+        // `[export] <ret> name[<T>](…)` (util). The name must be preceded by a REAL
+        // type token (audit B2, same guard as the rename scan) so statement-shaped
+        // lines can never classify as declarations.
+        var declPattern = new Regex(
+            $@"^(?:export\s+)?{LspHelpers.DeclTypePattern}\s+({Regex.Escape(memberName)})(?=\s*(?:=(?!=)|(?:<[\w,\s]+>\s*)?\())",
+            RegexOptions.CultureInvariant | RegexOptions.Multiline);
+        var declNameOffsets = new HashSet<int>();
+        foreach (Match m in declPattern.Matches(fileText))
+        {
+            var g = m.Groups[1];
+            declNameOffsets.Add(g.Index);
+            if (includeDeclaration)
+                AddLocationDedup(locations, fileUri, fileText, g.Index, g.Length);
+        }
 
-                AddLocationDedup(locations, fileUri, fileText, m.Index, m.Length);
-            }
+        // Usages of the member name as an identifier
+        var usagePattern = new Regex(
+            $@"\b{Regex.Escape(memberName)}\b",
+            RegexOptions.CultureInvariant);
+        foreach (Match m in usagePattern.Matches(fileText))
+        {
+            // Skip the declaration head (handled above, gated on includeDeclaration)
+            if (declNameOffsets.Contains(m.Index))
+                continue;
+            // Skip directives and comments
+            int lineStart = fileText.LastIndexOf('\n', Math.Max(0, m.Index - 1)) + 1;
+            var linePrefix = fileText.Substring(lineStart, m.Index - lineStart).TrimStart();
+            if (linePrefix.StartsWith("@", StringComparison.Ordinal))
+                continue;
+            if (linePrefix.StartsWith("//", StringComparison.Ordinal))
+                continue;
+
+            AddLocationDedup(locations, fileUri, fileText, m.Index, m.Length);
         }
     }
 

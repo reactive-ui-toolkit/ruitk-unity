@@ -9,7 +9,8 @@ namespace Ruitk.SourceGenerator.Tests
     /// <summary>
     /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M1, U-04): plain
     /// (wrapper-keyword-free) top-level declarations classify from the signature alone
-    /// (G-03), full export surface (default/list), and the mixed-style guard (U-08/2108).
+    /// (G-03), full export surface (default/list), and the mixed-style guard (U-08; the
+    /// 2320 removal error since 0.16.0).
     /// </summary>
     public sealed class PlainDeclarationParsingTests
     {
@@ -191,20 +192,22 @@ namespace Ruitk.SourceGenerator.Tests
             Assert.Contains(diags, d => d.Code == "UITKX2324");
         }
 
-        // ── Mixed-style guard (U-08 / Unity-local 2108) ─────────────────────
+        // ── Mixed-style guard (U-08, retired 2108 → the 2320 removal error) ─
 
         [Fact]
         public void MixedFile_PlainFirst_ThenWrapperKeyword_IsAnError()
         {
-            // 0.16.0: a wrapper keyword anywhere is an error (2108 mixed-mode detection
-            // still anchors it inside a plain file; retires to the 2320 removal error
-            // with the phase-4 parser deletions).
+            // 0.16.0: a wrapper keyword inside a plain file is the mode-independent
+            // 2320 mixed-file removal error (2108 retired; the Error severity must
+            // survive the codemod's migration parse so mixed files freeze).
             var (ds, diags) = Parse(
                 "int MaxItems = 5;\n" +
                 "compo" + "nent Foo {\n  return ( <Spacer /> );\n}\n");
             Assert.Contains(diags, d =>
                 d.Severity == ParseSeverity.Error
-                && (d.Code == "UITKX2108" || d.Code == "UITKX2320"));
+                && d.Code == "UITKX2320"
+                && d.Message.Contains("cannot be mixed"));
+            Assert.DoesNotContain(diags, d => d.Code == "UITKX2108");
             Assert.False(ds.UsesLegacySyntax);
         }
 

@@ -3932,9 +3932,9 @@ namespace Ruitk.SourceGenerator.Emitter
         ///
         /// <para>This method is a pure function of its inputs and is the single
         /// entry point used by every emitter (<see cref="CSharpEmitter"/>,
-        /// <see cref="HookEmitter"/>, <see cref="ModuleEmitter"/>) so that
-        /// <c>module</c> / <c>hook</c> bodies receive the same path-rewrite as
-        /// component setup code and JSX attributes.</para>
+        /// <see cref="HookEmitter"/>, <see cref="ExportsEmitter"/>) so that
+        /// member bodies receive the same path-rewrite as component setup code
+        /// and JSX attributes.</para>
         /// </summary>
         // H-03: bare paths ("styles.uss", no "./" prefix) used to pass through
         // AS-IS (unresolved) here while the LSP analyzer resolved them

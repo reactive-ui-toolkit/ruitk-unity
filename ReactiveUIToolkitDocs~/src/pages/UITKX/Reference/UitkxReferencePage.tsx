@@ -94,10 +94,13 @@ export const UitkxReferencePage: FC = () => (
       <code>import &quot;@Ns&quot;</code> spelling is the recommended form — see{' '}
       <MuiLink component={RouterLink} to="/imports">Imports &amp; Exports</MuiLink>) and{' '}
       <code>@uss</code>. <code>@namespace</code> is an optional interop override (the namespace is
-      file-keyed when omitted), and <code>@backend</code> selects the render backend. The legacy
-      directive-header form (<code>@component</code>/<code>@props</code>/<code>@key</code>/
-      <code>@inject</code>) was <strong>removed in 0.16.0</strong> together with the wrapper
-      keywords — run <code>UitkxMigrateImports --es-modules</code> to convert old files.
+      file-keyed when omitted), and <code>@backend</code> selects the render backend. The wrapper
+      keywords (<code>component</code>/<code>hook</code>/<code>module</code>) were{' '}
+      <strong>removed in 0.16.0</strong> — the <code>UitkxMigrateImports --es-modules</code>{' '}
+      codemod converts those files. The much older directive-header form (
+      <code>@component</code>/<code>@props</code>/<code>@key</code>/<code>@inject</code>) has been
+      unsupported since 0.5; such files report <code>UITKX2105</code> and must be rewritten as
+      plain declarations by hand.
     </Typography>
     <TableContainer>
       <Table size="small" sx={Styles.table}>

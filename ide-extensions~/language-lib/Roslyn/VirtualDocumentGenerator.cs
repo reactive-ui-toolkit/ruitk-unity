@@ -305,13 +305,13 @@ namespace Ruitk.Language.Roslyn
                 : "Component";
             string escapedPath = EscapePathForLineDirective(uitkxFilePath);
 
-            // -- New-mode __Exports scaffold (ES-modules campaign, U-02/M5) ----
+            // -- __Exports scaffold (ES-modules campaign, U-02/M5) ----
             // Plain member declarations (values/utils/hooks) live on the per-file __Exports
             // container in the real build; scaffold the same shape here — with mapped bodies so
             // IntelliSense/diagnostics work inside them — plus stub bridges for aliased/default
             // member imports. The component partial (below) sees them bare-name through the
-            // own-exports using scaffolded by AppendImportUsings' caller path (same namespace is
-            // NOT enough for static-class members).
+            // own-exports using scaffolded right below (same namespace is NOT enough for
+            // static-class members).
             bool hasMembers = !d.MemberDeclarations.IsDefaultOrEmpty;
             var bridges = ImportScopeFacts.ComputeImportedMemberBridges(d, uitkxFilePath);
             if (hasMembers || bridges.Count > 0)

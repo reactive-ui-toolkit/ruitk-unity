@@ -76,11 +76,12 @@ export VirtualNode Screen() {
 }`
 
 export const EXAMPLE_CODEMOD = `# Migrate wrapper-keyword files to plain declarations (the wrappers were
-# removed in 0.16.0 — un-migrated files raise UITKX2320):
-node scripts/migrate-uitkx.mjs Assets --es-modules
+# removed in 0.16.0 — un-migrated files raise UITKX2320). The tool ships in
+# the REPOSITORY, not the package: clone ruitk-unity and run from its root:
+node scripts/migrate-uitkx.mjs <YourProject>/Assets --es-modules
 
 # Dry run / idempotence gate — reports which files WOULD change, exits non-zero if any:
-node scripts/migrate-uitkx.mjs Assets --es-modules --check
+node scripts/migrate-uitkx.mjs <YourProject>/Assets --es-modules --check
 
 # Companion sets (X.uitkx + X.*.uitkx) migrate atomically. Generic hooks migrate
 # too (first-class since 0.16.0); the one shape the plain dialect cannot express —

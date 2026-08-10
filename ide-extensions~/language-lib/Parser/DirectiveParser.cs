@@ -127,7 +127,7 @@ namespace Ruitk.Language.Parser
                     Code = "UITKX2105",
                     Severity = ParseSeverity.Error,
                     SourceLine = fsLine,
-                    Message = "Invalid function-style component declaration. Expected 'component PascalCaseName { ... return (...) ... }'.",
+                    Message = "Invalid component declaration. Expected a plain typed declaration, e.g. 'export VirtualNode PascalCaseName(...) { ... return (...); }'.",
                 });
 
                 return new DirectiveSet(
@@ -155,7 +155,7 @@ namespace Ruitk.Language.Parser
                 Code = "UITKX2105",
                 Severity = ParseSeverity.Error,
                 SourceLine = 1,
-                Message = $"'{fallbackName}.uitkx' does not contain a valid function-style component declaration. Expected 'component PascalCaseName {{ ... return (...) ... }}'.",
+                Message = $"'{fallbackName}.uitkx' does not contain a valid top-level declaration. Expected a plain typed declaration, e.g. 'export VirtualNode PascalCaseName(...) {{ ... return (...); }}'.",
             });
 
             return new DirectiveSet(
@@ -749,13 +749,14 @@ namespace Ruitk.Language.Parser
                     else if (LooksLikePlainDeclarationHeadAt(source, i))
                     {
                         // U-08 mirror direction: a PLAIN declaration after legacy wrapper
-                        // declarations is the same mixed-mode error as a wrapper after plain.
+                        // declarations. Mode-independent Error (not WrapperKeywordDiag) so a
+                        // mixed file still freezes under the codemod's migration parse.
                         diagnosticBag.Add(new ParseDiagnostic
                         {
-                            Code = "UITKX2108",
+                            Code = "UITKX2320",
                             Severity = ParseSeverity.Error,
                             SourceLine = LineAtPos(source, i),
-                            Message = "legacy wrapper declarations and plain declarations cannot be mixed in one file — the file's first declaration sets its style",
+                            Message = "a plain declaration cannot follow legacy wrapper declarations — the wrapper grammar was removed in 0.16.0; rewrite the wrapper declarations as plain 'export' forms (mixed files are not auto-migrated by the codemod)",
                         });
                     }
                     else
@@ -1550,19 +1551,48 @@ namespace Ruitk.Language.Parser
             }
 
             if (hooks.Count == 0 && modules.Count == 0)
-                return false;
+            {
+                // The dispatch guard saw a `hook`/`module` head, so the file IS legacy even
+                // though no declaration survived the structural parse. Returning false here
+                // would drop the classification: Parse would fall through to the 2105
+                // fallback with UsesLegacySyntax=false, the SG's legacy gate would miss,
+                // and — worse — the codemod's already-migrated probe would pass the broken
+                // file through byte-untouched instead of freezing it into the parse-errors
+                // report. The 2320 + structural diagnostics are already in the bag.
+                directiveSet = new DirectiveSet(
+                    Namespace: functionNamespace,
+                    ComponentName: null,
+                    PropsTypeName: null,
+                    DefaultKey: null,
+                    Usings: usings.ToImmutableArray(),
+                    UssFiles: ImmutableArray<string>.Empty,
+                    Injects: ImmutableArray<(string Type, string Name)>.Empty,
+                    MarkupStartLine: line,
+                    MarkupStartIndex: source.Length,
+                    MarkupEndIndex: source.Length,
+                    IsFunctionStyle: true,
+                    HasExplicitNamespace: inlineNamespace != null,
+                    FunctionSetupCode: string.Empty,
+                    FunctionSetupStartLine: line
+                )
+                { UsingDirectives = usingDirectives.ToImmutableArray() };
+                return true;
+            }
 
             // Check for trailing content after declarations
             if (TryFindNextNonWhitespace(source, i, out int trailingPos))
             {
                 bool plainHead = LooksLikePlainDeclarationHeadAt(source, trailingPos);
+                // Mode-independent Error (deliberately NOT WrapperKeywordDiag): under the
+                // codemod's migration parse 2320 downgrades to a Warning, but a MIXED file
+                // is not auto-migratable and must still freeze into the parse-errors report.
                 diagnosticBag.Add(new ParseDiagnostic
                 {
-                    Code = plainHead ? "UITKX2108" : "UITKX2105",
+                    Code = plainHead ? "UITKX2320" : "UITKX2105",
                     Severity = ParseSeverity.Error,
                     SourceLine = LineAtPos(source, trailingPos),
                     Message = plainHead
-                        ? "legacy wrapper declarations and plain declarations cannot be mixed in one file — the file's first declaration sets its style"
+                        ? "a plain declaration cannot follow legacy wrapper declarations — the wrapper grammar was removed in 0.16.0; rewrite the wrapper declarations as plain 'export' forms (mixed files are not auto-migrated by the codemod)"
                         : "Invalid top-level statement after hook/module declarations.",
                 });
             }
@@ -2240,9 +2270,11 @@ namespace Ruitk.Language.Parser
                     continue;
                 }
 
-                // Legacy wrapper keyword in a new-mode file (U-08 / matrix row 3): UITKX2108
-                // (Unity-local), parsed best-effort via the existing machinery for IDE resilience,
-                // then STOP — the file's mode is broken past this point.
+                // Legacy wrapper keyword in a new-mode file (U-08 / matrix row 3): the removal
+                // error, parsed best-effort via the existing machinery for IDE resilience,
+                // then STOP — the file's mode is broken past this point. Mode-independent
+                // Error (not WrapperKeywordDiag) so a mixed file still freezes under the
+                // codemod's migration parse — mixed files are not auto-migratable.
                 {
                     int wrapperPeek = i;
                     bool wrapperExported = false;
@@ -2261,12 +2293,15 @@ namespace Ruitk.Language.Parser
                         || TryReadKeywordAt(source, wrapperKeywordPos, "hook")
                         || TryReadKeywordAt(source, wrapperKeywordPos, "module"))
                     {
+                        string wrapperKw = TryReadKeywordAt(source, wrapperKeywordPos, "component")
+                            ? "component"
+                            : TryReadKeywordAt(source, wrapperKeywordPos, "hook") ? "hook" : "module";
                         diagnosticBag.Add(new ParseDiagnostic
                         {
-                            Code = "UITKX2108",
+                            Code = "UITKX2320",
                             Severity = ParseSeverity.Error,
                             SourceLine = line,
-                            Message = "legacy wrapper declarations and plain declarations cannot be mixed in one file — the file's first declaration sets its style",
+                            Message = $"the '{wrapperKw}' wrapper keyword was removed in 0.16.0 and cannot be mixed with plain declarations — rewrite it as a plain 'export' declaration (mixed files are not auto-migrated by the codemod)",
                         });
                         i = wrapperKeywordPos;
                         if (TryReadKeyword(source, ref i, "component"))

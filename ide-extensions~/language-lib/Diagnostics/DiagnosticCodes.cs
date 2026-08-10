@@ -333,7 +333,10 @@ namespace Ruitk.Language.Diagnostics
 
         /// <summary>``legacy wrapper declarations and plain declarations cannot be mixed in one
         /// file — the file's first declaration sets its style``. Severity: Error. (Legal-with-
-        /// warnings in Unreal/Godot — recorded family divergence, §3.3.)</summary>
+        /// warnings in Unreal/Godot — recorded family divergence, §3.3.)
+        /// RETIRED 0.16.0 with the wrapper grammar: the mixed-mode parser sites now emit the
+        /// UITKX2320 removal error instead (mode-independent, so mixed files still freeze
+        /// under the codemod's migration parse); the ID stays reserved.</summary>
         public const string MixedDeclarationStyles = "UITKX2108";
 
         /// <summary>``namespace/default/renamed import of '{0}' requires the target file to use

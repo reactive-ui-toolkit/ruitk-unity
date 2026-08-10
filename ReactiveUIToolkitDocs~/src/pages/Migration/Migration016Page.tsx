@@ -49,10 +49,12 @@ export const Migration016Page: FC = () => (
 
     <Typography variant="body1" paragraph>
       0.16.0 removes the legacy <code>component</code>/<code>hook</code>/<code>module</code>{' '}
-      wrapper keywords and the <code>@component</code>/<code>@props</code>/<code>@key</code>/
-      <code>@inject</code> directive-header form (deprecated since 0.9.0). A file that still uses
-      them fails to compile with the <code>UITKX2320</code> error, whose message names the fix:
-      run the bundled migration codemod.
+      wrapper keywords (deprecated since 0.9.0). A file that still uses them fails to compile
+      with the <code>UITKX2320</code> error, whose message names the fix: run the bundled
+      migration codemod. (The far older <code>@component</code>/<code>@props</code>/
+      <code>@key</code>/<code>@inject</code> directive-header form has been unsupported since
+      0.5 — those files report <code>UITKX2105</code> and are not covered by the codemod;
+      rewrite them as plain declarations by hand, per the table below.)
     </Typography>
 
     <Alert severity="info" sx={{ mb: 2 }}>
@@ -89,7 +91,7 @@ export const Migration016Page: FC = () => (
             <TableCell>plain <code>export</code> values/functions at top level; consumers use <code>import * as M</code></TableCell>
           </TableRow>
           <TableRow>
-            <TableCell><code>@component / @props / @key / @inject</code></TableCell>
+            <TableCell><code>@component / @props / @key / @inject</code> (pre-0.5 header form; manual rewrite)</TableCell>
             <TableCell>typed parameters on the component declaration; <code>key=</code> at the use site</TableCell>
           </TableRow>
         </TableBody>

@@ -503,10 +503,12 @@ namespace Ruitk.Language.Parser
 
         /// <summary>
         /// True when the file's first declaration used a legacy wrapper keyword
-        /// (<c>component</c>/<c>hook</c>/<c>module</c>) — U-08. Drives folder-keyed namespace
-        /// derivation, legacy emission, and legacy import payloads for the WHOLE file (mixing
-        /// styles in one file is UITKX2108, Unity-local). A file with no declarations at all is
-        /// new-mode (<c>false</c>).
+        /// (<c>component</c>/<c>hook</c>/<c>module</c>) — U-08. Migration-only data since
+        /// 0.16.0: the wrapper grammar is a hard <c>UITKX2320</c> error on a normal parse
+        /// (mixing styles reports the 2320 mixed-file variant), and this flag routes the
+        /// SG's <c>#error</c> stub plus the codemod's migrate/freeze decision under
+        /// <c>ParseLegacyForMigration</c>. A file with no declarations at all is new-mode
+        /// (<c>false</c>).
         /// </summary>
         public bool UsesLegacySyntax { get; init; } = false;
 

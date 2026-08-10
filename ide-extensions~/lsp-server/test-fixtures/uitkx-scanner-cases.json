@@ -161,7 +161,9 @@
   ],
   "_fileScanDoc": [
     "fileScan cases run FUetkxFileScan::Scan (C++) / scanFile (TS) over a whole .uetkx source and",
-    "assert the parsed shape: imports (names+specifier), components/hooks/modules (name+exported),",
+    "assert the parsed shape: imports (names+specifier), components/values (name+exported; the",
+    "0.16 legacy-removal wave replaced the module-subject cases with exported-value subjects, so",
+    "expect keys are `components`/`values` and order tokens are `component:Name`/`value:Name`),",
     "the source `order`, and the exact set of diagnostic CODES. `basename` defaults to \"\" (so the",
     "component/file-name nudge 0103 never fires). `noError` asserts hasError()==false (LINT-only).",
     "fileScan = family-core import/export/mixed grammar (byte-identical family-wide); fileScanLeg =",

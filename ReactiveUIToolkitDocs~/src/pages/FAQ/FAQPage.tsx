@@ -39,8 +39,9 @@ export const FAQPage: FC = () => (
     <Typography variant="body2" paragraph>
       The <code>component</code>/<code>hook</code>/<code>module</code> wrappers were{' '}
       <strong>removed in 0.16.0</strong> — un-migrated files raise the <code>UITKX2320</code>{' '}
-      error. Run the bundled codemod once:{' '}
-      <code>node scripts/migrate-uitkx.mjs Assets --es-modules</code>{' '}
+      error. The codemod ships in the repository (not the package), so clone it and run once
+      against your project:{' '}
+      <code>node scripts/migrate-uitkx.mjs &lt;YourProject&gt;/Assets --es-modules</code>{' '}
       (add <code>--check</code> for a dry run). It rewrites the wrappers to plain{' '}
       <code>export</code> declarations, inserts the <code>import</code> lines each file needs,
       and stamps <code>@namespace</code> where needed so nothing changes identity. It is

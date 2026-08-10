@@ -1,8 +1,19 @@
 diff --git a/ide-extensions~/lsp-server/test-fixtures/uitkx-scanner-cases.json b/ide-extensions~/lsp-server/test-fixtures/uitkx-scanner-cases.json
-index 3aa73b72..74c36bd6 100644
+index 3aa73b72..1166d8d3 100644
 --- a/ide-extensions~/lsp-server/test-fixtures/uitkx-scanner-cases.json
 +++ b/ide-extensions~/lsp-server/test-fixtures/uitkx-scanner-cases.json
-@@ -170,7 +170,7 @@
+@@ -161,7 +161,9 @@
+   ],
+   "_fileScanDoc": [
+     "fileScan cases run FUetkxFileScan::Scan (C++) / scanFile (TS) over a whole .uetkx source and",
+-    "assert the parsed shape: imports (names+specifier), components/hooks/modules (name+exported),",
++    "assert the parsed shape: imports (names+specifier), components/values (name+exported; the",
++    "0.16 legacy-removal wave replaced the module-subject cases with exported-value subjects, so",
++    "expect keys are `components`/`values` and order tokens are `component:Name`/`value:Name`),",
+     "the source `order`, and the exact set of diagnostic CODES. `basename` defaults to \"\" (so the",
+     "component/file-name nudge 0103 never fires). `noError` asserts hasError()==false (LINT-only).",
+     "fileScan = family-core import/export/mixed grammar (byte-identical family-wide); fileScanLeg =",
+@@ -170,7 +172,7 @@
    "fileScan": [
      {
        "name": "import one name",
@@ -11,7 +22,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "imports": [
            {
-@@ -195,7 +195,7 @@
+@@ -195,7 +197,7 @@
      },
      {
        "name": "import multiple names, ~/ root specifier",
@@ -20,7 +31,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "imports": [
            {
-@@ -215,7 +215,7 @@
+@@ -215,7 +217,7 @@
      },
      {
        "name": "import parent-relative specifier",
@@ -29,7 +40,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "imports": [
            {
-@@ -230,7 +230,7 @@
+@@ -230,7 +232,7 @@
      },
      {
        "name": "import non-BMP specifier keeps code points intact",
@@ -38,7 +49,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "imports": [
            {
-@@ -245,7 +245,7 @@
+@@ -245,7 +247,7 @@
      },
      {
        "name": "multiple imports, mixed specifier forms",
@@ -47,7 +58,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "imports": [
            {
-@@ -272,7 +272,7 @@
+@@ -272,7 +274,7 @@
      },
      {
        "name": "export component",
@@ -56,7 +67,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "components": [
            {
-@@ -288,7 +288,7 @@
+@@ -288,7 +290,7 @@
      },
      {
        "name": "private component (no export)",
@@ -65,7 +76,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "components": [
            {
-@@ -301,23 +301,23 @@
+@@ -301,23 +303,23 @@
      },
      {
        "name": "export module",
@@ -95,7 +106,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "components": [
            {
-@@ -325,7 +325,7 @@
+@@ -325,7 +327,7 @@
              "exported": false
            }
          ],
@@ -104,7 +115,7 @@ index 3aa73b72..74c36bd6 100644
            {
              "name": "M",
              "exported": true
-@@ -333,14 +333,14 @@
+@@ -333,14 +335,14 @@
          ],
          "order": [
            "component:Foo",
@@ -121,7 +132,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "diags": [
            "UITKX2303"
-@@ -349,7 +349,7 @@
+@@ -349,7 +351,7 @@
      },
      {
        "name": "import after a declaration is UITKX2309",
@@ -130,7 +141,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "components": [
            {
-@@ -364,7 +364,7 @@
+@@ -364,7 +366,7 @@
      },
      {
        "name": "two components is the one-per-file convention warn UITKX2105 (not an error)",
@@ -139,7 +150,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "components": [
            {
-@@ -405,7 +405,7 @@
+@@ -405,7 +407,7 @@
      },
      {
        "name": "empty import list is UITKX0303",
@@ -148,7 +159,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "diags": [
            "UITKX0303"
-@@ -414,7 +414,7 @@
+@@ -414,7 +416,7 @@
      },
      {
        "name": "wave G: early returns — multiple markup returns accepted (last top-level anchors)",
@@ -157,7 +168,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "components": [
            {
-@@ -428,7 +428,7 @@
+@@ -428,7 +430,7 @@
      },
      {
        "name": "wave G: every return window parses per-span — a bad EARLY window still diagnoses",
@@ -166,7 +177,7 @@ index 3aa73b72..74c36bd6 100644
        "expect": {
          "diags": [
            "UITKX0108"
-@@ -437,7 +437,7 @@
+@@ -437,7 +439,7 @@
      },
      {
        "name": "S4/markup-everywhere (family): markup as a value scans clean — assignment + paren boundaries",

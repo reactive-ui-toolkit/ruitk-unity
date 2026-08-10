@@ -443,10 +443,12 @@ so hand-written `.cs` can extend them.
 | Symptom | Meaning → fix |
 |---|---|
 | `UITKX2320` on `component`/`hook`/`module` | The wrapper grammar was removed in 0.16.0 — run the codemod above |
+| `UITKX2320` "cannot be mixed with plain declarations" | One wrapper declaration sits inside an otherwise-migrated file (e.g. a pasted legacy snippet). Mixed files are NOT auto-migrated — the codemod freezes them into its report; rewrite that one declaration by hand |
 | `CS0103 'container' does not exist` post-migration | A former companion member is no longer merged — add `import { container } from "./X.style"` |
 | `CS0246/CS0234` in a consumer `.cs` | The namespace moved (file-keyed) — append the declaring file's stem to the `using` |
 | `CS0229 ambiguity with __Exports.X` | A value export shares a name with a type in scope (e.g. `Button`) — rename the export |
 | `UITKX2110` on a hook rename | `import { useX as y }` drops the `use` prefix — hook bindings must stay `use`-prefixed |
 
-(`UITKX2107`/`2108`/`2109` retired with the grammar in 0.16.0 — a legacy file now fails
-at parse before any of them could fire.)
+(`UITKX2107`/`2108`/`2109` retired with the grammar in 0.16.0. A legacy file fails at
+parse with 2320 before 2107/2109 could fire, and the former 2108 mixed-file cases now
+report the 2320 mixed-file variant above.)

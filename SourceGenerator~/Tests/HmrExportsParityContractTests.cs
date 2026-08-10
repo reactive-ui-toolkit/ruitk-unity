@@ -70,6 +70,22 @@ public class HmrExportsParityContractTests
     }
 
     [Fact]
+    public void Compiler_ThreadsEffectiveNamespace_IntoEveryEmitExportsCall()
+    {
+        // EmitExports keeps a defaulted `effectiveNs = null` with a raw-parse fallback,
+        // so a call site that DROPS the argument still compiles — and every stamp-less
+        // (file-keyed) file would emit its hot __Exports into the raw parser-default
+        // namespace: Type.FullName stops matching the project assembly and value edits
+        // silently stop swapping (the documented field bug the deleted EmitModules
+        // parity suite used to fence). Pin the named argument at all three call sites.
+        var src = HmrCompilerSource();
+        Assert.Contains("effectiveNs: exNs", src);
+        Assert.Contains("effectiveNs: newModeNs", src);
+        Assert.Contains("effectiveNs: ns", src);
+        Assert.Contains("string effectiveNs = null", HmrHookEmitterSource());
+    }
+
+    [Fact]
     public void Compiler_InjectsOwnExportsUsing_ForNewModeComponents()
     {
         var src = HmrCompilerSource();

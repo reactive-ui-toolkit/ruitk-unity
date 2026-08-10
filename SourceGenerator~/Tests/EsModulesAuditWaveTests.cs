@@ -15,7 +15,7 @@ namespace Ruitk.SourceGenerator.Tests
     /// ES-modules audit wave (Plans~/archive/ES_MODULES_AUDIT_FINDINGS.md): regression pins for the
     /// execution-verified parser/detector/formatter defects (F1-F11, P1/P2), the shared-parser
     /// dotted-closing-tag fix (H2), the payload/bridge/tag-map additions (F7b, H1/H3/H4), and
-    /// the 2108 mixed-mode mirror direction (PC-6).
+    /// the mixed-mode mirror direction (PC-6; the 2320 removal error since 0.16.0).
     /// </summary>
     public sealed class EsModulesAuditWaveTests
     {
@@ -117,21 +117,27 @@ namespace Ruitk.SourceGenerator.Tests
         public void P1_MalformedHookHeader_ReportsInsteadOfThrowing()
         {
             var diags = new List<ParseDiagnostic>();
+            DirectiveSet ds = null;
             var ex = Record.Exception(() =>
-                DirectiveParser.Parse("hook 123 {}\n", "C:/p/Assets/UI/Bad.uitkx", diags));
+                ds = DirectiveParser.Parse("hook 123 {}\n", "C:/p/Assets/UI/Bad.uitkx", diags));
             Assert.Null(ex);
             Assert.Contains(diags, d => d.Severity == ParseSeverity.Error);
+            // Review-pass fix: the legacy classification must survive a structurally
+            // failed hook/module parse — losing it made the SG's legacy gate miss and,
+            // worse, made the codemod's already-migrated probe pass the broken file
+            // through byte-untouched instead of freezing it into the report.
+            Assert.True(ds.UsesLegacySyntax);
         }
 
-        // ── PC-6: 2108 fires in BOTH mixed-mode directions ──────────────────
+        // ── PC-6: the removal error fires in BOTH mixed-mode directions ─────
 
         [Fact]
         public void PC6_WrapperKeywordAfterPlainDeclaration_IsAnError()
         {
-            // 0.16.0: the wrapper keyword is a removal ERROR wherever it appears
-            // (2108 mixed-mode anchoring until the phase-4 deletions, 2320 after).
-            // Keyword split across concatenation: deliberately-legacy fixture, must
-            // survive any future fixture-modernizer sweep.
+            // 0.16.0: a wrapper keyword inside a plain file is the mode-independent
+            // 2320 mixed-file removal error (2108 retired). Keyword split across
+            // concatenation: deliberately-legacy fixture, must survive any future
+            // fixture-modernizer sweep.
             var (_, diags) = Parse(
                 "export int Gap = 8;\n" +
                 "compo" + "nent Foo {\n" +
@@ -139,7 +145,9 @@ namespace Ruitk.SourceGenerator.Tests
                 "}\n");
             Assert.Contains(diags, d =>
                 d.Severity == ParseSeverity.Error
-                && (d.Code == "UITKX2108" || d.Code == "UITKX2320"));
+                && d.Code == "UITKX2320"
+                && d.Message.Contains("cannot be mixed"));
+            Assert.DoesNotContain(diags, d => d.Code == "UITKX2108");
         }
 
         [Fact]
@@ -152,6 +160,23 @@ namespace Ruitk.SourceGenerator.Tests
             Assert.Contains(diags, d =>
                 d.Code == "UITKX2320" && d.Severity == ParseSeverity.Error
                 && d.Message.Contains("UitkxMigrateImports"));
+        }
+
+        [Fact]
+        public void PC6_LegacyModuleFirstDeclaration_GetsRemovalError()
+        {
+            // D3 requires the removal error per wrapper keyword — `module` had no
+            // Error-severity pin (the codemod suite exercises it only at Warning
+            // severity under ParseLegacyForMigration).
+            var (ds, diags) = Parse(
+                "mod" + "ule Tokens {\n" +
+                "  public static readonly int Gap = 8;\n" +
+                "}\n");
+            Assert.Contains(diags, d =>
+                d.Code == "UITKX2320" && d.Severity == ParseSeverity.Error
+                && d.Message.Contains("'module'")
+                && d.Message.Contains("UitkxMigrateImports"));
+            Assert.True(ds.UsesLegacySyntax);
         }
 
         [Fact]
