@@ -186,6 +186,58 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
     }
 
     [Fact]
+    public async Task GoToDefinition_OnFirstMemberOfStyleFile_ReturnsCursorForReferencesFallback()
+    {
+        // Field find (StressTest.style.uitkx): a member-only file carries
+        // FunctionSetupStartLine == MarkupStartLine == its FIRST declaration's line
+        // with EMPTY setup code, so the setup-var scan's derived range collapsed
+        // onto exactly that line and `export Style container =` false-matched the
+        // `Type name =` variable shape — the click on the FIRST member jumped
+        // within its own line instead of returning the exact cursor position that
+        // triggers VS Code's Find All References fallback. Later members (outside
+        // the one-line range) always worked.
+        var styleContent =
+            "export Style container = new Style {\n"
+            + "  Padding = 10f,\n"
+            + "};\n"
+            + "\n"
+            + "export Style headerBar = new Style {\n"
+            + "  Margin = 4f,\n"
+            + "};\n";
+
+        string stylePathRaw = Path.Combine(_tempDir, "Panel.style.uitkx");
+        File.WriteAllText(stylePathRaw, styleContent);
+        var uri = OmniSharp.Extensions.LanguageServer.Protocol.DocumentUri
+            .FromFileSystemPath(stylePathRaw);
+
+        var store = new DocumentStore();
+        store.Set(uri, styleContent);
+        var handler = new DefinitionHandler(store, new WorkspaceIndex(), _host);
+
+        // Mid-name cursors: `container` line 0 col 15, `headerBar` line 4 col 15.
+        foreach (var (line0, char0) in new[] { (0, 15), (4, 15) })
+        {
+            var result = await handler.Handle(
+                new OmniSharp.Extensions.LanguageServer.Protocol.Models.DefinitionParams
+                {
+                    TextDocument = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .TextDocumentIdentifier(uri),
+                    Position = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .Position(line0, char0),
+                },
+                CancellationToken.None);
+
+            Assert.NotNull(result);
+            var loc = result!.First().Location;
+            Assert.NotNull(loc);
+            // The EXACT cursor position must come back — that is what makes the
+            // client run Find All References instead of jumping the cursor.
+            Assert.Equal(line0, (int)loc!.Range.Start.Line);
+            Assert.Equal(char0, (int)loc.Range.Start.Character);
+        }
+    }
+
+    [Fact]
     public async Task Rename_HookFromCallSite_AlsoRenamesImportListName()
     {
         // F2 on the CALL site renames the declaration (hook path) and every C#

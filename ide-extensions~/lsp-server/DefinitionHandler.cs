@@ -180,7 +180,15 @@ public sealed class DefinitionHandler : IDefinitionHandler
             return MakeLocation(localPath, codeVarLine, codeVarCol);
         }
 
-        if (directives.IsFunctionStyle)
+        // Setup-var scan only when the file actually HAS setup code: a member-only
+        // file (e.g. a .style companion) carries FunctionSetupStartLine ==
+        // MarkupStartLine == its FIRST declaration's line with empty setup, so the
+        // derived range collapsed onto that one line and `export Style Root =`
+        // false-matched the `Type name =` variable shape — hijacking the click on
+        // the FIRST member with a same-line jump instead of falling through to the
+        // member-declaration references fallback below (field find: first style in
+        // every .style.uitkx was un-navigable while later ones worked).
+        if (directives.IsFunctionStyle && !string.IsNullOrEmpty(directives.FunctionSetupCode))
         {
             var setupStart = directives.FunctionSetupStartLine > 0
                 ? directives.FunctionSetupStartLine
