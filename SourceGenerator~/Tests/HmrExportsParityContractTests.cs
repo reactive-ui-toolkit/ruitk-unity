@@ -7,7 +7,7 @@ namespace Ruitk.SourceGenerator.Tests;
 /// <summary>
 /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M4): source-text contract pins for the
 /// HMR side of the __Exports model (<c>Editor/HMR/</c> cannot be loaded by this test runner —
-/// same text-pin approach as <see cref="HmrModuleNamespaceParityContractTests"/>).
+/// so the pins are source-text asserts against the Editor files).
 ///
 /// <para>The invariant set:</para>
 /// <list type="number">
@@ -16,9 +16,10 @@ namespace Ruitk.SourceGenerator.Tests;
 ///   consumer keys by ordinal string equality (U-06/G-09);</description></item>
 ///   <item><description>hot-side values carry <c>[UitkxHmrSwap]</c> so the static swapper copies
 ///   them; hot-side hooks emit <c>__{name}_body</c> for the delegate swapper;</description></item>
-///   <item><description>the compiler routes new-mode member-only files through container
-///   <c>"__Exports"</c>, injects the own-exports using into new-mode component units, and the
-///   companion-parent redirect is LEGACY-ONLY (a new-mode companion compiles itself);</description></item>
+///   <item><description>the compiler routes member-only files through container
+///   <c>"__Exports"</c>, injects the own-exports using into component units, and every
+///   companion compiles ITSELF — the legacy companion-parent redirect was removed with the
+///   wrapper grammar (0.16.0);</description></item>
 ///   <item><description>the reverse-dependency import regex covers the full ES surface
 ///   (named / star / default).</description></item>
 /// </list>
@@ -80,14 +81,15 @@ public class HmrExportsParityContractTests
     }
 
     [Fact]
-    public void Controller_CompanionRedirect_IsLegacyOnly()
+    public void Controller_CompanionRedirect_IsFullyRemoved()
     {
+        // 0.16.0 legacy wave: every file compiles itself; the parent is reached through
+        // the import reverse-edge fan-out. A resurrected redirect would misroute saves
+        // of dotted-stem member files to a same-stem component that never merges them.
         var src = HmrControllerSource();
-        Assert.Contains("s_legacyWrapperKeywordRegex.IsMatch(content)", src);
-        // The mode discriminator mirrors the parser's wrapper-keyword rule; the keyword must
-        // be followed by an identifier start so new-mode body text (`module.Init();`) can't
-        // false-classify the file as legacy (audit L3).
-        Assert.Contains(@"(?:export\s+)?(?:component|hook|module)\s+[A-Za-z_]", src);
+        Assert.DoesNotContain("ResolveParentComponentFile", src);
+        Assert.DoesNotContain("s_legacyWrapperKeywordRegex", src);
+        Assert.Contains("FanOutToImporters(uitkxPath);", src);
     }
 
     [Fact]
@@ -107,12 +109,13 @@ public class HmrExportsParityContractTests
     }
 
     [Fact]
-    public void CompanionWarning_TreatsNewModeMemberFiles_AsLegitimate()
+    public void CompanionPass_GatesInliningOnMemberDeclarations()
     {
-        // The mid-write companion warning must not false-fire on a new-mode companion (which
-        // legitimately has neither modules nor hooks — only MemberDeclarations).
+        // A companion with no member declarations carries nothing to inline (import-only,
+        // export-list-only, and type-only files are legitimate) — the pass must gate on
+        // MemberDeclarations, not warn or emit for them.
         Assert.Contains(
-            "moduleCount == 0 && hookCount == 0 && memberCount == 0",
+            "if (GetItems(GetProp(companionDir, \"MemberDeclarations\")).Count > 0)",
             HmrCompilerSource());
     }
 }

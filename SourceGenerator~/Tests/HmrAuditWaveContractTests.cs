@@ -111,8 +111,9 @@ public class HmrAuditWaveContractTests
         Assert.Contains("&& !HotExportsAvailable(exportsFqn)", src);
         Assert.Contains("private static bool TypeExistsInProjectAssemblies(string fullTypeName)", src);
         Assert.DoesNotContain("TypeExistsInAppDomain", src);
-        // Legacy module/hook emitters are unreachable for new-mode candidates.
-        Assert.Contains("if (!candUsesLegacy)", src);
+        // The legacy module/hook emitters were deleted outright in the 0.16.0 wave.
+        Assert.DoesNotContain("candUsesLegacy", src);
+        Assert.DoesNotContain("EmitModules", src);
     }
 
     [Fact]
@@ -167,15 +168,14 @@ public class HmrAuditWaveContractTests
     public void RenameWave_DeleteAndRenameEvents_EvictStaleRegistrations()
     {
         // A rename (delete old path + create new path) must not leave the old identity's
-        // DLL registered as a cross-ref, its hook-container index entry, or its outgoing
-        // import edges. The watcher surfaces FSW Deleted and the Renamed OLD path through
-        // the debounced deletion queue (exists-again guarded — delete-and-replace saves are
-        // saves, not deletions); the controller evicts per-path state on that event.
+        // DLL registered as a cross-ref or its outgoing import edges. The watcher surfaces
+        // FSW Deleted and the Renamed OLD path through the debounced deletion queue
+        // (exists-again guarded — delete-and-replace saves are saves, not deletions); the
+        // controller evicts per-path state on that event.
         var compiler = Src("UitkxHmrCompiler.cs");
         Assert.Contains("public void EvictFileRegistration(string uitkxPath)", compiler);
         var controller = Src("UitkxHmrController.cs");
         Assert.Contains("_compiler?.EvictFileRegistration(uitkxPath);", controller);
-        Assert.Contains("HookContainerRegistry.Invalidate(uitkxPath);", controller);
         var watcher = Src("UitkxHmrFileWatcher.cs");
         Assert.Contains("_watcher.Deleted += (s, e) =>", watcher);
         Assert.Contains("EnqueueDeletion(e.FullPath);", watcher);
@@ -202,7 +202,7 @@ public class HmrAuditWaveContractTests
     {
         var src = Src("UitkxHmrCompiler.cs");
         Assert.Contains("!targetHookNames.Contains(nm)", src);
-        Assert.Contains("map[bound] = targetNs + \".\" + targetContainer + \"::\" + nm;", src);
+        Assert.Contains("map[bound] = targetNs + \".__Exports::\" + nm;", src);
     }
 
     [Fact]
@@ -261,7 +261,7 @@ public class HmrAuditWaveContractTests
         // dedupe), every fan-out logs its enqueued importers, and USS saves log
         // their dependent count. No line is emitted while idle.
         var src = Src("UitkxHmrController.cs");
-        Assert.Contains("[HMR] Save: {Path.GetFileName(changedPath)}", src);
+        Assert.Contains("[HMR] Save: {Path.GetFileName(uitkxPath)}", src);
         Assert.Contains("importers: {importerCount}", src);
         Assert.Contains("(already queued)", src);
         Assert.Contains("[HMR] Fan-out: {Path.GetFileName(changedFile)}", src);

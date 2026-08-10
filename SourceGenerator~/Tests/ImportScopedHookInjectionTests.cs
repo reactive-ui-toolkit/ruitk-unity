@@ -51,54 +51,9 @@ namespace Ruitk.SourceGenerator.Tests
             Assert.DoesNotContain("static NsB.OtherHooks", usings); // unimported container is NOT injected
         }
 
-        [Fact]
-        public void CrossNamespaceModule_Aliased_SameNamespace_Not()
-        {
-            var ds = new DirectiveSet(
-                Namespace: "My.Screen",
-                ComponentName: "Screen", PropsTypeName: null, DefaultKey: null,
-                Usings: ImmutableArray<string>.Empty, UssFiles: ImmutableArray<string>.Empty,
-                Injects: ImmutableArray<(string Type, string Name)>.Empty,
-                MarkupStartLine: 1, MarkupStartIndex: 0)
-            {
-                Imports = ImmutableArray.Create(
-                    new ImportDeclaration(ImmutableArray.Create("Palette"), "./Palette", 1, 0, ImmutableArray<int>.Empty),
-                    new ImportDeclaration(ImmutableArray.Create("Local"), "./Local", 2, 0, ImmutableArray<int>.Empty)),
-            };
-            var modules = ImmutableArray.Create(
-                new PeerModuleInfo("Palette", "Other.Ns", true) { SourceFilePath = "C:/proj/Assets/UI/Palette.uitkx" },
-                new PeerModuleInfo("Local", "My.Screen", true) { SourceFilePath = "C:/proj/Assets/UI/Local.uitkx" });
-
-            var usings = UitkxPipeline.ResolveInjectedUsings(ds, null, ScreenPath, modules);
-
-            Assert.Contains("Palette = Other.Ns.Palette", usings);          // cross-namespace → aliased
-            Assert.DoesNotContain(usings, u => u.StartsWith("Local =", System.StringComparison.Ordinal)); // same-ns → no alias
-        }
-
-        [Fact]
-        public void CrossNamespaceModule_NamedLikeBuiltinAlias_NotAliased()
-        {
-            // A module named after one of the emitter's reserved type aliases (Color,
-            // Length, …) must NOT be injected as `using Color = …` — that would be a
-            // second alias for `Color` and CS1537. Regression for the module-alias
-            // built-in collision found by the emit review.
-            var ds = new DirectiveSet(
-                Namespace: "My.Screen",
-                ComponentName: "Screen", PropsTypeName: null, DefaultKey: null,
-                Usings: ImmutableArray<string>.Empty, UssFiles: ImmutableArray<string>.Empty,
-                Injects: ImmutableArray<(string Type, string Name)>.Empty,
-                MarkupStartLine: 1, MarkupStartIndex: 0)
-            {
-                Imports = ImmutableArray.Create(
-                    new ImportDeclaration(ImmutableArray.Create("Color"), "./Palette", 1, 0, ImmutableArray<int>.Empty)),
-            };
-            var modules = ImmutableArray.Create(
-                new PeerModuleInfo("Color", "Other.Ns", true) { SourceFilePath = "C:/proj/Assets/UI/Palette.uitkx" });
-
-            var usings = UitkxPipeline.ResolveInjectedUsings(ds, null, ScreenPath, modules);
-
-            Assert.DoesNotContain(usings, u => u.StartsWith("Color =", System.StringComparison.Ordinal));
-        }
+        // (The module-alias injection tests were removed with the legacy module grammar —
+        // 0.16.0. Component aliases keep the same ReservedTypeAliases/same-namespace guards,
+        // exercised through the pipeline emit tests.)
 
         [Fact]
         public void NoImports_InjectsNothing()
