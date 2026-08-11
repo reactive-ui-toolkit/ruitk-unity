@@ -719,14 +719,17 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
                     foreach (var c in ds.ComponentDeclarations)
                         if (c.IsExported) exports.Add((c.Name, StrictImportDetector.ExportKind.Component));
                 // Member declarations (ES-modules campaign, M5): hooks map to the Hook
-                // kind; values/utils map to Module (the closest reference-shape the strict
-                // detector scans — the kind mostly drives import-brace completion + 2305 hints).
+                // kind, values to Module (dotted `config.Width` access IS satisfiable by
+                // importing the value), utils to Util — a util binds a FUNCTION, so the
+                // strict detector's dotted-access scan must never suggest importing one
+                // (the kind also drives import-brace completion, which lists all kinds).
                 if (!ds.MemberDeclarations.IsDefaultOrEmpty)
                     foreach (var mem in ds.MemberDeclarations)
                         if (mem.IsExported)
-                            exports.Add((mem.Name, mem.Kind == DeclKind.Hook
-                                ? StrictImportDetector.ExportKind.Hook
-                                : StrictImportDetector.ExportKind.Module));
+                            exports.Add((mem.Name,
+                                mem.Kind == DeclKind.Hook ? StrictImportDetector.ExportKind.Hook
+                                : mem.Kind == DeclKind.Value ? StrictImportDetector.ExportKind.Module
+                                : StrictImportDetector.ExportKind.Util));
                 if (!ds.Imports.IsDefaultOrEmpty)
                     foreach (var imp in ds.Imports)
                         imports.Add((imp.Specifier, imp.Names.ToArray()));

@@ -323,6 +323,16 @@ public sealed class DiagnosticsAnalyzerTests
     }
 
     [Fact]
+    public void UITKX0111_UnderscorePrefixedParam_IsDeliberatelyUnused_NoWarning()
+    {
+        // C# discard convention (field find): renaming an unused parameter to
+        // `_name` must acknowledge and silence the diagnostic, matching IDE0060.
+        var source = "export VirtualNode Foo(string _name, Action<int>? _onChanged = null) {\n  return (\n    <Label text=\"static\"/>\n  );\n}";
+        var diags = Analyze(source);
+        Assert.False(HasDiag(diags, DiagnosticCodes.UnusedParameter));
+    }
+
+    [Fact]
     public void UITKX0107_UnreachableAfterReturn_PlainDeclarationComponent()
     {
         var source = "export VirtualNode Foo() {\n  return (\n    <Label/>\n  );\n  var dead = 1;\n}";

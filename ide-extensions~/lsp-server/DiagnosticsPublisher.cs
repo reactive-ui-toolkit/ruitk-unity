@@ -387,7 +387,9 @@ public sealed class DiagnosticsPublisher
         foreach (var n in names)
         {
             var kind = _index.GetExportKind(targetFile, n);
-            if (kind == StrictImportDetector.ExportKind.Hook || kind == StrictImportDetector.ExportKind.Module)
+            if (kind == StrictImportDetector.ExportKind.Hook
+                || kind == StrictImportDetector.ExportKind.Module
+                || kind == StrictImportDetector.ExportKind.Util)
                 return true;
         }
         return false;

@@ -23,7 +23,12 @@ namespace Ruitk.Language
     /// </summary>
     public static class StrictImportDetector
     {
-        public enum ExportKind { Component, Hook, Module }
+        /// <summary><see cref="Util"/> is deliberately OUTSIDE the dotted-access scan:
+        /// a util export binds a FUNCTION, so a `Name.member` reference can never be
+        /// satisfied by importing it — matching utils there produced self-inconsistent
+        /// 2305 hints (field find: `Tick.CreateInitialState()` suggested importing the
+        /// unrelated util `Tick` from another game's GameLogic).</summary>
+        public enum ExportKind { Component, Hook, Module, Util }
 
         /// <summary>An exported name in a peer file of the same asmdef.</summary>
         public sealed record PeerExport(string Name, string TargetFilePath, ExportKind Kind);
@@ -110,6 +115,7 @@ namespace Ruitk.Language
                 [ExportKind.Component] = new(StringComparer.Ordinal),
                 [ExportKind.Hook] = new(StringComparer.Ordinal),
                 [ExportKind.Module] = new(StringComparer.Ordinal),
+                [ExportKind.Util] = new(StringComparer.Ordinal),
             };
             foreach (var pe in peerExports)
                 byKind[pe.Kind][pe.Name] = pe;

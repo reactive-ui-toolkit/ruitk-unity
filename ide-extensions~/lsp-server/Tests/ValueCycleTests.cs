@@ -90,7 +90,9 @@ namespace UitkxLanguageServer.Tests
                 bool value = names.Any(n =>
                 {
                     var k = idx.GetExportKind(tgt, n);
-                    return k == StrictImportDetector.ExportKind.Hook || k == StrictImportDetector.ExportKind.Module;
+                    return k == StrictImportDetector.ExportKind.Hook
+                        || k == StrictImportDetector.ExportKind.Module
+                        || k == StrictImportDetector.ExportKind.Util;
                 });
                 if (!value) continue;
                 string key = file.Replace('\\', '/');

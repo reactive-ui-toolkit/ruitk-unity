@@ -798,6 +798,11 @@ namespace Ruitk.Language.Diagnostics
 
             foreach (var p in d.FunctionParams)
             {
+                // C# discard convention: an underscore-prefixed parameter is
+                // deliberately unused (matches IDE0060's escape hatch).
+                if (p.Name.StartsWith("_", StringComparison.Ordinal))
+                    continue;
+
                 var nameRx = new Regex(@"\b" + Regex.Escape(p.Name) + @"\b");
 
                 // 1. Used in markup?  Simple text search is sufficient.

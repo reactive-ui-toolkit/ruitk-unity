@@ -1386,12 +1386,12 @@
         },
         {
           "name": "selectedIndexChanged",
-          "type": "Action",
-          "description": "Callback when selected tab changes."
+          "type": "TabIndexEventHandler",
+          "description": "Callback when selected tab changes — delegate void(int index)."
         },
         {
           "name": "activeTabChanged",
-          "type": "Action",
+          "type": "TabChangedEventHandler",
           "description": "Callback when active tab changes."
         },
         {
@@ -1621,8 +1621,8 @@
         },
         {
           "name": "enumType",
-          "type": "Type",
-          "description": "The System.Type of the enum."
+          "type": "string",
+          "description": "Assembly-qualified name of the enum type, e.g. typeof(TextAnchor).AssemblyQualifiedName."
         },
         {
           "name": "name",
