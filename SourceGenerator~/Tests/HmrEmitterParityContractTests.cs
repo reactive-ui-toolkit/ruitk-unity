@@ -36,6 +36,46 @@ namespace Ruitk.SourceGenerator.Tests;
 /// </summary>
 public class HmrEmitterParityContractTests
 {
+    // ── Underscore-marked params keep their public prop name ─────────────────
+
+    /// <summary>
+    /// A leading underscore marks a component parameter deliberately unused
+    /// WITHOUT renaming its public prop: the props-class property and the
+    /// props binding derive from <c>FunctionParam.PropSourceName</c>, while the
+    /// LOCAL keeps the literal source name. HMR mirrors this in
+    /// <c>HmrCSharpEmitter</c>'s props-binding loop — its reflective
+    /// <c>__HmrProp&lt;T&gt;(__rawProps, "Count", …)</c> lookup reads the
+    /// SG-generated property BY NAME, so both derivations must stay identical.
+    /// </summary>
+    [Fact]
+    public void Sg_UnderscoreParam_PropKeepsUnprefixedName()
+    {
+        var result = GeneratorTestHelper.Run(
+            """
+            export VirtualNode Panel(int _count = 0, string title = "t") {
+              return (
+                <Label text={title}/>
+              );
+            }
+            """,
+            "Panel.uitkx"
+        );
+
+        Assert.True(result.SourceWasProduced);
+        Assert.True(
+            result.SourceContains("public int Count { get; set; }"),
+            "The props-class property must strip the deliberately-unused marker"
+        );
+        Assert.True(
+            result.SourceContains("var _count = props.Count;"),
+            "The local binding keeps the source name; the property does not"
+        );
+        Assert.False(
+            result.SourceContains("props._count"),
+            "No surface may expose the underscored name as a prop"
+        );
+    }
+
     // ── Null-only components (React case 2) ─────────────────────────────────
 
     /// <summary>

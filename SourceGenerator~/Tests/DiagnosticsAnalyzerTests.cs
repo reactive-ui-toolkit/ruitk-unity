@@ -333,6 +333,33 @@ public sealed class DiagnosticsAnalyzerTests
     }
 
     [Fact]
+    public void UITKX0114_UnderscoreAndBareParam_CollideOnPropName()
+    {
+        // `_count` and `count` both expose the prop `count` (the underscore is
+        // the deliberately-unused marker, not part of the contract) — ambiguous.
+        var source = "export VirtualNode Foo(int _count, int count) {\n  return (\n    <Label text={count.ToString()}/>\n  );\n}";
+        var diags = Analyze(source);
+        Assert.True(HasDiag(diags, DiagnosticCodes.DuplicatePropName));
+    }
+
+    [Fact]
+    public void UITKX0114_DistinctPropNames_NoDiagnostic()
+    {
+        var source = "export VirtualNode Foo(int _count, string title) {\n  return (\n    <Label text={title}/>\n  );\n}";
+        var diags = Analyze(source);
+        Assert.False(HasDiag(diags, DiagnosticCodes.DuplicatePropName));
+    }
+
+    [Fact]
+    public void PropSourceName_StripsLeadingUnderscores_KeepsBareUnderscore()
+    {
+        Assert.Equal("x", Ruitk.Language.Parser.FunctionParam.ToPropSourceName("_x"));
+        Assert.Equal("x", Ruitk.Language.Parser.FunctionParam.ToPropSourceName("__x"));
+        Assert.Equal("_", Ruitk.Language.Parser.FunctionParam.ToPropSourceName("_"));
+        Assert.Equal("x", Ruitk.Language.Parser.FunctionParam.ToPropSourceName("x"));
+    }
+
+    [Fact]
     public void UITKX0107_UnreachableAfterReturn_PlainDeclarationComponent()
     {
         var source = "export VirtualNode Foo() {\n  return (\n    <Label/>\n  );\n  var dead = 1;\n}";

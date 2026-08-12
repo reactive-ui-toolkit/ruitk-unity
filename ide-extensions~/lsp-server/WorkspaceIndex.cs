@@ -782,7 +782,13 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
                             props.Add(
                                 new PropInfo
                                 {
-                                    Name = tokens[tokens.Length - 1],
+                                    // The PROP name strips the leading-underscore
+                                    // "deliberately unused" marker (mirrors
+                                    // FunctionParam.PropSourceName) — 0109,
+                                    // completion, hover, and the typed attr check
+                                    // all read this surface.
+                                    Name = Ruitk.Language.Parser.FunctionParam
+                                        .ToPropSourceName(tokens[tokens.Length - 1]),
                                     Type = string.Join(" ", tokens, 0, tokens.Length - 1),
                                     Line = lineNumber,
                                 }

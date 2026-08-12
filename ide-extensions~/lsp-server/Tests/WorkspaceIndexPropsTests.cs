@@ -55,6 +55,26 @@ public sealed class WorkspaceIndexPropsTests : IDisposable
     }
 
     [Fact]
+    public void UnderscoreParam_ExposesUnprefixedProp()
+    {
+        // The leading underscore marks a param deliberately unused WITHOUT
+        // renaming its public prop (FunctionParam.PropSourceName). This
+        // surface feeds 0109, attribute completion, hover, and the typed
+        // attr check — all must see `onCountChanged`, never the underscored name.
+        var idx = new WorkspaceIndex();
+        var file = WriteCs("Widget/Widget.uitkx",
+            "export VirtualNode Widget(Action<int>? _onCountChanged = null, string title = \"\") {\n" +
+            "  return (\n    <Label text={title}/>\n  );\n}\n");
+
+        idx.Refresh(file);
+
+        var props = idx.GetProps("Widget");
+        Assert.Contains(props, p => p.Name == "onCountChanged");
+        Assert.Contains(props, p => p.Name == "title");
+        Assert.DoesNotContain(props, p => p.Name == "_onCountChanged");
+    }
+
+    [Fact]
     public void ExpressionBodiedProp_WithGenericType_IsIndexed()
     {
         var idx = new WorkspaceIndex();

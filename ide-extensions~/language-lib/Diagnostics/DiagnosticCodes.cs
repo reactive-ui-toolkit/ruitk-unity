@@ -133,6 +133,16 @@ namespace Ruitk.Language.Diagnostics
         public const string DuplicateComponent = "UITKX0113";
 
         /// <summary>
+        /// Two component parameters collapse to the same PROP name: a leading
+        /// underscore marks a parameter deliberately unused without renaming its
+        /// public prop (<c>_count</c> and <c>count</c> both expose the prop
+        /// <c>count</c>), so declaring both is ambiguous. The generated props
+        /// class would also fail with CS0102. Anchored at the later parameter.
+        /// Severity: Error.
+        /// </summary>
+        public const string DuplicatePropName = "UITKX0114";
+
+        /// <summary>
         /// An <c>Asset&lt;T&gt;("path")</c>, <c>Ast&lt;T&gt;("path")</c>, or
         /// <c>@uss "path"</c> references a file that does not exist on disk.
         /// Severity: Error.

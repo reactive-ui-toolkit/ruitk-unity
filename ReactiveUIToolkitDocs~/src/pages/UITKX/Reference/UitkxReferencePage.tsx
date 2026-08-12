@@ -164,6 +164,10 @@ export const UitkxReferencePage: FC = () => (
             <TableCell><code>export VirtualNode Name(string text = "default") {'{ ... }'}</code></TableCell>
           </TableRow>
           <TableRow>
+            <TableCell>Deliberately unused parameter</TableCell>
+            <TableCell><code>export VirtualNode Name(Action&lt;int&gt;? _onChanged = null) {'{ ... }'}</code> — a leading underscore silences the unused-parameter diagnostic (<code>UITKX0111</code>) <em>without renaming the public prop</em>: consumers still write <code>onChanged={'{...}'}</code>. Declaring both <code>_x</code> and <code>x</code> is ambiguous (<code>UITKX0114</code>).</TableCell>
+          </TableRow>
+          <TableRow>
             <TableCell>Preamble imports</TableCell>
             <TableCell><code>import {'{ X }'} from "./file"</code> / <code>import "@Ns"</code> — before the first declaration</TableCell>
           </TableRow>

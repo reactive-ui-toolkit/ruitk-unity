@@ -40,6 +40,16 @@ instead of skipping them; where-constrained generics are rejected with a message
 the constrained helper to ambient C#, like type definitions — the one shape the plain
 dialect deliberately does not express).
 
+### Added — underscore-marked parameters keep their public prop
+
+A leading underscore on a component parameter marks it deliberately unused (silencing
+`UITKX0111`) WITHOUT renaming the public prop: `Action<int>? _onChanged = null` still
+exposes the `onChanged` attribute. The props-class property, the SG props binding, HMR's
+reflective prop lookup, and the LSP's attribute checks/completions all derive from one
+shared definition (`FunctionParam.PropSourceName` — leading underscores stripped), so
+marking a parameter unused can never change a consumer's call site. Declaring both `_x`
+and `x` is ambiguous and errors as the new **UITKX0114**.
+
 ### Added — codemod hardening for the removal wave
 
 Companion auto-export (dotted-stem files export their members so the parent's imports

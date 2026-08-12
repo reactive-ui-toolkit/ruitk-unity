@@ -243,7 +243,13 @@ export const UitkxDiagnosticsPage: FC = () => (
             <TableCell><Chip label="UITKX0111" size="small" color="error" variant="outlined" /></TableCell>
             <TableCell><Chip label="Error" size="small" color="error" /></TableCell>
             <TableCell>Unused component parameter</TableCell>
-            <TableCell>Remove the unused parameter or use it in the component body.</TableCell>
+            <TableCell>Remove the unused parameter, use it in the component body, or prefix it with an underscore (<code>_onChanged</code>) to mark it deliberately unused — the underscore does <em>not</em> rename the public prop, so consumers keep writing <code>onChanged=</code>.</TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell><Chip label="UITKX0114" size="small" color="error" variant="outlined" /></TableCell>
+            <TableCell><Chip label="Error" size="small" color="error" /></TableCell>
+            <TableCell>Two parameters expose the same prop name</TableCell>
+            <TableCell>A leading underscore marks a parameter deliberately unused without renaming its prop, so <code>_count</code> and <code>count</code> both expose the prop <code>count</code>. Rename or remove one of the parameters.</TableCell>
           </TableRow>
           <TableRow>
             <TableCell><Chip label="UITKX0112" size="small" color="error" variant="outlined" /></TableCell>

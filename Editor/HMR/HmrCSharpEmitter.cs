@@ -460,7 +460,14 @@ namespace Ruitk.EditorSupport.HMR
                             ?? GP<string>(fp, "Type")
                             ?? (string)fp.GetType().GetField("TypeAnnotation")?.GetValue(fp)
                             ?? "object";
-                        string propName = char.ToUpper(fpName[0]) + fpName.Substring(1);
+                        // The reflective read looks the prop up on the SG-generated
+                        // props class BY NAME, so this derivation must match the SG's
+                        // exactly: PropSourceName (leading underscores stripped — the
+                        // deliberately-unused marker never renames the public prop),
+                        // then PascalCase. Local fallback covers an older Language.dll
+                        // that predates the property.
+                        string propBase = GP<string>(fp, "PropSourceName") ?? StripPropMarker(fpName);
+                        string propName = char.ToUpper(propBase[0]) + propBase.Substring(1);
                         L(
                             $"            var {fpName} = __HmrProp<{fpType}>(__rawProps, \"{propName}\", default({fpType}));"
                         );
@@ -2823,6 +2830,17 @@ namespace Ruitk.EditorSupport.HMR
             // -- Output helpers --------------------------------------------
 
             private void L(string line) => _sb.AppendLine(line);
+
+            /// <summary>Fallback mirror of FunctionParam.ToPropSourceName for an older
+            /// Language.dll without the property: leading underscores stripped,
+            /// literal name kept when stripping would leave nothing.</summary>
+            private static string StripPropMarker(string name)
+            {
+                if (string.IsNullOrEmpty(name) || name[0] != '_')
+                    return name;
+                string stripped = name.TrimStart('_');
+                return stripped.Length == 0 ? name : stripped;
+            }
 
             private static T GP<T>(object obj, string name)
             {

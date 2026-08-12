@@ -135,6 +135,7 @@ namespace Ruitk.Language.Diagnostics
             if (d.IsFunctionStyle && !d.FunctionParams.IsDefaultOrEmpty)
             {
                 CheckUnusedParameters(d, parseResult.RootNodes, diags);
+                CheckDuplicatePropNames(d, diags);
             }
 
             // -- T2: UITKX0120 - Asset path not found -------------------------
@@ -828,6 +829,38 @@ namespace Ruitk.Language.Diagnostics
                     EndLine    = line,
                     EndColumn  = endCol,
                 });
+            }
+        }
+
+        /// <summary>
+        /// UITKX0114 - Two parameters that collapse to the same PROP name
+        /// (<c>_count</c> and <c>count</c> both expose the prop <c>count</c> —
+        /// the leading underscore is the deliberately-unused marker, not part
+        /// of the contract). Anchored at the LATER parameter.
+        /// </summary>
+        private static void CheckDuplicatePropNames(DirectiveSet d, List<ParseDiagnostic> diags)
+        {
+            var seen = new Dictionary<string, string>(System.StringComparer.Ordinal);
+            foreach (var p in d.FunctionParams)
+            {
+                string propName = p.PropSourceName;
+                if (seen.TryGetValue(propName, out string firstName))
+                {
+                    int col    = p.NameColumn >= 0 ? p.NameColumn : 0;
+                    int line   = p.SourceLine > 0 ? p.SourceLine : d.ComponentDeclarationLine;
+                    diags.Add(new ParseDiagnostic
+                    {
+                        Code       = DiagnosticCodes.DuplicatePropName,
+                        Severity   = ParseSeverity.Error,
+                        Message    = $"Parameters '{firstName}' and '{p.Name}' both expose the prop '{propName}' — a leading underscore marks a parameter unused without renaming its prop.",
+                        SourceLine = line,
+                        SourceColumn = col,
+                        EndLine    = line,
+                        EndColumn  = col + p.Name.Length,
+                    });
+                    continue;
+                }
+                seen[propName] = p.Name;
             }
         }
 

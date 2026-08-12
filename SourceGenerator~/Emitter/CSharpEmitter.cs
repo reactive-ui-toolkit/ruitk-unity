@@ -410,7 +410,11 @@ namespace Ruitk.SourceGenerator.Emitter
             {
                 foreach (var fp in _directives.FunctionParams)
                 {
-                    string propName = ToPropName(fp.Name);
+                    // The LOCAL keeps the source name (setup code references it,
+                    // underscore and all); the PROPERTY comes from PropSourceName so
+                    // a leading-underscore "deliberately unused" marker never renames
+                    // the public prop.
+                    string propName = ToPropName(fp.PropSourceName);
                     L($"{I3}var {fp.Name} = props.{propName};");
                 }
                 L("");
@@ -1846,10 +1850,11 @@ namespace Ruitk.SourceGenerator.Emitter
             L($"    public sealed class {className} : global::Ruitk.Core.IProps");
             L("    {");
 
-            // Properties
+            // Properties (named from PropSourceName: a leading-underscore param
+            // keeps its unprefixed public prop)
             foreach (var fp in fps)
             {
-                string propName = ToPropName(fp.Name);
+                string propName = ToPropName(fp.PropSourceName);
                 string def = string.IsNullOrWhiteSpace(fp.DefaultValue)
                     ? "default"
                     : fp.DefaultValue!;
@@ -1865,7 +1870,7 @@ namespace Ruitk.SourceGenerator.Emitter
             bool firstEq = true;
             foreach (var fp in fps)
             {
-                string propName = ToPropName(fp.Name);
+                string propName = ToPropName(fp.PropSourceName);
                 string conjunction = firstEq ? "            return " : "                && ";
                 firstEq = false;
                 L(
@@ -1888,7 +1893,7 @@ namespace Ruitk.SourceGenerator.Emitter
             L("                int hash = 17;");
             foreach (var fp in fps)
             {
-                string propName = ToPropName(fp.Name);
+                string propName = ToPropName(fp.PropSourceName);
                 L(
                     $"                hash = hash * 31 + global::System.Collections.Generic.EqualityComparer<{fp.Type}>.Default.GetHashCode({propName}!);"
                 );

@@ -10,7 +10,8 @@ namespace Ruitk.Language.Parser
     ///
     /// <list type="bullet">
     ///   <item><description><see cref="Type"/> — verbatim C# type (may include generics, e.g. <c>List&lt;string&gt;</c>).</description></item>
-    ///   <item><description><see cref="Name"/> — identifier used both as local variable in the body and (PascalCase) as the property name in the generated props class.</description></item>
+    ///   <item><description><see cref="Name"/> — identifier used as the local variable in the body; the
+    ///   PROPS contract derives from <see cref="PropSourceName"/> instead.</description></item>
     ///   <item><description><see cref="DefaultValue"/> — verbatim default expression, or <c>null</c> if omitted (maps to <c>default</c> in the generated class).</description></item>
     /// </list>
     /// </summary>
@@ -21,6 +22,29 @@ namespace Ruitk.Language.Parser
 
         /// <summary>0-based column of the first character of the parameter name. -1 when not tracked.</summary>
         public int NameColumn { get; init; } = -1;
+
+        /// <summary>
+        /// The name this parameter contributes to the component's PROPS contract:
+        /// <see cref="Name"/> minus any leading underscores. A leading underscore marks a
+        /// parameter deliberately unused (the C# discard convention UITKX0111 honors)
+        /// WITHOUT renaming the public prop — consumers keep writing the unprefixed
+        /// attribute, and the generated props-class property is the PascalCase of THIS
+        /// name. Every layer that maps params to props (SG emitter, HMR emitter, LSP
+        /// workspace index) derives from this single definition; two params that
+        /// collapse to the same prop name are UITKX0114.
+        /// </summary>
+        public string PropSourceName => ToPropSourceName(Name);
+
+        /// <summary>Static form of <see cref="PropSourceName"/> for callers that hold a raw
+        /// parameter name. Falls back to the literal name when stripping would leave nothing
+        /// (a bare <c>_</c> cannot become a prop).</summary>
+        public static string ToPropSourceName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name[0] != '_')
+                return name;
+            string stripped = name.TrimStart('_');
+            return stripped.Length == 0 ? name : stripped;
+        }
     }
 
     // ── Hook declaration ─────────────────────────────────────────────────────
