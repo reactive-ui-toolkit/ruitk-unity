@@ -232,13 +232,14 @@ namespace Ruitk.EditorSupport.HMR
             // Lock assembly reloads
             _suppressor.Lock();
 
-            // Start watching
-            string assetsPath = Path.GetFullPath(UnityEngine.Application.dataPath);
+            // Start watching — Assets/ plus every writable package root (embedded /
+            // local file: installs): a package-resident .uitkx raises no event from
+            // an Assets/-only watcher, leaving HMR blind to it (GEN-1's HMR leg).
             _watcher.OnUitkxChanged += OnUitkxFileChanged;
             _watcher.OnUssChanged += OnUssFileChanged;
             _watcher.OnUitkxDeleted += OnUitkxFileDeleted;
             _watcher.TraceEnabled = VerboseWatcherTrace;
-            _watcher.Start(assetsPath);
+            _watcher.Start(BuildWatchRoots());
 
             // UITKX Fast Refresh: wire the renderer-walk callback the
             // Refresh runtime needs to dispatch PerformRefresh. Doing it
@@ -917,12 +918,11 @@ namespace Ruitk.EditorSupport.HMR
                 return;
 
             // Also update the cached StyleSheet in the registry so PropsApplier
-            // picks up the new version on reconcile.
-            string normalized = ussPath.Replace('\\', '/');
-            int assetsIdx = normalized.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
-            if (assetsIdx >= 0)
+            // picks up the new version on reconcile. Layout-aware: a package-resident
+            // .uss maps to a "Packages/<id>/…" asset path, not "Assets/…".
+            string assetRelative = AbsoluteToAssetPath(ussPath);
+            if (assetRelative != null)
             {
-                string assetRelative = normalized.Substring(assetsIdx + 1); // "Assets/..."
                 AssetDatabase.ImportAsset(assetRelative, ImportAssetOptions.ForceSynchronousImport);
                 var sheet = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.StyleSheet>(
                     assetRelative
@@ -1218,7 +1218,7 @@ namespace Ruitk.EditorSupport.HMR
                 return false;
 
             bool anyCompiled = false;
-            string assetsDir = Path.GetFullPath(UnityEngine.Application.dataPath);
+            var searchRoots = BuildWatchRoots();
 
             foreach (Match m in matches)
             {
@@ -1228,8 +1228,14 @@ namespace Ruitk.EditorSupport.HMR
                 if (_compiler.HmrAssemblyPaths.ContainsKey(missingName))
                     continue;
 
-                // Search for a matching .uitkx file on disk
-                string uitkxPath = FindUitkxByComponentName(assetsDir, missingName);
+                // Search for a matching .uitkx file on disk (same roots the watcher covers)
+                string uitkxPath = null;
+                foreach (string root in searchRoots)
+                {
+                    uitkxPath = FindUitkxByComponentName(root, missingName);
+                    if (uitkxPath != null)
+                        break;
+                }
                 if (
                     uitkxPath == null
                     || uitkxPath.Equals(failedPath, StringComparison.OrdinalIgnoreCase)
@@ -1264,7 +1270,75 @@ namespace Ruitk.EditorSupport.HMR
         }
 
         /// <summary>
-        /// Search Assets/ recursively for a .uitkx file whose name matches
+        /// Absolute filesystem path → project asset path ("Assets/…" or
+        /// "Packages/&lt;id&gt;/…"), or null when the file is in neither surface.
+        /// Package paths resolve through <see cref="UnityEditor.PackageManager.PackageInfo"/>
+        /// so embedded and local (<c>file:</c>) layouts both map correctly — the
+        /// package's ASSET path uses its id, which need not equal its folder name.
+        /// </summary>
+        private static string AbsoluteToAssetPath(string absolutePath)
+        {
+            string full;
+            try { full = Path.GetFullPath(absolutePath).Replace('\\', '/'); }
+            catch { return null; }
+
+            string assetsRoot = Path.GetFullPath(UnityEngine.Application.dataPath).Replace('\\', '/');
+            if (full.StartsWith(assetsRoot + "/", StringComparison.OrdinalIgnoreCase))
+                return "Assets" + full.Substring(assetsRoot.Length);
+
+            try
+            {
+                foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
+                {
+                    if (string.IsNullOrEmpty(package.resolvedPath))
+                        continue;
+                    string root = Path.GetFullPath(package.resolvedPath).Replace('\\', '/');
+                    if (full.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase))
+                        return package.assetPath + full.Substring(root.Length);
+                }
+            }
+            catch { /* package manager unavailable — Assets/ answer above still served */ }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The roots the HMR watcher (and dependency discovery) must cover: the
+        /// project's Assets/ folder plus the resolved location of every WRITABLE
+        /// package (embedded and local <c>file:</c> installs — the layouts whose
+        /// .uitkx files a developer can actually edit). Immutable cache packages
+        /// are excluded: their content cannot change mid-session.
+        /// </summary>
+        private static List<string> BuildWatchRoots()
+        {
+            var roots = new List<string>
+            {
+                Path.GetFullPath(UnityEngine.Application.dataPath),
+            };
+            try
+            {
+                foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
+                {
+                    if (package.source != UnityEditor.PackageManager.PackageSource.Embedded
+                        && package.source != UnityEditor.PackageManager.PackageSource.Local)
+                        continue;
+                    if (string.IsNullOrEmpty(package.resolvedPath))
+                        continue;
+                    string full = Path.GetFullPath(package.resolvedPath);
+                    if (Directory.Exists(full) && !roots.Contains(full))
+                        roots.Add(full);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    $"[HMR] Package-root discovery failed ({ex.Message}) — watching Assets/ only.");
+            }
+            return roots;
+        }
+
+        /// <summary>
+        /// Search a watch root recursively for a .uitkx file whose name matches
         /// the given component name (case-insensitive).
         /// </summary>
         private static string FindUitkxByComponentName(string assetsDir, string componentName)

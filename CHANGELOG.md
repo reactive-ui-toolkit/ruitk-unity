@@ -60,6 +60,19 @@ resolves `dotnet` via `$RUITK_DOTNET` → `.ruitk-local.json` → PATH. The lega
 survives in exactly one quarantined entry point (`ParseLegacyForMigration`) that only
 the codemod uses — everything else parses legacy files straight to the 2320 error.
 
+### Fixed — HMR hot-swaps package-resident files
+
+The HMR file watcher was started on `Assets/` only, leaving HMR structurally blind to
+`.uitkx` files inside embedded and local packages — a save produced no event, no
+compile, no swap (and the FSW is the PRIMARY event source during play mode, where
+Unity's asset refresh may be deferred). The watcher now covers multiple roots —
+`Assets/` plus every writable package location resolved through `PackageInfo`
+(immutable cache packages excluded) — with the mtime baseline, dropped-event recovery,
+and the 2s safety sweep spanning all of them. The CS0103 dependency auto-discovery
+searches the same roots, and a package `.uss` save now refreshes its registry
+StyleSheet through a layout-aware absolute→asset-path conversion. Residual local-
+(`file:`)-package edges are tracked as GEN-4 in `Plans~/REMAINING_WORK.md`.
+
 ### Fixed — HMR starts on Unity 6000.5
 
 Unity 6000.5 removed the editor's dedicated `Data/DotNetSdkRoslyn` folder — Roslyn now
