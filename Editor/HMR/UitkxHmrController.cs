@@ -239,7 +239,8 @@ namespace Ruitk.EditorSupport.HMR
             _watcher.OnUssChanged += OnUssFileChanged;
             _watcher.OnUitkxDeleted += OnUitkxFileDeleted;
             _watcher.TraceEnabled = VerboseWatcherTrace;
-            _watcher.Start(BuildWatchRoots());
+            var watchRoots = BuildWatchRoots();
+            _watcher.Start(watchRoots);
 
             // UITKX Fast Refresh: wire the renderer-walk callback the
             // Refresh runtime needs to dispatch PerformRefresh. Doing it
@@ -254,10 +255,11 @@ namespace Ruitk.EditorSupport.HMR
             // import or @uss edge edited while HMR was stopped, with no domain reload
             // in between, stayed invisible, so a member-file save fanned out to NOBODY:
             // zero logs, zero screen change; a domain reload "fixed" it by forcing a
-            // fresh map. Both builders clear their map first; the cost is one read of
-            // each .uitkx at Start.
-            BuildUssDependencyMap(assetsPath);
-            BuildImportDependencyMap(assetsPath);
+            // fresh map. Both builders clear their map first and span the SAME roots
+            // the watcher covers — an Assets/-only graph would give package files
+            // empty fan-out edges; the cost is one read of each .uitkx at Start.
+            BuildUssDependencyMap(watchRoots);
+            BuildImportDependencyMap(watchRoots);
 
             // Hook lifecycle events
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
@@ -951,21 +953,22 @@ namespace Ruitk.EditorSupport.HMR
         /// Scans all .uitkx files under assetsRoot for @uss directives and builds
         /// a reverse map: absolute .uss path → list of .uitkx paths that import it.
         /// </summary>
-        private void BuildUssDependencyMap(string assetsRoot)
+        private void BuildUssDependencyMap(IReadOnlyList<string> roots)
         {
             _ussDependents.Clear();
             try
             {
-                foreach (
-                    string uitkxPath in Directory.EnumerateFiles(
-                        assetsRoot,
-                        "*.uitkx",
-                        SearchOption.AllDirectories
+                foreach (string root in roots)
+                    foreach (
+                        string uitkxPath in Directory.EnumerateFiles(
+                            root,
+                            "*.uitkx",
+                            SearchOption.AllDirectories
+                        )
                     )
-                )
-                {
-                    RegisterUssDependencies(uitkxPath);
-                }
+                    {
+                        RegisterUssDependencies(uitkxPath);
+                    }
             }
             catch (Exception ex)
             {
@@ -974,25 +977,27 @@ namespace Ruitk.EditorSupport.HMR
         }
 
         /// <summary>
-        /// Scans every <c>.uitkx</c> under <paramref name="assetsRoot"/> for <c>import</c> lines and
-        /// builds the reverse map (imported file → importers), mirroring the USS map (import/export
-        /// grammar §8). Called once at Start(); individual files are refreshed on each edit.
+        /// Scans every <c>.uitkx</c> under each of <paramref name="roots"/> for <c>import</c> lines
+        /// and builds the reverse map (imported file → importers), mirroring the USS map
+        /// (import/export grammar §8). Called once at Start() with the watcher's own roots;
+        /// individual files are refreshed on each edit.
         /// </summary>
-        private void BuildImportDependencyMap(string assetsRoot)
+        private void BuildImportDependencyMap(IReadOnlyList<string> roots)
         {
             _importDependents.Clear();
             try
             {
-                foreach (
-                    string uitkxPath in Directory.EnumerateFiles(
-                        assetsRoot,
-                        "*.uitkx",
-                        SearchOption.AllDirectories
+                foreach (string root in roots)
+                    foreach (
+                        string uitkxPath in Directory.EnumerateFiles(
+                            root,
+                            "*.uitkx",
+                            SearchOption.AllDirectories
+                        )
                     )
-                )
-                {
-                    RegisterImportDependencies(uitkxPath);
-                }
+                    {
+                        RegisterImportDependencies(uitkxPath);
+                    }
             }
             catch (Exception ex)
             {
