@@ -60,6 +60,16 @@ resolves `dotnet` via `$RUITK_DOTNET` → `.ruitk-local.json` → PATH. The lega
 survives in exactly one quarantined entry point (`ParseLegacyForMigration`) that only
 the codemod uses — everything else parses legacy files straight to the 2320 error.
 
+### Fixed — HMR starts on Unity 6000.5
+
+Unity 6000.5 removed the editor's dedicated `Data/DotNetSdkRoslyn` folder — Roslyn now
+ships inside the bundled .NET SDK under a version-numbered path
+(`Data/DotNetSdk/sdk/<ver>/Roslyn/bincore/csc.dll`) — so Start HMR failed with "Roslyn
+csc.dll not found". The compiler probe now covers both layouts, enumerating the SDK
+version segment instead of hardcoding it (highest wins); the bundled `NetCoreRuntime`
+host runs either csc (verified on 6000.5.6f1). The failure message names every probed
+location.
+
 ### Fixed — package-embedded `.uitkx` edits recompile their owning assembly
 
 Editing a `.uitkx` inside an embedded (or local `file:`) package changed nothing in
