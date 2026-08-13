@@ -2,7 +2,13 @@ import { Active, Base, Disabled } from "./AppButton.style"
 import * as StyleExtensions from "../../StyleExtensions"
 import "@UnityEngine.UIElements"
 
-export VirtualNode AppButton(string text = "", Action? onClick = null, bool active = false, bool disabled = false, Style? style = null) {
+export VirtualNode AppButton(
+  string text = "",
+  Action? onClick = null,
+  bool active = false,
+  bool disabled = false,
+  Style? style = null
+) {
   var resolved = StyleExtensions.Extend(
     Base,
     active ? Active : null,

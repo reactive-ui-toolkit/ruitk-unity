@@ -169,28 +169,26 @@ export const HmrPage: FC = () => (
         overwrite the value on the next save.
       </Typography>
       <Typography variant="body1" paragraph>
-        <strong>Limitation — prefer fields over static auto-properties.</strong> A get-only static
-        auto-property like <code>public static Style Root {'{'} get; {'}'} = new Style {'{'}…{'}'}</code>
-        is lowered by the C# compiler to a private <code>static readonly</code> backing field that
-        the source generator cannot rewrite. Its value will be inlined by the JIT and HMR cannot
-        refresh it. For HMR-able module values, use fields:
-        <code>public static readonly Style Root = new Style {'{'}…{'}'};</code>. Field handling for
-        static auto-properties is on the roadmap.
+        Value exports (<code>export Style Root = …</code>) always emit as swappable fields — the
+        generated code carries an HMR-swap marker, so every save re-evaluates the initializer and
+        copies the fresh value into the live type. Types you hand-write in ambient <code>.cs</code>{' '}
+        files are compiled by Unity, not the uitkx pipeline, and follow Unity&rsquo;s normal
+        domain-reload cycle instead.
       </Typography>
       <Typography variant="body1" paragraph>
-        Generic hooks (e.g. <code>{'useLocalStorage<T>(...)'}</code> (legacy generic hooks)) use a cached delegate
-        strategy — first call per type parameter after HMR pays ~1-2µs, subsequent calls are direct
-        invocations.
+        Generic hooks (e.g. <code>{'export (T, Action<T>) useSel<T>(...)'}</code>) use a cached
+        delegate strategy — first call per type parameter after HMR pays ~1-2µs, subsequent calls
+        are direct invocations.
       </Typography>
       <Typography variant="body1" paragraph>
         <strong>Hook identity is path-qualified.</strong> Hot-swap matches an edited hook to the
         components that use it by the key{' '}
-        <code>{'{Namespace}.{Container}::{hookName}'}</code> (e.g.{' '}
-        <code>MyGame.UI.CounterHooks::useCounter</code>), not by the bare hook name — so two
+        <code>{'{Namespace}.__Exports::{hookName}'}</code> (e.g.{' '}
+        <code>MyGame.UI.Counter.__Exports::useCounter</code>), not by the bare hook name — so two
         identically-named hooks in different files (say, two <code>useData</code>s) never
-        cross-swap: editing one refreshes only its own consumers. This follows the same
-        namespace/container derivation as the generated code, including the path-derived default
-        namespace when a file has no <code>@namespace</code>.
+        cross-swap: editing one refreshes only its own consumers. This follows the same file-keyed
+        namespace derivation as the generated code, including the path-derived default namespace
+        when a file has no <code>@namespace</code>.
       </Typography>
     </Section>
 

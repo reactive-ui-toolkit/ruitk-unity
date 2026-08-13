@@ -253,12 +253,6 @@ namespace Ruitk.Language.SemanticTokens
                         kindOf[mem.Name] = mem.Kind == Parser.DeclKind.Value
                             ? SemanticTokenTypes.Variable
                             : SemanticTokenTypes.Function;
-                if (!tds.HookDeclarations.IsDefaultOrEmpty)
-                    foreach (var h in tds.HookDeclarations)
-                        kindOf[h.Name] = SemanticTokenTypes.Function;
-                if (!tds.ModuleDeclarations.IsDefaultOrEmpty)
-                    foreach (var mo in tds.ModuleDeclarations)
-                        kindOf[mo.Name] = SemanticTokenTypes.Type;
 
                 int line0 = imp.Line - 1;
                 if (line0 < 0 || line0 >= lineStarts.Length)

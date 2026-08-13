@@ -13,7 +13,7 @@ public class LoweringTests
     {
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 var (count, setCount) = useState(0);
                 return (
                     <Box><Label text={$"{count}"} /></Box>

@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace Ruitk.Samples.Components.GalagaGame {
+  public enum GalagaScreen { MainMenu, Game }
+
   public static class GalagaTypes {
     // ───── Enums ─────
 

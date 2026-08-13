@@ -1,4 +1,5 @@
 import { useSnakeGame } from "./GameScreen.hooks"
+import * as GameScreenStyles from "./GameScreenStyles.style"
 import "@UnityEngine.UIElements"
 
 export VirtualNode GameScreen(int restartVersion = 0) {

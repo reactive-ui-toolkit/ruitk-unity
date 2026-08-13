@@ -1,4 +1,15 @@
-export VirtualNode ShowcaseExtrasPanel(bool isOptionEnabled = false, ChangeEventHandler<bool>? onOptionEnabledChange = null, bool isRadioSingleSelected = false, ChangeEventHandler<bool>? onRadioSingleChange = null, List<string>? selectionChoices = null, int selectionIndex = 0, ChangeEventHandler<int>? onSelectionChange = null, int progressValue = 0, int batchClicks = 0, Action? onBatchClick = null) {
+export VirtualNode ShowcaseExtrasPanel(
+  bool isOptionEnabled = false,
+  ChangeEventHandler<bool>? onOptionEnabledChange = null,
+  bool isRadioSingleSelected = false,
+  ChangeEventHandler<bool>? onRadioSingleChange = null,
+  List<string>? selectionChoices = null,
+  int selectionIndex = 0,
+  ChangeEventHandler<int>? onSelectionChange = null,
+  int progressValue = 0,
+  int batchClicks = 0,
+  Action? onBatchClick = null
+) {
   var containerStyle = new Style {
     (MarginTop, 12f),
     (PaddingLeft, 12f), (PaddingRight, 12f),

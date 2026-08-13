@@ -35,7 +35,7 @@ public class Unity63AliasEmissionTests
     {
         var src =
             "@namespace TestNs\n"
-            + "component MyComp {\n"
+            + "VirtualNode MyComp() {\n"
             + "  return (<VisualElement />);\n"
             + "}";
 
@@ -54,7 +54,7 @@ public class Unity63AliasEmissionTests
         // -> (int, Action)` example shape.
         const string src = """
             @namespace TestNs
-            hook UseFoo(int initial = 0) -> int {
+            export int useFoo(int initial = 0) {
                 return initial;
             }
             """;
@@ -70,14 +70,11 @@ public class Unity63AliasEmissionTests
     [Fact]
     public void Module_emits_guarded_aliases_for_unity_6_3_types()
     {
-        // Module-only .uitkx (no component) — exercises ModuleEmitter's
-        // preamble exclusively. Mirrors the working pattern from
-        // ModuleStaticReadonlyStripTests (filename matches module name).
+        // Value-only .uitkx (no component) — exercises the __Exports unit's
+        // preamble exclusively (0.16.0: the legacy module grammar is gone).
         const string src = """
             @namespace TestNs
-            module Foo {
-                public static int Bar = 1;
-            }
+            export int Bar = 1;
             """;
         var result = GeneratorTestHelper.Run(src, "Foo.uitkx");
 

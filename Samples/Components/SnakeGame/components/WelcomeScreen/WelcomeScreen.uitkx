@@ -1,3 +1,5 @@
+import * as WelcomeStyles from "./WelcomeStyles.style"
+
 export VirtualNode WelcomeScreen() {
   var navigate = RouterHooks.UseNavigate();
 

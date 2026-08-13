@@ -25,8 +25,8 @@ namespace UitkxLanguageServer.Tests
             _importer = Path.Combine(uiDir, "Screen.uitkx");
             File.WriteAllText(_importer, "import {  } from \"./Lib\"\n");
             File.WriteAllText(Path.Combine(uiDir, "Lib.uitkx"),
-                "export component Widget {\n    return (<Box />);\n}\n" +
-                "export hook useThing() { return 0; }\n" +
+                "export VirtualNode Widget() {\n    return (<Box />);\n}\n" +
+                "export void useThing() { return 0; }\n" +
                 "module Private { public const int X = 1; }\n");   // NOT exported
         }
 

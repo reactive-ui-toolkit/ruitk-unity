@@ -24,12 +24,54 @@ namespace Ruitk.Language.Parser
     /// </summary>
     public static class DirectiveParser
     {
-        // The default namespace for a function-style .uitkx file that has no @namespace.
-        // Under StrictImports the pipeline OVERRIDES this with the path-derived namespace
-        // (see UitkxPipeline.ResolveEffectiveNamespace); it survives only as the flag-off /
-        // no-project-root fallback. The generator no longer reads a companion .cs to infer the
+        // The default namespace for a .uitkx file that has no @namespace. The pipeline
+        // OVERRIDES this with the path-derived namespace (see
+        // UitkxPipeline.ResolveEffectiveNamespace); it survives only as the no-project-root
+        // fallback. The generator no longer reads a companion .cs to infer the
         // namespace — a target's identity must never flip on a .cs edit (plan §4).
         private const string FunctionStyleDefaultNamespace = "Ruitk.FunctionStyle";
+
+        // D5 (0.16.0 legacy removal): the migration codemod is the ONLY caller allowed to
+        // parse legacy syntax without the removal error — it still has to READ the files it
+        // rewrites. Set exclusively by ParseLegacyForMigration; builds and IDEs always go
+        // through Parse and get UITKX2320 as an ERROR on every wrapper keyword.
+        [ThreadStatic] private static bool t_parseLegacyForMigration;
+
+        /// <summary>
+        /// Migration-only entry point (0.16.0 legacy removal, D5): identical to
+        /// <see cref="Parse"/> except wrapper keywords produce the historical deprecation
+        /// WARNING instead of the removal ERROR, so the migration codemod's own
+        /// error-freeze gate does not freeze every legacy file it exists to convert.
+        /// Reserved for <c>UitkxMigrateImports</c>; every build/IDE path uses
+        /// <see cref="Parse"/>.
+        /// </summary>
+        public static DirectiveSet ParseLegacyForMigration(
+            string source, string filePath, List<ParseDiagnostic> diagnosticBag)
+        {
+            t_parseLegacyForMigration = true;
+            try { return Parse(source, filePath, diagnosticBag); }
+            finally { t_parseLegacyForMigration = false; }
+        }
+
+        /// <summary>The UITKX2320 diagnostic for a wrapper-keyword declaration: the 0.16.0
+        /// removal ERROR on every normal parse, the historical deprecation WARNING under
+        /// <see cref="ParseLegacyForMigration"/>.</summary>
+        private static ParseDiagnostic WrapperKeywordDiag(string keyword, int line) =>
+            t_parseLegacyForMigration
+                ? new ParseDiagnostic
+                {
+                    Code = "UITKX2320",
+                    Severity = ParseSeverity.Warning,
+                    SourceLine = line,
+                    Message = $"the '{keyword}' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it)",
+                }
+                : new ParseDiagnostic
+                {
+                    Code = "UITKX2320",
+                    Severity = ParseSeverity.Error,
+                    SourceLine = line,
+                    Message = $"the '{keyword}' wrapper keyword was removed in 0.16.0 — run the UitkxMigrateImports codemod with --es-modules (scripts/migrate-uitkx.mjs) to migrate this file",
+                };
 
         private static readonly HashSet<string> s_topLevelKeywords = new HashSet<string>(
             StringComparer.Ordinal
@@ -85,7 +127,7 @@ namespace Ruitk.Language.Parser
                     Code = "UITKX2105",
                     Severity = ParseSeverity.Error,
                     SourceLine = fsLine,
-                    Message = "Invalid function-style component declaration. Expected 'component PascalCaseName { ... return (...) ... }'.",
+                    Message = "Invalid component declaration. Expected a plain typed declaration, e.g. 'export VirtualNode PascalCaseName(...) { ... return (...); }'.",
                 });
 
                 return new DirectiveSet(
@@ -113,7 +155,7 @@ namespace Ruitk.Language.Parser
                 Code = "UITKX2105",
                 Severity = ParseSeverity.Error,
                 SourceLine = 1,
-                Message = $"'{fallbackName}.uitkx' does not contain a valid function-style component declaration. Expected 'component PascalCaseName {{ ... return (...) ... }}'.",
+                Message = $"'{fallbackName}.uitkx' does not contain a valid top-level declaration. Expected a plain typed declaration, e.g. 'export VirtualNode PascalCaseName(...) {{ ... return (...); }}'.",
             });
 
             return new DirectiveSet(
@@ -337,13 +379,7 @@ namespace Ruitk.Language.Parser
 
             // UITKX2320 (deprecation, G-10): every wrapper-keyword declaration in a legacy-mode
             // file warns. This is the file's FIRST declaration — it also sets the file's mode.
-            diagnosticBag.Add(new ParseDiagnostic
-            {
-                Code = "UITKX2320",
-                Severity = ParseSeverity.Warning,
-                SourceLine = line,
-                Message = "the 'component' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-            });
+            diagnosticBag.Add(WrapperKeywordDiag("component", line));
 
             int componentLine = line;
 
@@ -666,13 +702,7 @@ namespace Ruitk.Language.Parser
 
                 if (TryReadKeywordAt(source, i, "component"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'component' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("component", line));
                     var tailDecl = ParseSingleComponent(
                         source, filePath, diagnosticBag,
                         ref i, ref line, tailExported, useLastReturn, out bool tailHardStop);
@@ -683,25 +713,13 @@ namespace Ruitk.Language.Parser
                 }
                 else if (TryReadKeywordAt(source, i, "hook"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'hook' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("hook", line));
                     TryReadKeyword(source, ref i, "hook");
                     ParseSingleHook(source, filePath, diagnosticBag, tailHooks, ref i, ref line, tailExported);
                 }
                 else if (TryReadKeywordAt(source, i, "module"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'module' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("module", line));
                     TryReadKeyword(source, ref i, "module");
                     ParseSingleModule(source, filePath, diagnosticBag, tailModules, ref i, ref line, tailExported);
                 }
@@ -731,13 +749,14 @@ namespace Ruitk.Language.Parser
                     else if (LooksLikePlainDeclarationHeadAt(source, i))
                     {
                         // U-08 mirror direction: a PLAIN declaration after legacy wrapper
-                        // declarations is the same mixed-mode error as a wrapper after plain.
+                        // declarations. Mode-independent Error (not WrapperKeywordDiag) so a
+                        // mixed file still freezes under the codemod's migration parse.
                         diagnosticBag.Add(new ParseDiagnostic
                         {
-                            Code = "UITKX2108",
+                            Code = "UITKX2320",
                             Severity = ParseSeverity.Error,
                             SourceLine = LineAtPos(source, i),
-                            Message = "legacy wrapper declarations and plain declarations cannot be mixed in one file — the file's first declaration sets its style",
+                            Message = "a plain declaration cannot follow legacy wrapper declarations — the wrapper grammar was removed in 0.16.0; rewrite the wrapper declarations as plain 'export' forms (mixed files are not auto-migrated by the codemod)",
                         });
                     }
                     else
@@ -1094,16 +1113,19 @@ namespace Ruitk.Language.Parser
                 i = savedI; line = savedLine; return false;
             }
             SkipSpaces(source, ref i);
-            if (i >= source.Length || source[i] != '"')
+            // ES accepts either quote style for the specifier; the closing quote must
+            // match the opening one. The formatter re-emits the canonical double form.
+            if (i >= source.Length || (source[i] != '"' && source[i] != '\''))
             {
                 i = savedI; line = savedLine; return false;
             }
+            char specQuote = source[i];
             int specQuoteCol = ColAtPos(source, i);
             i++; // past opening quote
             int specStart = i;
-            while (i < source.Length && source[i] != '"' && source[i] != '\n')
+            while (i < source.Length && source[i] != specQuote && source[i] != '\n')
                 i++;
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || source[i] != specQuote)
             {
                 i = savedI; line = savedLine; return false; // unterminated specifier
             }
@@ -1169,16 +1191,17 @@ namespace Ruitk.Language.Parser
                 i = savedI; line = savedLine; return false;
             }
             SkipSpaces(source, ref i);
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || (source[i] != '"' && source[i] != '\''))
             {
                 i = savedI; line = savedLine; return false;
             }
+            char specQuote = source[i];
             int specQuoteCol = ColAtPos(source, i);
             i++; // past opening quote
             int specStart = i;
-            while (i < source.Length && source[i] != '"' && source[i] != '\n')
+            while (i < source.Length && source[i] != specQuote && source[i] != '\n')
                 i++;
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || source[i] != specQuote)
             {
                 i = savedI; line = savedLine; return false; // unterminated specifier
             }
@@ -1220,7 +1243,8 @@ namespace Ruitk.Language.Parser
 
             i += "import".Length;
             SkipSpaces(source, ref i);
-            if (i >= source.Length || source[i] == '{' || source[i] == '"' || source[i] == '*')
+            if (i >= source.Length || source[i] == '{' || source[i] == '"'
+                || source[i] == '\'' || source[i] == '*')
             {
                 i = savedI; line = savedLine; return false;
             }
@@ -1302,16 +1326,17 @@ namespace Ruitk.Language.Parser
                 i = savedI; line = savedLine; return false;
             }
             SkipSpaces(source, ref i);
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || (source[i] != '"' && source[i] != '\''))
             {
                 i = savedI; line = savedLine; return false;
             }
+            char specQuote = source[i];
             int specQuoteCol = ColAtPos(source, i);
             i++; // past opening quote
             int specStart = i;
-            while (i < source.Length && source[i] != '"' && source[i] != '\n')
+            while (i < source.Length && source[i] != specQuote && source[i] != '\n')
                 i++;
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || source[i] != specQuote)
             {
                 i = savedI; line = savedLine; return false; // unterminated specifier
             }
@@ -1361,11 +1386,13 @@ namespace Ruitk.Language.Parser
 
             i += "import".Length;
             SkipSpaces(source, ref i);
-            // A file import continues with `{`; a namespace import continues with a `"@…"` string.
-            if (i >= source.Length || source[i] != '"')
+            // A file import continues with `{`; a namespace import continues with a `"@…"` string
+            // (either quote style; the closing quote must match the opening one).
+            if (i >= source.Length || (source[i] != '"' && source[i] != '\''))
             {
                 i = savedI; line = savedLine; return false;
             }
+            char nsQuote = source[i];
             i++; // past opening quote
             if (i >= source.Length || source[i] != '@')
             {
@@ -1374,9 +1401,9 @@ namespace Ruitk.Language.Parser
             }
             i++; // past the '@' sigil
             int payloadStart = i;
-            while (i < source.Length && source[i] != '"' && source[i] != '\n')
+            while (i < source.Length && source[i] != nsQuote && source[i] != '\n')
                 i++;
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || source[i] != nsQuote)
             {
                 i = savedI; line = savedLine; return false; // unterminated
             }
@@ -1515,25 +1542,13 @@ namespace Ruitk.Language.Parser
 
                 if (TryReadKeywordAt(source, i, "hook"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'hook' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("hook", line));
                     TryReadKeyword(source, ref i, "hook");
                     ParseSingleHook(source, filePath, diagnosticBag, hooks, ref i, ref line, declExported);
                 }
                 else if (TryReadKeywordAt(source, i, "module"))
                 {
-                    diagnosticBag.Add(new ParseDiagnostic
-                    {
-                        Code = "UITKX2320",
-                        Severity = ParseSeverity.Warning,
-                        SourceLine = line,
-                        Message = "the 'module' wrapper keyword is deprecated — write a plain 'export' declaration (the UitkxMigrateImports --es-modules codemod rewrites it); the wrapper is removed in a later minor",
-                    });
+                    diagnosticBag.Add(WrapperKeywordDiag("module", line));
                     TryReadKeyword(source, ref i, "module");
                     ParseSingleModule(source, filePath, diagnosticBag, modules, ref i, ref line, declExported);
                 }
@@ -1544,19 +1559,48 @@ namespace Ruitk.Language.Parser
             }
 
             if (hooks.Count == 0 && modules.Count == 0)
-                return false;
+            {
+                // The dispatch guard saw a `hook`/`module` head, so the file IS legacy even
+                // though no declaration survived the structural parse. Returning false here
+                // would drop the classification: Parse would fall through to the 2105
+                // fallback with UsesLegacySyntax=false, the SG's legacy gate would miss,
+                // and — worse — the codemod's already-migrated probe would pass the broken
+                // file through byte-untouched instead of freezing it into the parse-errors
+                // report. The 2320 + structural diagnostics are already in the bag.
+                directiveSet = new DirectiveSet(
+                    Namespace: functionNamespace,
+                    ComponentName: null,
+                    PropsTypeName: null,
+                    DefaultKey: null,
+                    Usings: usings.ToImmutableArray(),
+                    UssFiles: ImmutableArray<string>.Empty,
+                    Injects: ImmutableArray<(string Type, string Name)>.Empty,
+                    MarkupStartLine: line,
+                    MarkupStartIndex: source.Length,
+                    MarkupEndIndex: source.Length,
+                    IsFunctionStyle: true,
+                    HasExplicitNamespace: inlineNamespace != null,
+                    FunctionSetupCode: string.Empty,
+                    FunctionSetupStartLine: line
+                )
+                { UsingDirectives = usingDirectives.ToImmutableArray() };
+                return true;
+            }
 
             // Check for trailing content after declarations
             if (TryFindNextNonWhitespace(source, i, out int trailingPos))
             {
                 bool plainHead = LooksLikePlainDeclarationHeadAt(source, trailingPos);
+                // Mode-independent Error (deliberately NOT WrapperKeywordDiag): under the
+                // codemod's migration parse 2320 downgrades to a Warning, but a MIXED file
+                // is not auto-migratable and must still freeze into the parse-errors report.
                 diagnosticBag.Add(new ParseDiagnostic
                 {
-                    Code = plainHead ? "UITKX2108" : "UITKX2105",
+                    Code = plainHead ? "UITKX2320" : "UITKX2105",
                     Severity = ParseSeverity.Error,
                     SourceLine = LineAtPos(source, trailingPos),
                     Message = plainHead
-                        ? "legacy wrapper declarations and plain declarations cannot be mixed in one file — the file's first declaration sets its style"
+                        ? "a plain declaration cannot follow legacy wrapper declarations — the wrapper grammar was removed in 0.16.0; rewrite the wrapper declarations as plain 'export' forms (mixed files are not auto-migrated by the codemod)"
                         : "Invalid top-level statement after hook/module declarations.",
                 });
             }
@@ -1863,10 +1907,14 @@ namespace Ruitk.Language.Parser
         }
 
         /// <summary>
-        /// Reads a plain declaration HEAD: <c>[Type] Name</c> immediately followed by <c>(</c>
-        /// (function-shaped) or <c>=</c> (value-shaped) — U-04 point 3. <paramref name="typeText"/>
-        /// is <c>null</c> when the head has no separate type token before the name (legal only for
-        /// value declarations using inference sugar, checked by the caller). Does NOT consume the
+        /// Reads a plain declaration HEAD: <c>[Type] Name[&lt;T, U&gt;]</c> immediately followed by
+        /// <c>(</c> (function-shaped) or <c>=</c> (value-shaped) — U-04 point 3.
+        /// <paramref name="typeText"/> is <c>null</c> when the head has no separate type token
+        /// before the name (legal only for value declarations using inference sugar, checked by
+        /// the caller). <paramref name="typeParamsText"/> carries a generic type-parameter list
+        /// verbatim including the angle brackets (F9 — generic declaration heads,
+        /// <c>export (T v, Action&lt;T&gt; set) useSel&lt;T&gt;(…)</c>), or <c>null</c>; generics
+        /// require a typed head and a function shape (<c>(</c> delimiter). Does NOT consume the
         /// delimiter itself — the cursor is left pointing AT <c>(</c>/<c>=</c> so the caller can
         /// dispatch on it (mirrors how the legacy component header leaves the cursor at <c>{</c>).
         /// Cursor-restore discipline matches the other readers in this file: returns false with
@@ -1875,14 +1923,14 @@ namespace Ruitk.Language.Parser
         private static bool TryReadDeclarationHead(
             string source, ref int i, ref int line,
             out string? typeText, out string name, out int nameLine, out int nameColumn, out char delimiter,
-            out bool genericHead)
+            out string? typeParamsText)
         {
             typeText = null;
             name = string.Empty;
             nameLine = line;
             nameColumn = -1;
             delimiter = '\0';
-            genericHead = false;
+            typeParamsText = null;
 
             int savedI = i, savedLine = line;
 
@@ -1917,6 +1965,41 @@ namespace Ruitk.Language.Parser
                 nameLine = line;
                 if (!TryReadIdentifier(source, ref i, out name))
                 { i = savedI; line = savedLine; return false; }
+
+                // F9 (family grammar): optional generic type-parameter list between the name
+                // and the parameter list. Only identifiers and commas are legal in declaration
+                // position (C# rules — no nested generics, no constraints here); a malformed
+                // list falls through to the normal not-a-head failure below.
+                if (i < source.Length && source[i] == '<')
+                {
+                    int tpStart = i;
+                    int p = i + 1;
+                    bool valid = true;
+                    bool expectIdent = true;
+                    while (p < source.Length && source[p] != '>')
+                    {
+                        char c = source[p];
+                        if (char.IsWhiteSpace(c)) { p++; continue; }
+                        if (expectIdent)
+                        {
+                            if (!(char.IsLetter(c) || c == '_')) { valid = false; break; }
+                            while (p < source.Length
+                                   && (char.IsLetterOrDigit(source[p]) || source[p] == '_'))
+                                p++;
+                            expectIdent = false;
+                            continue;
+                        }
+                        if (c == ',') { expectIdent = true; p++; continue; }
+                        valid = false;
+                        break;
+                    }
+                    if (valid && p < source.Length && source[p] == '>' && !expectIdent)
+                    {
+                        typeParamsText = source.Substring(tpStart, p + 1 - tpStart);
+                        i = p + 1;
+                    }
+                }
+
                 SkipSpaces(source, ref i);
             }
             else
@@ -1932,11 +2015,13 @@ namespace Ruitk.Language.Parser
                 typeText = null;
             }
 
+            // Generics are function-shaped only: a generic head followed by anything but '('
+            // (e.g. a would-be generic value declaration) is not a declaration head.
+            if (typeParamsText != null && (i >= source.Length || source[i] != '('))
+            { typeParamsText = null; i = savedI; line = savedLine; return false; }
+
             if (i >= source.Length || (source[i] != '(' && source[i] != '='))
-            {
-                genericHead = i < source.Length && source[i] == '<' && name.Length > 0;
-                i = savedI; line = savedLine; return false;
-            }
+            { i = savedI; line = savedLine; return false; }
             // Reject `==` — an equality expression starting right after the head is not a
             // declaration (defensive; well-formed input never reaches this in practice).
             if (source[i] == '=' && i + 1 < source.Length && source[i + 1] == '=')
@@ -2193,9 +2278,11 @@ namespace Ruitk.Language.Parser
                     continue;
                 }
 
-                // Legacy wrapper keyword in a new-mode file (U-08 / matrix row 3): UITKX2108
-                // (Unity-local), parsed best-effort via the existing machinery for IDE resilience,
-                // then STOP — the file's mode is broken past this point.
+                // Legacy wrapper keyword in a new-mode file (U-08 / matrix row 3): the removal
+                // error, parsed best-effort via the existing machinery for IDE resilience,
+                // then STOP — the file's mode is broken past this point. Mode-independent
+                // Error (not WrapperKeywordDiag) so a mixed file still freezes under the
+                // codemod's migration parse — mixed files are not auto-migratable.
                 {
                     int wrapperPeek = i;
                     bool wrapperExported = false;
@@ -2214,12 +2301,15 @@ namespace Ruitk.Language.Parser
                         || TryReadKeywordAt(source, wrapperKeywordPos, "hook")
                         || TryReadKeywordAt(source, wrapperKeywordPos, "module"))
                     {
+                        string wrapperKw = TryReadKeywordAt(source, wrapperKeywordPos, "component")
+                            ? "component"
+                            : TryReadKeywordAt(source, wrapperKeywordPos, "hook") ? "hook" : "module";
                         diagnosticBag.Add(new ParseDiagnostic
                         {
-                            Code = "UITKX2108",
+                            Code = "UITKX2320",
                             Severity = ParseSeverity.Error,
                             SourceLine = line,
-                            Message = "legacy wrapper declarations and plain declarations cannot be mixed in one file — the file's first declaration sets its style",
+                            Message = $"the '{wrapperKw}' wrapper keyword was removed in 0.16.0 and cannot be mixed with plain declarations — rewrite it as a plain 'export' declaration (mixed files are not auto-migrated by the codemod)",
                         });
                         i = wrapperKeywordPos;
                         if (TryReadKeyword(source, ref i, "component"))
@@ -2258,29 +2348,26 @@ namespace Ruitk.Language.Parser
 
                 if (!TryReadDeclarationHead(source, ref i, ref line,
                         out string? typeText, out string declName, out int declLine, out int declNameCol, out char delimiter,
-                        out bool genericHead))
+                        out string? typeParamsText))
                 {
-                    if (genericHead)
-                    {
-                        // `export T Identity<T>(…)` / `hook useX<T>` shapes: the plain dialect has
-                        // no generic-declaration form (family grammar, G-03). A precise error beats
-                        // the misleading whole-file line-1 fallback; generic hooks stay legacy
-                        // through the deprecation window (the codemod reports them).
-                        diagnosticBag.Add(new ParseDiagnostic
-                        {
-                            Code = "UITKX2105",
-                            Severity = ParseSeverity.Error,
-                            SourceLine = line,
-                            Message = "generic declarations are not supported in plain-declaration syntax — keep the generic in a legacy 'hook' file or in ambient C#",
-                        });
-                        parsedAnyDeclaration = true;
-                        break;
-                    }
-
                     if (!parsedAnyDeclaration)
                     {
                         i = declStart; line = declStartLine;
                         return false;
+                    }
+
+                    // Precise-code parity with the retired legacy tail: an `import` after a
+                    // declaration is 2309 (imports are preamble-only), not a generic 2105.
+                    if (TryReadKeywordAt(source, i, "import"))
+                    {
+                        diagnosticBag.Add(new ParseDiagnostic
+                        {
+                            Code = "UITKX2309",
+                            Severity = ParseSeverity.Error,
+                            SourceLine = LineAtPos(source, i),
+                            Message = "import declarations must appear in the file preamble, before the first declaration.",
+                        });
+                        break;
                     }
 
                     diagnosticBag.Add(new ParseDiagnostic
@@ -2357,6 +2444,24 @@ namespace Ruitk.Language.Parser
 
                 if (isVirtualNodeReturn)
                 {
+                    if (typeParamsText != null)
+                    {
+                        // F9 covers hooks and utility functions only: a component is a generated
+                        // class + Props pair, and neither the registry nor the reconciler has a
+                        // generic-component concept. Precise error, then best-effort recovery
+                        // (the body still parses so downstream diagnostics stay anchored).
+                        diagnosticBag.Add(new ParseDiagnostic
+                        {
+                            Code = "UITKX2105",
+                            Severity = ParseSeverity.Error,
+                            SourceLine = declLine,
+                            SourceColumn = declNameCol,
+                            EndLine = declLine,
+                            EndColumn = declNameCol + declName.Length,
+                            Message = $"component '{declName}' cannot be generic — generic declaration heads apply to hooks and utility functions",
+                        });
+                    }
+
                     if (looksLikeHook)
                     {
                         diagnosticBag.Add(new ParseDiagnostic
@@ -2425,7 +2530,7 @@ namespace Ruitk.Language.Parser
                         BodyStartLine: LineAtPos(source, exprStart),
                         BodyStartOffset: exprStart,
                         BodyEndOffset: exprEndExclusive)
-                    { Params = declParams });
+                    { Params = declParams, TypeParamsText = typeParamsText });
                     continue;
                 }
 
@@ -2475,7 +2580,7 @@ namespace Ruitk.Language.Parser
                     BodyStartLine: declBodyStartLine,
                     BodyStartOffset: declActualBodyStart,
                     BodyEndOffset: declBodyEnd)
-                { Params = declParams });
+                { Params = declParams, TypeParamsText = typeParamsText });
 
                 i = declBodyCloseExclusive;
                 line = LineAtPos(source, i);

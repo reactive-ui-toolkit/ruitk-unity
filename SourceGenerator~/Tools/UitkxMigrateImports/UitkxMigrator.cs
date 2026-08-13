@@ -76,7 +76,7 @@ namespace Ruitk.SourceGenerator.Tools
             foreach (var f in files)
             {
                 var diags = new List<ParseDiagnostic>();
-                var ds = DirectiveParser.Parse(f.Text, f.AbsPath, diags);
+                var ds = DirectiveParser.ParseLegacyForMigration(f.Text, f.AbsPath, diags);
                 parsed.Add(new ParsedFile(f, ds, CollectTopDecls(ds)));
             }
 
@@ -122,7 +122,7 @@ namespace Ruitk.SourceGenerator.Tools
         /// </summary>
         public static string TidyUsings(string text)
         {
-            var ds = DirectiveParser.Parse(text, "tidy.uitkx", new List<ParseDiagnostic>());
+            var ds = DirectiveParser.ParseLegacyForMigration(text, "tidy.uitkx", new List<ParseDiagnostic>());
             if (ds.UsingDirectives.IsDefaultOrEmpty)
                 return text;
 

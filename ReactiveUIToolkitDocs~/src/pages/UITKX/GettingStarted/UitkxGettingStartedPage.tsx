@@ -59,10 +59,11 @@ export const UitkxGettingStartedPage: FC = () => (
       don&rsquo;t need to create any companion file for this to work.
     </Typography>
     <Typography variant="body2" paragraph>
-      Upgrading an existing project? The bundled <code>UitkxMigrateImports</code> codemod
-      migrates legacy wrapper-keyword files to plain <code>export</code> declarations in one pass
-      (<code>--es-modules</code>) — see{' '}
-      <MuiLink component={RouterLink} to="/imports">Imports &amp; Exports → Migrating an existing project</MuiLink>.
+      Upgrading an existing project? The old wrapper keywords were removed in 0.16.0 — the
+      codemod (run from a clone of the repository:{' '}
+      <code>node scripts/migrate-uitkx.mjs &lt;YourProject&gt;/Assets --es-modules</code>)
+      migrates wrapper-keyword files to plain <code>export</code> declarations in one pass — see{' '}
+      <MuiLink component={RouterLink} to="/migration-0-16">Migrating to 0.16</MuiLink>.
     </Typography>
 
     <Typography variant="h5" component="h2" gutterBottom>

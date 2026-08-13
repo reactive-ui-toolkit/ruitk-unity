@@ -116,7 +116,7 @@ public sealed class FormatterSnapshotTests
         // Expected: all entries at opening-line-indent (2) + indentSize (2) = 4 spaces.
         var source = N(
             """
-            component Counter {
+            VirtualNode Counter() {
               var s = new Style {
                     (StyleKeys.Padding, 14f),
                   (StyleKeys.FlexDirection, "column"),
@@ -148,7 +148,7 @@ public sealed class FormatterSnapshotTests
         //   );                       <- depth 0, rel=0  → 2 spaces
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var x = useMemo(
                 () => new List<int>
                 {
@@ -181,7 +181,7 @@ public sealed class FormatterSnapshotTests
         // baseSpaces = 8 → both lines emit at rel=0 → both at 2-space. ✓
         var source = N(
             """
-            component Counter {
+            VirtualNode Counter() {
                     var (count, setCount) = useState(0);
                     var (mode, setMode) = useState("normal");
                     var msg = $"Count={count}";
@@ -203,7 +203,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Counter {
+            VirtualNode Counter() {
             var (count, setCount) = useState(0);
             var (mode, setMode) = useState("normal");
             return (<Box />);
@@ -224,7 +224,7 @@ public sealed class FormatterSnapshotTests
         // Re-anchor should preserve that relative difference.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               void DoThing() {
                 bar();
               }
@@ -246,7 +246,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               void Load() {
                 setRows(prev => {
                   var next = new List<int>(prev);
@@ -279,7 +279,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var a = useMemo(() => 1, 0);
 
               var b = useMemo(() => 2, 0);
@@ -308,7 +308,7 @@ public sealed class FormatterSnapshotTests
         //  to JSX node-list blank lines.)
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Label text="A" />
@@ -335,7 +335,7 @@ public sealed class FormatterSnapshotTests
         // the trailing newline.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var x = 1;
 
               return (<Box />);
@@ -357,14 +357,14 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void JSX_SelfClosingTag_HasSpaceBeforeSlash()
     {
-        var source = "component Foo { return (<Box/>); }";
+        var source = "VirtualNode Foo() { return (<Box/>); }";
         Assert.Contains("<Box />", Format(source));
     }
 
     [Fact]
     public void JSX_SelfClosingTag_ShortAttrs_StaysOnOneLine()
     {
-        var source = "component Foo { return (<Box text=\"Hi\" />); }";
+        var source = "VirtualNode Foo() { return (<Box text=\"Hi\" />); }";
         Assert.Contains("<Box text=\"Hi\" />", Format(source));
     }
 
@@ -374,7 +374,7 @@ public sealed class FormatterSnapshotTests
         // Total width exceeds PrintWidth=80, so attrs should each get their own line.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Button
                   text="A very very very long button label that definitely exceeds the print width"
@@ -402,7 +402,7 @@ public sealed class FormatterSnapshotTests
         // When the open tag wraps, > goes on its own line (BracketSameLine=false).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <VisualElement style={new Style { (StyleKeys.FlexDirection, "column"), (StyleKeys.Padding, 12f) }}>
                   <Label text="hello" />
@@ -425,7 +425,7 @@ public sealed class FormatterSnapshotTests
         // Children of root at 6-space, grandchildren at 8-space.
         var source = N(
             """
-            component Foo { return (<VisualElement><Box><Label text="x" /></Box></VisualElement>); }
+            VirtualNode Foo() { return (<VisualElement><Box><Label text="x" /></Box></VisualElement>); }
             """
         );
 
@@ -443,7 +443,7 @@ public sealed class FormatterSnapshotTests
     {
         // An element written as <Panel></Panel> should preserve the open+close form,
         // not collapse to <Panel />. The formatter puts the closing tag on its own line.
-        var source = "component Foo { return (<Panel></Panel>); }";
+        var source = "VirtualNode Foo() { return (<Panel></Panel>); }";
         var result = Format(source);
         Assert.Contains("<Panel>", result);
         Assert.Contains("</Panel>", result);
@@ -456,7 +456,7 @@ public sealed class FormatterSnapshotTests
     public void JSX_SelfClosingElement_StaysSelfClosing()
     {
         // An element written as <Panel /> should stay self-closing.
-        var source = "component Foo { return (<Panel />); }";
+        var source = "VirtualNode Foo() { return (<Panel />); }";
         var result = Format(source);
         Assert.Contains("<Panel />", result);
         Assert.DoesNotContain("</Panel>", result);
@@ -469,7 +469,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 {count.ToString()}
                 <Box />
@@ -488,7 +488,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 // some note
                 <Box />
@@ -511,7 +511,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @if (show) {
                     <Label text="yes" />
@@ -533,7 +533,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @if (x) {
                     <Label text="yes" />
@@ -558,7 +558,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @if (a) {
                     <A />
@@ -606,7 +606,7 @@ public sealed class FormatterSnapshotTests
         var source = N(
             """
             @namespace P
-            component MenuPage {
+            VirtualNode MenuPage() {
               var chrome = (<Box />);
 
               return (
@@ -657,7 +657,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component AppButton(
+            VirtualNode AppButton(
               string text = "",
               Action ? onClick = null,
               Texture2D ? iconName = null,
@@ -691,7 +691,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @foreach (var item in items) {
                     <Label text={item} key={item} />
@@ -720,7 +720,7 @@ public sealed class FormatterSnapshotTests
         //             <Row>    — at 12-space (indent 6)
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   @foreach (var g in groups) {
@@ -758,7 +758,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @switch (mode) {
                     @case "a":
@@ -797,7 +797,7 @@ public sealed class FormatterSnapshotTests
             @using UnityEngine
             @using System.Collections.Generic
 
-            component MyComp {
+            VirtualNode MyComp() {
               return (<Box />);
             }
             """
@@ -809,7 +809,32 @@ public sealed class FormatterSnapshotTests
         Assert.Contains("@using UnityEngine\n", result);
         Assert.Contains("@using System.Collections.Generic\n", result);
         // blank line between usings and component block
-        Assert.Contains("@using System.Collections.Generic\n\ncomponent MyComp", result);
+        Assert.Contains("@using System.Collections.Generic\n\nVirtualNode MyComp", result);
+    }
+
+    [Fact]
+    public void Import_SingleQuotedSpecifier_CanonicalizesToDouble()
+    {
+        // Either quote style parses; the formatter re-emits the canonical
+        // double-quoted, semicolon-less form (single source: the model reprint).
+        var source = N(
+            """
+            import {container} from './Foo.style';
+            import '@UnityEngine.UIElements'
+
+            export VirtualNode Foo() {
+              return (
+                <Label text="x" />
+              );
+            }
+            """
+        );
+
+        var result = Format(source);
+
+        Assert.Contains("import { container } from \"./Foo.style\"", result);
+        Assert.Contains("import \"@UnityEngine.UIElements\"", result);
+        Assert.DoesNotContain("'", result.Substring(0, result.IndexOf("export")));
     }
 
     [Fact]
@@ -817,7 +842,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Greeter(string name = "World", bool show = true) {
+            VirtualNode Greeter(string name = "World", bool show = true) {
               return (<Label text={$"Hello {name}"} />);
             }
             """
@@ -825,17 +850,16 @@ public sealed class FormatterSnapshotTests
 
         var result = Format(source);
 
-        Assert.StartsWith("component Greeter(string name = \"World\", bool show = true) {", result);
+        Assert.StartsWith("VirtualNode Greeter(string name = \"World\", bool show = true) {", result);
     }
 
     [Fact]
     public void Signature_NoParams_EmptyParens_Or_NoParens()
     {
-        // Component body without params — no parens in signature.
-        var source = "component HelloWorld { return (<Label text=\"Hi\" />); }";
+        // 0.16.0: the parameterless head ALWAYS carries empty parens.
+        var source = "VirtualNode HelloWorld() { return (<Label text=\"Hi\" />); }";
         var result = Format(source);
-        Assert.StartsWith("component HelloWorld {", result);
-        Assert.DoesNotContain("component HelloWorld()", result);
+        Assert.StartsWith("VirtualNode HelloWorld() {", result);
     }
 
     // ════════════════════════════════════════════════════════════════════════════
@@ -847,7 +871,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var x = 1;
               var y = 2;
               return (
@@ -871,10 +895,10 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void Edge_EmptyComponent_FormatsCleanly()
     {
-        var source = "component Empty { return (<Box />); }";
+        var source = "VirtualNode Empty() { return (<Box />); }";
         var result = Format(source);
 
-        Assert.StartsWith("component Empty {", result);
+        Assert.StartsWith("VirtualNode Empty() {", result);
         Assert.Contains("return (", result);
         Assert.Contains("<Box />", result);
         Assert.Contains(");", result);
@@ -885,7 +909,7 @@ public sealed class FormatterSnapshotTests
     public void Edge_ParseError_ReturnsSourceUnchanged()
     {
         // Deliberately broken: unclosed tag — formatter should return source as-is.
-        var source = N("component Bad { return (<Box>); }");
+        var source = N("VirtualNode Bad() { return (<Box>); }");
         var result = Format(source);
         Assert.Equal(source, result);
     }
@@ -893,7 +917,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void Edge_TrailingNewline_ExactlyOne()
     {
-        var source = "component Foo { return (<Box />); }";
+        var source = "VirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
         Assert.EndsWith("\n", result);
         Assert.False(result.EndsWith("\n\n"), "Output must not end with two newlines.");
@@ -903,10 +927,10 @@ public sealed class FormatterSnapshotTests
     public void Edge_SingleLineSource_ExpandsToCanonical()
     {
         var singleLine =
-            "component Counter { var (c,setC) = useState(0); return (<Button text={c.ToString()} onClick={_=>setC(c+1)} />); }";
+            "VirtualNode Counter() { var (c,setC) = useState(0); return (<Button text={c.ToString()} onClick={_=>setC(c+1)} />); }";
         var result = Format(singleLine);
 
-        Assert.Contains("component Counter {", result);
+        Assert.Contains("VirtualNode Counter() {", result);
         Assert.Contains("\n  var (c,setC) = useState(0);", result);
         Assert.Contains("\n  return (", result);
         Assert.Contains("\n  );", result);
@@ -916,7 +940,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void Edge_CrLfNormalisedToLf()
     {
-        var source = "component Foo {\r\n  return (<Box />);\r\n}\r\n";
+        var source = "VirtualNode Foo() {\r\n  return (<Box />);\r\n}\r\n";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
     }
@@ -926,7 +950,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component NoSetup {
+            VirtualNode NoSetup() {
               return (<Box />);
             }
             """
@@ -954,7 +978,7 @@ public sealed class FormatterSnapshotTests
         // Already-correct 4-space entries (2 for var + 2 relative) must survive.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 (StyleKeys.Padding, 12f),
                 (StyleKeys.MarginTop, 8f),
@@ -980,7 +1004,7 @@ public sealed class FormatterSnapshotTests
         // places them at the canonical block-target (opener-emit + indentSize = 4sp).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                     (StyleKeys.Padding, 12f),
                     (StyleKeys.MarginTop, 8f),
@@ -1008,7 +1032,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Multi {
+            VirtualNode Multi() {
               var (a, setA) = useState(0);
               var (b, setB) = useState(false);
               var (c, setC) = useState("hello");
@@ -1029,7 +1053,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component WithEffect {
+            VirtualNode WithEffect() {
               var (count, setCount) = useState(0);
               useEffect(() => {
                 setCount(n => n + 1);
@@ -1053,7 +1077,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Memo {
+            VirtualNode Memo() {
               var items = useMemo(
                 () => new List<string> { "a", "b", "c" },
                 0
@@ -1078,7 +1102,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component WithJsxVar {
+            VirtualNode WithJsxVar() {
               var (show, setShow) = useState(false);
               var fallback = (
                 <Label text="Loading..." />
@@ -1109,7 +1133,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component WithTwoJsxVars {
+            VirtualNode WithTwoJsxVars() {
               var first = (
                 <Label text="first" />
               );
@@ -1140,7 +1164,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component WithArrowJsx {
+            VirtualNode WithArrowJsx() {
               var tabViewProps = new TabViewProps
               {
                 Tabs = new List<TabViewProps.TabDef>
@@ -1166,7 +1190,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component WithArrowContainer {
+            VirtualNode WithArrowContainer() {
               var tabDef = new TabDef { Title = "Log", Content = () => <Box>
                 <Label text="hello" />
                 <Label text="world" />
@@ -1193,7 +1217,7 @@ public sealed class FormatterSnapshotTests
         // User already writes the canonical form with parens — stays inline
         var source = N(
             """
-            component WithArrowParen {
+            VirtualNode WithArrowParen() {
               var tabDef = new TabDef { Title = "Log", Content = () => (<Label text="hello" />) };
               return (<Box />);
             }
@@ -1212,7 +1236,7 @@ public sealed class FormatterSnapshotTests
         // () => variable should remain unchanged — no JSX to format
         var source = N(
             """
-            component WithVarRef {
+            VirtualNode WithVarRef() {
               var element = (<Label text="hello" />);
               var tabDef = new TabDef { Title = "Log", Content = () => element };
               return (<Box />);
@@ -1234,7 +1258,7 @@ public sealed class FormatterSnapshotTests
         // var x = <Label /> → var x = (<Label />);
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var bla = <Label text="hello" />;
               return (<Box />);
             }
@@ -1252,7 +1276,7 @@ public sealed class FormatterSnapshotTests
         // var bla = <Box>...</Box> → var bla = (\n  <Box>...\n);
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var bla = <Box>
                 <Label text="hello" />
               </Box>;
@@ -1277,7 +1301,7 @@ public sealed class FormatterSnapshotTests
         // var bla = <Box><Label /></Box> → normalized with parens AND expanded multi-line
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var bla = <Box><Label text="hello" /></Box>;
               return (<Box />);
             }
@@ -1302,7 +1326,7 @@ public sealed class FormatterSnapshotTests
         // Already paren-wrapped — stays as-is
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var bla = (<Label text="hello" />);
               return (<Box />);
             }
@@ -1320,7 +1344,7 @@ public sealed class FormatterSnapshotTests
         // Comparison operators (<=, >=, ==) must NOT trigger JSX normalization
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var x = 5;
               if (x <= 10) { }
               if (x >= 3) { }
@@ -1350,7 +1374,7 @@ public sealed class FormatterSnapshotTests
         // var badge = <Label /> inside @foreach setup code should get wrapped with ()
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               return (
                 <VisualElement>
                   @foreach (var item in items) {
@@ -1377,7 +1401,7 @@ public sealed class FormatterSnapshotTests
         // var badge = <Box>...</Box> inside @foreach setup code gets wrapped + expanded
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               return (
                 <VisualElement>
                   @foreach (var item in items) {
@@ -1409,7 +1433,7 @@ public sealed class FormatterSnapshotTests
         // var icon = <Label /> inside @if setup code
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               return (
                 <VisualElement>
                   @if (flag) {
@@ -1436,7 +1460,7 @@ public sealed class FormatterSnapshotTests
         // Already paren-wrapped — must stay as-is (no double-wrapping)
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               return (
                 <VisualElement>
                   @foreach (var item in items) {
@@ -1464,7 +1488,7 @@ public sealed class FormatterSnapshotTests
         // var x = <Label /> inside @switch case setup code
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               return (
                 <VisualElement>
                   @switch (mode) {
@@ -1499,7 +1523,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               void ApplyMode(string newMode)
               {
                 switch (newMode)
@@ -1549,7 +1573,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               void HandleEvent(ReactiveEvent evt)
               {
                 if (evt == null)
@@ -1590,7 +1614,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               void TreeAddParent()
               {
                 var oneTest = (
@@ -1642,7 +1666,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               void MctvDeleteLast()
               {
                 setMctvRows(prev =>
@@ -1688,7 +1712,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               void MctvSetChild()
               {
                 setMctvRows(prev =>
@@ -1743,7 +1767,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var secondElement = (
                 <Label text="This is a TabView demo." />
               );
@@ -1794,7 +1818,7 @@ public sealed class FormatterSnapshotTests
         // Style property after JSX block in nested initializer must keep correct indent
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var tabViewProps = new TabViewProps
               {
                 SelectedIndex = tabIndex,
@@ -1834,7 +1858,7 @@ public sealed class FormatterSnapshotTests
         // into { + content on separate lines and indent correctly
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var tabViewProps = new TabViewProps
               {
                 SelectedIndex = tabIndex,
@@ -1873,7 +1897,7 @@ public sealed class FormatterSnapshotTests
         // Two JSX blocks at different nesting depths in the same component.
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               var header = (
                 <Label text="header" />
               );
@@ -1916,7 +1940,7 @@ public sealed class FormatterSnapshotTests
         // JSX is the very first statement in a method.
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               void Init()
               {
                 var node = (
@@ -1945,7 +1969,7 @@ public sealed class FormatterSnapshotTests
         // JSX is the very last statement in a method.
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               void Finalize()
               {
                 DoSomething();
@@ -1975,7 +1999,7 @@ public sealed class FormatterSnapshotTests
         // JSX deeply nested: method → if → lambda body.
         var source = N(
             """
-            component Comp {
+            VirtualNode Comp() {
               void Process()
               {
                 if (condition)
@@ -2012,18 +2036,18 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void FunctionStyle_CanonicalStructure_OpenBraceOnSameLine()
     {
-        var source = "component Foo { return (<Box />); }";
+        var source = "VirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
 
         // Opening brace must be on the same line as `component`.
-        Assert.Contains("component Foo {", result);
+        Assert.Contains("VirtualNode Foo() {", result);
         Assert.DoesNotContain("component Foo\n{", result);
     }
 
     [Fact]
     public void FunctionStyle_CanonicalStructure_ClosingBraceOnOwnLine()
     {
-        var source = "component Foo { return (<Box />); }";
+        var source = "VirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
 
         Assert.EndsWith("}\n", result);
@@ -2037,7 +2061,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void FunctionStyle_ReturnKeyword_AtTwoSpaceIndent()
     {
-        var source = "component Foo { return (<Box />); }";
+        var source = "VirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
 
         Assert.Contains("\n  return (", result);
@@ -2053,7 +2077,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @foreach (var x in items) {
                     @if (x == null) {
@@ -2076,7 +2100,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @foreach (var x in items) {
                     @if (x == null) {
@@ -2101,7 +2125,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void Attrs_StringLiteral_QuotedCorrectly()
     {
-        var source = "component Foo { return (<Label text=\"Hello World\" />); }";
+        var source = "VirtualNode Foo() { return (<Label text=\"Hello World\" />); }";
         var result = Format(source);
         Assert.Contains("text=\"Hello World\"", result);
     }
@@ -2109,7 +2133,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void Attrs_CSharpExpression_CurlyBraces()
     {
-        var source = "component Foo { return (<Label text={greeting} />); }";
+        var source = "VirtualNode Foo() { return (<Label text={greeting} />); }";
         var result = Format(source);
         Assert.Contains("text={greeting}", result);
     }
@@ -2117,7 +2141,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void Attrs_BooleanShorthand_NoValue()
     {
-        var source = "component Foo { return (<Button disabled />); }";
+        var source = "VirtualNode Foo() { return (<Button disabled />); }";
         var result = Format(source);
         Assert.Contains("disabled", result);
         Assert.DoesNotContain("disabled=", result);
@@ -2135,7 +2159,7 @@ public sealed class FormatterSnapshotTests
     {
         var messy = N(
             """
-            component Foo{var (x,setX)=useState(0);return(<Box><Button text={x.ToString()} onClick={_=>setX(x+1)}/></Box>);}
+            VirtualNode Foo() {var (x,setX)=useState(0);return(<Box><Button text={x.ToString()} onClick={_=>setX(x+1)}/></Box>);}
             """
         );
 
@@ -2150,7 +2174,7 @@ public sealed class FormatterSnapshotTests
     {
         var messy = N(
             """
-            component List {
+            VirtualNode List() {
               return (
                 @foreach(var item in items){
                 <Label text={item}/>
@@ -2171,7 +2195,7 @@ public sealed class FormatterSnapshotTests
     {
         var messy = N(
             """
-            component Counter {
+            VirtualNode Counter() {
                     var (c, setC) = useState(0);
                     var label = $"Count: {c}";
                     return (<Button text={label} onClick={_=>setC(c+1)}/>);
@@ -2205,7 +2229,7 @@ public sealed class FormatterSnapshotTests
             @namespace NS
             @using System
             @using static Ruitk.Props.Typed.StyleKeys
-            component Foo { return (<Box />); }
+            VirtualNode Foo() { return (<Box />); }
             """
         );
 
@@ -2226,7 +2250,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var (count, setCount) = useState(0);
                   var (mode, setMode) = useState("normal");
               return (<Box />);
@@ -2246,7 +2270,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var (mounted, setMounted) = useState(true);
               return (<Box />);
             }
@@ -2264,7 +2288,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var (ids, setIds) = useState<List<int>?>(null);
               return (<Box />);
             }
@@ -2282,7 +2306,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var (log, setLog) = useState(new List<string> { "Ready." });
               return (<Box />);
             }
@@ -2303,7 +2327,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var (a, setA) = useState(0);
               var (b, setB) = useState("x");
 
@@ -2329,7 +2353,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var target = useContext<VisualElement>(PortalContextKeys.ModalRoot);
               return (<Box />);
             }
@@ -2350,7 +2374,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var color = useContext<Color>("theme-color");
               return (<Box />);
             }
@@ -2368,7 +2392,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   provideContext("my-key", someValue);
               return (<Box />);
             }
@@ -2388,7 +2412,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var count = useSignal(counterSignal);
               return (<Box />);
             }
@@ -2408,7 +2432,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var sig = useMemo(() => GetSig(), Array.Empty<object>());
               return (<Box />);
             }
@@ -2426,7 +2450,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var doubled = useMemo(() => count * 2, new object[] { count });
               return (<Box />);
             }
@@ -2449,7 +2473,7 @@ public sealed class FormatterSnapshotTests
         // bring them all to opener-line-indent + indentSize.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var options = useMemo(() => new List<string> {
                     "Alpha",
                 "Beta",
@@ -2476,7 +2500,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var renderCountRef = useRef<int>(0);
                   renderCountRef.Current++;
                   var renderCount = renderCountRef.Current;
@@ -2500,7 +2524,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   useEffect(() => {
                     doSomething();
                     return null;
@@ -2524,7 +2548,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   useEffect(() => {
                     doSetup();
                     return () => {
@@ -2552,7 +2576,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   useEffect(() => {
                     bool captured = false;
                     void OnChange(int value) {
@@ -2594,7 +2618,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   useEffect(() => {
                     setCount(n => n + 1);
                     setStatus("updated");
@@ -2620,7 +2644,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   useLayoutEffect(() => {
                     setTrigger(t => t);
                     return null;
@@ -2646,7 +2670,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void Reset() { setCount(0); }
               return (<Box />);
             }
@@ -2664,7 +2688,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void AppendLog(string message) {
                     var next = new List<string>(log.Count + 1) {
                       $"prefix: {message}",
@@ -2699,7 +2723,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void Shuffle() {
                     if (items.Count == 0) {
                       return;
@@ -2731,7 +2755,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void ApplyMode(string newMode) {
                     switch (newMode) {
                       case "a":
@@ -2771,7 +2795,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void HandleEvent(ReactiveEvent evt) {
                     if (evt == null) {
                       log("null");
@@ -2804,7 +2828,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void AddItem() {
                     setRows(prev =>
                     {
@@ -2837,7 +2861,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void SetParent() {
                     setRows(prev =>
                     {
@@ -2882,7 +2906,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void DeleteLast() {
                     setRows(prev =>
                     {
@@ -2914,7 +2938,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   MenuBuilderHandler buildMenu = dm => {
                     dm.AppendAction("Reset", _ => doReset());
                     dm.AppendAction("Set 10", _ => setValue(10));
@@ -2940,7 +2964,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var tabViewProps = new TabViewProps
                   {
                     SelectedIndex = tabIndex,
@@ -2973,7 +2997,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var syncColor = count >= 0
                 ? new Color(0.3f, 0.85f, 0.45f, 1f)
                 : new Color(0.95f, 0.65f, 0.1f, 1f);
@@ -2995,7 +3019,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var syncColor = count >= 0
                     ? new Color(0.3f, 0.85f, 0.45f, 1f)
                     : new Color(0.95f, 0.65f, 0.1f, 1f);
@@ -3021,7 +3045,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var text = items.Count == 0
                 ? "No items"
                 : string.Join(", ", items);
@@ -3051,7 +3075,7 @@ public sealed class FormatterSnapshotTests
         // (2) key content is preserved verbatim, and (3) double-format is stable.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var portalNode = target != null
                 ? V.Portal(
                   target,
@@ -3087,7 +3111,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var inlineNode = (
                 <VisualElement>
                   <Button text="-5" onClick={_ => doIt()} />
@@ -3116,7 +3140,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   bool IsReady() => trigger > 1000;
               return (<Box />);
             }
@@ -3134,7 +3158,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               bool SuspenseReady() => pendingTask == null || pendingTask.IsCompletedSuccessfully;
               return (<Box />);
             }
@@ -3154,7 +3178,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   // ── Section header ──────────────────────────────────────────
                   var x = 1;
                   // Another comment
@@ -3181,7 +3205,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var x = 1;
               // useEffect(() => {
               //   var rng = new System.Random();
@@ -3217,7 +3241,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var rowStyle = new Style {
                 (StyleKeys.FlexDirection, "row"),
                 (StyleKeys.FlexWrap, "wrap"),
@@ -3243,7 +3267,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var panelStyle = new Style {
                 (StyleKeys.Height, 80f),
                 (StyleKeys.BorderRadius, 6f),
@@ -3272,7 +3296,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var containerStyle = new Style {
                     (StyleKeys.FlexGrow, 1f),
                 (StyleKeys.Padding, 12f),
@@ -3298,7 +3322,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 (StyleKeys.BackgroundColor, new Color(0.2f, 0.2f, 0.23f, 0.85f)),
                 (StyleKeys.BorderRadius, 4f),
@@ -3325,7 +3349,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   @switch (mode) {
@@ -3359,7 +3383,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   @switch (mode) {
@@ -3397,7 +3421,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   @if (count < -5) {
@@ -3431,7 +3455,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   @if (count <= 0) {
@@ -3473,7 +3497,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   @if (count < -5) {
@@ -3504,7 +3528,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   @foreach (var entry in log) {
@@ -3529,7 +3553,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   @foreach (var opt in options) {
@@ -3557,7 +3581,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Button key="my-static-key" text="Click" onClick={_ => doIt()} />
@@ -3578,7 +3602,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Label key={item.Id} text={item.Name} />
@@ -3601,7 +3625,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Button text="+" onClick={_ => inc()} style={new Style { (StyleKeys.MarginRight, 6f) }} />
@@ -3622,7 +3646,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Label text={$"{count}"} style={new Style { (StyleKeys.MinWidth, 30f), ("unityTextAlign", "middle-center") }} />
@@ -3647,7 +3671,7 @@ public sealed class FormatterSnapshotTests
         // Combined line length exceeds print width → element wraps with each attr on own line.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Label text={$"Selected: {selected}"} style={new Style { (StyleKeys.MarginTop, 4f), (StyleKeys.FontSize, 13f), (StyleKeys.Color, new Color(0.85f, 0.95f, 1f, 1f)) }} />
@@ -3671,7 +3695,7 @@ public sealed class FormatterSnapshotTests
         // ("unityFontStyleAndWeight", FontStyle.Bold) - string key, not StyleKeys constant
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Label
@@ -3700,7 +3724,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var myStyle = new Style {
                 (StyleKeys.FlexGrow, 1f),
                 (StyleKeys.Padding, 12f),
@@ -3727,7 +3751,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <VisualElement
@@ -3760,7 +3784,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Suspense
@@ -3791,7 +3815,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var node = (<Label text="hi" />);
               return (
                 <Box>
@@ -3813,7 +3837,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var portalNode = target != null ? V.Label(new LabelProps { Text = "x" }) : null;
               return (
                 <Box>
@@ -3837,7 +3861,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               MenuBuilderHandler buildMenu = dm => { dm.AppendAction("A", _ => doA()); };
               return (
                 <Box>
@@ -3869,7 +3893,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var (tabIndex, setTabIndex) = useState(0);
               var tabs = new List<TabViewProps.TabDef>
               {
@@ -3904,7 +3928,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var (selected, setSelected) = useState(0);
               var options = new string[] { "A", "B", "C" };
               return (
@@ -3935,7 +3959,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   void AddItem() {
                     setRows(prev =>
                     {
@@ -3970,7 +3994,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var item = source.Parent ?? new Item { Id = Guid.NewGuid().ToString("N") };
               return (<Box />);
             }
@@ -3990,7 +4014,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var (treeRows, setTreeRows) = useState(new List<string>());
               var (treeNextPid, setTreeNextPid) = useState(2);
 
@@ -4017,7 +4041,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var tabDef = new TabViewProps.TabDef {
                 Title = "Intro",
                 Content = () => V.Label(new LabelProps { Text = "A TabView demo." }),
@@ -4050,7 +4074,7 @@ public sealed class FormatterSnapshotTests
             @using System.Collections.Generic
             @using UnityEngine
             @using static Ruitk.Props.Typed.StyleKeys
-            component KSSSetup {
+            VirtualNode KSSSetup() {
               var (count, setCount) = useState(0);
               var (mode, setMode) = useState("normal");
               var (log, setLog) = useState(new List<string> { "Ready." });
@@ -4202,7 +4226,7 @@ public sealed class FormatterSnapshotTests
         var source = N(
             """
             @namespace NS
-            component KSSJsx {
+            VirtualNode KSSJsx() {
               var (count, setCount) = useState(0);
               var (mode, setMode) = useState("normal");
               var (log, setLog) = useState(new List<string> { "Ready." });
@@ -4347,7 +4371,7 @@ public sealed class FormatterSnapshotTests
         // User pressed Tab twice before each var — each \t expands to 2 spaces.
         // The formatter must re-anchor to 2-space regardless of tab width used.
         var source =
-            "component Foo {\n\t\tvar (a, setA) = useState(0);\n\t\tvar (b, setB) = useState(1);\n\t\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\t\tvar (a, setA) = useState(0);\n\t\tvar (b, setB) = useState(1);\n\t\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  var (a, setA) = useState(0);", result);
@@ -4359,7 +4383,7 @@ public sealed class FormatterSnapshotTests
     public void D02_TabIndent_UseStateBody_TabsExpandedAndNormalised()
     {
         var source =
-            "component Foo {\n\tvar (count, setCount) = useState(0);\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvar (count, setCount) = useState(0);\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  var (count, setCount) = useState(0);", result);
@@ -4370,7 +4394,7 @@ public sealed class FormatterSnapshotTests
     public void D03_TabIndent_UseEffectBlock_AllTabsExpanded()
     {
         var source =
-            "component Foo {\n\tuseEffect(() => {\n\t\tdoSetup();\n\t\treturn null;\n\t}, Array.Empty<object>());\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tuseEffect(() => {\n\t\tdoSetup();\n\t\treturn null;\n\t}, Array.Empty<object>());\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  useEffect(() => {", result);
@@ -4384,7 +4408,7 @@ public sealed class FormatterSnapshotTests
     public void D04_TabIndent_VoidMethodBody_AllTabsExpanded()
     {
         var source =
-            "component Foo {\n\tvoid Reset() {\n\t\tsetCount(0);\n\t\tsetMode(\"normal\");\n\t}\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvoid Reset() {\n\t\tsetCount(0);\n\t\tsetMode(\"normal\");\n\t}\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  void Reset() {", result);
@@ -4398,7 +4422,7 @@ public sealed class FormatterSnapshotTests
     public void D05_TabIndent_StyleBlock_AllTabsExpanded()
     {
         var source =
-            "component Foo {\n\tvar s = new Style {\n\t\t(StyleKeys.Padding, 12f),\n\t\t(StyleKeys.FlexGrow, 1f),\n\t};\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvar s = new Style {\n\t\t(StyleKeys.Padding, 12f),\n\t\t(StyleKeys.FlexGrow, 1f),\n\t};\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  var s = new Style {", result);
@@ -4412,7 +4436,7 @@ public sealed class FormatterSnapshotTests
     public void D06_TabIndent_NestedLambdaInMethod_AllTabsExpanded()
     {
         var source =
-            "component Foo {\n\tvoid Add() {\n\t\tsetList(prev => {\n\t\t\tvar next = new List<int>(prev);\n\t\t\tnext.Add(1);\n\t\t\treturn next;\n\t\t});\n\t}\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvoid Add() {\n\t\tsetList(prev => {\n\t\t\tvar next = new List<int>(prev);\n\t\t\tnext.Add(1);\n\t\t\treturn next;\n\t\t});\n\t}\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  void Add() {", result);
@@ -4428,7 +4452,7 @@ public sealed class FormatterSnapshotTests
     public void D07_TabIndent_MultiLineUseMemo_TabsExpanded()
     {
         var source =
-            "component Foo {\n\tvar opts = useMemo(() => new List<string> {\n\t\t\"Alpha\",\n\t\t\"Beta\",\n\t}, Array.Empty<object>());\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvar opts = useMemo(() => new List<string> {\n\t\t\"Alpha\",\n\t\t\"Beta\",\n\t}, Array.Empty<object>());\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\"Alpha\",", result);
@@ -4440,7 +4464,7 @@ public sealed class FormatterSnapshotTests
     public void D08_TabIndent_UseEffectWithLocalFunction_TabsExpanded()
     {
         var source =
-            "component Foo {\n\tuseEffect(() => {\n\t\tbool go = true;\n\t\tvoid Inner(int v) {\n\t\t\tif (!go) return;\n\t\t\tsetVal(v);\n\t\t}\n\t\treturn null;\n\t}, Array.Empty<object>());\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tuseEffect(() => {\n\t\tbool go = true;\n\t\tvoid Inner(int v) {\n\t\t\tif (!go) return;\n\t\t\tsetVal(v);\n\t\t}\n\t\treturn null;\n\t}, Array.Empty<object>());\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n    bool go = true;", result);
@@ -4454,7 +4478,7 @@ public sealed class FormatterSnapshotTests
     {
         // Some lines have leading tab, others spaces — all should map to 2-space.
         var source =
-            "component Foo {\n\tvar a = 1;\n  var b = 2;\n\tvar c = 3;\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvar a = 1;\n  var b = 2;\n\tvar c = 3;\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  var a = 1;", result);
@@ -4470,7 +4494,7 @@ public sealed class FormatterSnapshotTests
         // Note: a tab *inside* code content (e.g. between tokens) is not
         // normalised by the formatter; only leading indentation tabs are handled.
         var source =
-            "component Foo {\n\tvar s = new Style {\n\t\t(StyleKeys.Padding, 4f),\n\t};\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvar s = new Style {\n\t\t(StyleKeys.Padding, 4f),\n\t};\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("(StyleKeys.Padding, 4f),", result);
@@ -4481,7 +4505,7 @@ public sealed class FormatterSnapshotTests
     public void D11_TabIndent_TypedDelegateLambda_TabsExpanded()
     {
         var source =
-            "component Foo {\n\tMenuBuilderHandler menu = dm => {\n\t\tdm.AppendAction(\"Reset\", _ => setX(0));\n\t};\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tMenuBuilderHandler menu = dm => {\n\t\tdm.AppendAction(\"Reset\", _ => setX(0));\n\t};\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  MenuBuilderHandler menu = dm => {", result);
@@ -4496,7 +4520,7 @@ public sealed class FormatterSnapshotTests
         // User used single-tab indent throughout.
         var source = N(
             """
-            component Counter {
+            VirtualNode Counter() {
             	var (count, setCount) = useState(0);
             	void Inc() { setCount(count + 1); }
             	return (<Box />);
@@ -4516,7 +4540,7 @@ public sealed class FormatterSnapshotTests
         // User's editor uses 4-space-equivalent tabs (4 spaces) — still normalises.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                 var (a, setA) = useState(0);
                 var (b, setB) = useState("x");
                 return (<Box />);
@@ -4534,7 +4558,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                var a = useState(1);
                var b = useState(2);
                return (<Box />);
@@ -4551,7 +4575,7 @@ public sealed class FormatterSnapshotTests
     public void D15_TabIndent_SwitchBodyInVoidMethod_AllTabsExpanded()
     {
         var source =
-            "component Foo {\n\tvoid Apply(string m) {\n\t\tswitch (m) {\n\t\t\tcase \"a\":\n\t\t\t\tdoA();\n\t\t\t\tbreak;\n\t\t\tdefault:\n\t\t\t\tdoDefault();\n\t\t\t\tbreak;\n\t\t}\n\t\tsetMode(m);\n\t}\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvoid Apply(string m) {\n\t\tswitch (m) {\n\t\t\tcase \"a\":\n\t\t\t\tdoA();\n\t\t\t\tbreak;\n\t\t\tdefault:\n\t\t\t\tdoDefault();\n\t\t\t\tbreak;\n\t\t}\n\t\tsetMode(m);\n\t}\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  void Apply(string m) {", result);
@@ -4574,7 +4598,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
             var (a, setA) = useState(0);
             var (b, setB) = useState("x");
             void Reset() {
@@ -4598,7 +4622,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                     var (a, setA) = useState(0);
                     var (b, setB) = useState(1);
                     return (<Box />);
@@ -4616,7 +4640,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                             var (a, setA) = useState(0);
                             var (b, setB) = useState(1);
                             return (<Box />);
@@ -4635,7 +4659,7 @@ public sealed class FormatterSnapshotTests
         // 3, 7, 1, 11 spaces — the minimum (1) becomes the base → relative diffs preserved.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                var a = useState(0);
                    var b = useState(1);
              var c = useState(2);
@@ -4658,7 +4682,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
              var (a, setA) = useState(0);
              var (b, setB) = useState(1);
              return (<Box />);
@@ -4676,7 +4700,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                var (a, setA) = useState(0);
                var (b, setB) = useState(1);
                return (<Box />);
@@ -4694,7 +4718,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   var (a, setA) = useState(0);
                   var (b, setB) = useState(1);
                   return (<Box />);
@@ -4714,7 +4738,7 @@ public sealed class FormatterSnapshotTests
         // Stack normaliser re-emits block interior at canonical 4sp.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               void Reset() {
                     setA(0);
                     setB(1);
@@ -4737,7 +4761,7 @@ public sealed class FormatterSnapshotTests
         // Block opener at 2sp, interior at absurd 20sp — stack normaliser fixes.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               void Apply() {
                                     doA();
                                     doB();
@@ -4759,7 +4783,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var x = 1;
                         return (<Box />);
             }
@@ -4777,7 +4801,7 @@ public sealed class FormatterSnapshotTests
         // The closing '}, Array...' at 2sp is recognised as a depth-0 line.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               useEffect(() => {
                     doSetup();
                     return null;
@@ -4802,7 +4826,7 @@ public sealed class FormatterSnapshotTests
         // (2) double-format is stable (formatter doesn't oscillate).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
             var (a, setA) = useState(0);
                     var (b, setB) = useState("x");
               useEffect(() => {
@@ -4839,7 +4863,7 @@ public sealed class FormatterSnapshotTests
     public void F01_Attr_SpaceBeforeEqualSign_StringAttr_Normalised()
     {
         // `text ="value"` → `text="value"`
-        var source = "component Foo { return (<Label text =\"hello\" />); }";
+        var source = "VirtualNode Foo() { return (<Label text =\"hello\" />); }";
         var result = Format(source);
         Assert.Contains("text=\"hello\"", result);
         Assert.DoesNotContain("text =", result);
@@ -4850,7 +4874,7 @@ public sealed class FormatterSnapshotTests
     public void F02_Attr_SpaceAfterEqualSign_StringAttr_Normalised()
     {
         // `text= "value"` → `text="value"`
-        var source = "component Foo { return (<Label text= \"hello\" />); }";
+        var source = "VirtualNode Foo() { return (<Label text= \"hello\" />); }";
         var result = Format(source);
         Assert.Contains("text=\"hello\"", result);
         Assert.DoesNotContain("text= ", result);
@@ -4861,7 +4885,7 @@ public sealed class FormatterSnapshotTests
     public void F03_Attr_SpacesAroundEqualSign_StringAttr_Normalised()
     {
         // `text = "value"` → `text="value"`
-        var source = "component Foo { return (<Label text = \"hello\" />); }";
+        var source = "VirtualNode Foo() { return (<Label text = \"hello\" />); }";
         var result = Format(source);
         Assert.Contains("text=\"hello\"", result);
         Assert.DoesNotContain("text =", result);
@@ -4871,7 +4895,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void F04_Attr_SpaceBeforeEqualSign_ExprAttr_Normalised()
     {
-        var source = "component Foo { return (<Button onClick ={_ => doIt()} text=\"go\" />); }";
+        var source = "VirtualNode Foo() { return (<Button onClick ={_ => doIt()} text=\"go\" />); }";
         var result = Format(source);
         Assert.Contains("onClick={_ => doIt()}", result);
         Assert.DoesNotContain("onClick =", result);
@@ -4881,7 +4905,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void F05_Attr_SpaceAfterEqualSign_ExprAttr_Normalised()
     {
-        var source = "component Foo { return (<Button onClick= {_ => doIt()} text=\"go\" />); }";
+        var source = "VirtualNode Foo() { return (<Button onClick= {_ => doIt()} text=\"go\" />); }";
         var result = Format(source);
         Assert.Contains("onClick={_ => doIt()}", result);
         Assert.Equal(result, Format(result));
@@ -4890,7 +4914,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void F06_Attr_SpacesAroundEqualSign_ExprAttr_Normalised()
     {
-        var source = "component Foo { return (<Button onClick = {_ => doIt()} text=\"go\" />); }";
+        var source = "VirtualNode Foo() { return (<Button onClick = {_ => doIt()} text=\"go\" />); }";
         var result = Format(source);
         Assert.Contains("onClick={_ => doIt()}", result);
         Assert.Equal(result, Format(result));
@@ -4900,7 +4924,7 @@ public sealed class FormatterSnapshotTests
     public void F07_Attr_NoSpaceBeforeSelfClose_GetsSpace()
     {
         // `<Box/>` → `<Box />`
-        var source = "component Foo { return (<Box/>); }";
+        var source = "VirtualNode Foo() { return (<Box/>); }";
         var result = Format(source);
         Assert.Contains("<Box />", result);
         Assert.DoesNotContain("<Box/>", result);
@@ -4911,7 +4935,7 @@ public sealed class FormatterSnapshotTests
     public void F08_Attr_ExtraSpacesBeforeSelfClose_NormalisedToOne()
     {
         // `<Box   />` → `<Box />`
-        var source = "component Foo { return (<Box   />); }";
+        var source = "VirtualNode Foo() { return (<Box   />); }";
         var result = Format(source);
         Assert.Contains("<Box />", result);
         Assert.DoesNotContain("<Box  ", result);
@@ -4921,7 +4945,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void F09_Attr_ExtraSpacesBeforeSelfClose_WithAttrs_NormalisedToOne()
     {
-        var source = "component Foo { return (<Label text=\"hi\"   />); }";
+        var source = "VirtualNode Foo() { return (<Label text=\"hi\"   />); }";
         var result = Format(source);
         Assert.Contains("<Label text=\"hi\" />", result);
         Assert.Equal(result, Format(result));
@@ -4931,7 +4955,7 @@ public sealed class FormatterSnapshotTests
     public void F10_Attr_KeyWithSpaceBeforeEqual_Normalised()
     {
         // `key ={item}` → `key={item}`
-        var source = "component Foo { return (<Label key ={item} text={item} />); }";
+        var source = "VirtualNode Foo() { return (<Label key ={item} text={item} />); }";
         var result = Format(source);
         Assert.Contains("key={item}", result);
         Assert.DoesNotContain("key =", result);
@@ -4941,7 +4965,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void F11_Attr_KeyWithSpaceAfterEqual_Normalised()
     {
-        var source = "component Foo { return (<Label key= {item} text={item} />); }";
+        var source = "VirtualNode Foo() { return (<Label key= {item} text={item} />); }";
         var result = Format(source);
         Assert.Contains("key={item}", result);
         Assert.Equal(result, Format(result));
@@ -4951,7 +4975,7 @@ public sealed class FormatterSnapshotTests
     public void F12_Attr_MultipleAttrs_SpacesAroundEquals_AllNormalised()
     {
         var source =
-            "component Foo { return (<Button text = \"go\" onClick = {_ => doIt()} disabled />); }";
+            "VirtualNode Foo() { return (<Button text = \"go\" onClick = {_ => doIt()} disabled />); }";
         var result = Format(source);
         Assert.Contains("text=\"go\"", result);
         Assert.Contains("onClick={_ => doIt()}", result);
@@ -4966,7 +4990,7 @@ public sealed class FormatterSnapshotTests
     {
         // `style={ new Style { ... } }` spaces inside outer {} normalised
         var source =
-            "component Foo { return (<Box style={ new Style { (StyleKeys.Padding, 4f) } } />); }";
+            "VirtualNode Foo() { return (<Box style={ new Style { (StyleKeys.Padding, 4f) } } />); }";
         var result = Format(source);
         Assert.Contains("style={new Style { (StyleKeys.Padding, 4f) }}", result);
         Assert.Equal(result, Format(result));
@@ -4976,7 +5000,7 @@ public sealed class FormatterSnapshotTests
     public void F14_Attr_StringValueWithInternalSpaces_ContentPreserved()
     {
         // Internal spaces in string values must NOT be touched by the formatter.
-        var source = "component Foo { return (<Label text=\"Hello   World\" />); }";
+        var source = "VirtualNode Foo() { return (<Label text=\"Hello   World\" />); }";
         var result = Format(source);
         Assert.Contains("text=\"Hello   World\"", result);
         Assert.Equal(result, Format(result));
@@ -4988,7 +5012,7 @@ public sealed class FormatterSnapshotTests
         // A wrapped attr line with trailing space should have it stripped.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Button
                   text="go"   
@@ -5013,7 +5037,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Button
                   text ="A long label"
@@ -5039,7 +5063,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Button
                   text= "A long label"
@@ -5060,7 +5084,7 @@ public sealed class FormatterSnapshotTests
     {
         // Wrapped attr lines with tab indent instead of spaces.
         var source =
-            "component Foo {\n  return (\n    <Button\n\t\ttext=\"go\"\n\t\tonClick={_ => doIt()}\n    />\n  );\n}";
+            "VirtualNode Foo() {\n  return (\n    <Button\n\t\ttext=\"go\"\n\t\tonClick={_ => doIt()}\n    />\n  );\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("text=\"go\"", result);
@@ -5071,7 +5095,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void F19_Attr_BooleanShorthand_NoTrailingWhitespace()
     {
-        var source = "component Foo { return (<Button disabled   text=\"go\" />); }";
+        var source = "VirtualNode Foo() { return (<Button disabled   text=\"go\" />); }";
         var result = Format(source);
         Assert.Contains("disabled", result);
         Assert.Equal(result, Format(result));
@@ -5080,7 +5104,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void F20_Attr_ExprWithInterpolatedString_SpacesInsideBraces_Normalised()
     {
-        var source = "component Foo { return (<Label text={ $\"{count}\" } />); }";
+        var source = "VirtualNode Foo() { return (<Label text={ $\"{count}\" } />); }";
         var result = Format(source);
         Assert.Contains("text={$\"{count}\"}", result);
         Assert.Equal(result, Format(result));
@@ -5098,7 +5122,7 @@ public sealed class FormatterSnapshotTests
         var source = N(
             """
             @namespace   MyApp.Components
-            component Foo { return (<Box />); }
+            VirtualNode Foo() { return (<Box />); }
             """
         );
         var result = Format(source);
@@ -5115,7 +5139,7 @@ public sealed class FormatterSnapshotTests
             @namespace NS
             @using   System
             @using   System.Collections.Generic
-            component Foo { return (<Box />); }
+            VirtualNode Foo() { return (<Box />); }
             """
         );
         var result = Format(source);
@@ -5136,7 +5160,7 @@ public sealed class FormatterSnapshotTests
             """
             @namespace NS
             @using   static   Ruitk.Props.Typed.StyleKeys
-            component Foo { return (<Box />); }
+            VirtualNode Foo() { return (<Box />); }
             """
         );
         var result = Format(source);
@@ -5149,7 +5173,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void G04_Directive_NamespaceTabSeparator_Normalised()
     {
-        var source = "@namespace\tMyApp.NS\ncomponent Foo { return (<Box />); }";
+        var source = "@namespace\tMyApp.NS\nVirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
         Assert.Contains("@namespace MyApp.NS", result);
         Assert.DoesNotContain("\t", result);
@@ -5159,7 +5183,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void G05_Directive_UsingTabSeparator_Normalised()
     {
-        var source = "@namespace NS\n@using\tSystem\ncomponent Foo { return (<Box />); }";
+        var source = "@namespace NS\n@using\tSystem\nVirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
         Assert.Contains("@using System", result);
         Assert.DoesNotContain("@using\t", result);
@@ -5169,7 +5193,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void G06_Directive_TrailingSpacesOnNamespace_Stripped()
     {
-        var source = "@namespace MyApp.NS   \ncomponent Foo { return (<Box />); }";
+        var source = "@namespace MyApp.NS   \nVirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
         // No trailing whitespace on any line.
         foreach (var line in result.Split('\n'))
@@ -5183,7 +5207,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void G07_Directive_TrailingSpacesOnUsing_Stripped()
     {
-        var source = "@namespace NS\n@using System   \ncomponent Foo { return (<Box />); }";
+        var source = "@namespace NS\n@using System   \nVirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -5206,7 +5230,7 @@ public sealed class FormatterSnapshotTests
             @namespace   My.App   
             @using   System   
             @using   static   My.StyleKeys   
-            component Foo { return (<Box />); }
+            VirtualNode Foo() { return (<Box />); }
             """
         );
         var result = Format(source);
@@ -5233,7 +5257,7 @@ public sealed class FormatterSnapshotTests
 
 
             @using System.Collections.Generic
-            component Foo { return (<Box />); }
+            VirtualNode Foo() { return (<Box />); }
             """
         );
         var result = Format(source);
@@ -5247,25 +5271,25 @@ public sealed class FormatterSnapshotTests
     // ════════════════════════════════════════════════════════════════════════════
     //  H — Component declaration line whitespace abuse
     //
-    //  Extra spaces in `component Name {`, tabs, Allman-style brace, etc.
+    //  Extra spaces in `VirtualNode Name() {`, tabs, Allman-style brace, etc.
     // ════════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public void H01_ComponentDecl_DoubleSpaceBeforeName_Normalised()
     {
-        var source = "component  Foo { return (<Box />); }";
+        var source = "VirtualNode  Foo() { return (<Box />); }";
         var result = Format(source);
-        Assert.Contains("component Foo {", result);
-        Assert.DoesNotContain("component  Foo", result);
+        Assert.Contains("VirtualNode Foo() {", result);
+        Assert.DoesNotContain("VirtualNode  Foo", result);
         Assert.Equal(result, Format(result));
     }
 
     [Fact]
     public void H02_ComponentDecl_DoubleSpaceBeforeBrace_Normalised()
     {
-        var source = "component Foo  { return (<Box />); }";
+        var source = "VirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
-        Assert.Contains("component Foo {", result);
+        Assert.Contains("VirtualNode Foo() {", result);
         Assert.DoesNotContain("Foo  {", result);
         Assert.Equal(result, Format(result));
     }
@@ -5273,9 +5297,9 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void H03_ComponentDecl_TabBeforeName_Normalised()
     {
-        var source = "component\tFoo { return (<Box />); }";
+        var source = "VirtualNode\tFoo() { return (<Box />); }";
         var result = Format(source);
-        Assert.Contains("component Foo {", result);
+        Assert.Contains("VirtualNode Foo() {", result);
         Assert.DoesNotContain("\t", result);
         Assert.Equal(result, Format(result));
     }
@@ -5283,9 +5307,9 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void H04_ComponentDecl_TabBeforeBrace_Normalised()
     {
-        var source = "component Foo\t{ return (<Box />); }";
+        var source = "VirtualNode Foo()\t{ return (<Box />); }";
         var result = Format(source);
-        Assert.Contains("component Foo {", result);
+        Assert.Contains("VirtualNode Foo() {", result);
         Assert.DoesNotContain("\t", result);
         Assert.Equal(result, Format(result));
     }
@@ -5293,18 +5317,18 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void H05_ComponentDecl_WithParams_ExtraSpaces_Normalised()
     {
-        var source = "component  Greeter ( string name = \"World\" )  { return (<Box />); }";
+        var source = "VirtualNode  Greeter ( string name = \"World\" )  { return (<Box />); }";
         var result = Format(source);
-        // The component keyword line is normalised; content of params passes through.
-        Assert.Contains("component Greeter", result);
-        Assert.DoesNotContain("component  Greeter", result);
+        // The declaration head is normalised; content of params passes through.
+        Assert.Contains("VirtualNode Greeter", result);
+        Assert.DoesNotContain("VirtualNode  Greeter", result);
         Assert.Equal(result, Format(result));
     }
 
     [Fact]
     public void H06_ComponentDecl_TrailingSpacesOnOpenBraceLine_Stripped()
     {
-        var source = "component Foo {   \n  return (<Box />);\n}";
+        var source = "VirtualNode Foo() {   \n  return (<Box />);\n}";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -5317,9 +5341,9 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void H07_ComponentDecl_MultipleExtraSpaces_EveryPosition_Normalised()
     {
-        var source = "component    Foo    {   return   (<Box   />);   }";
+        var source = "VirtualNode    Foo()    {   return   (<Box   />);   }";
         var result = Format(source);
-        Assert.Contains("component Foo {", result);
+        Assert.Contains("VirtualNode Foo() {", result);
         Assert.Contains("<Box />", result);
         Assert.Equal(result, Format(result));
     }
@@ -5333,7 +5357,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void I01_JSX_SelfCloseNoSpace_SingleAttr_GetsSpace()
     {
-        var source = "component Foo { return (<Label text=\"hi\"/>); }";
+        var source = "VirtualNode Foo() { return (<Label text=\"hi\"/>); }";
         var result = Format(source);
         Assert.Contains("<Label text=\"hi\" />", result);
         Assert.DoesNotContain("\"hi\"/>", result);
@@ -5343,7 +5367,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void I02_JSX_SelfCloseNoSpace_MultipleAttrs_GetsSpace()
     {
-        var source = "component Foo { return (<Button text=\"go\" onClick={_ => doIt()}/>); }";
+        var source = "VirtualNode Foo() { return (<Button text=\"go\" onClick={_ => doIt()}/>); }";
         var result = Format(source);
         Assert.Contains(" />", result);
         Assert.DoesNotContain("doIt()}/>", result);
@@ -5353,7 +5377,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void I03_JSX_SelfCloseThreeSpaces_NormalisedToOne()
     {
-        var source = "component Foo { return (<Box   />); }";
+        var source = "VirtualNode Foo() { return (<Box   />); }";
         var result = Format(source);
         Assert.Contains("<Box />", result);
         Assert.DoesNotContain("<Box  ", result);
@@ -5364,7 +5388,7 @@ public sealed class FormatterSnapshotTests
     public void I04_JSX_ReturnBracketNoSpace_Normalised()
     {
         // `return(` without space → `return (`
-        var source = "component Foo { return(<Box />); }";
+        var source = "VirtualNode Foo() { return(<Box />); }";
         var result = Format(source);
         Assert.Contains("return (", result);
         Assert.DoesNotContain("return(", result);
@@ -5376,7 +5400,7 @@ public sealed class FormatterSnapshotTests
     {
         // Children on one line → each gets its own line.
         var source =
-            "component Foo { return (<Box><Label text=\"a\" /><Label text=\"b\" /></Box>); }";
+            "VirtualNode Foo() { return (<Box><Label text=\"a\" /><Label text=\"b\" /></Box>); }";
         var result = Format(source);
         // Two separate Label lines in output.
         var countLabels = 0;
@@ -5392,7 +5416,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                   <Label text="a" />
@@ -5414,7 +5438,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>   
                   <Label text="hi" />   
@@ -5437,7 +5461,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
                         <Label text="a" />
@@ -5459,7 +5483,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>
             <Label text="a" />
@@ -5480,7 +5504,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @if (show) {
                   return (
@@ -5501,7 +5525,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @if (show) {
                 return (
@@ -5522,7 +5546,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @foreach (var item in items) {
                   return (
@@ -5543,7 +5567,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @foreach (var item in items) {
                 return (
@@ -5564,7 +5588,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @switch (mode) {
                     @case "a":
@@ -5587,7 +5611,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @foreach (var x in items) {
                   return (
@@ -5613,7 +5637,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
             	{myNode}
                 <Box />
@@ -5632,7 +5656,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 // extra spaces
                 <Box />
@@ -5650,7 +5674,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <VisualElement>
                         <Box>
@@ -5675,7 +5699,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
             <VisualElement>
             <Box>
@@ -5696,7 +5720,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void I20_JSX_ReturnRootElement_TabIndented_Normalised()
     {
-        var source = "component Foo {\n  return (\n\t<Box />\n  );\n}";
+        var source = "VirtualNode Foo() {\n  return (\n\t<Box />\n  );\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("<Box />", result);
@@ -5712,7 +5736,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void J01_Trailing_OnNamespaceLine_Stripped()
     {
-        var source = "component Foo {\n  return (\n    <Box />   \n  );\n}";
+        var source = "VirtualNode Foo() {\n  return (\n    <Box />   \n  );\n}";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -5725,7 +5749,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void J02_Trailing_OnUsingLine_Stripped()
     {
-        var source = "@namespace NS\n@using System   \ncomponent Foo { return (<Box />); }";
+        var source = "@namespace NS\n@using System   \nVirtualNode Foo() { return (<Box />); }";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -5738,7 +5762,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void J03_Trailing_OnComponentDeclarationLine_Stripped()
     {
-        var source = "component Foo {   \n  return (<Box />);\n}";
+        var source = "VirtualNode Foo() {   \n  return (<Box />);\n}";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -5751,7 +5775,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void J04_Trailing_OnSetupCodeLine_Stripped()
     {
-        var source = "component Foo {\n  var x = useState(0);   \n  return (<Box />);\n}";
+        var source = "VirtualNode Foo() {\n  var x = useState(0);   \n  return (<Box />);\n}";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -5764,7 +5788,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void J05_Trailing_OnReturnLine_Stripped()
     {
-        var source = "component Foo {\n  var x = 1;\n  return (<Box />);   \n}";
+        var source = "VirtualNode Foo() {\n  var x = 1;\n  return (<Box />);   \n}";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -5779,7 +5803,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Box>   
                   <Label text="hi" />   
@@ -5802,7 +5826,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Button   
                   text="go"   
@@ -5826,7 +5850,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @if (show) {   
                   return (
@@ -5851,7 +5875,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 @foreach (var item in items) {   
                   return (
@@ -5879,7 +5903,7 @@ public sealed class FormatterSnapshotTests
             """
             @namespace NS   
             @using System   
-            component Counter {   
+            VirtualNode Counter() {   
               var (count, setCount) = useState(0);   
               void Inc() { setCount(count + 1); }   
               return (   
@@ -5908,7 +5932,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void K01_CRLF_NamespaceLine_NormalisedToLf()
     {
-        var source = "component Foo {\r\n  return (\r\n    <Box />\r\n  );\r\n}\r\n";
+        var source = "VirtualNode Foo() {\r\n  return (\r\n    <Box />\r\n  );\r\n}\r\n";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
         Assert.Equal(result, Format(result));
@@ -5917,7 +5941,7 @@ public sealed class FormatterSnapshotTests
     [Fact]
     public void K02_CRLF_FunctionStyle_AllLines_NormalisedToLf()
     {
-        var source = "component Foo {\r\n  var x = useState(0);\r\n  return (<Box />);\r\n}\r\n";
+        var source = "VirtualNode Foo() {\r\n  var x = useState(0);\r\n  return (<Box />);\r\n}\r\n";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
         Assert.Equal(result, Format(result));
@@ -5927,7 +5951,7 @@ public sealed class FormatterSnapshotTests
     public void K03_CRLF_SetupWithEffectAndMethod_AllLinesNormalised()
     {
         var source =
-            "component Foo {\r\n  useEffect(() => {\r\n    doThing();\r\n    return null;\r\n  }, Array.Empty<object>());\r\n  void Reset() { setX(0); }\r\n  return (<Box />);\r\n}\r\n";
+            "VirtualNode Foo() {\r\n  useEffect(() => {\r\n    doThing();\r\n    return null;\r\n  }, Array.Empty<object>());\r\n  void Reset() { setX(0); }\r\n  return (<Box />);\r\n}\r\n";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
         Assert.Equal(result, Format(result));
@@ -5937,7 +5961,7 @@ public sealed class FormatterSnapshotTests
     public void K04_CRLF_JSXChildren_AllLinesNormalised()
     {
         var source =
-            "component Foo {\r\n  return (\r\n    <Box>\r\n      <Label text=\"a\" />\r\n      <Label text=\"b\" />\r\n    </Box>\r\n  );\r\n}\r\n";
+            "VirtualNode Foo() {\r\n  return (\r\n    <Box>\r\n      <Label text=\"a\" />\r\n      <Label text=\"b\" />\r\n    </Box>\r\n  );\r\n}\r\n";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
         Assert.Equal(result, Format(result));
@@ -5947,7 +5971,7 @@ public sealed class FormatterSnapshotTests
     public void K05_CRLF_IfElseChain_AllLinesNormalised()
     {
         var source =
-            "component Foo {\r\n  return (\r\n    @if (a) {\r\n      <LabelA />\r\n    } @else {\r\n      <LabelB />\r\n    }\r\n  );\r\n}\r\n";
+            "VirtualNode Foo() {\r\n  return (\r\n    @if (a) {\r\n      <LabelA />\r\n    } @else {\r\n      <LabelB />\r\n    }\r\n  );\r\n}\r\n";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
         Assert.Equal(result, Format(result));
@@ -5957,7 +5981,7 @@ public sealed class FormatterSnapshotTests
     public void K06_CRLF_MixedCrLfAndLf_AllNormalisedToLf()
     {
         // Some lines CRLF, others LF — mixed.
-        var source = "component Foo {\r\n  var a = 1;\n  var b = 2;\r\n  return (<Box />);\n}\n";
+        var source = "VirtualNode Foo() {\r\n  var a = 1;\n  var b = 2;\r\n  return (<Box />);\n}\n";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
         Assert.Equal(result, Format(result));
@@ -5996,7 +6020,7 @@ public sealed class FormatterSnapshotTests
     public void L02_DoubleFormat_ZeroIndentAndCRLF_Stable()
     {
         var source =
-            "component Foo {\r\nvar (a, setA) = useState(0);\r\nvoid Reset() {\r\nsetA(0);\r\n}\r\nreturn (<Box />);\r\n}\r\n";
+            "VirtualNode Foo() {\r\nvar (a, setA) = useState(0);\r\nvoid Reset() {\r\nsetA(0);\r\n}\r\nreturn (<Box />);\r\n}\r\n";
         var first = Format(source);
         var second = Format(first);
         Assert.Equal(first, second);
@@ -6007,7 +6031,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               return (
                 <Button   
                   text = "go"   
@@ -6027,7 +6051,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                             var (a, setA) = useState(0);   
                             useEffect(() => {   
                                 doThing();   
@@ -6048,7 +6072,7 @@ public sealed class FormatterSnapshotTests
     {
         // Tabs, zero indent, extra spaces in attrs, trailing whitespace, CRLF.
         var source =
-            "component Foo {\r\n\tvar x = useState(0);\r\n\treturn(\r\n\t\t<Box>   \r\n\t\t\t<Label text = \"hi\"   />\r\n\t\t\t<Button text=\"go\" onClick ={_ => setX(1)}/>   \r\n\t\t</Box>   \r\n\t);\r\n}\r\n";
+            "VirtualNode Foo() {\r\n\tvar x = useState(0);\r\n\treturn(\r\n\t\t<Box>   \r\n\t\t\t<Label text = \"hi\"   />\r\n\t\t\t<Button text=\"go\" onClick ={_ => setX(1)}/>   \r\n\t\t</Box>   \r\n\t);\r\n}\r\n";
         var first = Format(source);
         var second = Format(first);
         Assert.Equal(first, second);
@@ -6060,7 +6084,7 @@ public sealed class FormatterSnapshotTests
     public void L06_DoubleFormat_DirectivesAllAbuses_Stable()
     {
         var source =
-            "@namespace   NS   \r\n@using   System   \r\n@using\tSystem.Collections.Generic\t\r\ncomponent Foo { return (<Box />); }";
+            "@namespace   NS   \r\n@using   System   \r\n@using\tSystem.Collections.Generic\t\r\nVirtualNode Foo() { return (<Box />); }";
         var first = Format(source);
         var second = Format(first);
         Assert.Equal(first, second);
@@ -6073,7 +6097,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
                 """
-                component Foo {
+                VirtualNode Foo() {
                   return (
                     @switch (mode) {
                 	    @case "a":
@@ -6100,7 +6124,7 @@ public sealed class FormatterSnapshotTests
         // The everything-wrong variant: tabs, zero/extreme indent, trailing spaces,
         // CRLF, spaces around attr =, no space before />, missing space after return.
         var source =
-            "component KAOS {\r\n\tvar (count, setCount) = useState(0);\r\n\tvar (mode, setMode) = useState(\"normal\");\r\n\tuseEffect(() => {\r\n\t\tsetCount(n => n + 1);\r\n\t\treturn null;\r\n\t}, Array.Empty<object>());   \r\n\tvoid Reset() {\r\n\t\tsetCount(0);\r\n\t\tsetMode(\"normal\");\r\n\t}\r\n\treturn(\r\n\t\t<Box>   \r\n\t\t\t<Button text = \"Reset\" onClick ={_ => Reset()}/>   \r\n\t\t\t<Label text ={$\"{count}\"}/>   \r\n\t\t</Box>   \r\n\t);\r\n}\r\n";
+            "VirtualNode KAOS() {\r\n\tvar (count, setCount) = useState(0);\r\n\tvar (mode, setMode) = useState(\"normal\");\r\n\tuseEffect(() => {\r\n\t\tsetCount(n => n + 1);\r\n\t\treturn null;\r\n\t}, Array.Empty<object>());   \r\n\tvoid Reset() {\r\n\t\tsetCount(0);\r\n\t\tsetMode(\"normal\");\r\n\t}\r\n\treturn(\r\n\t\t<Box>   \r\n\t\t\t<Button text = \"Reset\" onClick ={_ => Reset()}/>   \r\n\t\t\t<Label text ={$\"{count}\"}/>   \r\n\t\t</Box>   \r\n\t);\r\n}\r\n";
         var first = Format(source);
         var second = Format(first);
         Assert.Equal(first, second);
@@ -6135,7 +6159,7 @@ public sealed class FormatterSnapshotTests
         // '( StyleKeys.MarginTop, 6f),' — the space after '(' is stripped.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 ( StyleKeys.MarginTop, 6f),
                 ( StyleKeys.Padding, 4f),
@@ -6157,7 +6181,7 @@ public sealed class FormatterSnapshotTests
         // are collapsed to a single space by CollapseIntraLineSpaces.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 (StyleKeys.FontSize,          13f),
                 (StyleKeys.LineHeight,      1.4f),
@@ -6179,7 +6203,7 @@ public sealed class FormatterSnapshotTests
         // are collapsed to a single space.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 (StyleKeys.Color, syncColor   ),
                 (StyleKeys.BackgroundColor, bgColor   ),
@@ -6200,7 +6224,7 @@ public sealed class FormatterSnapshotTests
         // Trailing spaces AFTER the final ',' on a style entry line ARE removed
         // by the per-line TrimEnd() pass.
         var source =
-            "component Foo {\n  var s = new Style {\n    (StyleKeys.Padding, 14f),   \n    (StyleKeys.MarginTop, 8f),  \n  };\n  return (<Box style={s} />);\n}";
+            "VirtualNode Foo() {\n  var s = new Style {\n    (StyleKeys.Padding, 14f),   \n    (StyleKeys.MarginTop, 8f),  \n  };\n  return (<Box style={s} />);\n}";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -6218,7 +6242,7 @@ public sealed class FormatterSnapshotTests
         // Exact user-reported pattern: space after '(', multiple spaces after ',',
         // spaces before ')', trailing spaces on line — all collapsed / stripped.
         var source =
-            "component Sync {\n  var syncLabelStyle = new Style {\n    ( StyleKeys.MarginTop, 6f   ),   \n    (StyleKeys.FontSize,          13f),\n    (StyleKeys.Color, syncColor),\n  };\n  return (<Label style={syncLabelStyle} />);\n}";
+            "VirtualNode Sync() {\n  var syncLabelStyle = new Style {\n    ( StyleKeys.MarginTop, 6f   ),   \n    (StyleKeys.FontSize,          13f),\n    (StyleKeys.Color, syncColor),\n  };\n  return (<Label style={syncLabelStyle} />);\n}";
         var result = Format(source);
         // Multiple spaces collapsed; trailing whitespace on lines removed.
         Assert.Contains("(StyleKeys.MarginTop, 6f),", result);
@@ -6238,7 +6262,7 @@ public sealed class FormatterSnapshotTests
         // Entries indented with tabs — leading tabs are expanded and the block-
         // stack normaliser places entries at the canonical 4-space depth.
         var source =
-            "component Foo {\n  var s = new Style {\n\t(StyleKeys.Padding, 14f),\n\t(StyleKeys.MarginTop, 8f),\n  };\n  return (<Box style={s} />);\n}";
+            "VirtualNode Foo() {\n  var s = new Style {\n\t(StyleKeys.Padding, 14f),\n\t(StyleKeys.MarginTop, 8f),\n  };\n  return (<Box style={s} />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("(StyleKeys.Padding, 14f),", result);
@@ -6253,7 +6277,7 @@ public sealed class FormatterSnapshotTests
         // block-stack normaliser collapses them to the canonical block level.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                         (StyleKeys.Width, 200f),
                         (StyleKeys.Height, 40f),
@@ -6276,7 +6300,7 @@ public sealed class FormatterSnapshotTests
         // indent).  Block-stack normaliser promotes them to 4sp.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
               (StyleKeys.Padding, 12f),
               (StyleKeys.Margin, 6f),
@@ -6299,7 +6323,7 @@ public sealed class FormatterSnapshotTests
         // same canonical block-target depth.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
               (StyleKeys.Padding, 12f),
                 (StyleKeys.Margin, 6f),
@@ -6325,7 +6349,7 @@ public sealed class FormatterSnapshotTests
         // A single blank line between entries — emitted as-is and stable.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 (StyleKeys.Padding, 12f),
 
@@ -6347,7 +6371,7 @@ public sealed class FormatterSnapshotTests
         // Several consecutive blank lines between entries — each is preserved as a
         // blank line and the output is idempotent.
         var source =
-            "component Foo {\n  var s = new Style {\n    (StyleKeys.Padding, 12f),\n\n\n\n    (StyleKeys.Margin, 6f),\n  };\n  return (<Box style={s} />);\n}";
+            "VirtualNode Foo() {\n  var s = new Style {\n    (StyleKeys.Padding, 12f),\n\n\n\n    (StyleKeys.Margin, 6f),\n  };\n  return (<Box style={s} />);\n}";
         var result = Format(source);
         Assert.Contains("(StyleKeys.Padding, 12f),", result);
         Assert.Contains("(StyleKeys.Margin, 6f),", result);
@@ -6361,7 +6385,7 @@ public sealed class FormatterSnapshotTests
         // by the block-stack push logic.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style{
                 (StyleKeys.Padding, 12f),
                 (StyleKeys.Margin, 6f),
@@ -6383,7 +6407,7 @@ public sealed class FormatterSnapshotTests
         // opener is still recognised and entries normalised correctly.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style   {
                 (StyleKeys.Padding, 12f),
                 (StyleKeys.Margin, 6f),
@@ -6404,7 +6428,7 @@ public sealed class FormatterSnapshotTests
         // Tabs as indent AND internal extra spaces in the tuple expression.
         // Tabs are stripped from the leading position; internal multi-spaces collapsed.
         var source =
-            "component Foo {\n  var s = new Style {\n\t( StyleKeys.Padding,   12f  ),\n\t(  StyleKeys.Margin,    6f ),\n  };\n  return (<Box style={s} />);\n}";
+            "VirtualNode Foo() {\n  var s = new Style {\n\t( StyleKeys.Padding,   12f  ),\n\t(  StyleKeys.Margin,    6f ),\n  };\n  return (<Box style={s} />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("(StyleKeys.Padding, 12f),", result);
@@ -6419,7 +6443,7 @@ public sealed class FormatterSnapshotTests
         // errors — both blocks should be normalised with multi-spaces collapsed.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var labelStyle = new Style {
                 ( StyleKeys.FontSize,  13f),
                 ( StyleKeys.Color, textColor),
@@ -6447,7 +6471,7 @@ public sealed class FormatterSnapshotTests
         // handles double nesting (lambda block + initialiser block) correctly.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               useEffect(() => {
                 var s = new Style {
                   ( StyleKeys.Padding, 8f),
@@ -6471,7 +6495,7 @@ public sealed class FormatterSnapshotTests
     {
         // Tabs on indent AND trailing spaces after the closing ',' — both stripped.
         var source =
-            "component Foo {\n  var s = new Style {\n\t(StyleKeys.Padding, 14f),   \n\t(StyleKeys.MarginTop, 8f),  \n  };\n  return (<Box style={s} />);\n}";
+            "VirtualNode Foo() {\n  var s = new Style {\n\t(StyleKeys.Padding, 14f),   \n\t(StyleKeys.MarginTop, 8f),  \n  };\n  return (<Box style={s} />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         foreach (var line in result.Split('\n'))
@@ -6491,7 +6515,7 @@ public sealed class FormatterSnapshotTests
         // multiple consecutive spaces are collapsed to single spaces.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 (StyleKeys.Color,           new Color(0.5f,   0.5f,   0.5f,   1f)),
                 (StyleKeys.BackgroundColor, new Color(1f,     0f,     0f,     0.8f)),
@@ -6512,7 +6536,7 @@ public sealed class FormatterSnapshotTests
         // Style block source with CRLF — all line endings normalised to LF,
         // multiple consecutive spaces collapsed.
         var source =
-            "component Foo {\r\n  var s = new Style {\r\n    ( StyleKeys.Padding,  12f),\r\n    (StyleKeys.Margin,     6f),\r\n  };\r\n  return (<Box style={s} />);\r\n}";
+            "VirtualNode Foo() {\r\n  var s = new Style {\r\n    ( StyleKeys.Padding,  12f),\r\n    (StyleKeys.Margin,     6f),\r\n  };\r\n  return (<Box style={s} />);\r\n}";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
         Assert.Contains("(StyleKeys.Padding, 12f),", result);
@@ -6527,7 +6551,7 @@ public sealed class FormatterSnapshotTests
         // lines, space after '(', multiple spaces after ',', spaces before ')',
         // mixed per-entry indentation (tabs + extra spaces).
         var source =
-            "component Sync {\r\n\tvar syncLabelStyle = new Style {\r\n\t\t( StyleKeys.MarginTop, 6f   ),   \r\n\t\t(StyleKeys.FontSize,          13f),\r\n\t\t(StyleKeys.Color, syncColor   ),\r\n\t\t(StyleKeys.BackgroundColor,   bgColor ),\r\n\t};\r\n\treturn (<Label style={syncLabelStyle} text=\"Hello\" />);\r\n}";
+            "VirtualNode Sync() {\r\n\tvar syncLabelStyle = new Style {\r\n\t\t( StyleKeys.MarginTop, 6f   ),   \r\n\t\t(StyleKeys.FontSize,          13f),\r\n\t\t(StyleKeys.Color, syncColor   ),\r\n\t\t(StyleKeys.BackgroundColor,   bgColor ),\r\n\t};\r\n\treturn (<Label style={syncLabelStyle} text=\"Hello\" />);\r\n}";
         var first = Format(source);
         var second = Format(first);
         Assert.Equal(first, second);
@@ -6566,7 +6590,7 @@ public sealed class FormatterSnapshotTests
         // block-stack places it at the canonical 4sp.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               if (ready) {
                         doWork();
                         finish();
@@ -6589,7 +6613,7 @@ public sealed class FormatterSnapshotTests
         // Both branches over-indented; the '} else {' line tests pop+push at depth-0.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               if (flag) {
                         setA(1);
               } else {
@@ -6613,7 +6637,7 @@ public sealed class FormatterSnapshotTests
     {
         // Three-branch if/else if/else with tab indentation throughout.
         var source =
-            "component Foo {\n\tif (x == 0) {\n\t\thandleZero();\n\t} else if (x < 0) {\n\t\thandleNeg();\n\t} else {\n\t\thandlePos();\n\t}\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tif (x == 0) {\n\t\thandleZero();\n\t} else if (x < 0) {\n\t\thandleNeg();\n\t} else {\n\t\thandlePos();\n\t}\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  if (x == 0) {", result);
@@ -6630,7 +6654,7 @@ public sealed class FormatterSnapshotTests
     {
         // Trailing spaces after every token in an if block — all stripped.
         var source =
-            "component Foo {\n  if (ready) {   \n    doWork();   \n    finish();   \n  }   \n  return (<Box />);\n}";
+            "VirtualNode Foo() {\n  if (ready) {   \n    doWork();   \n    finish();   \n  }   \n  return (<Box />);\n}";
         var result = Format(source);
         foreach (var line in result.Split('\n'))
             Assert.False(
@@ -6648,7 +6672,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               foreach (var item in items) {
                             process(item);
                             log(item);
@@ -6669,7 +6693,7 @@ public sealed class FormatterSnapshotTests
     public void N06_Foreach_TabIndent_TrailingSpaces_BothNormalised()
     {
         var source =
-            "component Foo {\n\tforeach (var item in items) {\n\t\tprocess(item);   \n\t\tlog(item);   \n\t}\n\treturn (<List />);\n}";
+            "VirtualNode Foo() {\n\tforeach (var item in items) {\n\t\tprocess(item);   \n\t\tlog(item);   \n\t}\n\treturn (<List />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         foreach (var line in result.Split('\n'))
@@ -6688,7 +6712,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               for (int i = 0; i < count; i++) {
                             total += values[i];
               }
@@ -6707,7 +6731,7 @@ public sealed class FormatterSnapshotTests
     public void N08_ForLoop_TabIndent_Normalised()
     {
         var source =
-            "component Foo {\n\tfor (int i = 0; i < 10; i++) {\n\t\tdoStep(i);\n\t}\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tfor (int i = 0; i < 10; i++) {\n\t\tdoStep(i);\n\t}\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  for (int i = 0; i < 10; i++) {", result);
@@ -6724,7 +6748,7 @@ public sealed class FormatterSnapshotTests
         // pop-then-push at depth-0.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               try {
                             riskyCall();
               } catch (Exception e) {
@@ -6747,7 +6771,7 @@ public sealed class FormatterSnapshotTests
     public void N10_TryCatchFinally_TabIndented_AllNormalised()
     {
         var source =
-            "component Foo {\n\ttry {\n\t\triskyCall();\n\t} catch (Exception e) {\n\t\tlog(e);\n\t} finally {\n\t\tcleanup();\n\t}\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\ttry {\n\t\triskyCall();\n\t} catch (Exception e) {\n\t\tlog(e);\n\t} finally {\n\t\tcleanup();\n\t}\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  try {", result);
@@ -6768,7 +6792,7 @@ public sealed class FormatterSnapshotTests
         // block-target (4sp) — the formatter has no case-specific logic.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               switch (mode) {
                             case "a":
                             doA();
@@ -6797,7 +6821,7 @@ public sealed class FormatterSnapshotTests
     public void N12_Switch_TabIndented_AllNormalised()
     {
         var source =
-            "component Foo {\n\tswitch (val) {\n\t\tcase 1:\n\t\t\thandleOne();\n\t\t\tbreak;\n\t\tdefault:\n\t\t\thandleOther();\n\t\t\tbreak;\n\t}\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tswitch (val) {\n\t\tcase 1:\n\t\t\thandleOne();\n\t\t\tbreak;\n\t\tdefault:\n\t\t\thandleOther();\n\t\t\tbreak;\n\t}\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("handleOne();", result);
@@ -6812,7 +6836,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var items = new List<string> {
                             "alpha",
                             "beta",
@@ -6835,7 +6859,7 @@ public sealed class FormatterSnapshotTests
     public void N14_DictionaryInitialiser_TabIndented_NormalisedToBlockTarget()
     {
         var source =
-            "component Foo {\n\tvar map = new Dictionary<string, int> {\n\t\t{ \"a\", 1 },\n\t\t{ \"b\", 2 },\n\t\t{ \"c\", 3 },\n\t};\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvar map = new Dictionary<string, int> {\n\t\t{ \"a\", 1 },\n\t\t{ \"b\", 2 },\n\t\t{ \"c\", 3 },\n\t};\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("{ \"a\", 1 },", result);
@@ -6849,7 +6873,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var cfg = new Config {
                             Width = 200,
                             Height = 100,
@@ -6877,7 +6901,7 @@ public sealed class FormatterSnapshotTests
         // The block-stack automatically computes the correct target at each level.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               void Process() {
                             if (ready) {
                                           for (int i = 0; i < 10; i++) {
@@ -6901,7 +6925,7 @@ public sealed class FormatterSnapshotTests
     public void N17_DeepNesting_VoidWithTryCatch_TabIndented_Normalised()
     {
         var source =
-            "component Foo {\n\tvoid SafeRun() {\n\t\ttry {\n\t\t\triskyOp();\n\t\t} catch (Exception e) {\n\t\t\tlastError = e.Message;\n\t\t}\n\t}\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvoid SafeRun() {\n\t\ttry {\n\t\t\triskyOp();\n\t\t} catch (Exception e) {\n\t\t\tlastError = e.Message;\n\t\t}\n\t}\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  void SafeRun() {", result);
@@ -6918,7 +6942,7 @@ public sealed class FormatterSnapshotTests
     public void N18_UseMemo_MultiLineLambda_TabIndented_Normalised()
     {
         var source =
-            "component Foo {\n\tvar sorted = useMemo(() => {\n\t\tvar copy = new List<int>(items);\n\t\tcopy.Sort();\n\t\treturn copy;\n\t}, new object[] { items });\n\treturn (<Box />);\n}";
+            "VirtualNode Foo() {\n\tvar sorted = useMemo(() => {\n\t\tvar copy = new List<int>(items);\n\t\tcopy.Sort();\n\t\treturn copy;\n\t}, new object[] { items });\n\treturn (<Box />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains("\n  var sorted = useMemo(() => {", result);
@@ -6935,7 +6959,7 @@ public sealed class FormatterSnapshotTests
         // levels over-indented in the input.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               useEffect(() => {
                             try {
                                           load();
@@ -6966,7 +6990,7 @@ public sealed class FormatterSnapshotTests
         // Every type of block written with CRLF — line endings normalised,
         // content and indentation preserved.
         var source =
-            "component Foo {\r\n  if (a) {\r\n    doA();\r\n  }\r\n  foreach (var x in xs) {\r\n    use(x);\r\n  }\r\n  try {\r\n    risky();\r\n  } catch (Exception e) {\r\n    handle(e);\r\n  }\r\n  var list = new List<int> {\r\n    1,\r\n    2,\r\n    3,\r\n  };\r\n  return (<Box />);\r\n}";
+            "VirtualNode Foo() {\r\n  if (a) {\r\n    doA();\r\n  }\r\n  foreach (var x in xs) {\r\n    use(x);\r\n  }\r\n  try {\r\n    risky();\r\n  } catch (Exception e) {\r\n    handle(e);\r\n  }\r\n  var list = new List<int> {\r\n    1,\r\n    2,\r\n    3,\r\n  };\r\n  return (<Box />);\r\n}";
         var result = Format(source);
         Assert.DoesNotContain("\r", result);
         Assert.Contains("doA();", result);
@@ -6984,7 +7008,7 @@ public sealed class FormatterSnapshotTests
         // Every block type in one component, with CRLF + tab indent + trailing
         // spaces + over-indentation — all abuses in one file.
         var source =
-            "component MEGA {\r\n\tvar (count, setCount) = useState(0);\r\n\tvar items = new List<string> {\r\n\t\t\"a\",   \r\n\t\t\"b\",   \r\n\t};\r\n\tvar cfg = new Config {\r\n\t\tWidth = 200,   \r\n\t\tHeight = 100,   \r\n\t};\r\n\tuseEffect(() => {\r\n\t\ttry {\r\n\t\t\tload();\r\n\t\t} catch (Exception e) {\r\n\t\t\tsetError(e);\r\n\t\t}\r\n\t\treturn null;\r\n\t}, Array.Empty<object>());   \r\n\tvoid Reset() {\r\n\t\tif (count > 0) {\r\n\t\t\tforeach (var x in items) {\r\n\t\t\t\tprocess(x);\r\n\t\t\t}\r\n\t\t}\r\n\t\tsetCount(0);\r\n\t}\r\n\treturn (<Box />);\r\n}";
+            "VirtualNode MEGA() {\r\n\tvar (count, setCount) = useState(0);\r\n\tvar items = new List<string> {\r\n\t\t\"a\",   \r\n\t\t\"b\",   \r\n\t};\r\n\tvar cfg = new Config {\r\n\t\tWidth = 200,   \r\n\t\tHeight = 100,   \r\n\t};\r\n\tuseEffect(() => {\r\n\t\ttry {\r\n\t\t\tload();\r\n\t\t} catch (Exception e) {\r\n\t\t\tsetError(e);\r\n\t\t}\r\n\t\treturn null;\r\n\t}, Array.Empty<object>());   \r\n\tvoid Reset() {\r\n\t\tif (count > 0) {\r\n\t\t\tforeach (var x in items) {\r\n\t\t\t\tprocess(x);\r\n\t\t\t}\r\n\t\t}\r\n\t\tsetCount(0);\r\n\t}\r\n\treturn (<Box />);\r\n}";
         var first = Format(source);
         var second = Format(first);
         Assert.Equal(first, second);
@@ -7025,7 +7049,7 @@ public sealed class FormatterSnapshotTests
         // 2-space, useState/var lines bumped to 4-space.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               // ── state ─────────────────────────────────────────────────────
                 var (count, setCount) = useState(0);
                 var (mode, setMode) = useState("normal");
@@ -7046,7 +7070,7 @@ public sealed class FormatterSnapshotTests
         // Multiple comment sections, each followed by 4-space vars.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               // ── state ─────────────────────────────────────────────────────
                 var (count, setCount) = useState(0);
               // ── context ────────────────────────────────────────────────────
@@ -7072,7 +7096,7 @@ public sealed class FormatterSnapshotTests
         // the var should be at 2sp, block entries at 4sp, '}; ' at 2sp.
         var source = N(
             """
-            component Sync {
+            VirtualNode Sync() {
               // ── styles ─────────────────────────────────────────────────────
                 var syncLabelStyle = new Style {
                     (StyleKeys.MarginTop, 6f),
@@ -7098,7 +7122,7 @@ public sealed class FormatterSnapshotTests
         // useEffect opener + body both at 4sp (CSharpier corruption).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               // ── effect ─────────────────────────────────────────────────────
                 useEffect(() => {
                     doSetup();
@@ -7121,7 +7145,7 @@ public sealed class FormatterSnapshotTests
         // void method block with body at 4sp corruption.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               // ── helpers ────────────────────────────────────────────────────
                 void Reset() {
                     setCount(0);
@@ -7147,7 +7171,7 @@ public sealed class FormatterSnapshotTests
         // input indent (4sp), preserving their +2sp offset → 4sp total.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               // ── sync color ──────────────────────────────────────────────────
                 var syncColor = count >= 0
                     ? new Color(0.3f, 0.85f, 0.45f, 1f)
@@ -7170,7 +7194,7 @@ public sealed class FormatterSnapshotTests
         // The full real-world corruption: CRLF, comments at 2sp, all statement
         // lines bumped to 4sp including Style blocks, useEffect, void methods.
         var source =
-            "component Sync {\r\n"
+            "VirtualNode Sync() {\r\n"
             + "  // ── state ──────────────────────────────────────────────────────\r\n"
             + "    var (count, setCount) = useState(0);\r\n"
             + "  // ── styles ─────────────────────────────────────────────────────\r\n"
@@ -7227,7 +7251,7 @@ public sealed class FormatterSnapshotTests
         // rel=0 regardless of baseSpaces.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var (count, setCount) = useState(0);
                 var (mode, setMode) = useState("normal");
               bool IsLoading() => trigger > 1000;
@@ -7252,7 +7276,7 @@ public sealed class FormatterSnapshotTests
         // 1–2 spaces are intentional alignment and are left intact (see M01, M14).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var panelStyle = new Style {
                 (   StyleKeys.BackgroundColor, new Color(0.2f, 0.2f, 0.25f, 0.9f)),
                 (     StyleKeys.FontSize, 13f),
@@ -7276,7 +7300,7 @@ public sealed class FormatterSnapshotTests
         // or similar). IsStatementStarter forces it to 2sp.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var (count, setCount) = useState(0);
                         var inlineLabel = "hello";
               return (<Box />);
@@ -7297,7 +7321,7 @@ public sealed class FormatterSnapshotTests
         // its '{' should land at 2sp; the body at 4sp.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               bool IsReady() => count > 0;
                 useEffect(() =>
                 {
@@ -7325,7 +7349,7 @@ public sealed class FormatterSnapshotTests
         // Style block entries with extra spaces, and a ternary at correct relative depth.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               // ── state ───────────────────────────────────────────────────
                 var (count, setCount) = useState(0);
               // ── styles ──────────────────────────────────────────────────
@@ -7365,7 +7389,7 @@ public sealed class FormatterSnapshotTests
         // Spaces after a comma (column-alignment) are collapsed to single space.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 (StyleKeys.Color,           new Color(0.5f, 0.5f, 0.5f, 1f)),
                 (StyleKeys.BackgroundColor, new Color(1f, 0f, 0f, 0.8f)),
@@ -7397,7 +7421,7 @@ public sealed class FormatterSnapshotTests
         // The formatter should normalise vars to rel=0 (= 2sp with IndentStr).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               // ── header ──
                 var (count, setCount) = useState(0);
                 var node = (
@@ -7422,7 +7446,7 @@ public sealed class FormatterSnapshotTests
         // (deeper than the },), not be flattened to block level.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               useEffect(() => {
                 var t = task;
                 t.ContinueWith(x => {
@@ -7455,7 +7479,7 @@ public sealed class FormatterSnapshotTests
         // the EmitCSharpLines path too.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                 (   StyleKeys.Padding, 8f),
                 (   StyleKeys.Margin, 4f),
@@ -7481,7 +7505,7 @@ public sealed class FormatterSnapshotTests
         // have independent normalisation.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                 var a = (
                 <Label text="A" />
               );
@@ -7511,7 +7535,7 @@ public sealed class FormatterSnapshotTests
         // prevent statement normalisation in the JSX path.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               // state
                 var (x, setX) = useState(0);
               // element
@@ -7537,7 +7561,7 @@ public sealed class FormatterSnapshotTests
         // when I change inner element and save they don't get back to this form"
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style {
                     (StyleKeys.Padding, 8f),
                 (StyleKeys.Margin, 4f),
@@ -7565,7 +7589,7 @@ public sealed class FormatterSnapshotTests
         // — nothing gets formatted inside"
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               MenuBuilderHandler buildMenu = dm => {
                        dm.AddItem("Option A", false, () => setChoice("A"));
                   dm.AddItem("Option B", false, () => setChoice("B"));
@@ -7590,7 +7614,7 @@ public sealed class FormatterSnapshotTests
         // switch-case: case labels at block target, body one indent deeper.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               void Apply(string m) {
                 switch (m) {
                   case "a":
@@ -7657,7 +7681,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("x   >>=   1;", "x >>= 1;")]
     public void S01_Assignments_MultiSpaces_Collapsed(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -7683,7 +7707,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("var a   =   x   is   string;", "var a = x is string;")]
     public void S02_Operators_MultiSpaces_Collapsed(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -7705,7 +7729,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("x   ??=   fallback;", "x ??= fallback;")]
     public void S03_NullOperators_MultiSpaces_Collapsed(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -7730,7 +7754,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("var arr   =   Array.Empty<int>();", "var arr = Array.Empty<int>();")]
     public void S04_MethodCalls_MultiSpaces_Collapsed(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -7758,7 +7782,7 @@ public sealed class FormatterSnapshotTests
     public void S05_StyleTuples_MultiSpaces_Collapsed(string input, string expected)
     {
         var source =
-            "component Foo {\n  var s = new Style {\n    "
+            "VirtualNode Foo() {\n  var s = new Style {\n    "
             + input
             + "\n  };\n  return (<Label style={s} />);\n}";
         var result = Format(source);
@@ -7779,7 +7803,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("var x   =   \"escaped\\\"   quote\";", "\"escaped\\\"   quote\"")]
     public void S06_StringLiterals_InternalSpaces_Preserved(string input, string expectedFragment)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expectedFragment, result);
         Assert.Equal(result, Format(result));
@@ -7795,7 +7819,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("// normal single spaces only", "// normal single spaces only")]
     public void S07_LineComments_InternalSpaces_Preserved(string input, string expectedFragment)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expectedFragment, result);
         Assert.Equal(result, Format(result));
@@ -7816,7 +7840,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("list.Add(\titem\t);", "list.Add(item);")]
     public void S08_Tabs_ReplacedBySpaceAndCollapsed(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.DoesNotContain("\t", result);
         Assert.Contains(expected, result);
@@ -7838,7 +7862,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("return;")]
     public void S09_AlreadyCorrect_Unchanged(string input)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(input, result);
         Assert.Equal(result, Format(result));
@@ -7857,7 +7881,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("var a   =   list?.Count   ??   0;", "var a = list?.Count ?? 0;")]
     public void S10_Ternary_MultiSpaces_Collapsed(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -7875,7 +7899,7 @@ public sealed class FormatterSnapshotTests
     public void S11_ParenSpaces_AllStripped(string input, string expected)
     {
         var source =
-            "component Foo {\n  var s = new Style {\n    "
+            "VirtualNode Foo() {\n  var s = new Style {\n    "
             + input
             + "\n  };\n  return (<Label style={s} />);\n}";
         var result = Format(source);
@@ -7914,7 +7938,7 @@ public sealed class FormatterSnapshotTests
     public void T01_JsxPath_Expressions_MultiSpaces_Collapsed(string input, string expected)
     {
         var source =
-            "component Foo {\n  "
+            "VirtualNode Foo() {\n  "
             + input
             + "\n  var el = (\n    <Label text=\"hi\" />\n  );\n  return (<Box>{el}</Box>);\n}";
         var result = Format(source);
@@ -7937,7 +7961,7 @@ public sealed class FormatterSnapshotTests
     public void T02_JsxPath_StyleTuples_MultiSpaces_Collapsed(string input, string expected)
     {
         var source =
-            "component Foo {\n  var s = new Style {\n    "
+            "VirtualNode Foo() {\n  var s = new Style {\n    "
             + input
             + "\n  };\n  var el = (\n    <Label text=\"hi\" />\n  );\n  return (<Box style={s}>{el}</Box>);\n}";
         var result = Format(source);
@@ -7956,7 +7980,7 @@ public sealed class FormatterSnapshotTests
     public void T03_JsxPath_StringsAndComments_Preserved(string input, string expectedFragment)
     {
         var source =
-            "component Foo {\n  "
+            "VirtualNode Foo() {\n  "
             + input
             + "\n  var el = (\n    <Label text=\"hi\" />\n  );\n  return (<Box>{el}</Box>);\n}";
         var result = Format(source);
@@ -7975,7 +7999,7 @@ public sealed class FormatterSnapshotTests
     public void T04_JsxPath_Tabs_ReplacedAndCollapsed(string input, string expected)
     {
         var source =
-            "component Foo {\n  "
+            "VirtualNode Foo() {\n  "
             + input
             + "\n  var el = (\n    <Label text=\"hi\" />\n  );\n  return (<Box>{el}</Box>);\n}";
         var result = Format(source);
@@ -7998,7 +8022,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style
                     {
                 (StyleKeys.Padding, 8f),
@@ -8018,7 +8042,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var items = new List<int>
                   {
                 1, 2, 3,
@@ -8037,7 +8061,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var dict = new Dictionary<string, int>
                       {
                 { "a", 1 },
@@ -8056,7 +8080,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style
               {
                 (StyleKeys.Padding, 8f),
@@ -8077,7 +8101,7 @@ public sealed class FormatterSnapshotTests
         // doesn't end with ; or {). Bare '{' after it is continuation.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var x = 1;
               useEffect(() =>
                       {
@@ -8100,7 +8124,7 @@ public sealed class FormatterSnapshotTests
         // Same as U01 but through EmitCSharpLines (JSX in setup).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var s = new Style
                     {
                 (StyleKeys.Padding, 8f),
@@ -8123,7 +8147,7 @@ public sealed class FormatterSnapshotTests
         // Same as U05 but through EmitCSharpLines (JSX in setup).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var x = 1;
               useEffect(() =>
                       {
@@ -8149,7 +8173,7 @@ public sealed class FormatterSnapshotTests
         // not pulled to depth-0.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var outer = new Style
               {
                 (StyleKeys.Padding, 8f),
@@ -8187,7 +8211,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("var a = ( x + y ) * z;", "var a = (x + y) * z;")]
     public void V01_SpaceAfterOpenParen_Stripped(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -8208,7 +8232,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("string.Format( \"{0}\", x );", "string.Format(\"{0}\", x);")]
     public void V02_SpaceBeforeCloseParen_Stripped(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -8234,7 +8258,7 @@ public sealed class FormatterSnapshotTests
     public void V03_StyleTuples_ParenSpaces_BothStripped(string input, string expected)
     {
         var source =
-            "component Foo {\n  var s = new Style {\n    "
+            "VirtualNode Foo() {\n  var s = new Style {\n    "
             + input
             + "\n  };\n  return (<Label style={s} />);\n}";
         var result = Format(source);
@@ -8251,7 +8275,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("var x = $\"result: ( {v} )\";", "$\"result: ( {v} )\"")]
     public void V04_StringContent_ParenSpaces_Preserved(string input, string expectedFragment)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expectedFragment, result);
         Assert.Equal(result, Format(result));
@@ -8266,7 +8290,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("( ( a ) );", "((a));")]
     public void V05_NestedParens_AllSpacesStripped(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -8280,7 +8304,7 @@ public sealed class FormatterSnapshotTests
     [InlineData("return ();", "return ();")]
     public void V06_EmptyParens_Unchanged(string input, string expected)
     {
-        var source = "component Foo {\n  " + input + "\n  return (<Label />);\n}";
+        var source = "VirtualNode Foo() {\n  " + input + "\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains(expected, result);
         Assert.Equal(result, Format(result));
@@ -8293,7 +8317,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var items = new List<int> { 1, 2, 3 };
               for ( int i = items.Count - 1; i > 0; i-- ) {
                 items[i] = items[i] * 2;
@@ -8316,7 +8340,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Counter {
+            VirtualNode Counter() {
               var (count, setCount) = useState(0);
               setCount(v => v + 1 );
               return (<Label text={count.ToString()} />);
@@ -8336,7 +8360,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var containerStyle = new Style {
                 ( StyleKeys.FlexGrow, 1f ),
                 (StyleKeys.Padding, 12f),
@@ -8366,7 +8390,7 @@ public sealed class FormatterSnapshotTests
     public void V10_JsxPath_ParenSpaces_Stripped(string input, string expected)
     {
         var source =
-            "component Foo {\n  "
+            "VirtualNode Foo() {\n  "
             + input
             + "\n  var el = (\n    <Label text=\"hi\" />\n  );\n  return (<Box>{el}</Box>);\n}";
         var result = Format(source);
@@ -8388,7 +8412,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                   MenuBuilderHandler buildMenu = dm => {
                 dm.AppendAction("Reset", _ => Reset());
               };
@@ -8406,7 +8430,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               MenuBuilderHandler buildMenu = dm =>
                     {
                 dm.AppendAction("Reset", _ => Reset());
@@ -8435,7 +8459,7 @@ public sealed class FormatterSnapshotTests
         // If user tabs/spaces the MenuBuilderHandler line, it should normalize to rel=0.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
                     MenuBuilderHandler buildMenu = dm =>
                     {
                 dm.AppendAction("A", _ => DoA());
@@ -8455,7 +8479,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               Action<int> callback = x =>
                   {
                 DoWork(x);
@@ -8475,7 +8499,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               Func<int, bool> predicate = n =>
                       {
                 return n > 0;
@@ -8496,7 +8520,7 @@ public sealed class FormatterSnapshotTests
         // += -= *= /= %= should NOT trigger the ' = ' heuristic.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               count += 1;
               total -= 5;
               factor *= 2;
@@ -8522,7 +8546,7 @@ public sealed class FormatterSnapshotTests
         // Same as W02 but through EmitCSharpLines path (JSX in setup).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               MenuBuilderHandler buildMenu = dm =>
                     {
                 dm.AppendAction("Reset", _ => Reset());
@@ -8550,7 +8574,7 @@ public sealed class FormatterSnapshotTests
         // Regression for TD-S6 (GalagaGame GameScreen.uitkx idempotency).
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               for (int i = 0; i < n; i++) {
                 if (items[i].Id == target
                     && items[i].Phase == 1) {
@@ -8576,7 +8600,7 @@ public sealed class FormatterSnapshotTests
         // The bare { after it should remain at continuation indent.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               Hooks.UseBlocker(
                 (from, to) =>
                 {
@@ -8600,7 +8624,7 @@ public sealed class FormatterSnapshotTests
         // Full scenario: custom type, Allman brace, inner lines with parens
         // and multi-spaces — everything should be normalised.
         var source =
-            "component Foo {\n      MenuBuilderHandler buildMenu = dm =>\n          {\n    dm.AppendAction(  \"Reset\",   _ => Reset()  );\n    dm.AppendAction( \"Set 10\",  _ => setCount( 10 ) );\n  };\n  return (<Label />);\n}";
+            "VirtualNode Foo() {\n      MenuBuilderHandler buildMenu = dm =>\n          {\n    dm.AppendAction(  \"Reset\",   _ => Reset()  );\n    dm.AppendAction( \"Set 10\",  _ => setCount( 10 ) );\n  };\n  return (<Label />);\n}";
         var result = Format(source);
         Assert.Contains("\n  MenuBuilderHandler buildMenu = dm =>\n  {\n", result);
         Assert.Contains("dm.AppendAction(\"Reset\", _ => Reset());", result);
@@ -8617,7 +8641,7 @@ public sealed class FormatterSnapshotTests
         // These lines end with ; so they're already statement starters.
         var source = N(
             """
-            component Foo {
+            VirtualNode Foo() {
               var a = x == y;
               var b = x != y;
               var c = x >= y;
@@ -8651,7 +8675,7 @@ public sealed class FormatterSnapshotTests
         // setup code + multi-attr elements, plus @if branch.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
               var items = new[] { "a", "b" };
 
               VirtualNode PillBar(string[] opts, string selected) {
@@ -8708,7 +8732,7 @@ public sealed class FormatterSnapshotTests
         // Local function with @if / @else branches returning JSX.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
               var (active, setActive) = useState(true);
 
               VirtualNode StatusBadge() {
@@ -8755,7 +8779,7 @@ public sealed class FormatterSnapshotTests
         // with setup-code JSX variable (catBadge) inside directive body.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
               var categories = new[] { "A", "B" };
               var tags = new[] { "x", "y" };
               var (count, setCount) = useState(2);
@@ -8871,7 +8895,7 @@ public sealed class FormatterSnapshotTests
         // Plus {} expression splicing in the return JSX.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
               var (active, setActive) = useState(true);
 
               var controlsNode = active
@@ -8902,7 +8926,7 @@ public sealed class FormatterSnapshotTests
         // Direct JSX assignment with nested directives in setup code.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
               var (mounted, setMounted) = useState(true);
 
               var headerNode = (
@@ -8934,7 +8958,7 @@ public sealed class FormatterSnapshotTests
         // expression splicing, and multi-level nesting in one component.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
               var (count, setCount) = useState(0);
               var items = new[] { "A", "B" };
 
@@ -8984,7 +9008,7 @@ public sealed class FormatterSnapshotTests
         // Messy indentation in deep nesting should normalize properly.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
                 var items = new[] { "a", "b" };
 
                   VirtualNode Fn() {
@@ -9026,7 +9050,7 @@ public sealed class FormatterSnapshotTests
         // with nested @if. This tests the placeholder-based formatting path.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
               var cats = new[] { "A", "B" };
               var (show, setShow) = useState(true);
 
@@ -9094,7 +9118,7 @@ public sealed class FormatterSnapshotTests
         // which caused EmitCSharpLines to shift indentation on every save.
         var source = N(
             """
-            component C {
+            VirtualNode C() {
               useEffect(() =>
               {
                   var x = 1;
@@ -9314,7 +9338,7 @@ public sealed class FormatterSnapshotTests
     {
         var source = N(
             @"@namespace Test
-component Comp {
+VirtualNode Comp() {
   var (count, setCount) = useState(0);
 
   void MethodBefore() { setCount(1); }
@@ -9371,7 +9395,7 @@ component Comp {
     {
         var source = N(
             @"@namespace Test
-component Comp {
+VirtualNode Comp() {
   var (count, setCount) = useState(0);
 
   // var x = ( <Label text=""nope"" /> )
@@ -9396,13 +9420,11 @@ component Comp {
         var filePath = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(filePath))
-            return;
+        Assert.True(File.Exists(filePath), $"fixture not found at {filePath}");
 
         var source = N(File.ReadAllText(filePath));
         var vdoc = GenerateVDoc(source, filePath);
@@ -9422,10 +9444,10 @@ component Comp {
         // Key identifiers must map to their correct source lines
         var checks = new[]
         {
-            ("MctvSetChild", 271),
-            ("MctvDeleteLast", 299),
-            ("TreeViewRowState", 59),
-            ("var secondElement", 320),
+            ("MctvSetChild", 261),
+            ("MctvDeleteLast", 289),
+            ("TreeViewRowState", 56),
+            ("var secondElement", 304),
         };
         foreach (var (id, expectedLine) in checks)
         {
@@ -9452,7 +9474,7 @@ component Comp {
     public void B14_VDG_SetupJsxExpressions_AreEmittedWithSourceMapping()
     {
         var source = N(
-            @"component Foo {
+            @"VirtualNode Foo() {
   var (count, setCount) = useState(0);
 
   var node = (
@@ -9497,7 +9519,7 @@ component Comp {
     {
         var source = N(
             """
-            component Counter {
+            VirtualNode Counter() {
               var (count, setCount) = useState(0);
               return (<Box></Box>);
               var x = 1;
@@ -9517,7 +9539,7 @@ component Comp {
     {
         var source = N(
             """
-            component Counter {
+            VirtualNode Counter() {
               var (count, setCount) = useState(0);
               //return (
                 <Box />
@@ -9540,13 +9562,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxCounterFunc",
             "UitkxCounterFunc.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
         var result = Format(source);
         Assert.Equal(source, result);
@@ -9558,17 +9578,19 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
+        // Insert a real single-line early return ahead of the main markup return.
+        // (The original mutation un-commented a specific commented-out JSX block
+        // that no longer exists in the fixture; the multi-return contract under
+        // test - formatter uses the LAST return, no corruption - is identical.)
         var modified = source.Replace(
-            "  {/* return (\n    <VisualElement>\n      <Button text=\"-5\" onClick={_ => setCount(count - 5)} />\n      <Button text=\"+5\" onClick={_ => setCount(count + 5)} />\n    </VisualElement>\n  ); */}",
-            "  return (<Box></Box>);"
+            "\n  return (\n",
+            "\n  return (<Box></Box>);\n\n  return (\n"
         );
         Assert.NotEqual(source, modified);
         // Multi-return: formatter uses last return. Verify no corruption.
@@ -9591,7 +9613,7 @@ component Comp {
         // get extra indentation inside its braces.
         var source = N(
             """
-            component Counter {
+            VirtualNode Counter() {
               var safeItems = Array.Empty<int>();
             var someVara = (
                 <Box>
@@ -9623,7 +9645,7 @@ component Comp {
 
         var expected = N(
             """
-            component Counter {
+            VirtualNode Counter() {
               var safeItems = Array.Empty<int>();
               var someVara = (
                 <Box>
@@ -9671,7 +9693,7 @@ component Comp {
     {
         var source = N(
             """
-            component Foo(IReadOnlyList<int>? items = null, Action? addItem = null, Action? setTopItem = null, Action? deleteLast = null, Action<int>? onCountChanged = null) {
+            VirtualNode Foo(IReadOnlyList<int>? items = null, Action? addItem = null, Action? setTopItem = null, Action? deleteLast = null, Action<int>? onCountChanged = null) {
               return (<Label text="hi" />);
             }
             """
@@ -9679,7 +9701,7 @@ component Comp {
 
         var expected = N(
             """
-            component Foo(
+            VirtualNode Foo(
               IReadOnlyList<int>? items = null,
               Action? addItem = null,
               Action? setTopItem = null,
@@ -9706,14 +9728,14 @@ component Comp {
     {
         var source = N(
             """
-            component Foo(int x = 0, string y = "hi") {
+            VirtualNode Foo(int x = 0, string y = "hi") {
               return (<Label text="hi" />);
             }
             """
         );
 
         var result = Format(source);
-        Assert.Contains("component Foo(int x = 0, string y = \"hi\") {", result);
+        Assert.Contains("VirtualNode Foo(int x = 0, string y = \"hi\") {", result);
         Assert.Equal(result, Format(result));
     }
 
@@ -9725,7 +9747,7 @@ component Comp {
     public void UITKX0111_UnusedParam_IsReported()
     {
         var source = N(
-            @"component Foo(int x = 0, string y = ""hi"") {
+            @"VirtualNode Foo(int x = 0, string y = ""hi"") {
   return (<Label text=""hello"" />);
 }"
         );
@@ -9740,7 +9762,7 @@ component Comp {
     public void UITKX0111_UsedParam_NoFalsePositive_InSetupCode()
     {
         var source = N(
-            @"component Foo(int x = 0) {
+            @"VirtualNode Foo(int x = 0) {
   var doubled = x * 2;
   return (<Label text={doubled.ToString()} />);
 }"
@@ -9753,7 +9775,7 @@ component Comp {
     public void UITKX0111_UsedParam_NoFalsePositive_InMarkup()
     {
         var source = N(
-            @"component Foo(string label = ""hi"") {
+            @"VirtualNode Foo(string label = ""hi"") {
   return (<Label text={label} />);
 }"
         );
@@ -9765,7 +9787,7 @@ component Comp {
     public void UITKX0111_MixedUsedAndUnused()
     {
         var source = N(
-            @"component Foo(int x = 0, string label = ""hi"") {
+            @"VirtualNode Foo(int x = 0, string label = ""hi"") {
   return (<Label text={label} />);
 }"
         );
@@ -9781,7 +9803,7 @@ component Comp {
         // `items` appears inside a local function as a local var — that
         // shadows the component parameter, so the parameter is still unused.
         var source = N(
-            @"component Foo(int items = 0) {
+            @"VirtualNode Foo(int items = 0) {
   void Shuffle()
   {
     var items = new List<int>();
@@ -9802,7 +9824,7 @@ component Comp {
         // `items` used inside a local function WITHOUT redeclaring it
         // → the parameter IS being used.
         var source = N(
-            @"component Foo(int items = 0) {
+            @"VirtualNode Foo(int items = 0) {
   void DoWork()
   {
     Console.WriteLine(items);
@@ -9820,7 +9842,7 @@ component Comp {
         // The declaration `var items = f(items)` shadows the name, but the
         // RHS still references the parameter — so the param IS used.
         var source = N(
-            @"component Foo(int items = 0) {
+            @"VirtualNode Foo(int items = 0) {
   var items = items + 1;
   return (<Label text={items.ToString()} />);
 }"
@@ -9839,13 +9861,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert a blank line right before the main "return ("
@@ -9869,13 +9889,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert many blank lines right before the main "return ("
@@ -9938,13 +9956,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert blank lines between return ( and <ScrollView
@@ -9967,13 +9983,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         // Read with CRLF line endings
         var source = File.ReadAllText(file).Replace("\r\n", "\n").Replace("\n", "\r\n");
 
@@ -9997,13 +10011,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         // Read the raw file (CRLF on Windows)
         var source = File.ReadAllText(file);
         var diags = new System.Collections.Generic.List<Ruitk.Language.ParseDiagnostic>();
@@ -10024,13 +10036,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert a dummy var assignment before the main return
@@ -10053,13 +10063,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Insert a fragment var assignment before the main return (user's exact pattern)
@@ -10082,13 +10090,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // Round 1: add var + format
@@ -10161,20 +10167,20 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
         // User's exact reproduction: add blank lines between the ternary and return (
+        // Re-anchored mutation (see RealFile_BlankLineSweep_CRLFEdits_NoCorruption):
+        // blanks after the markup-return open paren, which the formatter always removes.
         var blanks = new string('\n', extraBlanks);
         var modified = source.Replace(
-            ": string.Join(\", \", options);\n\n  return (",
-            ": string.Join(\", \", options);\n" + blanks + "\n  return ("
+            "\n  return (\n",
+            "\n  return (\n" + blanks
         );
         Assert.NotEqual(source, modified);
 
@@ -10404,20 +10410,22 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var sourceLF = N(File.ReadAllText(file));
 
-        // Add extra blank lines (LF)
+        // Add extra blank lines (LF) right after the component's markup-return
+        // open paren - a spot the formatter always normalizes, so the per-line
+        // edit machinery is genuinely exercised. (The previous anchor tied the
+        // string.Join line directly to the return; the fixture has since grown
+        // content between them.)
         var blanks = new string('\n', extraBlanks);
         var modifiedLF = sourceLF.Replace(
-            ": string.Join(\", \", options);\n\n  return (",
-            ": string.Join(\", \", options);\n" + blanks + "\n  return ("
+            "\n  return (\n",
+            "\n  return (\n" + blanks
         );
         Assert.NotEqual(sourceLF, modifiedLF);
 
@@ -10497,13 +10505,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var sourceLF = N(File.ReadAllText(file));
         var formatted = FormatWithRoslyn(sourceLF);
 
@@ -10597,19 +10603,19 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
         var source = N(File.ReadAllText(file));
 
+        // Re-anchored mutation (see RealFile_BlankLineSweep_CRLFEdits_NoCorruption):
+        // blanks after the markup-return open paren, which the formatter always removes.
         var blanks = new string('\n', extraBlanks);
         var modified = source.Replace(
-            ": string.Join(\", \", options);\n\n  return (",
-            ": string.Join(\", \", options);\n" + blanks + "\n  return ("
+            "\n  return (\n",
+            "\n  return (\n" + blanks
         );
         Assert.NotEqual(source, modified);
 
@@ -10672,12 +10678,12 @@ component Comp {
     public void HookFile_NotDestroyed_PreservesContent()
     {
         // Regression: formatter used to route hook files through
-        // FormatFunctionStyleComponent, emitting `component Component { return (); }`
+        // FormatFunctionStyleComponent, emitting `VirtualNode Component() { return (); }`
         var source = N(
             """
             @namespace MyApp
 
-            hook useCounter() -> (int count, Action increment) {
+            (int count, Action increment) useCounter() {
               var (count, setCount) = useState(0);
               Action increment = () => setCount(c => c + 1);
               return (count, increment);
@@ -10687,7 +10693,7 @@ component Comp {
 
         var result = Format(source);
 
-        Assert.Contains("hook useCounter()", result);
+        Assert.Contains("(int count, Action increment) useCounter()", result);
         Assert.Contains("var (count, setCount) = useState(0);", result);
         Assert.Contains("return (count, increment);", result);
         Assert.DoesNotContain("component Component", result);
@@ -10724,7 +10730,7 @@ component Comp {
             """
             @namespace MyApp
 
-            hook useCounter() -> (int count, Action increment) {
+            (int count, Action increment) useCounter() {
               var (count, setCount) = useState(0);
               Action increment = () => setCount(c => c + 1);
               return (count, increment);
@@ -10767,14 +10773,14 @@ component Comp {
             """
             @namespace MyApp
 
-            hook useFlag() -> bool {
+            bool useFlag() {
               return true;
             }
             """
         );
 
         var result = Format(source);
-        Assert.Contains("hook useFlag() -> bool {", result);
+        Assert.Contains("bool useFlag() {", result);
     }
 
     [Fact]
@@ -10785,7 +10791,7 @@ component Comp {
             """
             @namespace MyApp
 
-            hook useData(string veryLongParamNameOne, string veryLongParamNameTwo, int anotherLongParam) -> int {
+            int useData(string veryLongParamNameOne, string veryLongParamNameTwo, int anotherLongParam) {
               return 42;
             }
             """
@@ -10793,12 +10799,12 @@ component Comp {
 
         var result = Format(source);
 
-        // Should be wrapped one-per-line
-        Assert.Contains("hook useData(\n", result);
+        // Should be wrapped one-per-line (modern head shape, 0.16.0).
+        Assert.Contains("int useData(\n", result);
         Assert.Contains("  string veryLongParamNameOne,", result);
         Assert.Contains("  string veryLongParamNameTwo,", result);
         Assert.Contains("  int anotherLongParam\n", result);
-        Assert.Contains(") -> int {", result);
+        Assert.Contains(") {", result);
     }
 
     [Fact]
@@ -10808,7 +10814,7 @@ component Comp {
             """
             @namespace MyApp
 
-            hook useGameState() -> (bool gameStarted, string playerTurn, string winnerMessage, PointerEventHandler handleStart) {
+            (bool gameStarted, string playerTurn, string winnerMessage, PointerEventHandler handleStart) useGameState() {
               return (false, "X", "", null);
             }
             """
@@ -10816,11 +10822,12 @@ component Comp {
 
         var result = Format(source);
 
-        Assert.Contains(") -> (\n", result);
+        // Modern shape (0.16.0): the tuple RETURN wraps ahead of the name.
+        Assert.Contains("(\n", result);
         Assert.Contains("  bool gameStarted,", result);
         Assert.Contains("  string playerTurn,", result);
         Assert.Contains("  PointerEventHandler handleStart\n", result);
-        Assert.Contains(") {", result);
+        Assert.Contains(") useGameState() {", result);
     }
 
     [Fact]
@@ -10830,7 +10837,7 @@ component Comp {
             """
             @namespace MyApp
 
-            hook useBigHook(string paramAlpha, string paramBeta, int paramGamma) -> (bool flagOne, string valueTwo, int countThree, Action callbackFour) {
+            (bool flagOne, string valueTwo, int countThree, Action callbackFourLonger) useBigHook(string paramAlpha, string paramBeta, int paramGamma) {
               return (true, "x", 0, () => {});
             }
             """
@@ -10838,13 +10845,12 @@ component Comp {
 
         var result = Format(source);
 
-        // Params wrapped
-        Assert.Contains("hook useBigHook(\n", result);
-        Assert.Contains("  string paramAlpha,", result);
-        // Return tuple wrapped
-        Assert.Contains(") -> (\n", result);
+        // Modern shape (0.16.0): tuple return wraps first, then params.
+        Assert.Contains("(\n", result);
         Assert.Contains("  bool flagOne,", result);
-        Assert.Contains("  Action callbackFour\n", result);
+        Assert.Contains("  Action callbackFourLonger\n", result);
+        Assert.Contains(") useBigHook(\n", result);
+        Assert.Contains("  string paramAlpha,", result);
         Assert.Contains(") {", result);
     }
 
@@ -10855,11 +10861,11 @@ component Comp {
             """
             @namespace MyApp
 
-            hook useAlpha() -> int {
+            int useAlpha() {
               return 1;
             }
 
-            hook useBeta() -> string {
+            string useBeta() {
               return "hello";
             }
             """
@@ -10867,8 +10873,8 @@ component Comp {
 
         var result = Format(source);
 
-        Assert.Contains("hook useAlpha() -> int {", result);
-        Assert.Contains("hook useBeta() -> string {", result);
+        Assert.Contains("int useAlpha() {", result);
+        Assert.Contains("string useBeta() {", result);
         Assert.Contains("return 1;", result);
         Assert.Contains("return \"hello\";", result);
     }
@@ -10880,7 +10886,7 @@ component Comp {
             """
             @namespace MyApp
 
-            hook useCounter() -> int {
+            int useCounter() {
               return 0;
             }
 
@@ -10892,7 +10898,7 @@ component Comp {
 
         var result = Format(source);
 
-        Assert.Contains("hook useCounter() -> int {", result);
+        Assert.Contains("int useCounter() {", result);
         Assert.Contains("module Counter {", result);
         Assert.Contains("public static readonly int X = 42;", result);
     }
@@ -10903,13 +10909,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.hooks.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
 
         var source = N(File.ReadAllText(file));
         var first = Format(source);
@@ -10923,13 +10927,11 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.style.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
 
         var source = N(File.ReadAllText(file));
         var first = Format(source);
@@ -10943,19 +10945,18 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.hooks.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
 
         var source = N(File.ReadAllText(file));
         var result = Format(source);
 
-        Assert.Contains("hook useTestCounter()", result);
-        Assert.Contains("hook useTestFormState(", result);
+        Assert.Contains("useTestCounter()", result);
+        Assert.Contains("useTestFormState(", result);
+        Assert.Contains("export (", result);
         Assert.DoesNotContain("component Component", result);
     }
 
@@ -10965,19 +10966,16 @@ component Comp {
         var file = Path.Combine(
             WorkspaceRoot(),
             "Samples",
-            "UITKX",
             "Components",
             "UitkxTestFileDoNotTouch",
             "UitkxTestFileDoNotTouch.style.uitkx"
         );
-        if (!File.Exists(file))
-            return;
+        Assert.True(File.Exists(file), $"fixture not found at {file}");
 
         var source = N(File.ReadAllText(file));
         var result = Format(source);
 
-        Assert.Contains("module UitkxTestFileDoNotTouch {", result);
-        Assert.Contains("ContainerStyle", result);
+        Assert.Contains("export Style ContainerStyle", result);
         Assert.DoesNotContain("component Component", result);
     }
 
@@ -10986,7 +10984,7 @@ component Comp {
     [Fact]
     public void LeadingLineComment_Header_Survives()
     {
-        var source = "// My license header\ncomponent Foo {\n    return (\n        <Label text=\"hi\" />\n    );\n}\n";
+        var source = "// My license header\nVirtualNode Foo() {\n    return (\n        <Label text=\"hi\" />\n    );\n}\n";
         var result = Format(source);
         Assert.Contains("// My license header", result);
         Assert.StartsWith("// My license header", result);
@@ -10995,7 +10993,7 @@ component Comp {
     [Fact]
     public void LeadingLineComment_Header_IsIdempotent()
     {
-        var source = "// My license header\ncomponent Foo {\n    return (\n        <Label text=\"hi\" />\n    );\n}\n";
+        var source = "// My license header\nVirtualNode Foo() {\n    return (\n        <Label text=\"hi\" />\n    );\n}\n";
         var once = Format(source);
         var twice = Format(once);
         Assert.Equal(once, twice);
@@ -11004,7 +11002,7 @@ component Comp {
     [Fact]
     public void LeadingBlockComment_Header_Survives()
     {
-        var source = "/* Copyright 2026 */\ncomponent Foo {\n    return (\n        <Label text=\"hi\" />\n    );\n}\n";
+        var source = "/* Copyright 2026 */\nVirtualNode Foo() {\n    return (\n        <Label text=\"hi\" />\n    );\n}\n";
         var result = Format(source);
         Assert.Contains("/* Copyright 2026 */", result);
     }
@@ -11012,7 +11010,7 @@ component Comp {
     [Fact]
     public void LeadingComment_BetweenUsingLines_Survives()
     {
-        var source = "using System;\n// keep this using too\nusing System.Linq;\ncomponent Foo {\n    return (\n        <Label text=\"hi\" />\n    );\n}\n";
+        var source = "using System;\n// keep this using too\nusing System.Linq;\nVirtualNode Foo() {\n    return (\n        <Label text=\"hi\" />\n    );\n}\n";
         var result = Format(source);
         Assert.Contains("// keep this using too", result);
         Assert.Contains("@using System", result);
@@ -11022,7 +11020,7 @@ component Comp {
     [Fact]
     public void LeadingComment_HookModuleFile_Survives()
     {
-        var source = "// hook file header\nhook useCounter(int initial = 0) -> (int, Action) {\n    var (n, setN) = useState(initial);\n    return (n, () => setN(n + 1));\n}\n";
+        var source = "// hook file header\n(int, Action) useCounter(int initial = 0) {\n    var (n, setN) = useState(initial);\n    return (n, () => setN(n + 1));\n}\n";
         var result = Format(source);
         Assert.Contains("// hook file header", result);
         Assert.StartsWith("// hook file header", result);
@@ -11033,7 +11031,7 @@ component Comp {
     [Fact]
     public void InlineAttrJsx_ExpressionChild_Survives()
     {
-        var source = "component Foo {\n    return (\n        <Box header={<Box><Label text=\"t\" />{1 + 1}</Box>} />\n    );\n}\n";
+        var source = "VirtualNode Foo() {\n    return (\n        <Box header={<Box><Label text=\"t\" />{1 + 1}</Box>} />\n    );\n}\n";
         var result = Format(source);
         Assert.Contains("{1 + 1}", result);
     }
@@ -11041,7 +11039,7 @@ component Comp {
     [Fact]
     public void InlineAttrJsx_ExpressionChild_IsIdempotent()
     {
-        var source = "component Foo {\n    return (\n        <Box header={<Box><Label text=\"t\" />{1 + 1}</Box>} />\n    );\n}\n";
+        var source = "VirtualNode Foo() {\n    return (\n        <Box header={<Box><Label text=\"t\" />{1 + 1}</Box>} />\n    );\n}\n";
         var once = Format(source);
         var twice = Format(once);
         Assert.Equal(once, twice);
@@ -11050,7 +11048,7 @@ component Comp {
     [Fact]
     public void InlineAttrJsx_CommentChild_Survives()
     {
-        var source = "component Foo {\n    return (\n        <Box header={<Box>/* keep me */<Label text=\"t\" /></Box>} />\n    );\n}\n";
+        var source = "VirtualNode Foo() {\n    return (\n        <Box header={<Box>/* keep me */<Label text=\"t\" /></Box>} />\n    );\n}\n";
         var result = Format(source);
         Assert.Contains("keep me", result);
     }
@@ -11060,7 +11058,7 @@ component Comp {
     [Fact]
     public void VerbatimString_MultilineInterior_ByteIdentical()
     {
-        var source = "component Foo {\n    var s = @\"line1\n    }\n  indented content\n\";\n    return (\n        <Label text={s} />\n    );\n}\n";
+        var source = "VirtualNode Foo() {\n    var s = @\"line1\n    }\n  indented content\n\";\n    return (\n        <Label text={s} />\n    );\n}\n";
         var result = Format(source);
         Assert.Contains("\n    }\n", result);
         Assert.Contains("\n  indented content\n", result);
@@ -11069,7 +11067,7 @@ component Comp {
     [Fact]
     public void VerbatimString_MultilineInterior_IsIdempotent()
     {
-        var source = "component Foo {\n    var s = @\"line1\n    }\n  indented content\n\";\n    return (\n        <Label text={s} />\n    );\n}\n";
+        var source = "VirtualNode Foo() {\n    var s = @\"line1\n    }\n  indented content\n\";\n    return (\n        <Label text={s} />\n    );\n}\n";
         var once = Format(source);
         var twice = Format(once);
         Assert.Equal(once, twice);
@@ -11078,7 +11076,7 @@ component Comp {
     [Fact]
     public void DollarAtVerbatimString_MultilineInterior_ByteIdentical()
     {
-        var source = "component Foo {\n    var s = $@\"line1\n    }\n  indented {content}\n\";\n    return (\n        <Label text={s} />\n    );\n}\n";
+        var source = "VirtualNode Foo() {\n    var s = $@\"line1\n    }\n  indented {content}\n\";\n    return (\n        <Label text={s} />\n    );\n}\n";
         var result = Format(source);
         Assert.Contains("\n    }\n", result);
         Assert.Contains("\n  indented {content}\n", result);
@@ -11089,7 +11087,7 @@ component Comp {
     [Fact]
     public void SwitchCase_GlobalQualifiedValue_NotMangled()
     {
-        var source = "component Foo {\n    var mode = 1;\n    return (\n        <Box>\n            @switch (mode) {\n                @case global::System.StringComparison.Ordinal:\n                    <Label text=\"a\" />\n                @default:\n                    <Label text=\"b\" />\n            }\n        </Box>\n    );\n}\n";
+        var source = "VirtualNode Foo() {\n    var mode = 1;\n    return (\n        <Box>\n            @switch (mode) {\n                @case global::System.StringComparison.Ordinal:\n                    <Label text=\"a\" />\n                @default:\n                    <Label text=\"b\" />\n            }\n        </Box>\n    );\n}\n";
         var result = Format(source);
         Assert.Contains("@case global::System.StringComparison.Ordinal:", result);
         Assert.Contains("<Label text=\"a\" />", result);
@@ -11099,7 +11097,7 @@ component Comp {
     [Fact]
     public void SwitchCase_GlobalQualifiedValue_IsIdempotent()
     {
-        var source = "component Foo {\n    var mode = 1;\n    return (\n        <Box>\n            @switch (mode) {\n                @case global::System.StringComparison.Ordinal:\n                    <Label text=\"a\" />\n                @default:\n                    <Label text=\"b\" />\n            }\n        </Box>\n    );\n}\n";
+        var source = "VirtualNode Foo() {\n    var mode = 1;\n    return (\n        <Box>\n            @switch (mode) {\n                @case global::System.StringComparison.Ordinal:\n                    <Label text=\"a\" />\n                @default:\n                    <Label text=\"b\" />\n            }\n        </Box>\n    );\n}\n";
         var once = Format(source);
         var twice = Format(once);
         Assert.Equal(once, twice);
@@ -11108,7 +11106,7 @@ component Comp {
     // ── U-36: setup-code JSX splice-index desync must not swap block content ───
 
     private const string U36Repro =
-        "component Foo {\n" +
+        "VirtualNode Foo() {\n" +
         "    var cond = true;\n" +
         "    var x = (@if (cond) { <Label text=\"a\" /> } @else { <Label text=\"b\" /> });\n" +
         "    var y = (\n" +
@@ -11153,7 +11151,7 @@ component Comp {
     {
         // No other real JSX in setup code — routes through EmitSetupCodeNormalized.
         var source =
-            "component Foo {\n" +
+            "VirtualNode Foo() {\n" +
             "  /*\n" +
             "    return (\n" +
             "      <Label text={x} />\n" +
@@ -11180,7 +11178,7 @@ component Comp {
         // so this routes through EmitSetupCodeWithJsx's raw-C#-reindent fallback —
         // the exact path where the real UitkxTestFileDoNotTouch sample regressed.
         var source =
-            "component Foo {\n" +
+            "VirtualNode Foo() {\n" +
             "  var myRef = 1;\n" +
             "  {/*\n" +
             "    return (\n" +

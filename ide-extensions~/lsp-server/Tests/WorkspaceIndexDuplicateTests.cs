@@ -55,8 +55,8 @@ public sealed class WorkspaceIndexDuplicateTests : IDisposable
     {
         var idx = new WorkspaceIndex();
 
-        var a = WriteUitkx("a/Foo.uitkx", "component Foo {\n  return ( <Label/> );\n}\n");
-        var b = WriteUitkx("b/Foo.uitkx", "component Foo {\n  return ( <Label/> );\n}\n");
+        var a = WriteUitkx("a/Foo.uitkx", "VirtualNode Foo() {\n  return ( <Label/> );\n}\n");
+        var b = WriteUitkx("b/Foo.uitkx", "VirtualNode Foo() {\n  return ( <Label/> );\n}\n");
 
         idx.Refresh(a);
         idx.Refresh(b);
@@ -72,8 +72,8 @@ public sealed class WorkspaceIndexDuplicateTests : IDisposable
     public void GetDuplicateDeclarations_ReportsConflict()
     {
         var idx = new WorkspaceIndex();
-        var a = WriteUitkx("x/Bar.uitkx", "component Bar {\n  return ( <Label/> );\n}\n");
-        var b = WriteUitkx("y/Bar.uitkx", "component Bar {\n  return ( <Label/> );\n}\n");
+        var a = WriteUitkx("x/Bar.uitkx", "VirtualNode Bar() {\n  return ( <Label/> );\n}\n");
+        var b = WriteUitkx("y/Bar.uitkx", "VirtualNode Bar() {\n  return ( <Label/> );\n}\n");
 
         idx.Refresh(a);
         idx.Refresh(b);
@@ -91,8 +91,8 @@ public sealed class WorkspaceIndexDuplicateTests : IDisposable
         // the shared name's whole bucket on a single-file delete, so the
         // surviving declarant disappeared from the index.
         var idx = new WorkspaceIndex();
-        var a = WriteUitkx("p/Baz.uitkx", "component Baz {\n  return ( <Label/> );\n}\n");
-        var b = WriteUitkx("q/Baz.uitkx", "component Baz {\n  return ( <Label/> );\n}\n");
+        var a = WriteUitkx("p/Baz.uitkx", "VirtualNode Baz() {\n  return ( <Label/> );\n}\n");
+        var b = WriteUitkx("q/Baz.uitkx", "VirtualNode Baz() {\n  return ( <Label/> );\n}\n");
 
         idx.Refresh(a);
         idx.Refresh(b);
@@ -111,14 +111,14 @@ public sealed class WorkspaceIndexDuplicateTests : IDisposable
         // Wave-1 regression guard: pre-fix re-indexing a renamed file
         // would evict the shared name from the OTHER file too.
         var idx = new WorkspaceIndex();
-        var a = WriteUitkx("m/Qux.uitkx", "component Qux {\n  return ( <Label/> );\n}\n");
-        var b = WriteUitkx("n/Qux.uitkx", "component Qux {\n  return ( <Label/> );\n}\n");
+        var a = WriteUitkx("m/Qux.uitkx", "VirtualNode Qux() {\n  return ( <Label/> );\n}\n");
+        var b = WriteUitkx("n/Qux.uitkx", "VirtualNode Qux() {\n  return ( <Label/> );\n}\n");
 
         idx.Refresh(a);
         idx.Refresh(b);
 
         // Edit a to rename component Qux -> Qux2
-        File.WriteAllText(a, "component Qux2 {\n  return ( <Label/> );\n}\n");
+        File.WriteAllText(a, "VirtualNode Qux2() {\n  return ( <Label/> );\n}\n");
         idx.Refresh(a);
 
         var qux = idx.GetAllElementInfo("Qux");
@@ -134,7 +134,7 @@ public sealed class WorkspaceIndexDuplicateTests : IDisposable
     public void DeleteSoleDeclarant_RemovesNameEntirely()
     {
         var idx = new WorkspaceIndex();
-        var a = WriteUitkx("only/Solo.uitkx", "component Solo {\n  return ( <Label/> );\n}\n");
+        var a = WriteUitkx("only/Solo.uitkx", "VirtualNode Solo() {\n  return ( <Label/> );\n}\n");
         idx.Refresh(a);
         Assert.Single(idx.GetAllElementInfo("Solo"));
 
@@ -149,7 +149,7 @@ public sealed class WorkspaceIndexDuplicateTests : IDisposable
     public void NonDuplicate_DoesNotAppearInGetDuplicateDeclarations()
     {
         var idx = new WorkspaceIndex();
-        var a = WriteUitkx("u/Unique.uitkx", "component Unique {\n  return ( <Label/> );\n}\n");
+        var a = WriteUitkx("u/Unique.uitkx", "VirtualNode Unique() {\n  return ( <Label/> );\n}\n");
         idx.Refresh(a);
 
         var dupes = idx.GetDuplicateDeclarations();

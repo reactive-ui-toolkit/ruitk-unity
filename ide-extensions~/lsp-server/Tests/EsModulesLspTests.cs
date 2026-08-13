@@ -102,6 +102,36 @@ namespace UitkxLanguageServer.Tests
         }
 
         [Fact]
+        public void Vdoc_MemberDeclNames_AreSourceMapped()
+        {
+            // The declared NAME is user-authored source, not scaffold: cursor-on-name
+            // must resolve through the source map so semantic tokens / definition /
+            // references / rename go through Roslyn instead of the text/TextMate
+            // heuristics (field repro: first-export navigation and case-dependent
+            // coloring of names in .style.uitkx companions).
+            string src =
+                "export Style containerStyle = new Style { };\n" +
+                "\n" +
+                "export Style ButtonStyles = new Style { };\n" +
+                "\n" +
+                "export int clamp(int v) { return v; }\n" +
+                "\n" +
+                "export (int value, System.Action reset) useCountdown(int start) {\n" +
+                "  return (start, null);\n" +
+                "}\n";
+            string p = F("Board.style.uitkx", src);
+            var vdoc = GenerateVdoc(p);
+
+            foreach (var name in new[] { "containerStyle", "ButtonStyles", "clamp", "useCountdown" })
+            {
+                int nameOffset = src.IndexOf(name, StringComparison.Ordinal);
+                var mapped = vdoc.Map.ToVirtualOffset(nameOffset);
+                Assert.True(mapped.HasValue, $"{name}: decl name is not source-mapped");
+                Assert.Equal(name, vdoc.Text.Substring(mapped!.Value.VirtualOffset, name.Length));
+            }
+        }
+
+        [Fact]
         public void Vdoc_HookMember_MapsAsHookBody()
         {
             string p = F("Countdown.uitkx",
@@ -128,7 +158,7 @@ namespace UitkxLanguageServer.Tests
         public void Vdoc_LegacyFile_Unchanged_NoExportsContainer()
         {
             string p = F("Legacy.uitkx",
-                "component Legacy {\n  return (<VisualElement />);\n}\n");
+                "VirtualNode Legacy() {\n  return (<VisualElement />);\n}\n");
             var vdoc = GenerateVdoc(p);
 
             Assert.DoesNotContain("__Exports", vdoc.Text);

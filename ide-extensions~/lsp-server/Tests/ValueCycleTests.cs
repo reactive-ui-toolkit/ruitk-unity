@@ -64,9 +64,9 @@ namespace UitkxLanguageServer.Tests
         {
             var idx = new WorkspaceIndex();
             string a = Write("A.hooks.uitkx",
-                "import { useB } from \"./B.hooks\"\n\nexport hook useA() { return useB(); }\n");
+                "import { useB } from \"./B.hooks\"\n\nexport void useA() { return useB(); }\n");
             string b = Write("B.hooks.uitkx",
-                "import { useA } from \"./A.hooks\"\n\nexport hook useB() { return useA(); }\n");
+                "import { useA } from \"./A.hooks\"\n\nexport void useB() { return useA(); }\n");
             idx.Refresh(a);
             idx.Refresh(b);
 
@@ -90,7 +90,9 @@ namespace UitkxLanguageServer.Tests
                 bool value = names.Any(n =>
                 {
                     var k = idx.GetExportKind(tgt, n);
-                    return k == StrictImportDetector.ExportKind.Hook || k == StrictImportDetector.ExportKind.Module;
+                    return k == StrictImportDetector.ExportKind.Hook
+                        || k == StrictImportDetector.ExportKind.Module
+                        || k == StrictImportDetector.ExportKind.Util;
                 });
                 if (!value) continue;
                 string key = file.Replace('\\', '/');
@@ -104,8 +106,8 @@ namespace UitkxLanguageServer.Tests
         public void ComponentImports_AreNotValueEdges_NoCycle()
         {
             var idx = new WorkspaceIndex();
-            string a = Write("A.uitkx", "import { B } from \"./B\"\n\nexport component A { return (<B />); }\n");
-            string b = Write("B.uitkx", "import { A } from \"./A\"\n\nexport component B { return (<A />); }\n");
+            string a = Write("A.uitkx", "import { B } from \"./B\"\n\nexport VirtualNode A() { return (<B />); }\n");
+            string b = Write("B.uitkx", "import { A } from \"./A\"\n\nexport VirtualNode B() { return (<A />); }\n");
             idx.Refresh(a);
             idx.Refresh(b);
 

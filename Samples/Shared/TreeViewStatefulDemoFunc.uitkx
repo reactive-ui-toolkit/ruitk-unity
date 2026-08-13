@@ -2,7 +2,17 @@ import { IntroCounterFunc } from "./IntroCounterFunc"
 import "@UnityEngine.UIElements"
 import "@Ruitk.Samples.UITKXShared"
 
-export VirtualNode TreeViewStatefulDemoFunc(IReadOnlyList<TreeViewRowState>? rows = null, Action? addParent = null, Action? addChild = null, Action? setParent = null, Action? setChild = null, Action? deleteLast = null, IList<int>? expandedItemIds = null, TreeExpansionEventHandler? onExpandedChanged = null, Action<int>? onCountChanged = null) {
+export VirtualNode TreeViewStatefulDemoFunc(
+  IReadOnlyList<TreeViewRowState>? rows = null,
+  Action? addParent = null,
+  Action? addChild = null,
+  Action? setParent = null,
+  Action? setChild = null,
+  Action? deleteLast = null,
+  IList<int>? expandedItemIds = null,
+  TreeExpansionEventHandler? onExpandedChanged = null,
+  Action<int>? onCountChanged = null
+) {
   var safeRows = rows ?? Array.Empty<TreeViewRowState>();
 
   var rootItems = useMemo(() => {

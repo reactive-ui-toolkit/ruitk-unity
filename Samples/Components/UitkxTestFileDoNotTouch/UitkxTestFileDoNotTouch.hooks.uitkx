@@ -1,25 +1,13 @@
-@namespace Ruitk.Samples.UITKXComponents
-@using UnityEngine.UIElements
+import "@UnityEngine.UIElements"
 
-export hook useTestCounter() -> (
-  int count,
-  Action increment,
-  Action decrement
-) {
+export ( int count, Action increment, Action decrement ) useTestCounter() {
   var (count, setCount) = useState(0);
   Action increment = () => setCount(c => c + 1);
   Action decrement = () => setCount(c => c - 1);
   return (count, increment, decrement);
 }
 
-hook useTestFormState(
-  string initialFirstName,
-  string initialLastName,
-  string initialEmail,
-  int initialAge,
-  bool initialSubscribed,
-  string initialCountry
-) -> (
+export (
   string firstName,
   string lastName,
   string email,
@@ -32,6 +20,13 @@ hook useTestFormState(
   Hooks.StateSetter<int> setAge,
   Hooks.StateSetter<bool> setSubscribed,
   Hooks.StateSetter<string> setCountry
+) useTestFormState(
+  string initialFirstName,
+  string initialLastName,
+  string initialEmail,
+  int initialAge,
+  bool initialSubscribed,
+  string initialCountry
 ) {
   var (firstName, setFirstName) = useState(initialFirstName);
   var (lastName, setLastName) = useState(initialLastName);

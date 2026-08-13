@@ -40,7 +40,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void BasicScaffolding_ContainsNamespace()
     {
-        var source = "component Foo {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
+        var source = "VirtualNode Foo() {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
         var doc = Generate(source);
         Assert.Contains("namespace Ruitk.FunctionStyle", doc.Text);
     }
@@ -48,7 +48,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void BasicScaffolding_ContainsClassName()
     {
-        var source = "component Foo {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
+        var source = "VirtualNode Foo() {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
         var doc = Generate(source);
         Assert.Contains("Foo", doc.Text);
     }
@@ -56,7 +56,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void BasicScaffolding_MapIsNotEmpty()
     {
-        var source = "component Foo {\n  return (\n    <Label text={myVar}/>\n  );\n}";
+        var source = "VirtualNode Foo() {\n  return (\n    <Label text={myVar}/>\n  );\n}";
         var doc = Generate(source);
         Assert.True(doc.Map.Entries.Length > 0,
             "Expected at least one mapped entry for an expression attribute");
@@ -67,7 +67,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void ExpressionAttribute_MappedInVirtualDoc()
     {
-        var source = "component C {\n  return (\n    <Label text={myVar}/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text={myVar}/>\n  );\n}";
         var doc = Generate(source);
         Assert.Contains("myVar", doc.Text);
     }
@@ -75,7 +75,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void InlineExpression_MappedInVirtualDoc()
     {
-        var source = "component C {\n  return (\n    <Box>\n      {someExpr}\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      {someExpr}\n    </Box>\n  );\n}";
         var doc = Generate(source);
         Assert.Contains("someExpr", doc.Text);
     }
@@ -85,7 +85,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void CodeBlock_VerbatimCopied()
     {
-        var source = "component C {\n  int counter = 42;\n  return (\n    <Label/>\n  );\n}";
+        var source = "VirtualNode C() {\n  int counter = 42;\n  return (\n    <Label/>\n  );\n}";
         var doc = Generate(source);
         Assert.Contains("counter = 42", doc.Text);
     }
@@ -95,7 +95,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void FunctionStyle_SetupCodeCopied()
     {
-        var source = "component Counter {\n  int x = 10;\n  return (\n    <Label/>\n  );\n}";
+        var source = "VirtualNode Counter() {\n  int x = 10;\n  return (\n    <Label/>\n  );\n}";
         var doc = Generate(source);
         Assert.Contains("int x = 10", doc.Text);
     }
@@ -105,7 +105,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void SourceMap_RoundTripsExpressionOffset()
     {
-        var source = "component C {\n  return (\n    <Label text={myVar}/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text={myVar}/>\n  );\n}";
         var doc = Generate(source);
 
         // Find "myVar" in the uitkx source
@@ -135,7 +135,7 @@ public sealed class VirtualDocumentTests
         // Before U-33 the virtual doc never emitted the switch expression at
         // all, so it had no Roslyn-backed hover/diagnostics/go-to-def.
         var source =
-            "component C {\n  string mode = \"a\";\n  return (\n    @switch (mode) {\n      @case \"a\":\n        <Label/>\n    }\n  );\n}";
+            "VirtualNode C() {\n  string mode = \"a\";\n  return (\n    @switch (mode) {\n      @case \"a\":\n        <Label/>\n    }\n  );\n}";
         var doc = Generate(source);
         Assert.Contains("mode", doc.Text);
     }
@@ -144,7 +144,7 @@ public sealed class VirtualDocumentTests
     public void SwitchExpression_SourceMap_RoundTrips()
     {
         var source =
-            "component C {\n  string switchVar = \"a\";\n  return (\n    @switch (switchVar) {\n      @case \"a\":\n        <Label/>\n    }\n  );\n}";
+            "VirtualNode C() {\n  string switchVar = \"a\";\n  return (\n    @switch (switchVar) {\n      @case \"a\":\n        <Label/>\n    }\n  );\n}";
         var doc = Generate(source);
 
         int uitkxIdx = source.LastIndexOf("switchVar"); // the usage inside @switch(...), not the declaration
@@ -164,7 +164,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void SourceMap_NonCSharpRegion_ReturnsNull()
     {
-        var source = "component C {\n  return (\n    <Label text=\"plain\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"plain\"/>\n  );\n}";
         var doc = Generate(source);
 
         // "component" keyword is not C#; should not map
@@ -175,7 +175,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void SourceMap_CodeBlockRegion_RoundTrips()
     {
-        var source = "component C {\n  int val = 99;\n  return (\n    <Label/>\n  );\n}";
+        var source = "VirtualNode C() {\n  int val = 99;\n  return (\n    <Label/>\n  );\n}";
         var doc = Generate(source);
 
         int uitkxIdx = source.IndexOf("val = 99");
@@ -192,7 +192,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void SourceMap_FunctionSetup_RegionKind()
     {
-        var source = "component Foo {\n  int z = 7;\n  return (\n    <Label/>\n  );\n}";
+        var source = "VirtualNode Foo() {\n  int z = 7;\n  return (\n    <Label/>\n  );\n}";
         var doc = Generate(source);
 
         int uitkxIdx = source.IndexOf("int z = 7");
@@ -208,7 +208,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void IsInCSharpRegion_TrueForExpression()
     {
-        var source = "component C {\n  return (\n    <Label text={myExpr}/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text={myExpr}/>\n  );\n}";
         var doc = Generate(source);
 
         int idx = source.IndexOf("myExpr");
@@ -218,7 +218,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void IsInCSharpRegion_FalseForMarkup()
     {
-        var source = "component C {\n  return (\n    <Label text=\"plain\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"plain\"/>\n  );\n}";
         var doc = Generate(source);
 
         int idx = source.IndexOf("<Label");
@@ -230,7 +230,7 @@ public sealed class VirtualDocumentTests
     [Fact]
     public void MultipleExpressions_AllMapped()
     {
-        var source = "component C {\n  return (\n    <Box>\n      <Label text={aaa}/>\n      <Label text={bbb}/>\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      <Label text={aaa}/>\n      <Label text={bbb}/>\n    </Box>\n  );\n}";
         var doc = Generate(source);
 
         Assert.Contains("aaa", doc.Text);
@@ -254,7 +254,7 @@ public sealed class VirtualDocumentTests
     public void JsxInChildTernary_StubbedInVirtualDoc()
     {
         var source =
-            "component C {\n"
+            "VirtualNode C() {\n"
             + "  bool flag = true;\n"
             + "  return (\n"
             + "    <Box>{flag ? <Label/> : null}</Box>\n"
@@ -274,7 +274,7 @@ public sealed class VirtualDocumentTests
     public void JsxInAttributeTernary_StubbedInVirtualDoc()
     {
         var source =
-            "component C {\n"
+            "VirtualNode C() {\n"
             + "  bool flag = true;\n"
             + "  return (\n"
             + "    <Label text={flag ? \"on\" : \"off\"}/>\n"
@@ -294,7 +294,7 @@ public sealed class VirtualDocumentTests
         // Phase 1 must not regress the no-JSX path: scanner runs, finds
         // nothing, single Mapped segment is emitted (same as pre-Phase-1).
         var source =
-            "component C {\n"
+            "VirtualNode C() {\n"
             + "  int n = 42;\n"
             + "  return (\n"
             + "    <Label text={n.ToString()}/>\n"

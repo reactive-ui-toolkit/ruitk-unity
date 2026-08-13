@@ -120,7 +120,7 @@ public sealed class NoPropsFuncWithChildrenRegressionTest
         const string outerSrc = """
             @namespace UI.App
 
-            component Outer {
+            VirtualNode Outer() {
                 return (
                     <Inner>
                         <Leaf/>
@@ -132,7 +132,7 @@ public sealed class NoPropsFuncWithChildrenRegressionTest
         const string innerSrc = """
             @namespace UI.App
 
-            component Inner {
+            VirtualNode Inner() {
                 return (
                     <VisualElement>
                         {__children}
@@ -144,7 +144,7 @@ public sealed class NoPropsFuncWithChildrenRegressionTest
         const string leafSrc = """
             @namespace UI.App
 
-            component Leaf {
+            VirtualNode Leaf() {
                 return (
                     <Label text="leaf"/>
                 );

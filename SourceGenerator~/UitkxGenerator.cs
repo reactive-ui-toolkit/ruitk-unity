@@ -169,7 +169,6 @@ namespace Ruitk.SourceGenerator
                     // same pass via GetTypeByMetadataName).
                     var peerComponentsBuilder = ImmutableArray.CreateBuilder<PeerComponentInfo>();
                     var peerHookContainersBuilder = ImmutableArray.CreateBuilder<PeerHookContainerInfo>();
-                    var peerModulesBuilder = ImmutableArray.CreateBuilder<PeerModuleInfo>();
                     var peerExportsBuilder = ImmutableArray.CreateBuilder<PeerExportsInfo>();
                     var importsByFile = new List<(string File, List<(string[] Names, string Specifier)> Imports)>();
                     foreach (var txt in uitkxFiles)
@@ -185,7 +184,6 @@ namespace Ruitk.SourceGenerator
                         CollectPeerComponentInfos(src, txt.Path, peerComponentsBuilder);
                         if (TryBuildPeerHookContainerInfo(src, txt.Path, out var hookInfo))
                             peerHookContainersBuilder.Add(hookInfo);
-                        CollectPeerModuleInfos(src, txt.Path, peerModulesBuilder);
                         if (TryBuildPeerExportsInfo(src, txt.Path, out var exportsInfo))
                             peerExportsBuilder.Add(exportsInfo);
                         importsByFile.Add((txt.Path, ExtractImportsForCycle(src)));
@@ -194,13 +192,10 @@ namespace Ruitk.SourceGenerator
                         peerComponentsBuilder.ToImmutable();
                     ImmutableArray<PeerHookContainerInfo> peerHookContainers =
                         peerHookContainersBuilder.ToImmutable();
-                    ImmutableArray<PeerModuleInfo> peerModules =
-                        peerModulesBuilder.ToImmutable();
                     ImmutableArray<PeerExportsInfo> peerExports =
                         peerExportsBuilder.ToImmutable();
-                    var valueCycles = UitkxFeatureFlags.StrictImports
-                        ? BuildValueCycleMap(importsByFile, peerHookContainers, peerModules, peerExports)
-                        : null;
+                    var valueCycles = BuildValueCycleMap(
+                        importsByFile, peerHookContainers, peerExports);
 
                     // ── Primary path: use AdditionalTexts (incremental-cache-aware) ─
                     // The .uitkx files are injected as <AdditionalFiles> by
@@ -215,7 +210,7 @@ namespace Ruitk.SourceGenerator
                         string? source = ReadUitkxSource(txt, ct);
                         if (source == null)
                             continue;
-                        results.Add(UitkxPipeline.Run(source, txt.Path, compilation, ct, peerComponents, peerHookContainers, peerModules, valueCycles, peerExports));
+                        results.Add(UitkxPipeline.Run(source, txt.Path, compilation, ct, peerComponents, peerHookContainers, valueCycles, peerExports));
                     }
 
                     // ── Fallback path: disk scan ───────────────────────────────────
@@ -259,7 +254,6 @@ namespace Ruitk.SourceGenerator
                             // Pre-scan for peer component names (same as the AdditionalTexts path)
                             var diskPeerBuilder = ImmutableArray.CreateBuilder<PeerComponentInfo>();
                             var diskHookBuilder = ImmutableArray.CreateBuilder<PeerHookContainerInfo>();
-                            var diskModuleBuilder = ImmutableArray.CreateBuilder<PeerModuleInfo>();
                             var diskExportsBuilder = ImmutableArray.CreateBuilder<PeerExportsInfo>();
                             var diskImportsByFile = new List<(string File, List<(string[] Names, string Specifier)> Imports)>();
                             foreach (string fp in diskFiles)
@@ -271,7 +265,6 @@ namespace Ruitk.SourceGenerator
                                 CollectPeerComponentInfos(raw, fp, diskPeerBuilder);
                                 if (TryBuildPeerHookContainerInfo(raw, fp, out var hookInfo))
                                     diskHookBuilder.Add(hookInfo);
-                                CollectPeerModuleInfos(raw, fp, diskModuleBuilder);
                                 if (TryBuildPeerExportsInfo(raw, fp, out var exportsInfo))
                                     diskExportsBuilder.Add(exportsInfo);
                                 diskImportsByFile.Add((fp, ExtractImportsForCycle(raw)));
@@ -280,13 +273,10 @@ namespace Ruitk.SourceGenerator
                                 diskPeerBuilder.ToImmutable();
                             ImmutableArray<PeerHookContainerInfo> diskPeerHookContainers =
                                 diskHookBuilder.ToImmutable();
-                            ImmutableArray<PeerModuleInfo> diskPeerModules =
-                                diskModuleBuilder.ToImmutable();
                             ImmutableArray<PeerExportsInfo> diskPeerExports =
                                 diskExportsBuilder.ToImmutable();
-                            var diskValueCycles = UitkxFeatureFlags.StrictImports
-                                ? BuildValueCycleMap(diskImportsByFile, diskPeerHookContainers, diskPeerModules, diskPeerExports)
-                                : null;
+                            var diskValueCycles = BuildValueCycleMap(
+                                diskImportsByFile, diskPeerHookContainers, diskPeerExports);
 
                             foreach (string filePath in diskFiles)
                             {
@@ -294,7 +284,7 @@ namespace Ruitk.SourceGenerator
                                 if (IsInsideIgnoredFolder(filePath))
                                     continue;
                                 string source = File.ReadAllText(filePath);
-                                results.Add(UitkxPipeline.Run(source, filePath, compilation, ct, diskPeerComponents, diskPeerHookContainers, diskPeerModules, diskValueCycles, diskPeerExports));
+                                results.Add(UitkxPipeline.Run(source, filePath, compilation, ct, diskPeerComponents, diskPeerHookContainers, diskValueCycles, diskPeerExports));
                             }
                         }
                     }
@@ -378,40 +368,6 @@ namespace Ruitk.SourceGenerator
             return additional;
         }
 
-        // Matches the component-name declaration in a .uitkx file:
-        //   component FooBarFunc {
-        private static readonly Regex s_componentNameRe = new Regex(
-            @"^component\s+([A-Z][a-zA-Z0-9_]*)",
-            RegexOptions.Multiline | RegexOptions.Compiled
-        );
-
-        // Matches a function-style component that declares at least one typed param:
-        //   component FooBar(type param = default) {
-        // Used to distinguish props-bearing components from no-params ones so that
-        // PropsResolver only generates a typed V.Func<T> call when a Props class
-        // will actually be emitted for the peer component.
-        private static readonly Regex s_funcParamsRe = new Regex(
-            @"^component\s+[A-Z][a-zA-Z0-9_]*\s*\(\s*[a-zA-Z]",
-            RegexOptions.Multiline | RegexOptions.Compiled
-        );
-
-        /// <summary>
-        /// Quickly extracts the declared component type name from raw .uitkx source text.
-        /// Returns null if no component declaration is found.
-        /// </summary>
-        private static string? ExtractComponentName(string source)
-        {
-            var m = s_componentNameRe.Match(source);
-            return m.Success ? m.Groups[1].Value : null;
-        }
-
-        /// <summary>
-        /// Returns true when the source declares a function-style component with at
-        /// least one typed param — i.e. a <c>XxxProps</c> class will be generated.
-        /// </summary>
-        private static bool HasFunctionStyleParams(string source)
-            => s_funcParamsRe.IsMatch(source);
-
         /// <summary>
         /// Adds a <see cref="PeerComponentInfo"/> for EVERY component declared in the file
         /// (not just the first) so the shared resolver + strict-import tables see all of a
@@ -433,43 +389,24 @@ namespace Ruitk.SourceGenerator
             if (string.IsNullOrEmpty(ns))
                 return;
 
-            if (!ds.ComponentDeclarations.IsDefaultOrEmpty)
+            if (ds.ComponentDeclarations.IsDefaultOrEmpty)
+                return;
+            foreach (var cd in ds.ComponentDeclarations)
             {
-                foreach (var cd in ds.ComponentDeclarations)
+                if (string.IsNullOrEmpty(cd.Name))
+                    continue;
+                builder.Add(new PeerComponentInfo(
+                    cd.Name,
+                    ns!,
+                    !cd.FunctionParams.IsDefaultOrEmpty,
+                    cd.FunctionParams.IsDefault
+                        ? ImmutableArray<FunctionParam>.Empty
+                        : cd.FunctionParams)
                 {
-                    if (string.IsNullOrEmpty(cd.Name))
-                        continue;
-                    builder.Add(new PeerComponentInfo(
-                        cd.Name,
-                        ns!,
-                        !cd.FunctionParams.IsDefaultOrEmpty,
-                        cd.FunctionParams.IsDefault
-                            ? ImmutableArray<FunctionParam>.Empty
-                            : cd.FunctionParams)
-                    {
-                        SourceFilePath = filePath,
-                        IsExported = cd.IsExported,
-                    });
-                }
-                return;
+                    SourceFilePath = filePath,
+                    IsExported = cd.IsExported,
+                });
             }
-
-            // Fallback: a parser path (or the regex-only extractor) set ComponentName
-            // without populating ComponentDeclarations. Preserves the pre-multi behavior.
-            string? name = ds.ComponentName ?? ExtractComponentName(source);
-            if (string.IsNullOrEmpty(name))
-                return;
-            builder.Add(new PeerComponentInfo(
-                name!,
-                ns!,
-                !ds.FunctionParams.IsDefaultOrEmpty,
-                ds.FunctionParams.IsDefault
-                    ? ImmutableArray<FunctionParam>.Empty
-                    : ds.FunctionParams)
-            {
-                SourceFilePath = filePath,
-                IsExported = true,
-            });
         }
 
         private static bool TryBuildPeerHookContainerInfo(
@@ -487,43 +424,18 @@ namespace Ruitk.SourceGenerator
                 return false;
             }
 
-            // New-mode file (ES-modules campaign, U-06): hooks are plain declarations on the
-            // per-file __Exports container; the container-name convention changes, the peer
-            // table shape does not.
-            if (!ds.UsesLegacySyntax)
-            {
-                var newModeHooks = ImmutableArray.CreateBuilder<string>();
-                if (!ds.MemberDeclarations.IsDefaultOrEmpty)
-                    foreach (var m in ds.MemberDeclarations)
-                        if (m.Kind == DeclKind.Hook && m.IsExported)
-                            newModeHooks.Add(m.Name);
-                if (newModeHooks.Count == 0)
-                {
-                    hookInfo = default!;
-                    return false;
-                }
-                hookInfo = new PeerHookContainerInfo(hookNs!, "__Exports")
-                {
-                    SourceFilePath = filePath,
-                    ExportedHookNames = newModeHooks.ToImmutable(),
-                };
-                return true;
-            }
-
-            if (ds.HookDeclarations.IsDefaultOrEmpty)
+            // Hooks are plain declarations on the per-file __Exports container (U-06).
+            var exportedHooks = ImmutableArray.CreateBuilder<string>();
+            if (!ds.MemberDeclarations.IsDefaultOrEmpty)
+                foreach (var m in ds.MemberDeclarations)
+                    if (m.Kind == DeclKind.Hook && m.IsExported)
+                        exportedHooks.Add(m.Name);
+            if (exportedHooks.Count == 0)
             {
                 hookInfo = default!;
                 return false;
             }
-            var exportedHooks = ImmutableArray.CreateBuilder<string>();
-            foreach (var h in ds.HookDeclarations)
-                if (h.IsExported)
-                    exportedHooks.Add(h.Name);
-
-            hookInfo = new PeerHookContainerInfo(
-                hookNs!,
-                Emitter.HookEmitter.DeriveContainerClassName(filePath)
-            )
+            hookInfo = new PeerHookContainerInfo(hookNs!, "__Exports")
             {
                 SourceFilePath = filePath,
                 ExportedHookNames = exportedHooks.ToImmutable(),
@@ -532,8 +444,7 @@ namespace Ruitk.SourceGenerator
         }
 
         /// <summary>
-        /// Builds the per-file export surface for a NEW-MODE (plain-declaration) peer (ES-modules
-        /// campaign, U-03). Legacy files never get an entry.
+        /// Builds the per-file export surface for a peer (ES-modules campaign, U-03).
         /// </summary>
         private static bool TryBuildPeerExportsInfo(
             string source,
@@ -544,7 +455,7 @@ namespace Ruitk.SourceGenerator
             var throwawayDiags = new List<ParseDiagnostic>();
             var ds = DirectiveParser.Parse(source, filePath, throwawayDiags);
             string? ns = UitkxPipeline.ResolveEffectiveNamespace(ds, filePath);
-            if (ds.UsesLegacySyntax || string.IsNullOrEmpty(ns)
+            if (string.IsNullOrEmpty(ns)
                 || (ds.MemberDeclarations.IsDefaultOrEmpty && ds.ComponentDeclarations.IsDefaultOrEmpty))
             {
                 exportsInfo = default!;
@@ -571,10 +482,6 @@ namespace Ruitk.SourceGenerator
             return true;
         }
 
-        /// <summary>
-        /// Appends a <see cref="PeerModuleInfo"/> for every <c>module</c> declared in the file
-        /// (import/export grammar, leg 3, M6b/strict). Module edges had no peer table before.
-        /// </summary>
         // Regex import scan for the value-cycle graph (import/export grammar §6): cheaper than a full
         // parse in the pre-scan, and the value-cycle only needs specifier + names.
         private static readonly Regex s_importScanRe = new Regex(
@@ -674,20 +581,16 @@ namespace Ruitk.SourceGenerator
         private static Dictionary<string, string> BuildValueCycleMap(
             List<(string File, List<(string[] Names, string Specifier)> Imports)> importsByFile,
             ImmutableArray<PeerHookContainerInfo> peerHooks,
-            ImmutableArray<PeerModuleInfo> peerModules,
             ImmutableArray<PeerExportsInfo> peerExports = default)
         {
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            // (normalized target path + '\0' + name) for every hook/module export = a value symbol.
+            // (normalized target path + '\0' + name) for every hook export = a value symbol.
             var valueExports = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var ph in peerHooks)
                 if (!string.IsNullOrEmpty(ph.SourceFilePath))
                     foreach (var n in ph.ExportedHookNames)
                         valueExports.Add(NormPath(ph.SourceFilePath) + "\0" + n);
-            foreach (var pm in peerModules)
-                if (pm.IsExported && !string.IsNullOrEmpty(pm.SourceFilePath))
-                    valueExports.Add(NormPath(pm.SourceFilePath) + "\0" + pm.Name);
 
             // New-mode files (audit M5): every exported MEMBER is a value symbol — values
             // eager-init via static field initializers; hooks/utils match the legacy graph's
@@ -768,18 +671,5 @@ namespace Ruitk.SourceGenerator
             return result;
         }
 
-        private static void CollectPeerModuleInfos(
-            string source, string filePath, ImmutableArray<PeerModuleInfo>.Builder builder)
-        {
-            var throwawayDiags = new List<ParseDiagnostic>();
-            var ds = DirectiveParser.Parse(source, filePath, throwawayDiags);
-            if (ds.ModuleDeclarations.IsDefaultOrEmpty)
-                return;
-            string? ns = UitkxPipeline.ResolveEffectiveNamespace(ds, filePath);
-            if (string.IsNullOrEmpty(ns))
-                return;
-            foreach (var m in ds.ModuleDeclarations)
-                builder.Add(new PeerModuleInfo(m.Name, ns!, m.IsExported) { SourceFilePath = filePath });
-        }
     }
 }

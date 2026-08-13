@@ -430,25 +430,10 @@ namespace Ruitk.EditorSupport.HMR
                 stepSw = Stopwatch.StartNew();
                 var sources = new List<string> { csharp };
 
-                // Include companion .uitkx files (.style, .hooks, .utils) as
-                // partial-class sources so module/hook members are available
-                // to the component in the same compilation unit.
-                // Also collects hook container class names so we can inject
-                // `using static Ns.XxxHooks;` into the component source.
-                var hookContainerFqns = new List<string>();
-                EmitCompanionUitkxSources(directives, uitkxPath, componentName, ns, sources, hookContainerFqns);
-
-                // Inject using-static for peer hook containers so the component
-                // can call hook methods (e.g. useXxx()) without qualification —
-                // mirrors SG's Stage 3d peer-hook-container injection.
-                bool srcUsesLegacy = !(GetProp(directives, "UsesLegacySyntax") is bool sul) || sul;
-                if (hookContainerFqns.Count > 0)
-                {
-                    var usingLines = new List<string>();
-                    foreach (var fqn in hookContainerFqns)
-                        usingLines.Add($"static {fqn}");
-                    sources[0] = InjectUsings(sources[0], ns, usingLines, srcUsesLegacy);
-                }
+                // Inline hot copies of member files this compile cannot otherwise
+                // reference (mid-session created/renamed import targets and same-stem
+                // companions).
+                EmitCompanionUitkxSources(directives, uitkxPath, componentName, sources);
 
                 // §6.2/§6.3 parity via the shared language-lib ImportScopeFacts: cross-folder
                 // imported hook containers PLUS type aliases for imported modules/components that
@@ -469,8 +454,6 @@ namespace Ruitk.EditorSupport.HMR
                         if (payloads != null)
                         {
                             var already = new HashSet<string>(System.StringComparer.Ordinal);
-                            foreach (var fqn in hookContainerFqns)
-                                already.Add("static " + fqn);
                             var aliasLines = new List<string>();
                             foreach (object p in payloads)
                             {
@@ -478,7 +461,7 @@ namespace Ruitk.EditorSupport.HMR
                                     aliasLines.Add(payload);
                             }
                             if (aliasLines.Count > 0)
-                                sources[0] = InjectUsings(sources[0], ns, aliasLines, srcUsesLegacy);
+                                sources[0] = InjectUsings(sources[0], ns, aliasLines);
                         }
                     }
                     catch
@@ -497,8 +480,7 @@ namespace Ruitk.EditorSupport.HMR
                 // set — and bind the component to it bare-name (the source-defined type shadows
                 // the project one; CS0436 is warning-tier).
                 {
-                    bool cUsesLegacy = !(GetProp(directives, "UsesLegacySyntax") is bool cul) || cul;
-                    if (!cUsesLegacy && !string.IsNullOrEmpty(ns))
+                    if (!string.IsNullOrEmpty(ns))
                     {
                         bool hasMembers = GetItems(GetProp(directives, "MemberDeclarations")).Count > 0;
                         bool hasAliasedImports = false;
@@ -537,7 +519,7 @@ namespace Ruitk.EditorSupport.HMR
                                                     ownLines.Add(payload);
                                             if (ownLines.Count > 0)
                                                 ownExports = InjectUsings(
-                                                    ownExports, ns, ownLines, usesLegacySyntax: false);
+                                                    ownExports, ns, ownLines);
                                         }
                                     }
                                     catch { }
@@ -545,8 +527,7 @@ namespace Ruitk.EditorSupport.HMR
                                 sources.Add(ownExports);
                                 sources[0] = InjectUsings(
                                     sources[0], ns,
-                                    new List<string> { $"static {ns}.__Exports" },
-                                    usesLegacySyntax: false);
+                                    new List<string> { $"static {ns}.__Exports" });
                             }
                         }
                     }
@@ -619,7 +600,6 @@ namespace Ruitk.EditorSupport.HMR
             public string EmittedComponentSource;
             public List<string> CompanionUitkxSources = new();
             public List<string> CompanionCsSources = new();
-            public List<string> HookContainerFqns = new();
             public HashSet<string> CompanionUitkxPathsConsumed = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase
             );
@@ -756,18 +736,16 @@ namespace Ruitk.EditorSupport.HMR
                     BuildHookFamilyKeyMap(directives, uitkxPath)
                 );
 
-                // Companion .uitkx pickup. EmitCompanionUitkxSources writes
-                // into the (sources, fqns) lists; we tee into our per-file
-                // bundle and remember which companion paths we consumed so
-                // the batch can dedupe shared style/hook files across members.
+                // Companion .uitkx pickup. EmitCompanionUitkxSources writes into
+                // the sources list; we tee into our per-file bundle and remember
+                // which companion paths we consumed so the batch can dedupe
+                // shared style/hook files across members.
                 var companionInline = new List<string>();
                 EmitCompanionUitkxSources(
                     directives,
                     uitkxPath,
                     componentName,
-                    ns,
-                    companionInline,
-                    artifacts.HookContainerFqns
+                    companionInline
                 );
 
                 // Track which companion paths were inlined. The companion file
@@ -784,17 +762,6 @@ namespace Ruitk.EditorSupport.HMR
                     }
                 }
                 artifacts.CompanionUitkxSources = companionInline;
-
-                // Inject the same `using static` lines that the per-file path
-                // prepends, but as a separate header source so we can leave
-                // the main C# string untouched. Empty when no peer hooks.
-                if (artifacts.HookContainerFqns.Count > 0)
-                {
-                    var usingLines = new System.Text.StringBuilder();
-                    foreach (var fqn in artifacts.HookContainerFqns)
-                        usingLines.AppendLine($"using static {fqn};");
-                    csharp = usingLines.ToString() + csharp;
-                }
 
                 artifacts.EmittedComponentSource = csharp;
 
@@ -1151,8 +1118,8 @@ namespace Ruitk.EditorSupport.HMR
         }
 
         /// <summary>
-        /// Compiles a hook or module .uitkx file (no component keyword).
-        /// Uses <see cref="HmrHookEmitter"/> to generate the C# source and
+        /// Compiles a member-only .uitkx file (no component declaration).
+        /// Uses <see cref="HmrHookEmitter.EmitExports"/> to generate the C# source and
         /// compiles it the same way as component files.
         /// </summary>
         private HmrCompileResult CompileHookModuleFile(
@@ -1165,8 +1132,8 @@ namespace Ruitk.EditorSupport.HMR
         {
             try
             {
-                // H-01: same error-first gate as the component path — a malformed hook/
-                // module signature must not silently emit from a recovered directive set.
+                // H-01: same error-first gate as the component path — a malformed member
+                // signature must not silently emit from a recovered directive set.
                 if (TryGetParseErrorMessage(diagList, uitkxPath, out string parseErrorMsg))
                 {
                     result.Error = parseErrorMsg;
@@ -1175,162 +1142,104 @@ namespace Ruitk.EditorSupport.HMR
 
                 result.IsHookModuleFile = true;
 
-                // New-mode member-only file (ES-modules campaign, U-02): every member lives on
+                // Member-only file (ES-modules campaign, U-02): every member lives on
                 // the per-file __Exports container — one emit covers values (static swap),
                 // utils (module-method delegate swap by name), and hooks (__{name}_body +
                 // SwapHooks against container "__Exports").
-                bool usesLegacy = !(GetProp(directives, "UsesLegacySyntax") is bool ul) || ul;
-                if (!usesLegacy)
+                result.HookContainerClass = "__Exports";
+
+                string exNs = ComputeEffectiveNs(directives, uitkxPath);
+                // Registry identity (rename-flow field find): the literal key "__Exports"
+                // collided EVERY member-only file onto one _hmrAssemblyPaths slot — each
+                // member compile deleted the previous file's DLL, hijacked its cached
+                // compilation, and invalidated its cross-ref. The key is the container FQN
+                // {ns}.__Exports: unique per file (new-mode namespaces are file-keyed),
+                // stable across edits, and directly usable as the genuinely-new probe FQN.
+                // Only the REGISTRY identity changes — the container TYPE NAME stays
+                // "__Exports" (SwapHooks resolves the type by HookContainerClass).
+                string exKey = string.IsNullOrEmpty(exNs) ? "__Exports" : exNs + ".__Exports";
+                result.ComponentName = exKey;
+                var exStepSw = Stopwatch.StartNew();
+                string exportsCSharp = HmrHookEmitter.EmitExports(
+                    directives, uitkxPath,
+                    effectiveNs: exNs,
+                    hookKeyMap: BuildHookFamilyKeyMap(directives, uitkxPath),
+                    bridgeLines: ComputeBridgeLines(directives, uitkxPath));
+                exStepSw.Stop();
+                result.EmitMs = exStepSw.Elapsed.TotalMilliseconds;
+
+                if (string.IsNullOrEmpty(exportsCSharp))
                 {
-                    result.HookContainerClass = "__Exports";
+                    result.Error = "No member declarations found";
+                    return result;
+                }
 
-                    string exNs = ComputeEffectiveNs(directives, uitkxPath);
-                    // Registry identity (rename-flow field find): the literal key "__Exports"
-                    // collided EVERY member-only file onto one _hmrAssemblyPaths slot — each
-                    // member compile deleted the previous file's DLL, hijacked its cached
-                    // compilation, and invalidated its cross-ref. The key is the container FQN
-                    // {ns}.__Exports: unique per file (new-mode namespaces are file-keyed),
-                    // stable across edits, and directly usable as the genuinely-new probe FQN.
-                    // Only the REGISTRY identity changes — the container TYPE NAME stays
-                    // "__Exports" (SwapHooks resolves the type by HookContainerClass).
-                    string exKey = string.IsNullOrEmpty(exNs) ? "__Exports" : exNs + ".__Exports";
-                    result.ComponentName = exKey;
-                    var exStepSw = Stopwatch.StartNew();
-                    string exportsCSharp = HmrHookEmitter.EmitExports(
-                        directives, uitkxPath,
-                        effectiveNs: exNs,
-                        hookKeyMap: BuildHookFamilyKeyMap(directives, uitkxPath),
-                        bridgeLines: ComputeBridgeLines(directives, uitkxPath));
-                    exStepSw.Stop();
-                    result.EmitMs = exStepSw.Elapsed.TotalMilliseconds;
-
-                    if (string.IsNullOrEmpty(exportsCSharp))
+                // Import payloads (audit H4): the SG rewrites the unit's usings through
+                // ResolveInjectedUsings before ExportsEmitter runs — without the same
+                // payloads here, a member body referencing an imported member/module
+                // (`padding = spacing`) compiles in the full build but CS0103s on every
+                // hot edit of the file. Same shared-ImportScopeFacts route as the
+                // component path above.
+                if (_importScopePayloads != null)
+                {
+                    try
                     {
-                        result.Error = "No member declarations found";
-                        return result;
-                    }
-
-                    // Import payloads (audit H4): the SG rewrites the unit's usings through
-                    // ResolveInjectedUsings before ExportsEmitter runs — without the same
-                    // payloads here, a member body referencing an imported member/module
-                    // (`padding = spacing`) compiles in the full build but CS0103s on every
-                    // hot edit of the file. Same shared-ImportScopeFacts route as the
-                    // component path above.
-                    if (_importScopePayloads != null)
-                    {
-                        try
+                        var exPayloads = _importScopePayloads.Invoke(
+                            null, new object[] { directives, uitkxPath }) as System.Collections.IEnumerable;
+                        if (exPayloads != null)
                         {
-                            var exPayloads = _importScopePayloads.Invoke(
-                                null, new object[] { directives, uitkxPath }) as System.Collections.IEnumerable;
-                            if (exPayloads != null)
-                            {
-                                var exLines = new List<string>();
-                                foreach (object p in exPayloads)
-                                    if (p is string payload && payload.Length > 0)
-                                        exLines.Add(payload);
-                                if (exLines.Count > 0)
-                                    exportsCSharp = InjectUsings(
-                                        exportsCSharp, exNs, exLines, usesLegacySyntax: false);
-                            }
-                        }
-                        catch
-                        {
-                            // Graceful: no injected import scope — matches the component path.
+                            var exLines = new List<string>();
+                            foreach (object p in exPayloads)
+                                if (p is string payload && payload.Length > 0)
+                                    exLines.Add(payload);
+                            if (exLines.Count > 0)
+                                exportsCSharp = InjectUsings(
+                                    exportsCSharp, exNs, exLines);
                         }
                     }
-                    bool anyHookMember = false;
-                    foreach (var m in GetItems(GetProp(directives, "MemberDeclarations")))
-                        if (string.Equals(GetProp(m, "Kind")?.ToString(), "Hook", StringComparison.Ordinal))
-                        { anyHookMember = true; break; }
-                    result.HasHooks = anyHookMember;
-
-                    exStepSw = Stopwatch.StartNew();
-                    var exAsm = CompileSources(
-                        new[] { exportsCSharp }, exKey, uitkxPath, out string exCompileError);
-                    exStepSw.Stop();
-                    result.CompileMs = exStepSw.Elapsed.TotalMilliseconds;
-                    if (exAsm == null)
+                    catch
                     {
-                        result.Error = exCompileError;
-                        return result;
+                        // Graceful: no injected import scope — matches the component path.
                     }
-                    result.LoadedAssembly = exAsm;
-
-                    // Value/util/hook propagation contract for member files (rename flow, c):
-                    // consumers bind this file's members either through the PROJECT assembly
-                    // ({ns}.__Exports compiled before the session → SwapModuleStatics copies
-                    // the hot statics onto the project type in place, no consumer recompile
-                    // needed) or — for files created/renamed mid-session, where no project
-                    // type exists — through THIS hot DLL via the cross-ref registry. The
-                    // designed propagation path for the latter is the controller's import
-                    // fan-out: each importer recompiles fresh against the LATEST DLL
-                    // registered under exKey and re-renders. That path only exists with the
-                    // registration below — without the genuinely-new mark, BuildCrossRefs
-                    // never hands this DLL to any importer compile.
-                    _memberRegistryKeysByFile[NormalizeRegistryPath(uitkxPath)] = exKey;
-                    // Null namespace arg: exKey IS the container FQN, so the probe FQN equals
-                    // the registry key (CheckIfGenuinelyNew concatenates ns + "." + name when
-                    // a namespace is passed, which would double-qualify here).
-                    if (!_genuinelyNewComponents.Contains(exKey))
-                        CheckIfGenuinelyNew(exKey, null);
-
-                    result.Success = true;
-                    return result;
                 }
+                bool anyHookMember = false;
+                foreach (var m in GetItems(GetProp(directives, "MemberDeclarations")))
+                    if (string.Equals(GetProp(m, "Kind")?.ToString(), "Hook", StringComparison.Ordinal))
+                    { anyHookMember = true; break; }
+                result.HasHooks = anyHookMember;
 
-                string containerClass = HmrHookEmitter.DeriveContainerClassName(uitkxPath);
-                result.HookContainerClass = containerClass;
-                result.ComponentName = containerClass;
-
-                var stepSw = Stopwatch.StartNew();
-
-                // ── Emit C# for hook bodies and/or module bodies ─────────
-                var sources = new List<string>();
-
-                string hookCSharp = HmrHookEmitter.Emit(directives, uitkxPath, containerClass,
-                    withTrampoline: false,
-                    effectiveNs: ComputeEffectiveNs(directives, uitkxPath),
-                    hookKeyMap: BuildHookFamilyKeyMap(directives, uitkxPath));
-                if (!string.IsNullOrEmpty(hookCSharp))
-                    sources.Add(hookCSharp);
-                // Records whether a hook container was actually emitted, so the
-                // controller only runs SwapHooks for files that have hooks
-                // (a module-only file has no container to find).
-                result.HasHooks = !string.IsNullOrEmpty(hookCSharp);
-
-                string moduleCSharp = HmrHookEmitter.EmitModules(
-                    directives, uitkxPath, ComputeEffectiveNs(directives, uitkxPath));
-                if (!string.IsNullOrEmpty(moduleCSharp))
-                    sources.Add(moduleCSharp);
-
-                if (sources.Count == 0)
+                exStepSw = Stopwatch.StartNew();
+                var exAsm = CompileSources(
+                    new[] { exportsCSharp }, exKey, uitkxPath, out string exCompileError);
+                exStepSw.Stop();
+                result.CompileMs = exStepSw.Elapsed.TotalMilliseconds;
+                if (exAsm == null)
                 {
-                    result.Error = "No hook or module declarations found";
+                    result.Error = exCompileError;
                     return result;
                 }
+                result.LoadedAssembly = exAsm;
 
-                stepSw.Stop();
-                result.EmitMs = stepSw.Elapsed.TotalMilliseconds;
+                // Value/util/hook propagation contract for member files (rename flow, c):
+                // consumers bind this file's members either through the PROJECT assembly
+                // ({ns}.__Exports compiled before the session → SwapModuleStatics copies
+                // the hot statics onto the project type in place, no consumer recompile
+                // needed) or — for files created/renamed mid-session, where no project
+                // type exists — through THIS hot DLL via the cross-ref registry. The
+                // designed propagation path for the latter is the controller's import
+                // fan-out: each importer recompiles fresh against the LATEST DLL
+                // registered under exKey and re-renders. That path only exists with the
+                // registration below — without the genuinely-new mark, BuildCrossRefs
+                // never hands this DLL to any importer compile.
+                _memberRegistryKeysByFile[NormalizeRegistryPath(uitkxPath)] = exKey;
+                // Null namespace arg: exKey IS the container FQN, so the probe FQN equals
+                // the registry key (CheckIfGenuinelyNew concatenates ns + "." + name when
+                // a namespace is passed, which would double-qualify here).
+                if (!_genuinelyNewComponents.Contains(exKey))
+                    CheckIfGenuinelyNew(exKey, null);
 
-                // ── Compile ──────────────────────────────────────────────
-                stepSw = Stopwatch.StartNew();
-                var asm = CompileSources(
-                    sources.ToArray(),
-                    containerClass,
-                    uitkxPath,
-                    out string compileError
-                );
-                stepSw.Stop();
-                result.CompileMs = stepSw.Elapsed.TotalMilliseconds;
-
-                if (asm == null)
-                {
-                    result.Error = compileError;
-                    return result;
-                }
-
-                result.LoadedAssembly = asm;
                 result.Success = true;
+                return result;
             }
             catch (Exception ex)
             {
@@ -1350,28 +1259,21 @@ namespace Ruitk.EditorSupport.HMR
 
         /// <summary>
         /// Discovers companion .uitkx files (e.g. Foo.style.uitkx, Foo.hooks.uitkx)
-        /// beside the component file, parses their directives, emits C# for their
-        /// module/hook bodies, and appends the generated sources to the list so they
-        /// are compiled together as partial-class fragments.
-        /// Also collects fully-qualified hook container class names (e.g. "Ns.FooHooks")
-        /// so the caller can inject <c>using static</c> directives into the component source.
+        /// beside the component file plus the component's file-import targets, and
+        /// inlines a hot __Exports copy for any member file no referenceable assembly
+        /// carries yet (mid-session created/renamed files). Cross-file member scope
+        /// itself is import-driven (ImportScopeFacts payloads at the call sites).
         /// </summary>
         private void EmitCompanionUitkxSources(
             object componentDirectives,
             string uitkxPath,
             string componentName,
-            string componentNs,
-            List<string> sources,
-            List<string> hookContainerFqns
+            List<string> sources
         )
         {
             var dir = Path.GetDirectoryName(uitkxPath);
             if (dir == null)
                 return;
-
-            // Track which companion paths we emit inline so the registry pass
-            // below doesn't add a duplicate `using static` for the same FQN.
-            var inlinePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             // Candidate set = name-glob companions (ComponentName.*.uitkx) UNION the
             // component's file-import targets. The real build compiles EVERY .uitkx in
@@ -1447,144 +1349,57 @@ namespace Ruitk.EditorSupport.HMR
 
                     // An imported COMPONENT file is a candidate now too (import-target
                     // discovery above) but is never inlined — component types resolve via
-                    // the real assembly + alias payloads. Skipping here also keeps the
-                    // mid-write warning below meaningful (a component file legitimately
-                    // has neither modules nor hooks).
+                    // the real assembly + alias payloads.
                     if (!string.IsNullOrEmpty((string)GetProp(companionDir, "ComponentName")))
                         continue;
 
-                    // NEW-MODE member files take their own branch (field find — the
-                    // copy-rename-to-style scenario): the legacy module/hook emitters below
-                    // were never meant to see plain-declaration sets (they crash on the
-                    // default legacy ImmutableArrays), and a file CREATED mid-session has no
-                    // {ns}.__Exports in the project assembly at all (reload locked) — the
-                    // injected using dangles into CS0234. Inline the target's __Exports into
-                    // the hot unit ONLY while no assembly THIS compilation can reference
-                    // carries the container: the project assemblies always can, and the
-                    // target's own hot DLL can once it is registered genuinely-new (that is
-                    // exactly the set BuildCrossRefs hands to Roslyn — always the LATEST DLL
-                    // for that file). The previous gate probed the whole AppDomain, so the
-                    // target's own FIRST hot compile turned inlining off permanently while
-                    // nothing referenced its DLL — the rename-flow dead end (CS0234 on every
-                    // importer recompile).
-                    bool candUsesLegacy = !(GetProp(companionDir, "UsesLegacySyntax") is bool cl2) || cl2;
-                    if (!candUsesLegacy)
+                    // Member-file inlining (field find — the copy-rename-to-style scenario):
+                    // a file CREATED mid-session has no {ns}.__Exports in the project
+                    // assembly at all (reload locked) — the injected using dangles into
+                    // CS0234. Inline the target's __Exports into the hot unit ONLY while no
+                    // assembly THIS compilation can reference carries the container: the
+                    // project assemblies always can, and the target's own hot DLL can once
+                    // it is registered genuinely-new (that is exactly the set BuildCrossRefs
+                    // hands to Roslyn — always the LATEST DLL for that file). The previous
+                    // gate probed the whole AppDomain, so the target's own FIRST hot compile
+                    // turned inlining off permanently while nothing referenced its DLL — the
+                    // rename-flow dead end (CS0234 on every importer recompile). A companion
+                    // with no member declarations carries nothing to inline (its markup/type
+                    // declarations resolve via the real assembly).
+                    if (GetItems(GetProp(companionDir, "MemberDeclarations")).Count > 0)
                     {
-                        if (GetItems(GetProp(companionDir, "MemberDeclarations")).Count > 0)
+                        string newModeNs = ComputeEffectiveNs(companionDir, file);
+                        string exportsFqn = newModeNs + ".__Exports";
+                        if (!string.IsNullOrEmpty(newModeNs)
+                            && !TypeExistsInProjectAssemblies(exportsFqn)
+                            && !HotExportsAvailable(exportsFqn))
                         {
-                            string newModeNs = ComputeEffectiveNs(companionDir, file);
-                            string exportsFqn = newModeNs + ".__Exports";
-                            if (!string.IsNullOrEmpty(newModeNs)
-                                && !TypeExistsInProjectAssemblies(exportsFqn)
-                                && !HotExportsAvailable(exportsFqn))
+                            string inlined = HmrHookEmitter.EmitExports(
+                                companionDir, file,
+                                effectiveNs: newModeNs,
+                                hookKeyMap: BuildHookFamilyKeyMap(companionDir, file),
+                                bridgeLines: ComputeBridgeLines(companionDir, file));
+                            if (!string.IsNullOrEmpty(inlined))
                             {
-                                string inlined = HmrHookEmitter.EmitExports(
-                                    companionDir, file,
-                                    effectiveNs: newModeNs,
-                                    hookKeyMap: BuildHookFamilyKeyMap(companionDir, file),
-                                    bridgeLines: ComputeBridgeLines(companionDir, file));
-                                if (!string.IsNullOrEmpty(inlined))
+                                if (_importScopePayloads != null)
                                 {
-                                    if (_importScopePayloads != null)
+                                    try
                                     {
-                                        try
+                                        var tp = _importScopePayloads.Invoke(
+                                            null, new object[] { companionDir, file }) as System.Collections.IEnumerable;
+                                        if (tp != null)
                                         {
-                                            var tp = _importScopePayloads.Invoke(
-                                                null, new object[] { companionDir, file }) as System.Collections.IEnumerable;
-                                            if (tp != null)
-                                            {
-                                                var tl = new List<string>();
-                                                foreach (object p in tp)
-                                                    if (p is string s && s.Length > 0) tl.Add(s);
-                                                if (tl.Count > 0)
-                                                    inlined = InjectUsings(inlined, newModeNs, tl, usesLegacySyntax: false);
-                                            }
+                                            var tl = new List<string>();
+                                            foreach (object p in tp)
+                                                if (p is string s && s.Length > 0) tl.Add(s);
+                                            if (tl.Count > 0)
+                                                inlined = InjectUsings(inlined, newModeNs, tl);
                                         }
-                                        catch { }
                                     }
-                                    sources.Add(inlined);
-                                    try { inlinePaths.Add(Path.GetFullPath(file)); } catch { }
+                                    catch { }
                                 }
+                                sources.Add(inlined);
                             }
-                        }
-                        continue;
-                    }
-
-                    // Emit module bodies (style constants, utility methods, etc.) under the
-                    // companion's EFFECTIVE namespace — same folder as the component, so the
-                    // partial-class fragment lands in the component's namespace and merges,
-                    // exactly like the SG's ModuleEmitter output in the real build.
-                    string companionNs = ComputeEffectiveNs(companionDir, file);
-                    string moduleCSharp = HmrHookEmitter.EmitModules(companionDir, file, companionNs);
-                    if (!string.IsNullOrEmpty(moduleCSharp))
-                    {
-                        sources.Add(moduleCSharp);
-                    }
-                    else
-                    {
-                        // Defensive diagnostic: the file name matched the
-                        // companion glob (ComponentName.*.uitkx) but emitted
-                        // no module body. This can mask cascade-compile bugs
-                        // where Container/Image/Label etc. fail to resolve in
-                        // the component because the partial class fragment
-                        // never made it into the compilation. Surface it so
-                        // future copy-rename or new-file races are diagnosable
-                        // from a single log line (see also: TexasOne
-                        // creation race tracked in HMR_DETERMINISM_REPORT.md).
-                        // GetItems is default-ImmutableArray-safe, so it can count BOTH arrays: a
-                        // .hooks companion legitimately has hook declarations and no modules — the
-                        // mid-write warning must fire only when the file has NEITHER (previously it
-                        // false-warned on every hooks companion, e.g. StressTest.hooks.uitkx).
-                        int moduleCount = GetItems(GetProp(companionDir, "ModuleDeclarations")).Count;
-                        int hookCount = GetItems(GetProp(companionDir, "HookDeclarations")).Count;
-                        // New-mode companions (ES-modules campaign): plain member declarations
-                        // are NOT inlined — the parent resolves them via the real assembly's
-                        // {ns}.__Exports + injected using payloads, and their own edits compile
-                        // through the member-only path. Legitimately neither modules nor hooks.
-                        int memberCount = GetItems(GetProp(companionDir, "MemberDeclarations")).Count;
-                        if (moduleCount == 0 && hookCount == 0 && memberCount == 0)
-                        {
-                            Debug.LogWarning(
-                                $"[HMR] Companion {Path.GetFileName(file)} matched the "
-                                + $"'{componentName}.*.uitkx' glob but its directives "
-                                + "contain no module or hook declarations -- the parent's "
-                                + "static member references (e.g. style identifiers "
-                                + "like 'Container') will fail to resolve. This "
-                                + "usually means the file was caught mid-write by "
-                                + "the watcher; re-save the .uitkx to retry."
-                            );
-                        }
-                    }
-
-                    // Emit hook bodies if the companion also defines custom hooks
-                    string containerClass = HmrHookEmitter.DeriveContainerClassName(file);
-                    string hookCSharp = HmrHookEmitter.Emit(
-                        companionDir,
-                        file,
-                        containerClass,
-                        withTrampoline: true,
-                        effectiveNs: companionNs,
-                        hookKeyMap: BuildHookFamilyKeyMap(companionDir, file)
-                    );
-                    if (!string.IsNullOrEmpty(hookCSharp))
-                    {
-                        sources.Add(hookCSharp);
-
-                        // Collect FQN so caller can inject using-static. Must be the SAME
-                        // effective namespace Emit() just placed the container in — the raw
-                        // parsed value pointed the using-static at a namespace where no
-                        // container exists for stamp-less companions.
-                        string hookNs = companionNs;
-                        if (string.IsNullOrEmpty(hookNs))
-                            hookNs = componentNs ?? "Ruitk.Generated";
-                        hookContainerFqns.Add($"{hookNs}.{containerClass}");
-
-                        try
-                        {
-                            inlinePaths.Add(Path.GetFullPath(file));
-                        }
-                        catch
-                        { /* ignore unfullable */
                         }
                     }
                 }
@@ -1595,43 +1410,7 @@ namespace Ruitk.EditorSupport.HMR
                     );
                 }
             }
-
-            // Cross-directory hook resolution. The same-folder pass above only
-            // sees files matching `<ComponentName>.*.uitkx`; hooks declared in
-            // a shared folder (e.g. Assets/UI/Hooks/UseUiDocumentSlot.hooks.uitkx
-            // consumed from Assets/UI/Pages/...) live elsewhere. The registry
-            // (seeded at HMR start) supplies their FQNs so the trampoline gets
-            // the right `using static` directives. Their .cs is already in the
-            // loaded assembly so we DO NOT add source — only the using line.
-            //
-            // Brief gate: if the seed scan hasn't completed yet (very first
-            // recompile after HMR start), wait up to 100 ms. Subsequent
-            // recompiles never block here.
-            if (!HookContainerRegistry.TryWaitForSeed(100))
-            {
-                if (!_warnedSeedTimeout)
-                {
-                    _warnedSeedTimeout = true;
-                    Debug.LogWarning(
-                        "[HMR] HookContainerRegistry seed exceeded 100 ms; "
-                            + "first recompile may miss cross-directory hooks. "
-                            + "Subsequent recompiles will pick them up."
-                    );
-                }
-            }
-
-            string ownerAsmdef = AsmdefResolver.OwningAsmdefName(uitkxPath);
-            var crossDir = HookContainerRegistry.GetForAsmdef(ownerAsmdef, inlinePaths);
-            if (crossDir.Count > 0)
-            {
-                var seenFqn = new HashSet<string>(hookContainerFqns, StringComparer.Ordinal);
-                foreach (var fqn in crossDir)
-                    if (seenFqn.Add(fqn))
-                        hookContainerFqns.Add(fqn);
-            }
         }
-
-        private bool _warnedSeedTimeout;
 
         /// <summary>
         /// Clears per-session caches without releasing the expensive Roslyn handles
@@ -1701,17 +1480,9 @@ namespace Ruitk.EditorSupport.HMR
                 {
                     // Member-only files cache under their per-file registry key
                     // ({ns}.__Exports) — mirror of CompileHookModuleFile's exKey.
-                    bool legacy = !(GetProp(directives, "UsesLegacySyntax") is bool ul) || ul;
-                    if (legacy)
-                    {
-                        componentName = HmrHookEmitter.DeriveContainerClassName(uitkxPath);
-                    }
-                    else
-                    {
-                        string invNs = ComputeEffectiveNs(directives, uitkxPath);
-                        componentName = string.IsNullOrEmpty(invNs)
-                            ? "__Exports" : invNs + ".__Exports";
-                    }
+                    string invNs = ComputeEffectiveNs(directives, uitkxPath);
+                    componentName = string.IsNullOrEmpty(invNs)
+                        ? "__Exports" : invNs + ".__Exports";
                 }
                 if (!string.IsNullOrEmpty(componentName))
                 {
@@ -1938,12 +1709,18 @@ namespace Ruitk.EditorSupport.HMR
             if (_canonicalLower == null)
                 throw new MissingMethodException("CanonicalLowering.LowerToRenderRoots not found");
 
-            // H-04: UitkxParser.ParseFragment (standalone JSX snippet parsing) replaces
+            // H-04: UitkxParser.ParseFragment (standalone JSX snippet parsing) replaced
             // the fragile synthetic-header-prepend trick previously used to parse
-            // embedded JSX fragments. Optional — older Language.dll builds may lack it;
-            // HMR falls back to the synthetic-header path when missing (see parseMarkup
-            // delegates in Compile/BuildComponentArtifacts).
+            // embedded JSX fragments. Required since 0.16.0: the legacy synthetic header
+            // used the removed wrapper grammar, and HMR ships in the same package as the
+            // committed Language.dll — a missing ParseFragment means a stale DLL, same
+            // loud-failure class as the EffectiveNamespace overload check above.
             _parseFragment = upType.GetMethod("ParseFragment", BindingFlags.Public | BindingFlags.Static);
+            if (_parseFragment == null)
+                throw new MissingMethodException(
+                    "UitkxParser.ParseFragment not found — the committed Analyzers/Ruitk.Language.dll "
+                    + "predates the fragment parser. Rebuild it with scripts/build-generator.ps1 "
+                    + "and restart Unity.");
         }
 
         private object CreateDiagnosticList()
@@ -1954,25 +1731,13 @@ namespace Ruitk.EditorSupport.HMR
 
         /// <summary>
         /// H-04: parses a standalone JSX fragment via <c>UitkxParser.ParseFragment</c>
-        /// when the loaded language-lib has it; falls back to the old fragile
-        /// synthetic-header-prepend trick for older committed DLLs that predate it.
+        /// (required — bind time fails loudly on a stale Language.dll without it).
         /// </summary>
         private IList ParseMarkupFragment(string jsxText, string path, int startLine)
         {
-            if (_parseFragment != null)
-            {
-                var diags = CreateDiagnosticList();
-                var nodes = InvokeWithDefaults(_parseFragment, null, jsxText, path, startLine, diags);
-                return GetItems(nodes);
-            }
-
-            // ── Fallback: older Language.dll without ParseFragment ────────────
-            string synthetic = "@namespace __Tmp\n@component __Tmp\n" + jsxText;
-            var miniDiags = CreateDiagnosticList();
-            var miniDir = InvokeWithDefaults(_directiveParse, null, synthetic, path, miniDiags, false);
-            var legacyNodes = InvokeWithDefaults(
-                _uitkxParse, null, synthetic, path, miniDir, miniDiags, false, 0);
-            return GetItems(legacyNodes);
+            var diags = CreateDiagnosticList();
+            var nodes = InvokeWithDefaults(_parseFragment, null, jsxText, path, startLine, diags);
+            return GetItems(nodes);
         }
 
         /// <summary>
@@ -2729,9 +2494,54 @@ namespace Ruitk.EditorSupport.HMR
                     $"dotnet runtime not found at {Path.Combine(dataDir, "NetCoreRuntime")}"
                 );
 
-            _cscPath = Path.Combine(dataDir, "DotNetSdkRoslyn", "csc.dll");
-            if (!File.Exists(_cscPath))
-                throw new FileNotFoundException($"Roslyn csc.dll not found at {_cscPath}");
+            _cscPath = FindBundledCsc(dataDir);
+        }
+
+        /// <summary>
+        /// Locates the editor's bundled Roslyn compiler across Unity layouts.
+        /// Through 6000.4 it lives in a dedicated <c>Data/DotNetSdkRoslyn</c> folder;
+        /// 6000.5 removed that folder and ships Roslyn inside the full bundled .NET
+        /// SDK under a VERSION-NUMBERED directory (e.g.
+        /// <c>Data/DotNetSdk/sdk/8.0.318/Roslyn/bincore/csc.dll</c>), so the SDK
+        /// segment is enumerated rather than hardcoded — highest version wins when
+        /// several are present. The existing <c>NetCoreRuntime</c> host runs either
+        /// csc (verified against 6000.5.6f1: Roslyn 4.10.0 under the bundled host).
+        /// </summary>
+        private static string FindBundledCsc(string dataDir)
+        {
+            string legacy = Path.Combine(dataDir, "DotNetSdkRoslyn", "csc.dll");
+            if (File.Exists(legacy))
+                return legacy;
+
+            string sdkRoot = Path.Combine(dataDir, "DotNetSdk", "sdk");
+            if (Directory.Exists(sdkRoot))
+            {
+                string bestCsc = null;
+                Version bestVer = null;
+                foreach (string dir in Directory.GetDirectories(sdkRoot))
+                {
+                    string candidate = Path.Combine(dir, "Roslyn", "bincore", "csc.dll");
+                    if (!File.Exists(candidate))
+                        continue;
+                    Version.TryParse(Path.GetFileName(dir), out Version ver);
+                    if (bestCsc == null
+                        || (ver != null && (bestVer == null || ver > bestVer)))
+                    {
+                        bestCsc = candidate;
+                        bestVer = ver;
+                    }
+                }
+                if (bestCsc != null)
+                    return bestCsc;
+            }
+
+            throw new FileNotFoundException(
+                "Roslyn csc.dll not found — probed "
+                    + legacy
+                    + " (Unity <= 6000.4 layout) and "
+                    + Path.Combine(sdkRoot, "<version>", "Roslyn", "bincore", "csc.dll")
+                    + " (Unity 6000.5+ layout)"
+            );
         }
 
         // ── Compilation ───────────────────────────────────────────────────────
@@ -2791,8 +2601,23 @@ namespace Ruitk.EditorSupport.HMR
                 var asm = InProcessCompile(sources, componentName, ownerUitkxPath, out error);
                 if (asm != null || error == null)
                     return asm;
-                // If in-process failed with an error, fall through to external
-                Debug.LogWarning($"[HMR] In-process compile failed, trying external: {error}");
+                // Infrastructure failures (the exception path, e.g. the NuGet-cache
+                // Roslyn binding against a BCL Unity already loaded — MissingMethod
+                // on 6000.5's newer System.Reflection.Metadata) are permanent for
+                // the session: latch off in-process so every subsequent save goes
+                // straight to external csc without re-failing + re-warning.
+                if (error.Contains("In-process Roslyn error"))
+                {
+                    _roslynLoaded = false;
+                    Debug.LogWarning(
+                        "[HMR] In-process Roslyn is incompatible with this editor's loaded "
+                            + $"assemblies — using the external csc for the rest of the session. ({error})"
+                    );
+                }
+                else
+                {
+                    Debug.LogWarning($"[HMR] In-process compile failed, trying external: {error}");
+                }
                 error = null;
             }
 
@@ -3176,6 +3001,15 @@ namespace Ruitk.EditorSupport.HMR
                 rsp.WriteLine("-nullable:enable");
                 rsp.WriteLine("-deterministic");
                 rsp.WriteLine("-optimize+");
+                // Same preprocessor symbols the in-process path sets — WITHOUT
+                // them every `#if UNITY_EDITOR` region in the emitted source is
+                // preprocessed OUT, including the __UitkxRefresh companion whose
+                // [ModuleInitializer] publishes the new render body to its
+                // Family: the hot assembly then loads and swaps delegates but no
+                // fiber ever refreshes (field find: first session forced onto
+                // this path by the 6000.5 in-process Roslyn breakage).
+                foreach (string sym in ResolveEditorPreprocessorSymbols())
+                    rsp.WriteLine($"-define:{sym}");
                 foreach (var loc in GetFilteredRefLocations(ownerUitkxPath))
                     rsp.WriteLine($"-reference:\"{loc}\"");
                 // Add previously HMR-compiled assemblies for cross-component resolution (new components only)
@@ -3377,18 +3211,19 @@ namespace Ruitk.EditorSupport.HMR
         }
 
         /// <summary>
-        /// Adds using payloads to an emitted unit. LEGACY units keep the historical file-top
-        /// prepend; NEW-MODE units get the usings INSIDE the namespace block (global::-qualified)
-        /// — file-keyed namespaces make sibling file stems enclosing-namespace members, which
-        /// shadow file-level using-aliases, and inside-namespace usings resolve RELATIVE to the
-        /// enclosing namespaces (mirrors the SG emitters' M7 move).
+        /// Adds using payloads to an emitted unit, INSIDE the namespace block
+        /// (global::-qualified) — file-keyed namespaces make sibling file stems
+        /// enclosing-namespace members, which shadow file-level using-aliases, and
+        /// inside-namespace usings resolve RELATIVE to the enclosing namespaces
+        /// (mirrors the SG emitters' M7 move). A unit without a resolvable namespace
+        /// falls back to the file-top prepend.
         /// </summary>
         internal static string InjectUsings(
-            string source, string ns, List<string> payloads, bool usesLegacySyntax)
+            string source, string ns, List<string> payloads)
         {
             if (payloads == null || payloads.Count == 0)
                 return source;
-            if (usesLegacySyntax || string.IsNullOrEmpty(ns))
+            if (string.IsNullOrEmpty(ns))
             {
                 var sbTop = new System.Text.StringBuilder();
                 foreach (var p in payloads)
@@ -3455,7 +3290,7 @@ namespace Ruitk.EditorSupport.HMR
             if (immutableArray == null)
                 return Array.Empty<object>();
             // A DEFAULT ImmutableArray<T> (declared but never initialized — e.g.
-            // DirectiveSet.HookDeclarations on every component-only file) throws
+            // DirectiveSet.MemberDeclarations on a markup-only file) throws
             // InvalidOperationException from GetEnumerator(). Typed consumers guard with
             // IsDefaultOrEmpty; this reflective mirror must too, or the first hot-reload of a
             // plain component crashes in BuildHookFamilyKeyMap (found by RUNTIME-V testing).
@@ -3480,11 +3315,9 @@ namespace Ruitk.EditorSupport.HMR
         // reached by reflection, plus the container-name algorithm all worlds keep in sync.
 
         /// <summary>The file's effective namespace via the shared resolver; raw fallback if absent.
-        /// Mode-aware (ES-modules campaign, U-01): the 4-arg overload is bound by parameter types;
-        /// the mode flag comes from the reflected DirectiveSet's UsesLegacySyntax (additive
-        /// property, U-12). A model without the property at all defaults to LEGACY folder-keyed —
-        /// unreachable in practice (such a DLL also lacks the 4-arg Resolve and fails the loud
-        /// bind-time check), but the safe direction regardless.</summary>
+        /// Always FILE-keyed (isNewMode: true) — the 4-arg overload is bound by parameter types
+        /// and the legacy folder-keyed mode died with the wrapper grammar (0.16.0); the flag
+        /// survives on the resolver for the migration codemod's before-snapshot.</summary>
         internal string ComputeEffectiveNs(object directives, string filePath)
         {
             string rawNs = (string)GetProp(directives, "Namespace") ?? string.Empty;
@@ -3493,10 +3326,8 @@ namespace Ruitk.EditorSupport.HMR
             try
             {
                 bool hasExplicit = GetProp(directives, "HasExplicitNamespace") is bool b && b;
-                object usesLegacyProp = GetProp(directives, "UsesLegacySyntax");
-                bool usesLegacy = !(usesLegacyProp is bool l) || l;
                 var r = _effectiveNamespaceResolve.Invoke(
-                    null, new object[] { hasExplicit, rawNs, filePath, !usesLegacy });
+                    null, new object[] { hasExplicit, rawNs, filePath, true });
                 return (r as string) ?? rawNs;
             }
             catch { return rawNs; }
@@ -3510,22 +3341,9 @@ namespace Ruitk.EditorSupport.HMR
                 return map;
             string ns = ComputeEffectiveNs(directives, filePath);
 
-            // Same-file hooks (mixed-decl) → this file's own container.
-            var hookDecls = GetItems(GetProp(directives, "HookDeclarations"));
-            if (hookDecls.Count > 0)
-            {
-                string ownContainer = HmrHookEmitter.DeriveContainerClassName(filePath);
-                foreach (var h in hookDecls)
-                {
-                    string name = (string)GetProp(h, "Name");
-                    if (!string.IsNullOrEmpty(name))
-                        map[name] = ns + "." + ownContainer + "::" + name;
-                }
-            }
-
-            // Same-file plain-declaration hooks (ES-modules campaign, U-06): new-mode hooks live
-            // in MemberDeclarations (Kind == Hook) on the per-file __Exports container. Enum
-            // compared by name — the DeclKind type lives in the reflected Language.dll.
+            // Same-file hooks live in MemberDeclarations (Kind == Hook) on the per-file
+            // __Exports container. Enum compared by name — the DeclKind type lives in the
+            // reflected Language.dll.
             var memberDecls = GetItems(GetProp(directives, "MemberDeclarations"));
             foreach (var m in memberDecls)
             {
@@ -3568,12 +3386,6 @@ namespace Ruitk.EditorSupport.HMR
                         object targetDs = ParseDirectivesForFile(targetFile);
                         string targetNs = targetDs != null
                             ? ComputeEffectiveNs(targetDs, targetFile) : string.Empty;
-                        // Mode-aware container (U-06): new-mode targets keep everything on
-                        // __Exports; legacy targets keep the historical {Stem}Hooks name.
-                        bool targetLegacy = !(GetProp(targetDs, "UsesLegacySyntax") is bool tl) || tl;
-                        string targetContainer = targetLegacy
-                            ? HmrHookEmitter.DeriveContainerClassName(targetFile)
-                            : "__Exports";
                         // M1 parity with UitkxPipeline.BuildHookFamilyKeyMap: only names that are
                         // actually EXPORTED HOOKS of the target get keys (values/components must
                         // not pollute the map), and a rename-on-import binds the BOUND name to a
@@ -3582,10 +3394,6 @@ namespace Ruitk.EditorSupport.HMR
                         var targetHookNames = new HashSet<string>(StringComparer.Ordinal);
                         if (targetDs != null)
                         {
-                            foreach (var h in GetItems(GetProp(targetDs, "HookDeclarations")))
-                                if (GetProp(h, "IsExported") is bool he && he
-                                    && GetProp(h, "Name") is string hn && !string.IsNullOrEmpty(hn))
-                                    targetHookNames.Add(hn);
                             foreach (var m in GetItems(GetProp(targetDs, "MemberDeclarations")))
                                 if (string.Equals(GetProp(m, "Kind")?.ToString(), "Hook", StringComparison.Ordinal)
                                     && GetProp(m, "IsExported") is bool me && me
@@ -3599,7 +3407,7 @@ namespace Ruitk.EditorSupport.HMR
                             if (string.IsNullOrEmpty(nm) || !targetHookNames.Contains(nm))
                                 continue;
                             string bound = k < aliases.Count ? (aliases[k] as string) ?? nm : nm;
-                            map[bound] = targetNs + "." + targetContainer + "::" + nm;
+                            map[bound] = targetNs + ".__Exports::" + nm;
                         }
                     }
                 }

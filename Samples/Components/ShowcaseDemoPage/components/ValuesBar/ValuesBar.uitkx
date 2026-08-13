@@ -1,6 +1,8 @@
 import { ValueItem } from "./components/ValueItem/ValueItem"
 
-export VirtualNode ValuesBar(IEnumerable<KeyValuePair<string, string>>? items = null) {
+export VirtualNode ValuesBar(
+  IEnumerable<KeyValuePair<string, string>>? items = null
+) {
   var safeItems = items ?? Array.Empty<KeyValuePair<string, string>>();
 
   var barContainerStyle = new Style {

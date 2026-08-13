@@ -20,9 +20,9 @@ namespace Ruitk.SourceGenerator.Tests
         public void NamespaceImport_And_AtUsing_ProduceIdenticalComponentSource()
         {
             const string withAtUsing =
-                "@namespace TestNs\n@using System.Text\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\n@using System.Text\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
             const string withNsImport =
-                "@namespace TestNs\nimport \"@System.Text\"\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\nimport \"@System.Text\"\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
 
             var a = GeneratorTestHelper.Run(withAtUsing);
             var b = GeneratorTestHelper.Run(withNsImport);
@@ -30,17 +30,18 @@ namespace Ruitk.SourceGenerator.Tests
             Assert.True(a.SourceWasProduced);
             Assert.True(b.SourceWasProduced);
             Assert.Equal(a.GeneratedSource, b.GeneratedSource);
-            // And the namespace actually made it into the emitted usings.
-            Assert.Contains("using System.Text;", b.GeneratedSource!);
+            // And the namespace actually made it into the emitted usings
+            // (inside-namespace, global::-qualified — 0.16.0).
+            Assert.Contains("using global::System.Text;", b.GeneratedSource!);
         }
 
         [Fact]
         public void NamespaceImport_And_AtUsing_ProduceIdenticalHookSource()
         {
             const string withAtUsing =
-                "@namespace TestNs\n@using System.Text\nhook UseFoo(int initial = 0) -> int {\n  return initial;\n}";
+                "@namespace TestNs\n@using System.Text\nexport int useFoo(int initial = 0) {\n  return initial;\n}";
             const string withNsImport =
-                "@namespace TestNs\nimport \"@System.Text\"\nhook UseFoo(int initial = 0) -> int {\n  return initial;\n}";
+                "@namespace TestNs\nimport \"@System.Text\"\nexport int useFoo(int initial = 0) {\n  return initial;\n}";
 
             var a = GeneratorTestHelper.Run(withAtUsing, "UseFoo.uitkx");
             var b = GeneratorTestHelper.Run(withNsImport, "UseFoo.uitkx");
@@ -54,12 +55,13 @@ namespace Ruitk.SourceGenerator.Tests
         public void NamespaceImport_StaticPayload_EmitsUsingStatic()
         {
             const string src =
-                "@namespace TestNs\nimport \"@static System.Math\"\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\nimport \"@static System.Math\"\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
 
             var result = GeneratorTestHelper.Run(src);
 
             Assert.True(result.SourceWasProduced);
-            Assert.Contains("using static System.Math;", result.GeneratedSource!);
+            // 0.16.0: usings emit inside the namespace block, global::-qualified.
+            Assert.Contains("using static global::System.Math;", result.GeneratedSource!);
         }
 
         [Fact]
@@ -68,7 +70,7 @@ namespace Ruitk.SourceGenerator.Tests
             // Feature 2: Ruitk.Router is in the baseline, so RouterHooks resolves with no
             // @using/import at all — and the generated file carries the using.
             const string src =
-                "@namespace TestNs\ncomponent Screen {\n  var nav = RouterHooks.UseNavigate();\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\nVirtualNode Screen() {\n  var nav = RouterHooks.UseNavigate();\n  return (<VisualElement />);\n}";
 
             var result = GeneratorTestHelper.Run(src);
 
@@ -119,7 +121,7 @@ namespace Ruitk.SourceGenerator.Tests
             const string uitkx = """
                 @namespace MyApp.UI
 
-                component MyPage {
+                VirtualNode MyPage() {
                     return (<RouteFunc path="/home" element={null} />);
                 }
                 """;
@@ -175,7 +177,7 @@ namespace Ruitk.SourceGenerator.Tests
             const string uitkx = """
                 @namespace MyApp.UI
 
-                component AppShell {
+                VirtualNode AppShell() {
                     return (
                         <Router initialPath="/home">
                             <Routes>
@@ -209,9 +211,9 @@ namespace Ruitk.SourceGenerator.Tests
             var files = new[]
             {
                 ("Widget.uitkx",
-                    "@namespace My.Widgets\nexport component Widget(string title = \"\", bool busy = false) {\n  return (<VisualElement />);\n}"),
+                    "@namespace My.Widgets\nexport VirtualNode Widget(string title = \"\", bool busy = false) {\n  return (<VisualElement />);\n}"),
                 ("Screen.uitkx",
-                    "@namespace My.Screens\nimport { Widget } from \"./Widget\"\ncomponent Screen {\n  return (<Widget title=\"hi\" busy={true} />);\n}"),
+                    "@namespace My.Screens\nimport { Widget } from \"./Widget\"\nVirtualNode Screen() {\n  return (<Widget title=\"hi\" busy={true} />);\n}"),
             };
 
             var result = GeneratorTestHelper.RunMultiple(files, "Screen.uitkx");
@@ -235,16 +237,16 @@ namespace Ruitk.SourceGenerator.Tests
             var files = new[]
             {
                 ("Widget.uitkx",
-                    "@namespace My.Widgets\nexport component Widget(string title = \"\") {\n  return (<VisualElement />);\n}"),
+                    "@namespace My.Widgets\nexport VirtualNode Widget(string title = \"\") {\n  return (<VisualElement />);\n}"),
                 ("Panel.utils.uitkx",
-                    "@namespace My.Screens\nimport { Widget } from \"./Widget\"\nexport module Panel {\n  public static object MakeProps() => new Widget.WidgetProps { Title = \"x\" };\n}"),
+                    "@namespace My.Screens\nimport { Widget } from \"./Widget\"\nexport object MakeProps() => new Widget.WidgetProps { Title = \"x\" };"),
             };
 
             var result = GeneratorTestHelper.RunMultiple(files, "Panel.utils.uitkx");
 
             Assert.True(result.SourceWasProduced,
                 $"No source produced. Diagnostics: {string.Join(", ", result.Diagnostics)}");
-            Assert.True(result.SourceContains("using Widget = My.Widgets.Widget;"),
+            Assert.True(result.SourceContains("using Widget = global::My.Widgets.Widget;"),
                 $"Expected the imported component aliased for C# body references. Got:\n{result.GeneratedSource}");
         }
 
@@ -256,7 +258,7 @@ namespace Ruitk.SourceGenerator.Tests
             var files = new[]
             {
                 ("Widget.uitkx",
-                    "@namespace My.Ns\nexport component Widget(string title = \"\") {\n  return (<VisualElement />);\n}"),
+                    "@namespace My.Ns\nexport VirtualNode Widget(string title = \"\") {\n  return (<VisualElement />);\n}"),
                 ("Panel.utils.uitkx",
                     "@namespace My.Ns\nimport { Widget } from \"./Widget\"\nexport module Panel {\n  public static object MakeProps() => new Widget.WidgetProps { Title = \"x\" };\n}"),
             };
@@ -272,7 +274,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void NamespaceImport_NoDiagnosticsForValidNamespace()
         {
             const string src =
-                "@namespace TestNs\nimport \"@System.Text\"\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\nimport \"@System.Text\"\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
 
             var result = GeneratorTestHelper.Run(src);
 

@@ -1,6 +1,7 @@
 import { GameScreen } from "./components/GameScreen/GameScreen"
 import { Menu } from "./components/Menu/Menu"
 import { WelcomeScreen } from "./components/WelcomeScreen/WelcomeScreen"
+import * as Styles from "./SnakeGameStyles.style"
 
 export VirtualNode SnakeGame() {
   var (restartVersion, setRestartVersion) = useState(0);

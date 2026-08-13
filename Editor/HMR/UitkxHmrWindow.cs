@@ -152,7 +152,7 @@ namespace Ruitk.EditorSupport.HMR
             // ── Stats ────────────────────────────────────────────────────────
             if (isActive || (_controller != null && _controller.SwapCount > 0))
             {
-                EditorGUILayout.LabelField("Watched", "Assets/**/*.uitkx");
+                EditorGUILayout.LabelField("Watched", "Assets + embedded/local packages (**/*.uitkx)");
                 EditorGUILayout.LabelField("Swaps", _controller?.SwapCount.ToString() ?? "0");
                 EditorGUILayout.LabelField("Errors", _controller?.ErrorCount.ToString() ?? "0");
 

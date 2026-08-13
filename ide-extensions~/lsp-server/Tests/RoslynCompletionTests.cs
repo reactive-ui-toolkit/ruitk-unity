@@ -69,7 +69,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
     [Fact]
     public async Task ExpressionAttribute_DotCompletion_ReturnsMethods()
     {
-        var raw = "component C {\n  string msg = \"hello\";\n  return (\n    <Label text={msg.|}/>\n  )\n}";
+        var raw = "VirtualNode C() {\n  string msg = \"hello\";\n  return (\n    <Label text={msg.|}/>\n  )\n}";
         var (source, offset) = ExtractCursor(raw);
         var items = await GetCompletions(source, offset, trigger: '.');
         Assert.True(items.Count > 0, "Expected dot-completion to return items");
@@ -79,7 +79,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
     [Fact]
     public async Task ExpressionAttribute_DotCompletion_HasToString()
     {
-        var raw = "component C {\n  int count = 42;\n  return (\n    <Label text={count.|}/>\n  )\n}";
+        var raw = "VirtualNode C() {\n  int count = 42;\n  return (\n    <Label text={count.|}/>\n  )\n}";
         var (source, offset) = ExtractCursor(raw);
         var items = await GetCompletions(source, offset, trigger: '.');
         Assert.Contains(items, i => i.Label == "ToString");
@@ -91,7 +91,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
     public async Task CodeBlock_DotCompletion_StringMethods()
     {
         // Simpler code-block test: string variable dot-completion
-        var raw = "component C {\n  string s = \"hello\";\n  var x = s.|;\n  return (\n    <Label/>\n  )\n}";
+        var raw = "VirtualNode C() {\n  string s = \"hello\";\n  var x = s.|;\n  return (\n    <Label/>\n  )\n}";
         var (source, offset) = ExtractCursor(raw);
         var items = await GetCompletions(source, offset, trigger: '.');
         Assert.True(items.Count > 0, "Expected code-block dot-completion items");
@@ -103,7 +103,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
     [Fact]
     public async Task FunctionStyle_SetupCode_DotCompletion()
     {
-        var raw = "component Counter {\n  string s = \"test\";\n  var len = s.|;\n  return (\n    <Label/>\n  );\n}";
+        var raw = "VirtualNode Counter() {\n  string s = \"test\";\n  var len = s.|;\n  return (\n    <Label/>\n  );\n}";
         var (source, offset) = ExtractCursor(raw);
         var items = await GetCompletions(source, offset, trigger: '.');
         Assert.True(items.Count > 0, "Expected function-style setup code completions");
@@ -116,7 +116,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
     public async Task MarkupRegion_NoCompletions()
     {
         // Cursor is inside markup text, not a C# expression — should return empty.
-        var raw = "component C {\n  return (\n    <Label text=\"hel|lo\"/>\n  )\n}";
+        var raw = "VirtualNode C() {\n  return (\n    <Label text=\"hel|lo\"/>\n  )\n}";
         var (source, offset) = ExtractCursor(raw);
         var items = await GetCompletions(source, offset);
         Assert.Empty(items);
@@ -128,7 +128,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
     public async Task CodeBlock_IntDotCompletion()
     {
         // Completions after int variable in a code block, verifying non-dot context also works
-        var raw = "component C {\n  int count = 0;\n  var s = count.|;\n  return (\n    <Label/>\n  )\n}";
+        var raw = "VirtualNode C() {\n  int count = 0;\n  var s = count.|;\n  return (\n    <Label/>\n  )\n}";
         var (source, offset) = ExtractCursor(raw);
         var items = await GetCompletions(source, offset, trigger: '.');
         Assert.True(items.Count > 0, "Expected dot completions on int in code block");
@@ -140,7 +140,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
     [Fact]
     public async Task InlineExpression_DotCompletion()
     {
-        var raw = "component C {\n  string greeting = \"hi\";\n  return (\n    <Box>\n      {greeting.|}\n    </Box>\n  )\n}";
+        var raw = "VirtualNode C() {\n  string greeting = \"hi\";\n  return (\n    <Box>\n      {greeting.|}\n    </Box>\n  )\n}";
         var (source, offset) = ExtractCursor(raw);
         var items = await GetCompletions(source, offset, trigger: '.');
         Assert.True(items.Count > 0, "Expected inline expression dot-completions");
@@ -152,7 +152,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
     [Fact]
     public async Task FunctionStyle_UseRef_DotCompletion_ShowsCurrentAndValue()
     {
-        var raw = "component Test {\n  var myRef = useRef(false);\n  var x = myRef.|;\n  return (\n    <Label/>\n  );\n}";
+        var raw = "VirtualNode Test() {\n  var myRef = useRef(false);\n  var x = myRef.|;\n  return (\n    <Label/>\n  );\n}";
         var (source, offset) = ExtractCursor(raw);
         var items = await GetCompletions(source, offset, trigger: '.');
         Assert.True(items.Count > 0, "Expected useRef dot-completion items");
@@ -167,7 +167,7 @@ public sealed class RoslynCompletionTests : IAsyncLifetime
         // (the workspace-shared canonical type), not a per-document nested stub.
         // This guarantees that values flow without CS1503 to peer hooks
         // declaring `Ref<T>` parameters.
-        var raw = "component Test {\n  var myRef = useRef<int>(0);\n  var t = myRef.GetType().FullName;\n  return (\n    <Label text={t}/>\n  );\n}";
+        var raw = "VirtualNode Test() {\n  var myRef = useRef<int>(0);\n  var t = myRef.GetType().FullName;\n  return (\n    <Label text={t}/>\n  );\n}";
         // Force virtual doc generation by requesting completions at an arbitrary point.
         var items = await GetCompletions(raw, raw.IndexOf("myRef.G", System.StringComparison.Ordinal) + 6, trigger: '.');
         Assert.Contains(items, i => i.Label == "GetType"); // myRef.GetType bound → type resolved

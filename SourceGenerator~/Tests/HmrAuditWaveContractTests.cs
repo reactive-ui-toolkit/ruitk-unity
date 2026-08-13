@@ -73,8 +73,8 @@ public class HmrAuditWaveContractTests
         var shared = LangSrc("ImportScopeFacts.cs");
         Assert.Contains("internal static {type} {alias} => global::{targetNs}.__Exports.{target.Name};", sg);
         Assert.Contains("internal static {type} {alias} => global::{tns}.__Exports.{m.Name};", shared);
-        Assert.Contains("internal static {ret} {alias}({paramList}) => global::{targetNs}.__Exports.{target.Name}({argNames});", sg);
-        Assert.Contains("internal static {ret} {alias}({pl}) => global::{tns}.__Exports.{m.Name}({an});", shared);
+        Assert.Contains("internal static {ret} {alias}{typeParams}({paramList}) => global::{targetNs}.__Exports.{target.Name}{typeParams}({argNames});", sg);
+        Assert.Contains("internal static {ret} {alias}{typeParams}({pl}) => global::{tns}.__Exports.{m.Name}{typeParams}({an});", shared);
     }
 
     [Fact]
@@ -111,8 +111,9 @@ public class HmrAuditWaveContractTests
         Assert.Contains("&& !HotExportsAvailable(exportsFqn)", src);
         Assert.Contains("private static bool TypeExistsInProjectAssemblies(string fullTypeName)", src);
         Assert.DoesNotContain("TypeExistsInAppDomain", src);
-        // Legacy module/hook emitters are unreachable for new-mode candidates.
-        Assert.Contains("if (!candUsesLegacy)", src);
+        // The legacy module/hook emitters were deleted outright in the 0.16.0 wave.
+        Assert.DoesNotContain("candUsesLegacy", src);
+        Assert.DoesNotContain("EmitModules", src);
     }
 
     [Fact]
@@ -167,17 +168,16 @@ public class HmrAuditWaveContractTests
     public void RenameWave_DeleteAndRenameEvents_EvictStaleRegistrations()
     {
         // A rename (delete old path + create new path) must not leave the old identity's
-        // DLL registered as a cross-ref, its hook-container index entry, or its outgoing
-        // import edges. The watcher surfaces FSW Deleted and the Renamed OLD path through
-        // the debounced deletion queue (exists-again guarded — delete-and-replace saves are
-        // saves, not deletions); the controller evicts per-path state on that event.
+        // DLL registered as a cross-ref or its outgoing import edges. The watcher surfaces
+        // FSW Deleted and the Renamed OLD path through the debounced deletion queue
+        // (exists-again guarded — delete-and-replace saves are saves, not deletions); the
+        // controller evicts per-path state on that event.
         var compiler = Src("UitkxHmrCompiler.cs");
         Assert.Contains("public void EvictFileRegistration(string uitkxPath)", compiler);
         var controller = Src("UitkxHmrController.cs");
         Assert.Contains("_compiler?.EvictFileRegistration(uitkxPath);", controller);
-        Assert.Contains("HookContainerRegistry.Invalidate(uitkxPath);", controller);
         var watcher = Src("UitkxHmrFileWatcher.cs");
-        Assert.Contains("_watcher.Deleted += (s, e) =>", watcher);
+        Assert.Contains("watcher.Deleted += (s, e) =>", watcher);
         Assert.Contains("EnqueueDeletion(e.FullPath);", watcher);
         Assert.Contains("EnqueueDeletion(e.OldFullPath);", watcher);
         Assert.Contains("if (!File.Exists(path))", watcher);
@@ -202,7 +202,7 @@ public class HmrAuditWaveContractTests
     {
         var src = Src("UitkxHmrCompiler.cs");
         Assert.Contains("!targetHookNames.Contains(nm)", src);
-        Assert.Contains("map[bound] = targetNs + \".\" + targetContainer + \"::\" + nm;", src);
+        Assert.Contains("map[bound] = targetNs + \".__Exports::\" + nm;", src);
     }
 
     [Fact]
@@ -218,7 +218,10 @@ public class HmrAuditWaveContractTests
         var src = Src("UitkxHmrController.cs");
         Assert.DoesNotContain("if (_ussDependents.Count == 0)", src);
         Assert.DoesNotContain("if (_importDependents.Count == 0)\n                BuildImportDependencyMap", src.Replace("\r\n", "\n"));
-        Assert.Contains("BuildUssDependencyMap(assetsPath);\n            BuildImportDependencyMap(assetsPath);", src.Replace("\r\n", "\n"));
+        // Since the package-watch wave the maps span the SAME roots the watcher
+        // covers (Assets + writable packages) — an Assets/-only graph gave
+        // package files empty fan-out edges.
+        Assert.Contains("BuildUssDependencyMap(watchRoots);\n            BuildImportDependencyMap(watchRoots);", src.Replace("\r\n", "\n"));
     }
 
     [Fact]
@@ -245,7 +248,7 @@ public class HmrAuditWaveContractTests
         // events log as [HMR][trace] when the EditorPref is on, pushed into the
         // watcher via a volatile field (FSW callbacks run on a threadpool thread).
         var watcher = Src("UitkxHmrFileWatcher.cs");
-        Assert.Contains("_watcher.Error +=", watcher);
+        Assert.Contains("watcher.Error +=", watcher);
         Assert.Contains("[HMR][trace] FSW", watcher);
         Assert.Contains("internal volatile bool TraceEnabled;", watcher);
         var controller = Src("UitkxHmrController.cs");
@@ -261,7 +264,7 @@ public class HmrAuditWaveContractTests
         // dedupe), every fan-out logs its enqueued importers, and USS saves log
         // their dependent count. No line is emitted while idle.
         var src = Src("UitkxHmrController.cs");
-        Assert.Contains("[HMR] Save: {Path.GetFileName(changedPath)}", src);
+        Assert.Contains("[HMR] Save: {Path.GetFileName(uitkxPath)}", src);
         Assert.Contains("importers: {importerCount}", src);
         Assert.Contains("(already queued)", src);
         Assert.Contains("[HMR] Fan-out: {Path.GetFileName(changedFile)}", src);

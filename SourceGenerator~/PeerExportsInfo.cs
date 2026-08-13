@@ -14,8 +14,8 @@ namespace Ruitk.SourceGenerator
     ///   <item><description>dotted-tag (<c>&lt;X.Comp/&gt;</c>) namespace resolution
     ///   (star-alias map, U-05).</description></item>
     /// </list>
-    /// Legacy files never get an entry — their surface stays on the existing
-    /// PeerComponentInfo/PeerHookContainerInfo/PeerModuleInfo tables.
+    /// One entry per member-bearing file (0.16.0: the legacy wrapper grammar and its
+    /// peer-module table are gone; components additionally appear in PeerComponentInfo).
     /// </summary>
     public sealed record PeerExportsInfo(
         /// <summary>Absolute path of the owning <c>.uitkx</c> file.</summary>

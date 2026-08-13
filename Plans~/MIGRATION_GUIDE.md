@@ -104,12 +104,13 @@ Namespace: since 0.9.0 the default is **file-keyed** — derived from the file's
 relative to its owning `.asmdef` plus its file stem (the generator never reads a
 companion `.cs` for it). If you have a hand-written companion `partial .cs`, declare an
 explicit `@namespace` matching it so the two partials merge. The `component` wrapper
-keyword and the `@component` directive-header form are deprecated (`UITKX2320`).
+keyword and the `@component` directive-header form were removed in 0.16.0 (`UITKX2320`
+error).
 
 Cross-file references are explicit: prefix declarations with `export` and add
-`import { X } from "./path"` lines (or run the bundled `UitkxMigrateImports --es-modules`
-codemod once over the project — it does all of this mechanically; see the 0.9.0 section
-at the end of this guide).
+`import { X } from "./path"` lines (or run the bundled codemod once over the project —
+`node scripts/migrate-uitkx.mjs <dir> --es-modules` does all of this mechanically; see
+the wrapper-removal section at the end of this guide).
 
 #### Tidying `@using` → `import "@Ns"` (optional, `--tidy`)
 
@@ -366,14 +367,16 @@ for typed props via declared parameters see
 
 ---
 
-## 0.9.0 ES modules — wrapper keywords to plain declarations
+## Wrapper keywords — deprecated 0.9.0, REMOVED 0.16.0
 
 ### Why
 
 A `.uitkx` file IS a module (like an ES module): its exports are its entire public
 surface, its namespace derives from its file path, and everything cross-file goes
-through an import. The `component` / `hook` / `module` wrapper keywords are deprecated
-(UITKX2320) in favor of plain typed declarations classified from the signature alone.
+through an import. The `component` / `hook` / `module` wrapper keywords were deprecated
+in 0.9.0 and **removed in 0.16.0** in favor of plain typed declarations classified from
+the signature alone. A file that still uses them fails to compile with the `UITKX2320`
+error; the table below is that error's remediation doc.
 
 ### Before / after
 
@@ -411,29 +414,41 @@ export module Tokens {                      export int Gap = 8;
 ### Codemod
 
 ```bash
-dotnet run --project SourceGenerator~/Tools/UitkxMigrateImports -- <dir> --es-modules
-dotnet run --project SourceGenerator~/Tools/UitkxMigrateImports -- <dir> --es-modules --check   # idempotence gate
+node scripts/migrate-uitkx.mjs <dir> --es-modules
+node scripts/migrate-uitkx.mjs <dir> --es-modules --check    # idempotence gate
+node scripts/migrate-uitkx.mjs <dir> --es-modules --report r.txt   # rewrite + namespace-move ledger
 ```
 
-Companion sets (`X.uitkx` + `X.*.uitkx`) migrate atomically — all or none. Shapes the
-plain dialect cannot express stay legacy with a reported reason (generic hooks; modules
-containing nested types, properties, events, or constructors) and keep compiling under
-the deprecation window.
+Companion sets (`X.uitkx` + `X.*.uitkx`) migrate atomically — all or none. Generic
+hooks migrate (first-class plain declarations since 0.16.0). The one shape the plain
+dialect cannot express — type definitions (enums/classes/structs, plus properties,
+events, and constructors on them) — is reported with the fix: move it to a hand-written
+`.cs` beside the components (ambient C# is never policed). Where-constrained generics
+are also rejected with a message (move the constrained helper to ambient C#).
 
-### Timeline & escape hatches
+Recommended upgrade order: **codemod first, then bump the package** — the codemod runs
+from the repository against your project regardless of the installed package version,
+so migrate on 0.15.x, verify, then upgrade to 0.16.0 with a clean console. (Upgrading
+first also works; every legacy file reports `UITKX2320` until the codemod runs.)
 
-0.9.0 warns (`UITKX2320` wrappers, `UITKX2107` companion merges); removal comes in a
-later minor, owner-triggered. Escape hatches are unchanged: an explicit `@namespace`
-stamp pins a file's namespace; components still emit `partial class`, so hand-written
-`.cs` can extend them.
+### Escape hatches (unchanged)
+
+`@using` keeps parsing indefinitely (the unified `import "@Ns"` spelling is the
+recommended form). An explicit `@namespace` stamp pins a file's namespace — a rare
+interop escape hatch, not for normal components. Components still emit `partial class`,
+so hand-written `.cs` can extend them.
 
 ### Troubleshooting
 
 | Symptom | Meaning → fix |
 |---|---|
-| `UITKX2108` mixed styles | One file mixes wrappers and plain declarations — the first declaration sets the file's style; migrate the whole file |
-| `UITKX2109` on `* as`/default/renamed import | The target file is still legacy — migrate it first (named imports of legacy targets stay fine) |
+| `UITKX2320` on `component`/`hook`/`module` | The wrapper grammar was removed in 0.16.0 — run the codemod above |
+| `UITKX2320` "cannot be mixed with plain declarations" | One wrapper declaration sits inside an otherwise-migrated file (e.g. a pasted legacy snippet). Mixed files are NOT auto-migrated — the codemod freezes them into its report; rewrite that one declaration by hand |
 | `CS0103 'container' does not exist` post-migration | A former companion member is no longer merged — add `import { container } from "./X.style"` |
 | `CS0246/CS0234` in a consumer `.cs` | The namespace moved (file-keyed) — append the declaring file's stem to the `using` |
 | `CS0229 ambiguity with __Exports.X` | A value export shares a name with a type in scope (e.g. `Button`) — rename the export |
 | `UITKX2110` on a hook rename | `import { useX as y }` drops the `use` prefix — hook bindings must stay `use`-prefixed |
+
+(`UITKX2107`/`2108`/`2109` retired with the grammar in 0.16.0. A legacy file fails at
+parse with 2320 before 2107/2109 could fire, and the former 2108 mixed-file cases now
+report the 2320 mixed-file variant above.)

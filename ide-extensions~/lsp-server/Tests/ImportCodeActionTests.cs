@@ -16,7 +16,7 @@ namespace UitkxLanguageServer.Tests
         [Fact]
         public void From2305Message_BuildsImportInsert_AtTop()
         {
-            string text = "component Screen {\n    return (<StatusChip />);\n}\n";
+            string text = "VirtualNode Screen() {\n    return (<StatusChip />);\n}\n";
             bool ok = ImportCodeActionHandler.TryBuildAddImportEdit(text, Msg2305, out int line, out string insert);
 
             Assert.True(ok);
@@ -27,7 +27,7 @@ namespace UitkxLanguageServer.Tests
         [Fact]
         public void InsertsAfterLeadingComments()
         {
-            string text = "// license header\n// line 2\ncomponent Screen {\n    return (<StatusChip />);\n}\n";
+            string text = "// license header\n// line 2\nVirtualNode Screen() {\n    return (<StatusChip />);\n}\n";
             bool ok = ImportCodeActionHandler.TryBuildAddImportEdit(text, Msg2305, out int line, out _);
 
             Assert.True(ok);
@@ -37,7 +37,7 @@ namespace UitkxLanguageServer.Tests
         [Fact]
         public void AlreadyImported_NoFix()
         {
-            string text = "import { StatusChip } from \"./StatusChip\"\ncomponent Screen {\n    return (<StatusChip />);\n}\n";
+            string text = "import { StatusChip } from \"./StatusChip\"\nVirtualNode Screen() {\n    return (<StatusChip />);\n}\n";
             bool ok = ImportCodeActionHandler.TryBuildAddImportEdit(text, Msg2305, out _, out _);
             Assert.False(ok);
         }
@@ -46,14 +46,14 @@ namespace UitkxLanguageServer.Tests
         public void MessageWithoutImportLine_NoFix()
         {
             bool ok = ImportCodeActionHandler.TryBuildAddImportEdit(
-                "component Screen { }", "`useX` is used like a hook but no file exports it", out _, out _);
+                "VirtualNode Screen() { }", "`useX` is used like a hook but no file exports it", out _, out _);
             Assert.False(ok);
         }
 
         [Fact]
         public void FirstNonTriviaLine_SkipsBlockComment()
         {
-            string text = "/*\n header\n*/\n\ncomponent Screen { }";
+            string text = "/*\n header\n*/\n\nVirtualNode Screen() { }";
             Assert.Equal(4, ImportCodeActionHandler.FirstNonTriviaLine(text));
         }
 
@@ -90,7 +90,7 @@ namespace UitkxLanguageServer.Tests
         public void ConvertUsing_NotAUsingLine_False()
         {
             Assert.False(ImportCodeActionHandler.TryBuildConvertUsingToImport(
-                "component Foo {", out _));
+                "VirtualNode Foo() {", out _));
             Assert.False(ImportCodeActionHandler.TryBuildConvertUsingToImport(
                 "import { X } from \"./X\"", out _));
         }

@@ -61,9 +61,8 @@ public sealed class HelloEditorWindow : EditorWindow
   private void CreateGUI()
   {
     EditorRootRendererUtility.Mount(
-      this,
-      V.Func(HelloWorld.Render),
-      rootVisualElement
+      rootVisualElement,
+      V.Func(HelloWorld.Render)
     );
   }
 }`

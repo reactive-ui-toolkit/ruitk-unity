@@ -1,6 +1,11 @@
 import "@System.Diagnostics"
 
-export VirtualNode ShowcaseTopBar(string inputText = "", ChangeEventHandler<string>? onInputChange = null, Action? onSetText = null, DateTime currentTime = default) {
+export VirtualNode ShowcaseTopBar(
+  string inputText = "",
+  ChangeEventHandler<string>? onInputChange = null,
+  Action? onSetText = null,
+  DateTime currentTime = default
+) {
   var topBarStyle = new Style {
     (StyleKeys.FlexDirection, "row"),
     (JustifyContent, "space-between"),

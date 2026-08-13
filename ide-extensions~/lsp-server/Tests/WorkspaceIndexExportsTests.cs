@@ -41,10 +41,10 @@ namespace UitkxLanguageServer.Tests
         {
             var idx = new WorkspaceIndex();
             string lib = Write("Lib.uitkx",
-                "export component Widget {\n  return (<Box />);\n}\n" +
-                "export hook useThing() { return 0; }\n" +
+                "export VirtualNode Widget() {\n  return (<Box />);\n}\n" +
+                "export void useThing() { return 0; }\n" +
                 "module Priv { public const int X = 1; }\n");
-            string screen = Write("Screen.uitkx", "export component Screen {\n  return (<Box />);\n}\n");
+            string screen = Write("Screen.uitkx", "export VirtualNode Screen() {\n  return (<Box />);\n}\n");
             idx.Refresh(lib);
             idx.Refresh(screen);
 
@@ -60,8 +60,8 @@ namespace UitkxLanguageServer.Tests
         public void ExportTable_FeedsDetector_UnimportedPeerTag_Emits2305()
         {
             var idx = new WorkspaceIndex();
-            string chip = Write("StatusChip.uitkx", "export component StatusChip {\n  return (<Label text=\"x\" />);\n}\n");
-            string screen = Write("Screen.uitkx", "export component Screen {\n  return (<StatusChip />);\n}\n");
+            string chip = Write("StatusChip.uitkx", "export VirtualNode StatusChip() {\n  return (<Label text=\"x\" />);\n}\n");
+            string screen = Write("Screen.uitkx", "export VirtualNode Screen() {\n  return (<StatusChip />);\n}\n");
             idx.Refresh(chip);
             idx.Refresh(screen);
 
@@ -79,12 +79,65 @@ namespace UitkxLanguageServer.Tests
         }
 
         [Fact]
+        public void UtilExport_DottedAccess_DoesNotSuggestImport()
+        {
+            // Field repro: `Tick.CreateInitialState()` (dotted access on a name bound
+            // ambiently, e.g. a nested class via @static) suggested importing the
+            // UNRELATED util `Tick` exported by another file. A util binds a FUNCTION —
+            // `import { Tick }` can never satisfy `Tick.member` — so util exports are
+            // indexed as ExportKind.Util, outside the dotted-access scan.
+            var idx = new WorkspaceIndex();
+            string logic = Write("GameLogic.uitkx", "export int Tick(int s) { return s; }\n");
+            string screen = Write("Screen.uitkx",
+                "export VirtualNode Screen() {\n  var s = Tick.CreateInitialState();\n  return (<Box />);\n}\n");
+            idx.Refresh(logic);
+            idx.Refresh(screen);
+
+            var peers = idx.GetPeerExports(screen, null);
+            Assert.Contains(peers, e => e.Name == "Tick" && e.Kind == StrictImportDetector.ExportKind.Util);
+
+            var diags = new System.Collections.Generic.List<Ruitk.Language.ParseDiagnostic>();
+            var directives = Ruitk.Language.Parser.DirectiveParser.Parse(File.ReadAllText(screen), screen, diags);
+            var findings = StrictImportDetector.Detect(
+                directives, screen, StrictImportDetector.ScrubNonCode(File.ReadAllText(screen)),
+                peers, _ => false);
+
+            Assert.DoesNotContain(findings, f => f.Code == "UITKX2305");
+        }
+
+        [Fact]
+        public void ValueExport_DottedAccess_StillSuggestsImport()
+        {
+            // The intentional survivor: dotted access on a peer-exported VALUE is
+            // satisfiable by importing it, so the (heuristic, warning-tier) hint stays.
+            var idx = new WorkspaceIndex();
+            string tokens = Write("Tokens.uitkx", "export int config = 1;\n");
+            string screen = Write("Screen.uitkx",
+                "export VirtualNode Screen() {\n  var w = config.ToString();\n  return (<Box />);\n}\n");
+            idx.Refresh(tokens);
+            idx.Refresh(screen);
+
+            var peers = idx.GetPeerExports(screen, null);
+            Assert.Contains(peers, e => e.Name == "config" && e.Kind == StrictImportDetector.ExportKind.Module);
+
+            var diags = new System.Collections.Generic.List<Ruitk.Language.ParseDiagnostic>();
+            var directives = Ruitk.Language.Parser.DirectiveParser.Parse(File.ReadAllText(screen), screen, diags);
+            var findings = StrictImportDetector.Detect(
+                directives, screen, StrictImportDetector.ScrubNonCode(File.ReadAllText(screen)),
+                peers, _ => false);
+
+            var f = Assert.Single(findings, x => x.Code == "UITKX2305");
+            Assert.True(f.IsHeuristic);
+            Assert.Contains("config", f.Message);
+        }
+
+        [Fact]
         public void Import_SatisfiesReference_NoDiagnostic()
         {
             var idx = new WorkspaceIndex();
-            string chip = Write("StatusChip.uitkx", "export component StatusChip {\n  return (<Label text=\"x\" />);\n}\n");
+            string chip = Write("StatusChip.uitkx", "export VirtualNode StatusChip() {\n  return (<Label text=\"x\" />);\n}\n");
             string screen = Write("Screen.uitkx",
-                "import { StatusChip } from \"./StatusChip\"\n\nexport component Screen {\n  return (<StatusChip />);\n}\n");
+                "import { StatusChip } from \"./StatusChip\"\n\nexport VirtualNode Screen() {\n  return (<StatusChip />);\n}\n");
             idx.Refresh(chip);
             idx.Refresh(screen);
 

@@ -46,11 +46,11 @@ export const CompanionFilesPage: FC = () => (
     </Typography>
     <Box sx={{ my: 2, p: 2, borderLeft: '4px solid', borderColor: 'primary.main', bgcolor: 'action.hover' }}>
       <Typography variant="body2">
-        <strong>As of 0.9.0</strong>, a file IS a module: cross-file references go through
-        explicit <code>import</code>s, and the legacy behaviour where a same-named companion
-        merged into the component&rsquo;s partial class is <strong>deprecated</strong>{' '}
-        (<code>UITKX2107</code>). The file-kind naming rules below (one component per file,{' '}
-        <code>.hooks</code>/<code>.style</code> suffixes, filename == component) are{' '}
+        A file IS a module: cross-file references go through explicit <code>import</code>s. The
+        legacy behaviour where a same-named companion merged into the component&rsquo;s partial
+        class was <strong>removed in 0.16.0</strong> together with the wrapper keywords. The
+        file-kind naming rules below (one component per file, <code>.hooks</code>/
+        <code>.style</code> suffixes, filename == component) are{' '}
         <strong>documentation conventions</strong> rather than compiler-enforced requirements. A
         single file may declare any mix of components, hooks, and values. See{' '}
         <MuiLink component={RouterLink} to="/imports">Imports &amp; Exports</MuiLink> for the model, the
@@ -190,8 +190,7 @@ export const CompanionFilesPage: FC = () => (
     </Typography>
     <Typography variant="body1" paragraph>
       Style constants and helpers are plain value exports — the component imports the names it
-      uses. (The legacy behaviour where a same-named <code>module</code> merged into the
-      component&rsquo;s partial class is deprecated, <code>UITKX2107</code>.)
+      uses.
     </Typography>
     <CodeBlock language="jsx" code={EXAMPLE_STYLES} />
 
@@ -225,13 +224,10 @@ export const CompanionFilesPage: FC = () => (
         <ListItemText primary="Hook state is preserved across swaps (useState, useRef, useEffect, etc.)." />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary="Module changes (styles, utilities) hot-reload in-place: static readonly field initializers are re-evaluated and the new values are copied into the live module type, and static method bodies are swapped via per-method delegate trampolines. No domain reload required." />
+        <ListItemText primary="Value and utility changes hot-reload in-place: value initializers are re-evaluated and the fresh values are copied into the live __Exports type, and utility method bodies are swapped via per-method delegate trampolines. No domain reload required." />
       </ListItem>
       <ListItem disablePadding>
-        <ListItemText primary="Adding a new field or method to a module mid-session is a CLR rude edit — the project type's metadata cannot grow at runtime. HMR auto-recovers by scheduling a domain reload (configurable via the HMR window's 'Auto-reload on rude edit' toggle, default on; or EditorPref UITKX_HMR_AutoReloadOnRudeEdit). A once-per-session warning is logged either way." />
-      </ListItem>
-      <ListItem disablePadding>
-        <ListItemText primary="For HMR-able module values prefer fields (public static readonly Style Root = …) over static auto-properties — the C# compiler lowers get-only auto-properties to a private static readonly backing field that the source generator cannot rewrite, so the JIT inlines the cold value and HMR cannot refresh it." />
+        <ListItemText primary="Adding a NEW export to a file mid-session is a CLR rude edit — the project type's metadata cannot grow at runtime. HMR auto-recovers by scheduling a domain reload (configurable via the HMR window's 'Auto-reload on rude edit' toggle, default on; or EditorPref UITKX_HMR_AutoReloadOnRudeEdit). A once-per-session warning is logged either way." />
       </ListItem>
     </List>
 

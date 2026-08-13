@@ -10,7 +10,8 @@ namespace Ruitk.Language.Parser
     ///
     /// <list type="bullet">
     ///   <item><description><see cref="Type"/> — verbatim C# type (may include generics, e.g. <c>List&lt;string&gt;</c>).</description></item>
-    ///   <item><description><see cref="Name"/> — identifier used both as local variable in the body and (PascalCase) as the property name in the generated props class.</description></item>
+    ///   <item><description><see cref="Name"/> — identifier used as the local variable in the body; the
+    ///   PROPS contract derives from <see cref="PropSourceName"/> instead.</description></item>
     ///   <item><description><see cref="DefaultValue"/> — verbatim default expression, or <c>null</c> if omitted (maps to <c>default</c> in the generated class).</description></item>
     /// </list>
     /// </summary>
@@ -21,6 +22,29 @@ namespace Ruitk.Language.Parser
 
         /// <summary>0-based column of the first character of the parameter name. -1 when not tracked.</summary>
         public int NameColumn { get; init; } = -1;
+
+        /// <summary>
+        /// The name this parameter contributes to the component's PROPS contract:
+        /// <see cref="Name"/> minus any leading underscores. A leading underscore marks a
+        /// parameter deliberately unused (the C# discard convention UITKX0111 honors)
+        /// WITHOUT renaming the public prop — consumers keep writing the unprefixed
+        /// attribute, and the generated props-class property is the PascalCase of THIS
+        /// name. Every layer that maps params to props (SG emitter, HMR emitter, LSP
+        /// workspace index) derives from this single definition; two params that
+        /// collapse to the same prop name are UITKX0114.
+        /// </summary>
+        public string PropSourceName => ToPropSourceName(Name);
+
+        /// <summary>Static form of <see cref="PropSourceName"/> for callers that hold a raw
+        /// parameter name. Falls back to the literal name when stripping would leave nothing
+        /// (a bare <c>_</c> cannot become a prop).</summary>
+        public static string ToPropSourceName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name[0] != '_')
+                return name;
+            string stripped = name.TrimStart('_');
+            return stripped.Length == 0 ? name : stripped;
+        }
     }
 
     // ── Hook declaration ─────────────────────────────────────────────────────
@@ -278,6 +302,12 @@ namespace Ruitk.Language.Parser
         /// or <c>export default</c> marking — no inline <c>export</c> prefix exists in source, so
         /// the formatter must not synthesize one.</summary>
         public bool IsExportImplied { get; init; }
+        /// <summary>Generic type-parameter list text verbatim including the angle brackets
+        /// (e.g. <c>&lt;T&gt;</c>, <c>&lt;TKey, TValue&gt;</c>), or <c>null</c> for non-generic
+        /// members (F9 — generic declaration heads). Function-shaped members only; values never
+        /// carry one. Emitters append it to the emitted method name; the formatter re-emits it
+        /// between the name and the parameter list.</summary>
+        public string? TypeParamsText { get; init; }
     };
 
     // ── Directive data ────────────────────────────────────────────────────────
@@ -497,10 +527,12 @@ namespace Ruitk.Language.Parser
 
         /// <summary>
         /// True when the file's first declaration used a legacy wrapper keyword
-        /// (<c>component</c>/<c>hook</c>/<c>module</c>) — U-08. Drives folder-keyed namespace
-        /// derivation, legacy emission, and legacy import payloads for the WHOLE file (mixing
-        /// styles in one file is UITKX2108, Unity-local). A file with no declarations at all is
-        /// new-mode (<c>false</c>).
+        /// (<c>component</c>/<c>hook</c>/<c>module</c>) — U-08. Migration-only data since
+        /// 0.16.0: the wrapper grammar is a hard <c>UITKX2320</c> error on a normal parse
+        /// (mixing styles reports the 2320 mixed-file variant), and this flag routes the
+        /// SG's <c>#error</c> stub plus the codemod's migrate/freeze decision under
+        /// <c>ParseLegacyForMigration</c>. A file with no declarations at all is new-mode
+        /// (<c>false</c>).
         /// </summary>
         public bool UsesLegacySyntax { get; init; } = false;
 

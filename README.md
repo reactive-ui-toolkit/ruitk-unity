@@ -21,7 +21,7 @@ The same components also render to classic **Unity UI (uGUI)**: one fiber reconc
 | `Ugui/` | uGUI render backend — `UguiRootRenderer`, `U.*` factories, element adapters, islands |
 | `Editor/` | Unity Editor integration — HMR, change watcher, console navigation |
 | `Analyzers/` | Published Roslyn analyzer / source generator DLLs |
-| `Samples/` | Demo components: legacy C# (`Components/`), UITKX (`UITKX/`), showcase app (`Showcase/`) |
+| `Samples/` | Demo components (`Components/`), shared demo infra (`Shared/`), full apps (`UIs/`, `Showcase/`), uGUI demos (`UguiDemo/`) |
 | `SourceGenerator~/` | Source generator source code + tests |
 | `ide-extensions~/` | IDE extension projects (VS Code, VS2022, Rider, shared LSP server) |
 | `Plans~/` | Design documents and implementation plans |
