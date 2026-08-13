@@ -1,3 +1,29 @@
+## [0.16.0] - 2026-08-10
+
+### The wrapper keywords are gone - plain declarations only
+
+**`component` / `hook` / `module` and the `@component`/`@props`/`@key`/`@inject` directives were removed** (deprecated since 0.9.0). A legacy file now fails with `UITKX2320`, whose message names the fix. Upgrade order: codemod first, then bump the package - the codemod runs from the repo against your project on any installed version:
+
+```
+node scripts/migrate-uitkx.mjs <YourProject>/Assets --es-modules
+```
+
+Companion sets migrate atomically, files whose generated namespace would move get an explicit `@namespace` stamp, and `--report` writes a ledger of every rewrite. The one shape the dialect will not express - type definitions - is reported with the fix (a hand-written .cs beside the components). `@using` keeps parsing forever; `import "@Ns"` stays the recommended spelling.
+
+**Generic hooks are first-class now.** `export (T value, Action<T> set) useSel<T>(...)` parses, emits, hot-reloads, bridges across aliased imports, formats, and highlights - and the codemod migrates legacy generic hooks instead of skipping them.
+
+**Fix - long declaration heads wrap again.** The legacy formatter wrapped over-width heads; the plain path silently did not. Parameters one per line, tuple returns ahead of the name.
+
+**Under the hood**, the dead machinery went with the grammar: the SG's module emitter, HMR's legacy container emitter, the LSP's legacy generators, and diagnostics `UITKX2107`/`2108`/`2109`/`0211` (retired, IDs reserved). Docs gain a 0.16 migration page plus Mounting & Roots.
+
+**Also shipped.** Underscore-marked params stay unused WITHOUT renaming their prop (`_onChanged` still exposes `onChanged`; `_x`+`x` = `UITKX0114`). Import specifiers accept single quotes. HMR runs on Unity 6000.5 and hot-swaps `.uitkx` inside embedded/local packages. `.uitkx` files wear the toolkit icon in VS Code.
+
+**Tests.** 1855/1855 SG, 172/172 LSP.
+
+VS Code **1.9.1 -> 1.10.0** | VS 2022 **1.9.1 -> 1.10.0**.
+
+---
+
 ## [0.15.0] - 2026-08-02
 
 ### Unity 6.5 PanelRenderer host - sub-root mount, rebuild dispatch, workarounds

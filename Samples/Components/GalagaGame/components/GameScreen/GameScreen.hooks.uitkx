@@ -1,14 +1,16 @@
+import * as Tick from "../../GameLogic"
 import "@UnityEngine.UIElements"
 import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes"
 import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes.C"
-import "@static Ruitk.Samples.Components.GalagaGame.GameLogic"
 import "@GameState = Ruitk.Samples.Components.GalagaGame.GalagaTypes.GameState"
 
 export (
   GameState state,
   Action restart,
   KeyboardEventHandler onKeyDown
-) useGalagaGame(Ref<VisualElement?> boardRef) {
+) useGalagaGame(
+  Ref<VisualElement?> boardRef
+) {
   var initialState = useMemo(() => Tick.CreateInitialState(), 0);
   var (state, setState) = useState<GameState>(initialState);
   var stateRef = useRef<GameState>(initialState);

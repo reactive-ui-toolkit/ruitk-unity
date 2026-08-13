@@ -156,8 +156,9 @@ namespace Ruitk.SourceGenerator.Emitter
                 if (mutableRefParams.Count > 1)
                     return RefParamLookupResult.Ambiguous;
 
-                // Exactly one — convert camelCase param name to PascalCase prop name.
-                refPropName = ToPropName(mutableRefParams[0].Name);
+                // Exactly one — convert camelCase param name to PascalCase prop name
+                // (PropSourceName: underscore-marked params keep their public prop).
+                refPropName = ToPropName(mutableRefParams[0].PropSourceName);
                 return RefParamLookupResult.Found;
             }
 
@@ -536,7 +537,7 @@ namespace Ruitk.SourceGenerator.Emitter
                     if (!peer.FunctionParams.IsDefaultOrEmpty)
                     {
                         foreach (var p in peer.FunctionParams)
-                            result.Add(ToPropName(p.Name));
+                            result.Add(ToPropName(p.PropSourceName));
                     }
                     return result;
                 }

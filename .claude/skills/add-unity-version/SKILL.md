@@ -227,6 +227,11 @@ Update the docs site so the website reflects the new version.
 
 1. **Build the runtime package** — Verify no compile errors on the floor version (6.2)
 2. **Build with new Unity** — If the new version is installed, verify `#if` guards compile correctly
+   - **Also probe the editor's bundled tooling layout** — `UitkxHmrCompiler.FindCompilerPaths`
+     depends on where the editor ships Roslyn and the dotnet host. 6000.5 silently moved csc
+     from `Data/DotNetSdkRoslyn/csc.dll` into `Data/DotNetSdk/sdk/<ver>/Roslyn/bincore/csc.dll`
+     (version-numbered!), which broke Start HMR with no API diff to warn about it. Check
+     `Data/` for layout drift on every new editor line and extend the probe, never rewrite it.
 3. **Build LSP server:**
    ```powershell
    cd ide-extensions~/lsp-server; dotnet build

@@ -26,7 +26,7 @@ public class DebugDumpTest
             @namespace UI.App.Pages
             @using UnityEngine.UIElements
 
-            component GameOverPage() {
+            VirtualNode GameOverPage() {
                 return (
                     <VisualElement style={Styles.TopContainerSafe}>
                         <Label text="Hello" />

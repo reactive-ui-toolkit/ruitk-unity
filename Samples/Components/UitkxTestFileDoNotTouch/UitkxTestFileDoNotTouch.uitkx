@@ -1,15 +1,10 @@
-@namespace Ruitk.Samples.UITKXComponents
 import { IntroCounterFunc } from "../../Shared/IntroCounterFunc"
 import { UitkxTestSubFileDoNotTouch } from "./UitkxTestSubFileDoNotTouch"
-@using System
-@using System.Collections.Generic
-@using UnityEngine
-@using UnityEngine.UIElements
-@using Ruitk.Signals
-@using Ruitk.Router
-@using Ruitk.Samples.UITKXShared
+import "@UnityEngine.UIElements"
+import "@Ruitk.Signals"
+import "@Ruitk.Samples.UITKXShared"
 
-export component UitkxTestFileDoNotTouch(
+export VirtualNode UitkxTestFileDoNotTouch(
   IReadOnlyList<ListViewRowState>? items = null,
   Action? addItem = null,
   Action? setTopItem = null,
@@ -319,9 +314,7 @@ export component UitkxTestFileDoNotTouch(
     SelectedIndex = tabIndex,
     Tabs = new List<TabViewProps.TabDef>
     {
-      new TabViewProps.TabDef { Title = "Log", Content = () => (
-        <Box />
-      )},
+      new TabViewProps.TabDef { Title = "Log", Content = () => BuildRowRenderer()(0, null) },
       new TabViewProps.TabDef { Title = "Counter", Content = () => secondElement },
       new TabViewProps.TabDef { Title = "Mode", Content = () => V.Label(new LabelProps { Text = $"Mode: {mode}" }) },
     },
@@ -609,6 +602,33 @@ export component UitkxTestFileDoNotTouch(
           style={new Style { (StyleKeys.MarginRight, 6f) }}
         />
         <Button text="Shuffle" onClick={_ => ShuffleOptions()} />
+      </VisualElement>
+      <VisualElement style={rowStyle}>
+        <Button
+          text="Tree +Parent"
+          onClick={_ => TreeAddParent()}
+          style={new Style { (StyleKeys.MarginRight, 6f) }}
+        />
+        <Button
+          text="Tree Set"
+          onClick={_ => TreeSetParent()}
+          style={new Style { (StyleKeys.MarginRight, 6f) }}
+        />
+        <Button
+          text="Tree Del"
+          onClick={_ => TreeDeleteLast()}
+          style={new Style { (StyleKeys.MarginRight, 6f) }}
+        />
+        <Button
+          text="Mctv Set"
+          onClick={_ => MctvSetChild()}
+          style={new Style { (StyleKeys.MarginRight, 6f) }}
+        />
+        <Button text="Mctv Del" onClick={_ => MctvDeleteLast()} />
+        <Label
+          text={$"tree: {treeRows.Count} | mctv: {mctvRows.Count}"}
+          style={new Style { (StyleKeys.MarginLeft, 6f), (StyleKeys.FontSize, 12f) }}
+        />
       </VisualElement>
       <ToggleButtonGroup value={selected}>
         @foreach (var opt in options) {

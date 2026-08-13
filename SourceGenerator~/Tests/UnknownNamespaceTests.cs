@@ -17,7 +17,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void MisspelledAtUsing_Emits2316()
         {
             const string src =
-                "@namespace TestNs\n@using Zzz.Totally.Bogus\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\n@using Zzz.Totally.Bogus\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
 
             var result = GeneratorTestHelper.Run(src);
 
@@ -29,7 +29,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void MisspelledNamespaceImport_Emits2316()
         {
             const string src =
-                "@namespace TestNs\nimport \"@Zzz.Totally.Bogus\"\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\nimport \"@Zzz.Totally.Bogus\"\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
 
             var result = GeneratorTestHelper.Run(src);
 
@@ -40,7 +40,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void ValidCoreNamespace_No2316()
         {
             const string src =
-                "@namespace TestNs\n@using System.Collections.Generic\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\n@using System.Collections.Generic\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
 
             var result = GeneratorTestHelper.Run(src);
 
@@ -53,7 +53,7 @@ namespace Ruitk.SourceGenerator.Tests
             // `static X` targets a TYPE, not a namespace — v1 SG check skips it (no false 2316
             // even though this test compilation lacks a Doom.Nonexistent type).
             const string src =
-                "@namespace TestNs\nimport \"@static Doom.Nonexistent.Thing\"\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\nimport \"@static Doom.Nonexistent.Thing\"\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
 
             var result = GeneratorTestHelper.Run(src);
 
@@ -69,9 +69,9 @@ namespace Ruitk.SourceGenerator.Tests
             var files = new[]
             {
                 ("Widget.uitkx",
-                    "@namespace MyApp.Widgets\nexport component Widget {\n  return (<VisualElement />);\n}"),
+                    "@namespace MyApp.Widgets\nexport VirtualNode Widget() {\n  return (<VisualElement />);\n}"),
                 ("Screen.uitkx",
-                    "@namespace MyApp.Screens\nimport \"@MyApp.Widgets\"\ncomponent Screen {\n  return (<VisualElement />);\n}"),
+                    "@namespace MyApp.Screens\nimport \"@MyApp.Widgets\"\nVirtualNode Screen() {\n  return (<VisualElement />);\n}"),
             };
 
             var result = GeneratorTestHelper.RunMultiple(files, "Screen.uitkx");
@@ -86,7 +86,7 @@ namespace Ruitk.SourceGenerator.Tests
             // (the emitted using's CS0246 stays the real gate; the editor pass is the error tier).
             // Because it doesn't halt, the component source is still produced.
             const string src =
-                "@namespace TestNs\n@using Zzz.Bogus\ncomponent MyComp {\n  return (<VisualElement />);\n}";
+                "@namespace TestNs\n@using Zzz.Bogus\nVirtualNode MyComp() {\n  return (<VisualElement />);\n}";
 
             var result = GeneratorTestHelper.Run(src);
 

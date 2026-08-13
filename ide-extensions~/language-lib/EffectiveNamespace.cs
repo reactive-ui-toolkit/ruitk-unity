@@ -10,9 +10,9 @@ namespace Ruitk.Language
     /// hook family keys are <c>{EffectiveNamespace}.{Container}::{HookName}</c>, and a producer id
     /// (emitted by one world) must string-match a consumer key (possibly emitted by the other).
     ///
-    /// Rule: an explicit <c>@namespace</c> wins; otherwise, under <see cref="UitkxFeatureFlags.StrictImports"/>,
-    /// the namespace is path-derived (<see cref="NamespaceDerivation.Derive"/>) anchored at the nearest
-    /// owning <c>.asmdef</c>, else the configured project root; with the flag off it is the parsed value.
+    /// Rule: an explicit <c>@namespace</c> wins; otherwise the namespace is path-derived
+    /// (<see cref="NamespaceDerivation.Derive"/>) anchored at the nearest owning <c>.asmdef</c>,
+    /// else the configured project root.
     /// </summary>
     public static class EffectiveNamespace
     {
@@ -39,8 +39,6 @@ namespace Ruitk.Language
         /// </summary>
         public static string? Resolve(bool hasExplicitNamespace, string? rawNamespace, string filePath, bool fileKeyed)
         {
-            if (!UitkxFeatureFlags.StrictImports)
-                return rawNamespace;
             if (hasExplicitNamespace)
                 return rawNamespace;
             string? anchor = ResolveDerivationAnchor(filePath);

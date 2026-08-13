@@ -1,0 +1,48 @@
+export Style Container = new Style {
+  (StyleKeys.Display, "flex"),
+  (StyleKeys.FlexGrow, 1f),
+  (StyleKeys.FlexDirection, "column"),
+  (StyleKeys.AlignSelf, "stretch"),
+};
+
+export Style TopBar = new Style {
+  (StyleKeys.Display, "flex"),
+  (StyleKeys.FlexDirection, "row"),
+  (StyleKeys.JustifyContent, "center"),
+  (StyleKeys.AlignItems, "center"),
+  (StyleKeys.Padding, 12f),
+  (StyleKeys.FlexShrink, 0f),
+};
+
+export Style ScoreLabel = new Style {
+  (StyleKeys.FontSize, 20f),
+  (StyleKeys.Color, Color.white),
+};
+
+export Style BoardArea = new Style {
+  (StyleKeys.Display, "flex"),
+  (StyleKeys.FlexGrow, 1f),
+  (StyleKeys.JustifyContent, "center"),
+  (StyleKeys.AlignItems, "center"),
+};
+
+export Style GameOverRow = new Style {
+  (StyleKeys.Display, "flex"),
+  (StyleKeys.FlexDirection, "row"),
+  (StyleKeys.AlignItems, "center"),
+};
+
+export Style GameOverText = new Style {
+  (StyleKeys.FontSize, 22f),
+  (StyleKeys.Color, new Color(0.95f, 0.2f, 0.2f, 1f)),
+  (StyleKeys.MarginRight, 12f),
+};
+
+export Style PlayAgainButton = new Style {
+  (StyleKeys.Height, 30f),
+  (StyleKeys.Width, 120f),
+  (StyleKeys.BackgroundColor, new Color(0.2f, 0.6f, 0.3f, 1f)),
+  (StyleKeys.Color, Color.white),
+  (StyleKeys.BorderRadius, 4f),
+  (StyleKeys.BorderWidth, 0f),
+};

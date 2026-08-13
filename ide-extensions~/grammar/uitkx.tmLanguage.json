@@ -28,15 +28,6 @@
       "include": "#plain-declaration"
     },
     {
-      "include": "#function-style-declaration"
-    },
-    {
-      "include": "#hook-declaration"
-    },
-    {
-      "include": "#module-declaration"
-    },
-    {
       "include": "#cs-line-comment"
     },
     {
@@ -87,7 +78,7 @@
     "namespace-import-declaration": {
       "comment": "Handles namespace imports: import \"@Namespace\" (namespace-import unification plan). Scoped IDENTICALLY to a file import — same `keyword.control.import` keyword and `string.quoted.double` string — so every import line reads as the same colour; the leading @ inside the string is the only visual/semantic marker.",
       "name": "meta.import.namespace.uitkx",
-      "match": "^(\\s*)(import)\\s+(\"@[^\"]*\")",
+      "match": "^(\\s*)(import)\\s+(\"@[^\"]*\"|'@[^']*')",
       "captures": {
         "2": { "name": "keyword.control.import.uitkx" },
         "3": { "name": "string.quoted.double.uitkx" }
@@ -96,7 +87,7 @@
     "import-declaration": {
       "comment": "Handles import lines: import { A, B, C as D } from \"./specifier\" (import/export grammar + ES-modules `as` renames)",
       "name": "meta.import.uitkx",
-      "match": "^(\\s*)(import)\\s*(\\{)([^}]*)(\\})\\s*(from)\\s*(\"[^\"]*\")",
+      "match": "^(\\s*)(import)\\s*(\\{)([^}]*)(\\})\\s*(from)\\s*(\"[^\"]*\"|'[^']*')",
       "captures": {
         "2": { "name": "keyword.control.import.uitkx" },
         "3": { "name": "punctuation.definition.block.begin.uitkx" },
@@ -112,7 +103,7 @@
     "star-import-declaration": {
       "comment": "Namespace import of a peer file (ES-modules campaign, G-05): import * as X from \"./specifier\"",
       "name": "meta.import.star.uitkx",
-      "match": "^(\\s*)(import)\\s*(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(from)\\s*(\"[^\"]*\")",
+      "match": "^(\\s*)(import)\\s*(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(from)\\s*(\"[^\"]*\"|'[^']*')",
       "captures": {
         "2": { "name": "keyword.control.import.uitkx" },
         "3": { "name": "keyword.operator.uitkx" },
@@ -125,7 +116,7 @@
     "default-import-declaration": {
       "comment": "Default import + ES combined forms (G-05): import X from, import X, { a as b } from, import X, * as NS from \"./specifier\"",
       "name": "meta.import.default.uitkx",
-      "match": "^(\\s*)(import)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:,\\s*(?:(\\{)([^}]*)(\\})|(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)))?\\s+(from)\\s*(\"[^\"]*\")",
+      "match": "^(\\s*)(import)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:,\\s*(?:(\\{)([^}]*)(\\})|(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)))?\\s+(from)\\s*(\"[^\"]*\"|'[^']*')",
       "captures": {
         "2": { "name": "keyword.control.import.uitkx" },
         "3": { "name": "entity.name.type.uitkx" },
@@ -163,16 +154,27 @@
       }
     },
     "plain-declaration": {
-      "comment": "Plain typed declaration head (ES-modules campaign, U-04/G-03): [export] VirtualNode Name( => component (entity.name.class); [export] <Type> useName( => hook (entity.name.function). Value/util heads fall through to #code-block-body (ordinary C# coloring). Must run BEFORE the wrapper-keyword patterns' fallback but AFTER the import patterns.",
+      "comment": "Plain typed declaration head (ES-modules campaign, U-04/G-03): [export] VirtualNode Name( => component (entity.name.class); [export] <Type> useName( => hook (entity.name.function); [export] <Type> name = => value (variable.other.constant); [export] <Type> name( => util (entity.name.function); a column-0 `) name(` is the wrapped tuple-return continuation the formatter emits for over-width heads. Declared names get a deterministic scope here so they never fall to the case-split identifier heuristics (#cs-type-name / #identifier). Value/util/wrapped alternatives are column-0-anchored so body statements cannot false-match. Must run AFTER the import patterns.",
       "name": "meta.declaration.plain.uitkx",
-      "match": "^(\\s*)(export)?\\s*((?:global::)?(?:[A-Za-z_][\\w.]*\\.)?VirtualNode)\\s+([A-Z][A-Za-z0-9_]*)\\s*(?=\\()|^(\\s*)(export)?\\s*((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+(use[A-Z][A-Za-z0-9_]*)\\s*(?=\\()",
+      "match": "^(\\s*)(export)?\\s*((?:global::)?(?:[A-Za-z_][\\w.]*\\.)?VirtualNode)\\s+([A-Z][A-Za-z0-9_]*)\\s*(?=\\()|^(\\s*)(export)?\\s*((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+(use[A-Z][A-Za-z0-9_]*)\\s*(<[\\w,\\s]+>)?\\s*(?=\\()|^(export\\s+)?(?![<\\s])((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?==(?!=))|^(export\\s+)?(?![<\\s])((?:[\\w.<>\\[\\],\\s\\?]|\\([^)]*\\))+?)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(<[\\w,\\s]+>)?\\s*(?=\\()|^(\\))\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(<[\\w,\\s]+>)?\\s*(?=\\()",
       "captures": {
         "2": { "name": "keyword.control.export.uitkx" },
         "3": { "name": "entity.name.type.uitkx" },
         "4": { "name": "entity.name.class.uitkx" },
         "6": { "name": "keyword.control.export.uitkx" },
         "7": { "patterns": [ { "include": "#expression-content" } ] },
-        "8": { "name": "entity.name.function.uitkx" }
+        "8": { "name": "entity.name.function.uitkx" },
+        "9": { "name": "entity.name.type.uitkx" },
+        "10": { "name": "keyword.control.export.uitkx" },
+        "11": { "patterns": [ { "include": "#expression-content" } ] },
+        "12": { "name": "variable.other.constant.uitkx" },
+        "13": { "name": "keyword.control.export.uitkx" },
+        "14": { "patterns": [ { "include": "#expression-content" } ] },
+        "15": { "name": "entity.name.function.uitkx" },
+        "16": { "name": "entity.name.type.uitkx" },
+        "17": { "name": "punctuation.section.group.end.uitkx" },
+        "18": { "name": "entity.name.function.uitkx" },
+        "19": { "name": "entity.name.type.uitkx" }
       }
     },
     "comment": {
@@ -207,9 +209,9 @@
       }
     },
     "directive-declaration": {
-      "comment": "Handles @namespace X, @component X, @using X, @props X, @key X, @inject T N",
+      "comment": "Handles @namespace X, @using X, @backend X (the legacy @component/@props/@key/@inject directives were removed with the wrapper grammar in 0.16.0)",
       "name": "meta.directive.uitkx",
-      "match": "^(@)(namespace|component|using|props|key|inject|backend)\\b(.*)$",
+      "match": "^(@)(namespace|using|backend)\\b(.*)$",
       "captures": {
         "1": {
           "name": "keyword.other.directive.uitkx"
@@ -219,77 +221,6 @@
         },
         "3": {
           "name": "entity.name.type.uitkx"
-        }
-      }
-    },
-    "function-style-declaration": {
-      "comment": "Handles function-style component declarations: component Name { or component Name(params) {",
-      "name": "meta.component.function-style.uitkx",
-      "match": "^(\\s*)(?:export\\s+)?(component)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\s*\\([^)]*\\))?(\\s*\\{)?\\s*$",
-      "captures": {
-        "2": {
-          "name": "keyword.other.directive.uitkx"
-        },
-        "3": {
-          "name": "entity.name.type.uitkx"
-        },
-        "4": {
-          "patterns": [
-            { "include": "#expression-content" }
-          ]
-        },
-        "5": {
-          "name": "punctuation.section.block.begin.uitkx"
-        }
-      }
-    },
-    "hook-declaration": {
-      "comment": "Handles hook declarations: hook useName<T>(params) -> ReturnType {",
-      "name": "meta.hook.uitkx",
-      "match": "^(\\s*)(?:export\\s+)?(hook)\\s+([A-Za-z_][A-Za-z0-9_]*)(<[^>]+>)?\\s*(\\([^)]*\\))\\s*(?:(->)\\s*([^{]+?))?\\s*(\\{)?\\s*$",
-      "captures": {
-        "2": {
-          "name": "keyword.other.hook.uitkx"
-        },
-        "3": {
-          "name": "entity.name.function.uitkx"
-        },
-        "4": {
-          "patterns": [
-            { "include": "#expression-content" }
-          ]
-        },
-        "5": {
-          "patterns": [
-            { "include": "#expression-content" }
-          ]
-        },
-        "6": {
-          "name": "keyword.operator.arrow.uitkx"
-        },
-        "7": {
-          "patterns": [
-            { "include": "#expression-content" }
-          ]
-        },
-        "8": {
-          "name": "punctuation.section.block.begin.uitkx"
-        }
-      }
-    },
-    "module-declaration": {
-      "comment": "Handles module declarations: module Name {",
-      "name": "meta.module.uitkx",
-      "match": "^(\\s*)(?:export\\s+)?(module)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\s*\\{)?\\s*$",
-      "captures": {
-        "2": {
-          "name": "keyword.other.module.uitkx"
-        },
-        "3": {
-          "name": "entity.name.type.uitkx"
-        },
-        "4": {
-          "name": "punctuation.section.block.begin.uitkx"
         }
       }
     },

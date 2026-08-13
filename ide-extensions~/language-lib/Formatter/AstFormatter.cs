@@ -188,16 +188,15 @@ namespace Ruitk.Language.Formatter
             if (ContainsInlineJsxControlFlow(nodes))
                 return source;
 
-            // -- New-mode plain-declaration files (ES-modules campaign, U-10) --
+            // -- Plain-declaration files (ES-modules campaign, U-10) --
             // Must be checked FIRST: these files carry MemberDeclarations/DefaultExportName/
             // ExportListNames that no other path re-emits — falling through would DELETE them
             // (the A7f data-loss guard extended to the new record fields).
             if (
-                !directives.UsesLegacySyntax
-                && (!directives.MemberDeclarations.IsDefaultOrEmpty
-                    || !directives.ComponentDeclarations.IsDefaultOrEmpty
-                    || directives.DefaultExportName != null
-                    || !directives.ExportListNames.IsDefaultOrEmpty)
+                !directives.MemberDeclarations.IsDefaultOrEmpty
+                || !directives.ComponentDeclarations.IsDefaultOrEmpty
+                || directives.DefaultExportName != null
+                || !directives.ExportListNames.IsDefaultOrEmpty
             )
             {
                 // Losslessly re-formatting the 2nd+ component needs per-component markup
@@ -206,22 +205,6 @@ namespace Ruitk.Language.Formatter
                 if (directives.ComponentDeclarations.Length > 1)
                     return source;
                 FormatPlainDeclarationFile(directives, nodes);
-            }
-            // -- Hook/module files: dedicated path -----------------------------
-            // Must be checked BEFORE IsFunctionStyle because the parser sets that
-            // flag for hook/module files too.
-            else if (
-                !directives.HookDeclarations.IsDefaultOrEmpty
-                || !directives.ModuleDeclarations.IsDefaultOrEmpty
-            )
-            {
-                // A legacy MIXED file (component + hook/module) has no lossless path here —
-                // FormatHookModuleFile never re-emits components. Untouched beats data loss
-                // (same precedent as ContainsInlineJsxControlFlow; audit P2).
-                if (directives.ComponentDeclarations.Length > 0
-                    || !string.IsNullOrEmpty(directives.ComponentName))
-                    return source;
-                FormatHookModuleFile(source, directives);
             }
             else if (directives.IsFunctionStyle)
             {
@@ -515,6 +498,31 @@ namespace Ruitk.Language.Formatter
             string ExportPrefix(string name, bool isExported, bool exportImplied)
                 => isExported && !exportImplied && !listExported.Contains(name) ? "export " : "";
 
+            // A previously-wrapped head carries embedded newlines/indent in its raw text.
+            static string CollapseHeadWhitespace(string s)
+                => System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim();
+
+            // Top-level comma split of a tuple TYPE's items ("(a, b<c,d>, e)" -> 3 items).
+            static string[] SplitTupleItems(string tupleText)
+            {
+                string inner = tupleText.Substring(1, tupleText.Length - 2);
+                var parts = new List<string>();
+                int depth = 0, start = 0;
+                for (int k = 0; k < inner.Length; k++)
+                {
+                    char ch = inner[k];
+                    if (ch == '(' || ch == '<' || ch == '[') depth++;
+                    else if (ch == ')' || ch == '>' || ch == ']') depth--;
+                    else if (ch == ',' && depth == 0)
+                    {
+                        parts.Add(inner.Substring(start, k - start).Trim());
+                        start = k + 1;
+                    }
+                }
+                parts.Add(inner.Substring(start).Trim());
+                return parts.ToArray();
+            }
+
             // Merge members + the single component in source order. OrderBy (stable) — a
             // same-line tie must never reorder declarations (audit F2).
             var entries = new List<(int Line, int MemberIndex, bool IsComponent)>();
@@ -546,16 +554,30 @@ namespace Ruitk.Language.Formatter
                 if (entry.IsComponent)
                 {
                     var c = directives.ComponentDeclarations[0];
-                    string paramList = "";
-                    if (!c.FunctionParams.IsDefaultOrEmpty)
-                    {
-                        var parts = c.FunctionParams.Select(p =>
+                    string[] compParams = c.FunctionParams.IsDefaultOrEmpty
+                        ? System.Array.Empty<string>()
+                        : c.FunctionParams.Select(p =>
                             p.DefaultValue != null
                                 ? $"{p.Type} {p.Name} = {p.DefaultValue}"
-                                : $"{p.Type} {p.Name}");
-                        paramList = string.Join(", ", parts);
+                                : $"{p.Type} {p.Name}").ToArray();
+                    string compPrefix = ExportPrefix(c.Name, c.IsExported, c.IsExportImplied);
+                    string compHeader =
+                        $"{compPrefix}VirtualNode {c.Name}({string.Join(", ", compParams)}) {{";
+                    if (compParams.Length > 0 && compHeader.Length > _opts.PrintWidth)
+                    {
+                        // Long-head wrap: params one-per-line, one level in — the same
+                        // shape the legacy component head used.
+                        _sb.Append($"{compPrefix}VirtualNode {c.Name}(\n");
+                        _indent++;
+                        for (int pi = 0; pi < compParams.Length; pi++)
+                            Ln(pi == compParams.Length - 1 ? compParams[pi] : compParams[pi] + ",");
+                        _indent--;
+                        Ln(") {");
                     }
-                    Ln($"{ExportPrefix(c.Name, c.IsExported, c.IsExportImplied)}VirtualNode {c.Name}({paramList}) {{");
+                    else
+                    {
+                        Ln(compHeader);
+                    }
                     _indent++;
                     EmitFunctionStyleComponentBodyAndClose(directives, nodes);
                     continue;
@@ -570,15 +592,70 @@ namespace Ruitk.Language.Formatter
                     continue;
                 }
 
-                string ret = m.ReturnTypeText ?? "void";
-                string paramsText = m.ParamsText ?? string.Empty;
+                // Canonicalize the head pieces: a previously-wrapped tuple return or param
+                // list carries embedded newlines/indent in its raw text — collapse so the
+                // wrap decision (and the emitted single-line form) is deterministic.
+                string ret = CollapseHeadWhitespace(m.ReturnTypeText ?? "void");
+                string typeParams = m.TypeParamsText ?? string.Empty;
+                string[] memberParams = m.Params.IsDefaultOrEmpty
+                    ? System.Array.Empty<string>()
+                    : m.Params.Select(p =>
+                        p.DefaultValue != null
+                            ? $"{p.Type} {p.Name} = {p.DefaultValue}"
+                            : $"{p.Type} {p.Name}").ToArray();
+                string paramsText = memberParams.Length > 0
+                    ? string.Join(", ", memberParams)
+                    : CollapseHeadWhitespace(m.ParamsText ?? string.Empty);
                 if (m.IsExpressionBodied)
                 {
-                    Ln($"{prefix}{ret} {m.Name}({paramsText}) => {m.BodyText};");
+                    Ln($"{prefix}{ret} {m.Name}{typeParams}({paramsText}) => {m.BodyText};");
                 }
                 else
                 {
-                    Ln($"{prefix}{ret} {m.Name}({paramsText}) {{");
+                    string headerLine = $"{prefix}{ret} {m.Name}{typeParams}({paramsText}) {{";
+                    bool tooLong = headerLine.Length > _opts.PrintWidth;
+                    bool retIsTuple = ret.StartsWith("(", System.StringComparison.Ordinal) && ret.Contains(',');
+                    // Wrap the tuple RETURN when even the pre-params head is over budget;
+                    // wrap PARAMS whenever the single-line head is over budget.
+                    bool wrapRet = tooLong && retIsTuple
+                        && $"{prefix}{ret} {m.Name}{typeParams}(".Length > _opts.PrintWidth;
+                    bool wrapParams = tooLong && memberParams.Length > 0;
+                    if (!wrapRet && !wrapParams)
+                    {
+                        Ln(headerLine);
+                    }
+                    else
+                    {
+                        if (wrapRet)
+                        {
+                            var items = SplitTupleItems(ret);
+                            _sb.Append($"{prefix}(\n");
+                            _indent++;
+                            for (int ti = 0; ti < items.Length; ti++)
+                                Ln(ti == items.Length - 1 ? items[ti] : items[ti] + ",");
+                            _indent--;
+                            if (wrapParams)
+                            {
+                                Ln($") {m.Name}{typeParams}(");
+                            }
+                            else
+                            {
+                                Ln($") {m.Name}{typeParams}({paramsText}) {{");
+                            }
+                        }
+                        else
+                        {
+                            _sb.Append($"{prefix}{ret} {m.Name}{typeParams}(\n");
+                        }
+                        if (wrapParams)
+                        {
+                            _indent++;
+                            for (int pi = 0; pi < memberParams.Length; pi++)
+                                Ln(pi == memberParams.Length - 1 ? memberParams[pi] : memberParams[pi] + ",");
+                            _indent--;
+                            Ln(") {");
+                        }
+                    }
                     _indent++;
                     EmitSetupCodeNormalized(m.BodyText.Trim(), tabExp);
                     _indent--;
@@ -609,243 +686,6 @@ namespace Ruitk.Language.Formatter
                 _sb.Append('\n');
                 Ln($"export default {directives.DefaultExportName};");
             }
-        }
-
-        // -----------------------------------------------------------------------
-        //  HOOK / MODULE FILES
-        // -----------------------------------------------------------------------
-
-        /// <summary>
-        /// Formats a .uitkx file that contains <c>hook</c> and/or <c>module</c>
-        /// declarations (no component markup). Re-emits the preamble directives,
-        /// then each declaration header + body with normalized indentation.
-        /// </summary>
-        private void FormatHookModuleFile(string source, DirectiveSet directives)
-        {
-            // -- Leading trivia: re-emit verbatim (license headers, etc. - see U-01) -
-            bool hasLeadingTrivia = !directives.LeadingTrivia.IsDefaultOrEmpty;
-            foreach (var (text, _, _) in directives.LeadingTrivia)
-            {
-                _sb.Append(text);
-                _sb.Append('\n');
-            }
-
-            // -- Preamble ------------------------------------------------------
-            // Canonical order via the shared EmitPreamble (@namespace → imports grouped). @uss is not
-            // part of the hook/module preamble (no component to attach a stylesheet to).
-            bool hasPreamble = EmitPreamble(directives, includeUss: false);
-
-            if (hasPreamble || hasLeadingTrivia)
-                _sb.Append('\n');
-
-            string tabExp = new string(' ', _opts.IndentSize);
-
-            // -- Hooks ---------------------------------------------------------
-            if (!directives.HookDeclarations.IsDefaultOrEmpty)
-            {
-                for (int i = 0; i < directives.HookDeclarations.Length; i++)
-                {
-                    if (i > 0)
-                        _sb.Append('\n');
-                    var hook = directives.HookDeclarations[i];
-                    EmitHookHeader(hook);
-                    _indent++;
-                    EmitSetupCodeNormalized(hook.Body.Trim(), tabExp);
-                    _indent--;
-                    Ln("}");
-                }
-            }
-
-            // -- Modules ------------------------------------------------------
-            if (!directives.ModuleDeclarations.IsDefaultOrEmpty)
-            {
-                for (int i = 0; i < directives.ModuleDeclarations.Length; i++)
-                {
-                    // Blank line between hooks and first module, or between modules
-                    if (i > 0 || !directives.HookDeclarations.IsDefaultOrEmpty)
-                        _sb.Append('\n');
-                    var mod = directives.ModuleDeclarations[i];
-                    Ln($"{(mod.IsExported ? "export " : "")}module {mod.Name} {{");
-                    _indent++;
-                    EmitSetupCodeNormalized(mod.Body.Trim(), tabExp);
-                    _indent--;
-                    Ln("}");
-                }
-            }
-        }
-
-        /// <summary>
-        /// Emits the hook declaration header line:
-        /// <c>hook useName&lt;T&gt;(type param) -> ReturnType {</c>
-        /// When the single-line form exceeds <see cref="FormatterOptions.PrintWidth"/>,
-        /// wraps parameters and return-type tuple members one-per-line (same
-        /// convention as the component header wrapping).
-        /// </summary>
-        private void EmitHookHeader(HookDeclaration hook)
-        {
-            // -- Build single-line form to measure -----------------------------
-            string singleLine = BuildHookHeaderSingleLine(hook);
-
-            if (singleLine.Length <= _opts.PrintWidth)
-            {
-                Ln(singleLine);
-                return;
-            }
-
-            // -- Wrapped form --------------------------------------------------
-            // hook name<T>(
-            //   type param,
-            //   type param
-            // ) -> (
-            //   type member,
-            //   type member
-            // ) {
-
-            var prefix = new StringBuilder();
-            if (hook.IsExported)
-                prefix.Append("export ");
-            prefix.Append("hook ");
-            prefix.Append(hook.Name);
-            if (!string.IsNullOrEmpty(hook.GenericParams))
-                prefix.Append(hook.GenericParams);
-
-            bool hasParams = !hook.Params.IsDefaultOrEmpty;
-            bool hasReturnType = !string.IsNullOrEmpty(hook.ReturnType);
-            bool returnIsTuple = hasReturnType && hook.ReturnType!.TrimStart().StartsWith("(");
-
-            if (hasParams)
-            {
-                _sb.Append(IndentStr()).Append(prefix).Append("(\n");
-                _indent++;
-                for (int i = 0; i < hook.Params.Length; i++)
-                {
-                    var p = hook.Params[i];
-                    string paramText =
-                        p.DefaultValue != null
-                            ? $"{p.Type} {p.Name} = {p.DefaultValue}"
-                            : $"{p.Type} {p.Name}";
-                    bool isLast = i == hook.Params.Length - 1;
-                    Ln(isLast ? paramText : paramText + ",");
-                }
-                _indent--;
-
-                if (hasReturnType && returnIsTuple)
-                {
-                    // `) -> (`  on its own line, then tuple members
-                    Ln(") -> (");
-                    EmitWrappedTupleMembers(hook.ReturnType!);
-                    Ln(") {");
-                }
-                else if (hasReturnType)
-                {
-                    Ln($") -> {hook.ReturnType} {{");
-                }
-                else
-                {
-                    Ln(") {");
-                }
-            }
-            else
-            {
-                // No params but return type is long
-                if (hasReturnType && returnIsTuple)
-                {
-                    _sb.Append(IndentStr()).Append(prefix).Append("() -> (\n");
-                    EmitWrappedTupleMembers(hook.ReturnType!);
-                    Ln(") {");
-                }
-                else
-                {
-                    // Fallback: single-line (shouldn't exceed width without params, but safe)
-                    Ln(singleLine);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Builds the single-line hook header string for measuring purposes.
-        /// </summary>
-        private static string BuildHookHeaderSingleLine(HookDeclaration hook)
-        {
-            var sb = new StringBuilder();
-            if (hook.IsExported)
-                sb.Append("export ");
-            sb.Append("hook ");
-            sb.Append(hook.Name);
-            if (!string.IsNullOrEmpty(hook.GenericParams))
-                sb.Append(hook.GenericParams);
-            sb.Append('(');
-            if (!hook.Params.IsDefaultOrEmpty)
-            {
-                for (int p = 0; p < hook.Params.Length; p++)
-                {
-                    if (p > 0)
-                        sb.Append(", ");
-                    var param = hook.Params[p];
-                    sb.Append(param.Type).Append(' ').Append(param.Name);
-                    if (param.DefaultValue != null)
-                        sb.Append(" = ").Append(param.DefaultValue);
-                }
-            }
-            sb.Append(')');
-            if (!string.IsNullOrEmpty(hook.ReturnType))
-                sb.Append(" -> ").Append(hook.ReturnType);
-            sb.Append(" {");
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// Emits the inner members of a tuple return type, one per line, indented.
-        /// Input: <c>(bool foo, string bar, int baz)</c> - outer parens are stripped.
-        /// </summary>
-        private void EmitWrappedTupleMembers(string tupleType)
-        {
-            // Strip outer parens
-            string inner = tupleType.Trim();
-            if (inner.StartsWith("("))
-                inner = inner.Substring(1);
-            if (inner.EndsWith(")"))
-                inner = inner.Substring(0, inner.Length - 1);
-            inner = inner.Trim();
-
-            // Split on commas, respecting nested generics/tuples
-            var members = SplitRespectingNesting(inner);
-
-            _indent++;
-            for (int i = 0; i < members.Count; i++)
-            {
-                bool isLast = i == members.Count - 1;
-                string member = members[i].Trim();
-                Ln(isLast ? member : member + ",");
-            }
-            _indent--;
-        }
-
-        /// <summary>
-        /// Splits a string on top-level commas, respecting <c>&lt;&gt;</c>,
-        /// <c>()</c>, and <c>[]</c> nesting.
-        /// </summary>
-        private static List<string> SplitRespectingNesting(string text)
-        {
-            var result = new List<string>();
-            int depth = 0;
-            int start = 0;
-            for (int i = 0; i < text.Length; i++)
-            {
-                char c = text[i];
-                if (c == '<' || c == '(' || c == '[')
-                    depth++;
-                else if (c == '>' || c == ')' || c == ']')
-                    depth--;
-                else if (c == ',' && depth == 0)
-                {
-                    result.Add(text.Substring(start, i - start));
-                    start = i + 1;
-                }
-            }
-            if (start < text.Length)
-                result.Add(text.Substring(start));
-            return result;
         }
 
         // -----------------------------------------------------------------------

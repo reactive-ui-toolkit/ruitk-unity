@@ -1,3 +1,5 @@
+import * as MainMenuStyles from "./MainMenuStyles.style"
+
 export VirtualNode MainMenu(Action onNewGame) {
   return (
     <VisualElement style={MainMenuStyles.Container}>

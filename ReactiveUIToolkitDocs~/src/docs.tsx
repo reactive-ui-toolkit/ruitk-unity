@@ -4,6 +4,8 @@ import { pages as legacySections } from './pages'
 import { PAGE_VERSIONS, isAvailableIn, compareVersions } from './versionManifest'
 import { KnownIssuesPage } from './pages/KnownIssues/KnownIssuesPage'
 import { MigrationPage } from './pages/Migration/MigrationPage'
+import { Migration016Page } from './pages/Migration/Migration016Page'
+import { MountingPage } from './pages/Mounting/MountingPage'
 import { RoadmapPage } from './pages/Roadmap/RoadmapPage'
 import { UitkxAPIPage } from './pages/UITKX/API/UitkxAPIPage'
 import { UitkxComponentReferencePage } from './pages/UITKX/Components/UitkxComponentReferencePage'
@@ -92,6 +94,22 @@ export const sections: DocSection[] = [
     ],
   },
   {
+    id: 'mounting',
+    title: 'Mounting & Roots',
+    pages: [
+      {
+        id: 'mounting-page',
+        canonicalId: 'mounting',
+        title: 'Mounting & Roots',
+        path: '/mounting',
+        keywords: ['mount', 'mounting', 'rootrenderer', 'initialize', 'uidocument', 'panelrenderer', 'visualelement', 'editor window', 'host', 'render'],
+        searchContent:
+          'mounting roots RootRenderer Initialize Render V.Func UIDocument recommended polls rootVisualElement once per frame migrates fiber tree panel rebuild inspector redraw 6.3 regression VisualElement static root custom hosts tests bespoke panels PanelRenderer unity 6.5 world space render texture callback-driven held replayed __ruitk_root sub-root V.Host props worldSpaceSizeMode worldSpaceSize pivot reuse in place retarget state preserved fresh remount released subtree uxml source asset panelSettings mount_watchdog nested_prevention nested_repair env callback HostContext PortalContextKeys portal slots EditorRootRendererUtility.Mount editor scheduler signals diagnostics one renderer per host UguiRootRenderer ugui canvas',
+        element: () => <MountingPage />,
+      },
+    ],
+  },
+  {
     id: 'companion-files',
     title: 'Companion Files',
     pages: [
@@ -101,7 +119,7 @@ export const sections: DocSection[] = [
         title: 'Companion Files',
         path: '/companion-files',
         keywords: ['companion', 'hook', 'module', 'styles', 'types', 'utils'],
-        searchContent: 'companion files optional .uitkx modules plain export declarations import styles types utils naming conventions directory layout source generator produces complete class no boilerplate needed MyComponent.hooks.uitkx custom hooks reusable state logic MyComponent.style.uitkx style constants helpers colours sizes ambient .cs enums structs DTOs MyComponent.utils.uitkx pure helper formatting functions hmr support editing hook triggers hmr delegate swap module changes standalone modules UITKX2107 deprecated partial-class merge',
+        searchContent: 'companion files optional .uitkx modules plain export declarations import styles types utils naming conventions directory layout source generator produces complete class no boilerplate needed MyComponent.hooks.uitkx custom hooks reusable state logic MyComponent.style.uitkx style constants helpers colours sizes ambient .cs enums structs DTOs MyComponent.utils.uitkx pure helper formatting functions hmr support editing hook triggers hmr delegate swap value utility changes standalone modules removed 0.16 partial-class merge',
         element: () => <CompanionFilesPage />,
       },
     ],
@@ -392,7 +410,7 @@ export const sections: DocSection[] = [
         title: 'Language Reference',
         path: '/reference',
         keywords: ['directives', 'syntax', 'control flow', 'expressions'],
-        searchContent: 'uitkx language reference directives syntax control flow expressions header directives @namespace My.Game.UI optional interop override file-keyed namespace @component MyButton legacy directive-header deprecated @using System.Collections.Generic adds using directive generated file import "@Ns" recommended spelling @uss stylesheet @props MyButtonProps legacy @key root-key static key root element legacy @inject ILogger logger dependency-injected field legacy plain declarations export VirtualNode UITKX2320 wrapper deprecation preamble declaration parameters typed optional default export VirtualNode Counter string label Count var count setCount useState return VisualElement Label text Button onClick setCount conditional rendering @if @else @foreach @switch @case @for @while {expr} markup child embed expression brace JSX babel react render component inline children attr={expr} c# expression attribute value literal plain string attribute // line comment /* block comment */ standard c-style comments fragment <> </> invisible wrapper rules gotchas hook calls must be unconditional component top level single root element component filename recommended convention reconciliation setup code return() switch expression jsx in setup code bare jsx assignment ternary paren-wrapped collection initializer array list dictionary new VirtualNode[] migration @(expr) removed UITKX0306 directive prefix only @uss',
+        searchContent: 'uitkx language reference directives syntax control flow expressions header directives @namespace My.Game.UI optional interop override file-keyed namespace @component removed 0.16 directive-header @using System.Collections.Generic adds using directive generated file import "@Ns" recommended spelling @uss stylesheet @backend ugui uitk render backend plain declarations export VirtualNode UITKX2320 wrapper removed 0.16 error codemod preamble declaration parameters typed optional default export VirtualNode Counter string label Count var count setCount useState return VisualElement Label text Button onClick setCount conditional rendering @if @else @foreach @switch @case @for @while {expr} markup child embed expression brace JSX babel react render component inline children attr={expr} c# expression attribute value literal plain string attribute // line comment /* block comment */ standard c-style comments fragment <> </> invisible wrapper rules gotchas hook calls must be unconditional component top level single root element component filename recommended convention reconciliation setup code return() switch expression jsx in setup code bare jsx assignment ternary paren-wrapped collection initializer array list dictionary new VirtualNode[] migration @(expr) removed UITKX0306 directive prefix only @uss',
         element: () => <UitkxReferencePage />,
       },
       {
@@ -434,7 +452,7 @@ export const sections: DocSection[] = [
         title: 'FAQ',
         path: '/faq',
         keywords: ['faq', 'frequently asked questions', 'help'],
-        searchContent: 'frequently asked questions migrate migration codemod UitkxMigrateImports --es-modules import export 0.9.0 upgrade existing project what is uitkx markup language authoring unity ui toolkit components react-like model .uitkx jsx-style hooks control flow roslyn source generator which unity versions supported unity 6.2 does uitkx work with existing ui toolkit code visualelement runtime overhead reconciliation scheduler per-frame cost aot-compatible production builds plain c# which editors supported vs code visual studio 2022 jetbrains rider .net version language server .net 8 dotnet directive-header form function-style components hmr hot module replacement hooks top level unconditional burst assembly-csharp-editor completions hover stopped working debugging guide',
+        searchContent: 'frequently asked questions migrate migration codemod UitkxMigrateImports migrate-uitkx.mjs --es-modules import export wrapper keywords removed 0.16 UITKX2320 upgrade existing project what is uitkx markup language authoring unity ui toolkit components react-like model .uitkx jsx-style hooks control flow roslyn source generator which unity versions supported unity 6.2 does uitkx work with existing ui toolkit code visualelement runtime overhead reconciliation scheduler per-frame cost aot-compatible production builds plain c# which editors supported vs code visual studio 2022 jetbrains rider .net version language server .net 8 dotnet directive-header form function-style components hmr hot module replacement hooks top level unconditional burst assembly-csharp-editor completions hover stopped working debugging guide',
         element: () => <FAQPage />,
       },
     ],
@@ -459,6 +477,16 @@ export const sections: DocSection[] = [
     id: 'migration',
     title: 'Migration',
     pages: [
+      {
+        id: 'migration-0-16-page',
+        canonicalId: 'migration-0-16-page',
+        title: 'Migrating to 0.16',
+        path: '/migration-0-16',
+        keywords: ['migration', '0.16', 'wrapper', 'component', 'hook', 'module', 'removed', 'UITKX2320', 'codemod', 'es-modules'],
+        searchContent:
+          'migrating 0.16 wrapper keywords removed component hook module directive header @component @props @key @inject UITKX2320 error plain declarations export VirtualNode use prefix tuple return values import * as codemod UitkxMigrateImports migrate-uitkx.mjs --es-modules --check --report idempotent companion sets atomic generic hooks first-class namespace stamp @namespace escape hatch @using keeps working import "@Ns" retired diagnostics 2107 2108 2109 0211 codemod first then upgrade order',
+        element: () => <Migration016Page />,
+      },
       {
         id: 'migration-0-12-page',
         canonicalId: 'migration-0-12-page',

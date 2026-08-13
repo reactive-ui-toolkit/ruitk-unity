@@ -91,10 +91,10 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
     private readonly Dictionary<string, HashSet<string>> _elementsByFile =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // Set of .uitkx file paths whose top-level declarations include `module`
-    // or `hook`. Maintained incrementally by IndexUitkxFile and consumed by
+    // Set of .uitkx file paths whose top-level declarations export members
+    // (values/utils/hooks). Maintained incrementally by IndexUitkxFile and consumed by
     // RoslynHost.FindPeerUitkxFiles to enable cross-directory symbol resolution
-    // for module-member references like `Theme.SidebarWidth` when `Theme` lives
+    // for member references like `Theme.SidebarWidth` when `Theme` lives
     // in a different folder than the consumer .uitkx file.
     private readonly HashSet<string> _moduleHookFiles = new(StringComparer.OrdinalIgnoreCase);
 
@@ -168,13 +168,16 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline
     );
 
-    // Matches a top-level declaration that contributes non-component symbols, BOTH grammars:
-    //   module Foo { / hook fooBar(                       (legacy wrappers)
+    // Matches a top-level declaration that contributes non-component symbols:
     //   export <Type> useX( / export <Type> Name = ...    (plain hook/util/value declarations)
-    // Multiline so `^` matches each logical line start; both grammars prohibit leading
-    // whitespace before a top-level declaration head.
+    //   ) useX(                                           (wrapped tuple-return head continuation)
+    // Multiline so `^` matches each logical line start; the grammar prohibits leading
+    // whitespace before a top-level declaration head, so a column-0 `)` can only be the
+    // continuation line of a formatter-wrapped over-width head. (The legacy module/hook
+    // wrapper alternates were dropped with the grammar in 0.16.0.)
     private static readonly Regex s_uitkxModuleOrHookPattern = new(
-        @"^(?:export\s+)?(?:module\s+[A-Za-z_]\w*\s*\{|hook\s+[A-Za-z_]\w*\s*[<\(])|^export\s+(?![A-Za-z_]\w*\s+from\b)[\w<>\[\],\s\.\?\(\)]+?\s[A-Za-z_]\w*\s*[=\(]",
+        @"^export\s+(?![A-Za-z_]\w*\s+from\b)[\w<>\[\],\s\.\?\(\)]+?\s[A-Za-z_]\w*\s*(?:<[\w,\s]+>)?\s*[=\(]"
+        + @"|^\)\s*[A-Za-z_]\w*\s*(?:<[\w,\s]+>)?\s*\(",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline
     );
 
@@ -715,21 +718,18 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
                 if (!ds.ComponentDeclarations.IsDefaultOrEmpty)
                     foreach (var c in ds.ComponentDeclarations)
                         if (c.IsExported) exports.Add((c.Name, StrictImportDetector.ExportKind.Component));
-                if (!ds.HookDeclarations.IsDefaultOrEmpty)
-                    foreach (var h in ds.HookDeclarations)
-                        if (h.IsExported) exports.Add((h.Name, StrictImportDetector.ExportKind.Hook));
-                if (!ds.ModuleDeclarations.IsDefaultOrEmpty)
-                    foreach (var mod in ds.ModuleDeclarations)
-                        if (mod.IsExported) exports.Add((mod.Name, StrictImportDetector.ExportKind.Module));
-                // Plain member declarations (ES-modules campaign, M5): hooks map to the Hook
-                // kind; values/utils map to Module (the closest reference-shape the strict
-                // detector scans — the kind mostly drives import-brace completion + 2305 hints).
+                // Member declarations (ES-modules campaign, M5): hooks map to the Hook
+                // kind, values to Module (dotted `config.Width` access IS satisfiable by
+                // importing the value), utils to Util — a util binds a FUNCTION, so the
+                // strict detector's dotted-access scan must never suggest importing one
+                // (the kind also drives import-brace completion, which lists all kinds).
                 if (!ds.MemberDeclarations.IsDefaultOrEmpty)
                     foreach (var mem in ds.MemberDeclarations)
                         if (mem.IsExported)
-                            exports.Add((mem.Name, mem.Kind == DeclKind.Hook
-                                ? StrictImportDetector.ExportKind.Hook
-                                : StrictImportDetector.ExportKind.Module));
+                            exports.Add((mem.Name,
+                                mem.Kind == DeclKind.Hook ? StrictImportDetector.ExportKind.Hook
+                                : mem.Kind == DeclKind.Value ? StrictImportDetector.ExportKind.Module
+                                : StrictImportDetector.ExportKind.Util));
                 if (!ds.Imports.IsDefaultOrEmpty)
                     foreach (var imp in ds.Imports)
                         imports.Add((imp.Specifier, imp.Names.ToArray()));
@@ -782,7 +782,13 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
                             props.Add(
                                 new PropInfo
                                 {
-                                    Name = tokens[tokens.Length - 1],
+                                    // The PROP name strips the leading-underscore
+                                    // "deliberately unused" marker (mirrors
+                                    // FunctionParam.PropSourceName) — 0109,
+                                    // completion, hover, and the typed attr check
+                                    // all read this surface.
+                                    Name = Ruitk.Language.Parser.FunctionParam
+                                        .ToPropSourceName(tokens[tokens.Length - 1]),
                                     Type = string.Join(" ", tokens, 0, tokens.Length - 1),
                                     Line = lineNumber,
                                 }

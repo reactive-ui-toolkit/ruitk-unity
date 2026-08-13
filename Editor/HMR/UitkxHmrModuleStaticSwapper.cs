@@ -6,14 +6,12 @@
 //  Problem this solves (Issue 13 / B28 in Plans~/PRETTY_UI_HMR_BUGS.md)
 //  ───────────────────────────────────────────────────────────────────
 //
-//  `module` declarations in .uitkx files are emitted by both the source
-//  generator (SourceGenerator~/Emitter/ModuleEmitter.cs) and the HMR pipeline
-//  (Editor/HMR/HmrHookEmitter.EmitModules) as a `public partial class` whose
-//  body contains the user's module declarations:
+//  Exported values in .uitkx files are emitted by both the source generator
+//  (SourceGenerator~/Emitter/ExportsEmitter.cs) and the HMR pipeline
+//  (Editor/HMR/HmrHookEmitter.EmitExports) as statics on the per-file
+//  `__Exports` class:
 //
-//      module MenuPage {
-//          public static readonly Style Root = new Style { ... };
-//      }
+//      export Style Root = new Style { ... };
 //
 //  When the project is cold-built, the CLR runs `MenuPage`'s type initializer
 //  (cctor) ONCE and pins `MenuPage.Root` to a `Style` instance produced by the

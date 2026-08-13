@@ -153,15 +153,78 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
-        public void GenericHook_FileStaysLegacy_WithError()
+        public void CompanionModule_NonPublicMembers_AutoExport()
         {
+            // T15: modifier-less companion members were reachable through the partial-class
+            // merge; migration must keep them reachable (auto-export + warning), not strand
+            // the base file at CS0103.
+            var comp = F("Card.uitkx",
+                "import { CardStyles } from \"./Card.style\"\ncomponent Card {\n    return (\n        <Box />\n    );\n}\n");
+            var style = F("Card.style.uitkx",
+                "export module CardStyles {\n    static readonly int Gap = 8;\n}\n");
+            var changed = Run(out var errors, comp, style);
+
+            string styleOut = changed[style.AbsPath];
+            Assert.Contains("export int Gap = 8;", styleOut);
+            Assert.Contains(errors, e => e.Message.Contains("auto-exported"));
+        }
+
+        [Fact]
+        public void NonCompanionModule_NonPublicMembers_StayInternal()
+        {
+            var tokens = F("Tokens.uitkx",
+                "export module Tokens {\n    static readonly int Hidden = 1;\n    public static readonly int Gap = 8;\n}\n");
+            var changed = Run(out var errors, tokens);
+
+            string outText = changed[tokens.AbsPath];
+            Assert.Contains("export int Gap = 8;", outText);
+            Assert.Contains("int Hidden = 1;", outText);
+            Assert.DoesNotContain("export int Hidden", outText);
+        }
+
+        [Fact]
+        public void GenericModuleMethod_MigratesToGenericDeclarationHead()
+        {
+            var utils = F("Utils.uitkx",
+                "export module Utils {\n    public static T Pick<T>(T a, T b, bool first) { return first ? a : b; }\n}\n");
+            var changed = Run(out var errors, utils);
+
+            Assert.Empty(errors.Where(e => e.Message.Contains("generic")));
+            string outText = changed[utils.AbsPath];
+            Assert.Contains("export T Pick<T>(T a, T b, bool first)", outText);
+        }
+
+        [Fact]
+        public void DeadNamespaceImport_GetsPc12bWarning()
+        {
+            // Widgets/ is folder-keyed pre-migration; Screen imports "@Game.Widgets" and also
+            // migrates. Post-migration the folder namespace has no members left - the surviving
+            // namespace import draws the PC-12b warning (never a silent rewrite).
+            var widget = new MigratorFile("C:/proj/Assets/UI/Widgets/Chip.uitkx", "Game",
+                "component Chip {\n    return (\n        <Box />\n    );\n}\n");
+            string oldNs = Ruitk.Language.EffectiveNamespace.Resolve(
+                hasExplicitNamespace: false, null, widget.AbsPath, fileKeyed: false)!;
+            var screen = F("Screen.uitkx",
+                $"import \"@{oldNs}\"\ncomponent Screen {{\n    return (\n        <Chip />\n    );\n}}\n");
+            var changed = Run(out var errors, widget, screen);
+
+            Assert.Contains(errors, e =>
+                e.FilePath == screen.AbsPath && e.Message.Contains("pre-migration folder namespace"));
+        }
+
+        [Fact]
+        public void GenericHook_MigratesToGenericDeclarationHead()
+        {
+            // F9 closed (0.16.0): the plain dialect has generic declaration heads, so the
+            // codemod migrates generic hooks instead of freezing the file legacy.
             var file = F("Gen.hooks.uitkx",
                 "export hook useGen<T>(T seed) -> T {\n    return seed;\n}\n");
             var changed = Run(out var errors, file);
 
-            Assert.Contains(errors, e => e.Message.Contains("generic hook"));
-            string outText = changed.TryGetValue(file.AbsPath, out var t) ? t : file.Text;
-            Assert.Contains("hook useGen", outText);
+            Assert.Empty(errors);
+            string outText = changed[file.AbsPath];
+            Assert.Contains("export T useGen<T>(T seed) {", outText);
+            Assert.DoesNotContain("hook useGen", outText);
         }
 
         // ── Idempotence (the §7.1 acceptance) ────────────────────────────────
@@ -387,16 +450,18 @@ namespace Ruitk.SourceGenerator.Tests
         [Fact]
         public void FailedSetImporter_OfMigratedModule_GetsStarImport_WithNote()
         {
+            // The failed set is forced by a module with a nested type (still unmigratable);
+            // generic hooks migrate since F9 closed, so they can no longer play this role.
             var tokens = F("Tokens.uitkx",
                 "export module Tokens {\n    public static readonly int Gap = 8;\n}\n");
-            var broken = F("Broken.hooks.uitkx",
-                "import { Tokens } from \"./Tokens\"\nexport hook useGen<T>(T seed) -> T {\n    var g = Tokens.Gap;\n    return seed;\n}\n");
+            var broken = F("Broken.style.uitkx",
+                "import { Tokens } from \"./Tokens\"\nexport module BrokenStyles {\n    public enum Kind { A, B }\n    public static readonly int Pad = Tokens.Gap;\n}\n");
             var changed = Run(out var errors, tokens, broken);
 
-            Assert.Contains(errors, e => e.Message.Contains("generic hook"));
+            Assert.Contains(errors, e => e.Message.Contains("BrokenStyles"));
             string outText = changed[broken.AbsPath];
             Assert.Contains("import * as Tokens from \"./Tokens\"", outText);
-            Assert.Contains("hook useGen", outText);
+            Assert.Contains("module BrokenStyles", outText);
             Assert.DoesNotContain("import { Tokens }", outText);
             Assert.Contains(errors, e => e.Message.Contains("import * as"));
         }

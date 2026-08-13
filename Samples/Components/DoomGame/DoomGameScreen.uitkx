@@ -6,7 +6,13 @@ import "@UnityEngine.UIElements"
 import "@static Ruitk.Samples.Components.DoomGame.DoomTypes"
 import "@static Ruitk.Samples.Components.DoomGame.DoomTextures"
 
-export VirtualNode DoomGameScreen(int restartVersion, int level, Difficulty difficulty, Action onExit, Action onNextLevel) {
+export VirtualNode DoomGameScreen(
+  int restartVersion,
+  int level,
+  Difficulty difficulty,
+  Action onExit,
+  Action onNextLevel
+) {
   var viewRef = useRef<VisualElement?>(null);
   var (state, restart, onKeyDown, onPointerMove, onPointerDown, onPointerUp) = useDoomGame(viewRef, level, difficulty);
 

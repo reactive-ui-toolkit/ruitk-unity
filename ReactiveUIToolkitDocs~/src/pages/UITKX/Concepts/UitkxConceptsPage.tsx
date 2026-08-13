@@ -104,11 +104,8 @@ export const UitkxConceptsPage: FC = () => (
         ships into every player build by itself — no build hooks, no Preloaded Assets — and
         loads synchronously on every platform. A missing file or key falls back to the
         compiled default; unknown keys are ignored; enum values are lowercase strings,
-        parsed case-insensitively. No scripting define symbols are involved. The knob set
-        is family-canonical — the same semantics and defaults on every Reactive UI
-        Toolkit leg (each leg spells the key names engine-natively), keys marked{' '}
-        <em>(Unity-only)</em> excepted — and every default reproduces the untouched
-        behavior:
+        parsed case-insensitively. No scripting define symbols are involved. Every default
+        reproduces the untouched behavior:
       </Typography>
       <List sx={Styles.list}>
         <ListItem disablePadding>
@@ -142,16 +139,16 @@ export const UitkxConceptsPage: FC = () => (
           <ListItemText primary={<><code>diff_tracing</code> — default <code>false</code>. Detailed Fiber diff logs (props application, update dumps), independent of <code>trace_level</code>: diff tracing alone lights them, and <code>verbose</code> alone does too.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>diagnostics_output_folder</code> <em>(Unity-only)</em> — where benchmark results and log captures are written. Empty = <code>&lt;project&gt;/Logs/ReactiveUIToolkit</code> in the editor and <code>&lt;persistentDataPath&gt;/ReactiveUIToolkit</code> in players; absolute paths are used as-is, relative paths resolve against the project root (editor) or <code>persistentDataPath</code> (player). Diagnostics never write into the package folder.</>} />
+          <ListItemText primary={<><code>diagnostics_output_folder</code> — where benchmark results and log captures are written. Empty = <code>&lt;project&gt;/Logs/ReactiveUIToolkit</code> in the editor and <code>&lt;persistentDataPath&gt;/ReactiveUIToolkit</code> in players; absolute paths are used as-is, relative paths resolve against the project root (editor) or <code>persistentDataPath</code> (player). Diagnostics never write into the package folder.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>mount_watchdog</code> <em>(Unity-only)</em> — default <code>true</code>. Unity 6.5 PanelRenderer workaround (case IN-150082 + UUM-147875): forces the attach path when an enabled, configured renderer never delivers its UI reload callback. Symptom-gated — inert on fixed editors. See <MuiLink component={RouterLink} to="/known-issues">Known Issues</MuiLink>.</>} />
+          <ListItemText primary={<><code>mount_watchdog</code> — default <code>true</code>. Unity 6.5 PanelRenderer workaround (case IN-150082 + UUM-147875): forces the attach path when an enabled, configured renderer never delivers its UI reload callback. Symptom-gated — inert on fixed editors. See <MuiLink component={RouterLink} to="/known-issues">Known Issues</MuiLink>.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>nested_prevention</code> <em>(Unity-only)</em> — default <code>true</code>. Unity 6.5 workaround (UUM-148452): disables nested child PanelRenderers around rebuilds the library itself triggers so the release cascade cannot poison them.</>} />
+          <ListItemText primary={<><code>nested_prevention</code> — default <code>true</code>. Unity 6.5 workaround (UUM-148452): disables nested child PanelRenderers around rebuilds the library itself triggers so the release cascade cannot poison them.</>} />
         </ListItem>
         <ListItem disablePadding>
-          <ListItemText primary={<><code>nested_repair</code> <em>(Unity-only)</em> — default <code>true</code>. Unity 6.5 workaround (UUM-148452): a nested PanelRenderer whose tree was released with no follow-up callback destroys and re-adds itself with all settings copied. Symptom-gated.</>} />
+          <ListItemText primary={<><code>nested_repair</code> — default <code>true</code>. Unity 6.5 workaround (UUM-148452): a nested PanelRenderer whose tree was released with no follow-up callback destroys and re-adds itself with all settings copied. Symptom-gated.</>} />
         </ListItem>
       </List>
       <Typography variant="body2" paragraph>

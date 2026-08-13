@@ -1061,9 +1061,8 @@ namespace UitkxLanguageServer.Roslyn
                 )
                     return;
 
-                var enriched = EnrichWithPeerHookUsings(parseResult, uitkxFilePath);
                 var virtualDoc = _docGenerator.Generate(
-                    enriched,
+                    parseResult,
                     source,
                     uitkxFilePath,
                     _propsTypes.ForBackend(parseResult.Directives.Backend)
@@ -1109,10 +1108,10 @@ namespace UitkxLanguageServer.Roslyn
 
                 var ct = cts.Token;
 
-                // 1. Generate virtual document (enriched with peer hook usings)
-                var enriched = EnrichWithPeerHookUsings(parseResult, uitkxFilePath);
+                // 1. Generate the virtual document (import payloads flow through the
+                //    shared ImportScopeFacts route inside the generator itself)
                 var virtualDoc = _docGenerator.Generate(
-                    enriched,
+                    parseResult,
                     source,
                     uitkxFilePath,
                     _propsTypes.ForBackend(parseResult.Directives.Backend)
@@ -1566,102 +1565,6 @@ namespace UitkxLanguageServer.Roslyn
         }
 
         /// <summary>
-        /// Enriches a <see cref="ParseResult"/> by injecting <c>using static Ns.XxxHooks;</c>
-        /// entries for every peer hook container that belongs to the same asmdef as
-        /// the consumer .uitkx file, regardless of whether the hook file lives in the
-        /// same namespace or directory. This is the LSP-side mirror of the SG's
-        /// Stage 3d in <c>UitkxPipeline.cs</c>; both inject the same set of
-        /// using-static directives so the IDE and the build agree.
-        /// </summary>
-        private ParseResult EnrichWithPeerHookUsings(ParseResult parseResult, string uitkxFilePath)
-        {
-            var d = parseResult.Directives;
-            // Only enrich component files (hooks/modules don't call peer hooks).
-            if (d.ComponentName == null)
-                return parseResult;
-
-            var peers = FindPeerUitkxFiles(uitkxFilePath);
-            if (peers.Count == 0)
-                return parseResult;
-
-            string consumerAsmdef = AsmdefResolver.OwningAsmdefName(uitkxFilePath);
-
-            var extraUsings = new List<string>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            if (!d.Usings.IsDefault)
-                foreach (var u in d.Usings)
-                    seen.Add(u);
-
-            foreach (var peerPath in peers)
-            {
-                try
-                {
-                    var peerSource = System.IO.File.ReadAllText(peerPath);
-                    var peerDiags = new List<ParseDiagnostic>();
-                    var peerDirectives = DirectiveParser.Parse(peerSource, peerPath, peerDiags);
-
-                    if (peerDirectives.HookDeclarations.IsDefaultOrEmpty)
-                        continue;
-                    // EFFECTIVE namespace — where the peer's generated container actually
-                    // lives (explicit @namespace wins, else path-derived + config prefix).
-                    // The RAW parsed namespace is the parser default for stamp-less files
-                    // and points at a container that exists only in the (pre-fix) virtual
-                    // doc, never in the real build.
-                    string? peerNs = Ruitk.Language.EffectiveNamespace.Resolve(
-                        peerDirectives.HasExplicitNamespace, peerDirectives.Namespace, peerPath,
-                        fileKeyed: !peerDirectives.UsesLegacySyntax);
-                    if (string.IsNullOrEmpty(peerNs))
-                        peerNs = peerDirectives.Namespace;
-                    if (string.IsNullOrEmpty(peerNs))
-                        continue;
-                    if (!string.Equals(
-                            AsmdefResolver.OwningAsmdefName(peerPath),
-                            consumerAsmdef,
-                            StringComparison.Ordinal))
-                        continue;
-
-                    string containerClass = peerDirectives.UsesLegacySyntax
-                        ? DerivePeerHookContainerClass(peerPath)
-                        : "__Exports";
-                    string fqn = $"static {peerNs}.{containerClass}";
-                    if (seen.Add(fqn))
-                        extraUsings.Add(fqn);
-                }
-                catch
-                { /* skip unreadable peers */
-                }
-            }
-
-            if (extraUsings.Count == 0)
-                return parseResult;
-
-            var currentUsings = d.Usings.IsDefault ? ImmutableArray<string>.Empty : d.Usings;
-            var newUsings = currentUsings.AddRange(extraUsings);
-            var enrichedDirectives = d with { Usings = newUsings };
-            return new ParseResult(
-                enrichedDirectives,
-                parseResult.RootNodes,
-                parseResult.Diagnostics
-            );
-        }
-
-        // Derives the static container class name for a peer hook file.
-        // Mirrors HookEmitter.DeriveContainerClassName (SG) and
-        // GenerateHookDocument (VDG): take the part before the first dot in the
-        // filename (so .hooks / .style middle segments are ignored), PascalCase
-        // the first letter, and append "Hooks".
-        private static string DerivePeerHookContainerClass(string peerPath)
-        {
-            string fileName = System.IO.Path.GetFileNameWithoutExtension(peerPath);
-            int dot = fileName.IndexOf('.');
-            if (dot > 0)
-                fileName = fileName.Substring(0, dot);
-            if (fileName.Length > 0 && char.IsLower(fileName[0]))
-                fileName = char.ToUpper(fileName[0]) + fileName.Substring(1);
-            return fileName + "Hooks";
-        }
-
-        /// <summary>
         /// First-open path: adds peer .uitkx virtual documents to the workspace
         /// via <see cref="AdhocWorkspace.AddDocument"/>.
         /// </summary>
@@ -1683,18 +1586,13 @@ namespace UitkxLanguageServer.Roslyn
                     var peerDiags = new List<ParseDiagnostic>();
                     var peerDirectives = DirectiveParser.Parse(peerSource, peerPath, peerDiags);
 
-                    // Only include files that contribute importable symbols — legacy
-                    // hooks/modules AND new-mode member files (their __Exports container
-                    // must exist in the compilation or the importer's injected
-                    // `using static {ns}.__Exports` dangles → CS0103 on every bare
-                    // member reference; found live in the 0.9.0 F5 battery). Regular
-                    // component-only files are handled by their own workspace.
-                    if (
-                        peerDirectives.HookDeclarations.IsDefaultOrEmpty
-                        && peerDirectives.ModuleDeclarations.IsDefaultOrEmpty
-                        && (peerDirectives.UsesLegacySyntax
-                            || peerDirectives.MemberDeclarations.IsDefaultOrEmpty)
-                    )
+                    // Only include files that contribute importable symbols — member
+                    // files (their __Exports container must exist in the compilation
+                    // or the importer's injected `using static {ns}.__Exports` dangles
+                    // → CS0103 on every bare member reference; found live in the 0.9.0
+                    // F5 battery). Regular component-only files are handled by their
+                    // own workspace.
+                    if (peerDirectives.MemberDeclarations.IsDefaultOrEmpty)
                         continue;
 
                     var peerParseResult = new ParseResult(
@@ -1757,15 +1655,10 @@ namespace UitkxLanguageServer.Roslyn
                     var peerDiags = new List<ParseDiagnostic>();
                     var peerDirectives = DirectiveParser.Parse(peerSource, peerPath, peerDiags);
 
-                    // Same inclusion rule as AddPeerUitkxDocuments: legacy hooks/modules
-                    // AND new-mode member files (their __Exports must exist in the
-                    // compilation for member imports to resolve).
-                    if (
-                        peerDirectives.HookDeclarations.IsDefaultOrEmpty
-                        && peerDirectives.ModuleDeclarations.IsDefaultOrEmpty
-                        && (peerDirectives.UsesLegacySyntax
-                            || peerDirectives.MemberDeclarations.IsDefaultOrEmpty)
-                    )
+                    // Same inclusion rule as AddPeerUitkxDocuments: member files only
+                    // (their __Exports must exist in the compilation for member imports
+                    // to resolve).
+                    if (peerDirectives.MemberDeclarations.IsDefaultOrEmpty)
                         continue;
 
                     var peerParseResult = new ParseResult(

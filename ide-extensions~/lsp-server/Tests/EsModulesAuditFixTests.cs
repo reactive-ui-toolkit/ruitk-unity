@@ -14,10 +14,10 @@ namespace UitkxLanguageServer.Tests
 {
     /// <summary>
     /// ES-modules LSP audit fixes (Plans~/archive/ES_MODULES_AUDIT_FINDINGS.md): declaration-head
-    /// matching requires a type token (B1/B2/B6), import-list rename applies a single
-    /// origin-decided interpretation of the renamed identifier (B3, PC-10), the workspace
-    /// index ignores comment-shaped declarations (B5), the import-brace completion parses
-    /// aliased entries (B7), and UITKX2107 surfaces live (PC-7).
+    /// matching requires a type token (B1/B2/B6 — extended to the References collectors in the
+    /// 0.16.0 review pass), import-list rename applies a single origin-decided interpretation
+    /// of the renamed identifier (B3, PC-10), the workspace index ignores comment-shaped
+    /// declarations (B5), and the import-brace completion parses aliased entries (B7).
     /// </summary>
     public sealed class EsModulesAuditFixTests : IDisposable
     {
@@ -165,6 +165,117 @@ namespace UitkxLanguageServer.Tests
             var edits = (List<TextEdit>)changes[uri];
             Assert.Single(edits);
             Assert.Equal(1, (int)edits[0].Range.Start.Line);
+        }
+
+        // ── Review pass (0.16.0): References collectors — declaration matching
+        // requires a type token (the same B2 guard the rename scan has) ──────
+
+        [Fact]
+        public void HookReferences_DeclarationAndCalls_AreCollected()
+        {
+            string text =
+                "export (int count, System.Action inc) useCounter(int start) {\n" +
+                "  return (start, null);\n" +
+                "}\n" +
+                "export VirtualNode Panel() {\n" +
+                "  useCounter(3);\n" +
+                "  return (<VisualElement />);\n" +
+                "}\n";
+            var uri = DocumentUri.FromFileSystemPath(Path.Combine(_uiDir, "Hooks.uitkx"));
+
+            var withDecl = new List<Location>();
+            ReferencesHandler.CollectHookReferencesInText(text, uri, "useCounter", includeDeclaration: true, withDecl);
+            Assert.Equal(2, withDecl.Count);
+
+            var callsOnly = new List<Location>();
+            ReferencesHandler.CollectHookReferencesInText(text, uri, "useCounter", includeDeclaration: false, callsOnly);
+            Assert.Single(callsOnly);
+            Assert.Equal(4, (int)callsOnly[0].Range.Start.Line);
+        }
+
+        [Fact]
+        public void HookReferences_IndentedCallStatement_IsNotDroppedAsDeclaration()
+        {
+            // Review-pass regression fix: a whitespace-tolerant declaration pattern
+            // classified an indented, `=`-free call statement as a declaration, so
+            // includeDeclaration=false silently dropped that call site.
+            string text =
+                "export VirtualNode Panel() {\n" +
+                "  useMyLogger(\"x\");\n" +
+                "  return (<VisualElement />);\n" +
+                "}\n";
+            var uri = DocumentUri.FromFileSystemPath(Path.Combine(_uiDir, "Panel.uitkx"));
+
+            var callsOnly = new List<Location>();
+            ReferencesHandler.CollectHookReferencesInText(text, uri, "useMyLogger", includeDeclaration: false, callsOnly);
+            Assert.Single(callsOnly);
+            Assert.Equal(1, (int)callsOnly[0].Range.Start.Line);
+        }
+
+        [Fact]
+        public void HookReferences_WrappedDoublyNestedTupleHead_DeclarationIsNotACallSite()
+        {
+            // The wrapped tuple-return continuation line (`) useX(` at column 0) must be
+            // recognized as the DECLARATION even when the tuple nests two paren levels —
+            // past DeclTypePattern's accidental cross-line tolerance. Pre-fix, the name on
+            // that line was counted as a call site and polluted includeDeclaration=false.
+            string text =
+                "export (\n" +
+                "  List<(string id, (float x, float y) pos)> boxes,\n" +
+                "  bool finished\n" +
+                ") useDeepLoop(int count) {\n" +
+                "  return (null, false);\n" +
+                "}\n" +
+                "export VirtualNode Panel() {\n" +
+                "  useDeepLoop(3);\n" +
+                "  return (<VisualElement />);\n" +
+                "}\n";
+            var uri = DocumentUri.FromFileSystemPath(Path.Combine(_uiDir, "Deep.uitkx"));
+
+            var callsOnly = new List<Location>();
+            ReferencesHandler.CollectHookReferencesInText(text, uri, "useDeepLoop", includeDeclaration: false, callsOnly);
+            Assert.Single(callsOnly);
+            Assert.Equal(7, (int)callsOnly[0].Range.Start.Line);
+
+            var withDecl = new List<Location>();
+            ReferencesHandler.CollectHookReferencesInText(text, uri, "useDeepLoop", includeDeclaration: true, withDecl);
+            Assert.Equal(2, withDecl.Count);
+        }
+
+        [Fact]
+        public void HookReferences_GenericCallSite_IsCollected()
+        {
+            string text =
+                "export VirtualNode Panel() {\n" +
+                "  var (v, s) = useSel<int>(0);\n" +
+                "  return (<VisualElement />);\n" +
+                "}\n";
+            var uri = DocumentUri.FromFileSystemPath(Path.Combine(_uiDir, "Panel.uitkx"));
+
+            var callsOnly = new List<Location>();
+            ReferencesHandler.CollectHookReferencesInText(text, uri, "useSel", includeDeclaration: false, callsOnly);
+            Assert.Single(callsOnly);
+        }
+
+        [Fact]
+        public void MemberReferences_ValueDeclarationAndUsage_AreCollected()
+        {
+            string text =
+                "export int Gap = 8;\n" +
+                "export VirtualNode Panel() {\n" +
+                "  var g = Gap;\n" +
+                "  return (<VisualElement />);\n" +
+                "}\n";
+            var uri = DocumentUri.FromFileSystemPath(Path.Combine(_uiDir, "Tokens.uitkx"));
+
+            var withDecl = new List<Location>();
+            ReferencesHandler.CollectMemberReferencesInText(text, uri, "Gap", includeDeclaration: true, withDecl);
+            Assert.Equal(2, withDecl.Count);
+
+            var usagesOnly = new List<Location>();
+            ReferencesHandler.CollectMemberReferencesInText(text, uri, "Gap", includeDeclaration: false, usagesOnly);
+            Assert.Single(usagesOnly);
+            Assert.Equal(2, (int)usagesOnly[0].Range.Start.Line);
         }
 
         // ── B3 / PC-10: import-list rename — origin decides the interpretation ──
@@ -322,7 +433,7 @@ namespace UitkxLanguageServer.Tests
         public void ComponentDeclRename_IgnoresIndentedLocalAndParenlessLine()
         {
             string text =
-                "component Other {\n" +
+                "VirtualNode Other() {\n" +
                 "  VirtualNode Foo = MakeIt();\n" +
                 "  return (<VisualElement />);\n" +
                 "}\n" +
@@ -348,7 +459,7 @@ namespace UitkxLanguageServer.Tests
             changes.Clear();
             RenameHandler.RenameComponentDeclarationInFile(
                 Path.Combine(_uiDir, "Legacy.uitkx"),
-                "component Foo {\n  return (<VisualElement />);\n}\n",
+                "VirtualNode Foo() {\n  return (<VisualElement />);\n}\n",
                 "Foo", "Bar", changes);
             Assert.Single(changes);
         }
@@ -360,7 +471,7 @@ namespace UitkxLanguageServer.Tests
         {
             string p = F("Real.uitkx",
                 "/*\n" +
-                "component Phantom {\n" +
+                "VirtualNode Phantom() {\n" +
                 "export VirtualNode Ghost() {\n" +
                 "*/\n" +
                 "export VirtualNode Real() {\n" +
@@ -421,42 +532,7 @@ namespace UitkxLanguageServer.Tests
             Assert.DoesNotContain("isSomethingEven", names);
         }
 
-        // ── PC-7: UITKX2107 surfaces live on the merging legacy module file ─────
-
-        [Fact]
-        public void CompanionMerge_LegacyModuleWithPeerComponent_Gets2107Warning()
-        {
-            F("Foo.uitkx", "component Foo {\n  return (<VisualElement />);\n}\n");
-            string stylePath = F("Foo.style.uitkx",
-                "export module Foo {\n  public static readonly int Gap = 8;\n}\n");
-
-            var index = new WorkspaceIndex();
-            index.EnsureScanned(_root);
-            var publisher = new DiagnosticsPublisher(null!, new UitkxSchema(), index, new DocumentStore());
-
-            var ds = Parse(File.ReadAllText(stylePath), stylePath);
-            var diags = publisher.ComputeCompanionMergeDiagnostics(ds, stylePath);
-
-            var d = Assert.Single(diags);
-            Assert.Equal("UITKX2107", d.Code);
-            Assert.Equal(ParseSeverity.Warning, d.Severity);
-            Assert.Equal(1, d.SourceLine);
-            Assert.Contains("Foo.uitkx", d.Message);
-        }
-
-        [Fact]
-        public void CompanionMerge_NamespaceDivergence_No2107()
-        {
-            F("Bar.uitkx", "@namespace Other.Ns\ncomponent Bar {\n  return (<VisualElement />);\n}\n");
-            string stylePath = F("Bar.style.uitkx",
-                "export module Bar {\n  public static readonly int Gap = 8;\n}\n");
-
-            var index = new WorkspaceIndex();
-            index.EnsureScanned(_root);
-            var publisher = new DiagnosticsPublisher(null!, new UitkxSchema(), index, new DocumentStore());
-
-            var ds = Parse(File.ReadAllText(stylePath), stylePath);
-            Assert.Empty(publisher.ComputeCompanionMergeDiagnostics(ds, stylePath));
-        }
+        // (The PC-7 UITKX2107 companion-merge facts were removed with companion
+        // partial-class merging — 0.16.0 legacy removal.)
     }
 }

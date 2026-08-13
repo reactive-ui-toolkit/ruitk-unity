@@ -1,7 +1,13 @@
 import "@UnityEngine.UIElements"
 import "@static Ruitk.Samples.Components.DoomGame.DoomTypes"
 
-export VirtualNode DoomMainMenu(int level, Difficulty difficulty, Action<int> onLevelChange, Action<Difficulty> onDifficultyChange, Action onStart) {
+export VirtualNode DoomMainMenu(
+  int level,
+  Difficulty difficulty,
+  Action<int> onLevelChange,
+  Action<Difficulty> onDifficultyChange,
+  Action onStart
+) {
   var bg = new Color(0.06f, 0.05f, 0.05f, 1f);
   var titleClr = new Color(0.95f, 0.20f, 0.15f, 1f);
   var subtitleClr = new Color(0.85f, 0.70f, 0.40f, 1f);

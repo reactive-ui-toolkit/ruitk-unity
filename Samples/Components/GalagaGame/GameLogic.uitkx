@@ -1,0 +1,564 @@
+import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes"
+import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes.C"
+import "@GCollision = Ruitk.Samples.Components.GalagaGame.GalagaTypes.Collision"
+
+export GameState CreateInitialState() {
+  int nextId = 1;
+  var enemies = Formation.CreateWave(1, ref nextId);
+  return new GameState {
+    Phase = GamePhase.WaveIntro,
+    Player = new PlayerState {
+      X = VIEWPORT_W * 0.5f - ENTITY_SIZE * 0.5f,
+      Y = VIEWPORT_H - ENTITY_SIZE - 20,
+      Alive = true,
+    },
+    Enemies = enemies,
+    Bullets = new List<BulletState>(),
+    Explosions = new List<ExplosionState>(),
+    Score = 0,
+    Lives = 3,
+    Wave = 1,
+    PhaseTimer = 0,
+    FormationSwayX = 0,
+    FormationSwayTimer = 0,
+    DiveTimer = 2f,
+    NextEnemyId = nextId,
+    NextBulletId = 1,
+    NextExplosionId = 1,
+    TractorBeamActive = false,
+    TractorBeamCommanderId = -1,
+  };
+}
+
+export GameState Update(
+  GameState s,
+  float dt,
+  bool left,
+  bool right,
+  bool shoot,
+  System.Random rng
+) {
+  switch (s.Phase) {
+    case GamePhase.WaveIntro:
+    return TickWaveIntro(s, dt);
+    case GamePhase.Battle:
+    return TickBattle(s, dt, left, right, shoot, rng);
+    case GamePhase.WaveCleared:
+    return TickWaveCleared(s, dt);
+    default:
+    return s;
+  }
+}
+
+GameState TickWaveIntro(GameState s, float dt) {
+  s.PhaseTimer += dt;
+  if (s.PhaseTimer >= WAVE_INTRO_DURATION) {
+    s.Phase = GamePhase.Battle;
+    s.PhaseTimer = 0;
+    s.DiveTimer = 3f;
+    // Entry organized into batches of 8 (two sub-groups of 4)
+    // with ENTRY_WAVE_DELAY seconds between each batch
+    for (int i = 0; i < s.Enemies.Count; i++) {
+      var e = s.Enemies[i];
+      e.Phase = EnemyPhase.Entering;
+      int batchIndex = i / 8;
+      int withinBatch = i % 8;
+      int subGroup = withinBatch / 4;
+      int withinSubGroup = withinBatch % 4;
+      e.EnterDelay = batchIndex * ENTRY_WAVE_DELAY + subGroup * 0.8f + withinSubGroup * 0.12f;
+      e.EnterT = 0;
+      e.EnterPath = Paths.MakeEntryPath(e.FormationRow, e.FormationCol, i, 0);
+      e.X = -200;
+      e.Y = -200;
+      s.Enemies[i] = e;
+    }
+  }
+  return s;
+}
+
+GameState TickBattle(
+  GameState s,
+  float dt,
+  bool left,
+  bool right,
+  bool shoot,
+  System.Random rng
+) {
+  // --- Player movement (always active during battle) ---
+  var p = s.Player;
+  if (p.Alive && !p.Captured && !p.InBeam) {
+    float moveX = 0;
+    if (left) moveX -= 1;
+    if (right) moveX += 1;
+    p.X += moveX * PLAYER_SPEED * dt;
+    p.X = Mathf.Clamp(p.X, 0, VIEWPORT_W - ENTITY_SIZE);
+    if (p.DualShip) {
+      p.DualShipX = Mathf.Clamp(p.DualShipX + moveX * PLAYER_SPEED * dt, 0, VIEWPORT_W - ENTITY_SIZE);
+    }
+
+    p.ShootCooldown -= dt;
+    if (shoot && p.ShootCooldown <= 0) {
+      int playerBullets = 0;
+      for (int i = 0; i < s.Bullets.Count; i++) {
+        if (s.Bullets[i].Active && s.Bullets[i].Owner == BulletOwner.Player) playerBullets++;
+      }
+      if (playerBullets < MAX_PLAYER_BULLETS) {
+        s.Bullets.Add(new BulletState {
+          Id = s.NextBulletId++,
+          X = p.X + ENTITY_SIZE * 0.5f,
+          Y = p.Y,
+          Vx = 0, Vy = -PLAYER_BULLET_SPEED,
+          Owner = BulletOwner.Player,
+          Active = true,
+        });
+        if (p.DualShip) {
+          s.Bullets.Add(new BulletState {
+            Id = s.NextBulletId++,
+            X = p.DualShipX + ENTITY_SIZE * 0.5f,
+            Y = p.Y,
+            Vx = 0, Vy = -PLAYER_BULLET_SPEED,
+            Owner = BulletOwner.Player,
+            Active = true,
+          });
+        }
+        p.ShootCooldown = SHOOT_COOLDOWN;
+      }
+    }
+
+    if (p.InvincibleTimer > 0) p.InvincibleTimer -= dt;
+  }
+  s.Player = p;
+
+  s.FormationSwayTimer += dt * FORMATION_SWAY_SPEED;
+  s.FormationSwayX = Mathf.Sin(s.FormationSwayTimer) * FORMATION_SWAY_AMOUNT;
+
+  s = UpdateEnemies(s, dt, rng);
+  s = UpdateBullets(s, dt);
+  s = CheckCollisions(s);
+  s = UpdateExplosions(s, dt);
+  s = UpdateTractorBeam(s, dt);
+
+  bool anyAlive = false;
+  for (int i = 0; i < s.Enemies.Count; i++) {
+    if (s.Enemies[i].Phase != EnemyPhase.Dead) { anyAlive = true; break; }
+  }
+  if (!anyAlive) {
+    s.Phase = GamePhase.WaveCleared;
+    s.PhaseTimer = 0;
+  }
+
+  if (!s.Player.Alive && s.Lives <= 0) {
+    bool anyExplosions = false;
+    for (int i = 0; i < s.Explosions.Count; i++) {
+      if (s.Explosions[i].Timer < EXPLOSION_DURATION) { anyExplosions = true; break; }
+    }
+    if (!anyExplosions) s.Phase = GamePhase.GameOver;
+  }
+
+  return s;
+}
+
+GameState UpdateEnemies(GameState s, float dt, System.Random rng) {
+  s.DiveTimer -= dt;
+  bool shouldDive = s.DiveTimer <= 0;
+  if (shouldDive) {
+    s.DiveTimer = DIVE_INTERVAL_MIN + (float)(rng.NextDouble() * (DIVE_INTERVAL_MAX - DIVE_INTERVAL_MIN));
+  }
+
+  int diverIndex = -1;
+  if (shouldDive) {
+    var candidates = new List<int>();
+    for (int i = 0; i < s.Enemies.Count; i++) {
+      if (s.Enemies[i].Phase == EnemyPhase.Formation) candidates.Add(i);
+    }
+    if (candidates.Count > 0) {
+      diverIndex = candidates[rng.Next(candidates.Count)];
+    }
+  }
+
+  bool tryTractorBeam = !s.TractorBeamActive && s.Wave >= 1 && rng.Next(200) < 1;
+  int tractorCmdIndex = -1;
+  if (tryTractorBeam) {
+    var cmds = new List<int>();
+    for (int i = 0; i < s.Enemies.Count; i++) {
+      if (s.Enemies[i].Type == EnemyType.Commander && s.Enemies[i].Phase == EnemyPhase.Formation
+      && !s.Enemies[i].HasCapturedShip) {
+        cmds.Add(i);
+      }
+    }
+    if (cmds.Count > 0) {
+      tractorCmdIndex = cmds[rng.Next(cmds.Count)];
+    }
+  }
+
+  for (int i = 0; i < s.Enemies.Count; i++) {
+    var e = s.Enemies[i];
+    if (e.Phase == EnemyPhase.Dead) continue;
+
+    e.AnimTimer += dt;
+    if (e.AnimTimer >= 0.3f) { e.AnimTimer = 0; e.AnimFrame++; }
+
+    // Handle entering enemies (flying in during battle)
+    if (e.Phase == EnemyPhase.Entering) {
+      if (e.EnterDelay > 0) {
+        e.EnterDelay -= dt;
+        s.Enemies[i] = e;
+        continue;
+      }
+      e.EnterT += dt * ENTER_SPEED;
+      if (e.EnterT >= 1f) {
+        e.Phase = EnemyPhase.Formation;
+        e.EnterT = 1f;
+        var fpos = Formation.GetFormationPos(e.FormationRow, e.FormationCol);
+        e.X = fpos.X + s.FormationSwayX;
+        e.Y = fpos.Y;
+      } else {
+        var pos = Paths.EvalPath(e.EnterPath, Mathf.Clamp01(e.EnterT));
+        e.X = pos.X;
+        e.Y = pos.Y;
+      }
+      s.Enemies[i] = e;
+      continue;
+    }
+
+    if (e.Phase == EnemyPhase.Formation) {
+      var fpos = Formation.GetFormationPos(e.FormationRow, e.FormationCol);
+      e.X = fpos.X + s.FormationSwayX;
+      e.Y = fpos.Y;
+
+      if (i == diverIndex) {
+        e.Phase = EnemyPhase.Diving;
+        e.DiveT = 0;
+        e.DivePath = Paths.MakeDivePath(new Vec2(e.X, e.Y), s.Player.X + ENTITY_SIZE * 0.5f, e.Type);
+        e.ShootCooldown = 0.5f + (float)(rng.NextDouble() * 0.5f);
+      }
+
+      if (i == tractorCmdIndex) {
+        e.Phase = EnemyPhase.TractorBeam;
+        e.TractorBeamTimer = 0;
+        e.TractorBeamFrame = 0;
+        e.TractorPhase = 0; // phase 0 = diving down to position
+        s.TractorBeamActive = true;
+        s.TractorBeamCommanderId = e.Id;
+        e.DiveT = 0;
+        e.DivePath = Paths.MakeTractorDivePath(new Vec2(e.X, e.Y), s.Player.X + ENTITY_SIZE * 0.5f);
+      }
+    }
+    else if (e.Phase == EnemyPhase.Diving) {
+      e.DiveT += dt * DIVE_SPEED;
+
+      e.ShootCooldown -= dt;
+      if (e.ShootCooldown <= 0) {
+        s.Bullets.Add(new BulletState {
+          Id = s.NextBulletId++,
+          X = e.X + ENTITY_SIZE * 0.5f,
+          Y = e.Y + ENTITY_SIZE,
+          Vx = 0, Vy = ENEMY_BULLET_SPEED,
+          Owner = BulletOwner.Enemy,
+          Active = true,
+        });
+        e.ShootCooldown = 1.5f + (float)(rng.NextDouble() * 1.5f);
+      }
+
+      if (e.DiveT >= 1f) {
+        e.Phase = EnemyPhase.Formation;
+        var fpos = Formation.GetFormationPos(e.FormationRow, e.FormationCol);
+        e.X = fpos.X + s.FormationSwayX;
+        e.Y = fpos.Y;
+      } else {
+        var pos = Paths.EvalPath(e.DivePath, e.DiveT);
+        e.X = pos.X;
+        e.Y = pos.Y;
+      }
+    }
+    else if (e.Phase == EnemyPhase.TractorBeam) {
+      // Phase 0: Diving down to beam position
+      if (e.TractorPhase == 0) {
+        e.DiveT += dt * 0.84f;
+        if (e.DiveT >= 1f) {
+          e.DiveT = 1f;
+          e.TractorPhase = 1; // Start beaming
+          e.TractorBeamTimer = 0;
+        }
+        var pos = Paths.EvalPath(e.DivePath, Mathf.Clamp01(e.DiveT));
+        e.X = pos.X;
+        e.Y = pos.Y;
+      }
+      // Phase 1: Stationary, projecting tractor beam
+      else if (e.TractorPhase == 1) {
+        e.TractorBeamTimer += dt;
+        e.TractorBeamFrame = ((int)(e.TractorBeamTimer * 6)) % 3;
+
+        // Commander stays completely still during beam
+        if (e.TractorBeamTimer >= TRACTOR_BEAM_DURATION) {
+          // Beam expired — release player if caught, return to formation
+          if (s.Player.InBeam) {
+            var p2 = s.Player;
+            p2.InBeam = false;
+            s.Player = p2;
+          }
+          e.TractorPhase = 2;
+          e.DiveT = 0;
+          Vec2 formPos = Formation.GetFormationPos(e.FormationRow, e.FormationCol) + new Vec2(s.FormationSwayX, 0);
+          e.DivePath = Paths.MakeReturnPath(new Vec2(e.X, e.Y), formPos);
+        }
+      }
+      // Phase 2: Returning to formation
+      else {
+        e.DiveT += dt * 0.8f;
+        if (e.DiveT >= 1f) {
+          e.Phase = EnemyPhase.Formation;
+          s.TractorBeamActive = false;
+          s.TractorBeamCommanderId = -1;
+          var fpos = Formation.GetFormationPos(e.FormationRow, e.FormationCol);
+          e.X = fpos.X + s.FormationSwayX;
+          e.Y = fpos.Y;
+        } else {
+          var pos = Paths.EvalPath(e.DivePath, e.DiveT);
+          e.X = pos.X;
+          e.Y = pos.Y;
+        }
+      }
+    }
+
+    s.Enemies[i] = e;
+  }
+
+  return s;
+}
+
+GameState UpdateBullets(GameState s, float dt) {
+  for (int i = s.Bullets.Count - 1; i >= 0; i--) {
+    var b = s.Bullets[i];
+    if (!b.Active) continue;
+    b.X += b.Vx * dt;
+    b.Y += b.Vy * dt;
+    if (b.Y < -20 || b.Y > VIEWPORT_H + 20 || b.X < -20 || b.X > VIEWPORT_W + 20) {
+      b.Active = false;
+    }
+    s.Bullets[i] = b;
+  }
+  s.Bullets.RemoveAll(b => !b.Active);
+  return s;
+}
+
+GameState CheckCollisions(GameState s) {
+  for (int bi = 0; bi < s.Bullets.Count; bi++) {
+    var b = s.Bullets[bi];
+    if (!b.Active || b.Owner != BulletOwner.Player) continue;
+
+    for (int ei = 0; ei < s.Enemies.Count; ei++) {
+      var e = s.Enemies[ei];
+      if (e.Phase == EnemyPhase.Dead || e.Phase == EnemyPhase.Waiting) continue;
+
+      if (GCollision.BulletHitsEntity(b, e.X, e.Y, ENTITY_SIZE)) {
+        b.Active = false;
+        s.Bullets[bi] = b;
+
+        e.Health--;
+        if (e.Health <= 0) {
+          bool wasDiving = e.Phase == EnemyPhase.Diving || e.Phase == EnemyPhase.TractorBeam;
+          s.Score += C.GetScore(e.Type, wasDiving);
+
+          if (e.HasCapturedShip && s.Player.Alive) {
+            var pl = s.Player;
+            pl.DualShip = true;
+            pl.DualShipX = pl.X + ENTITY_SIZE;
+            s.Player = pl;
+          }
+
+          s.Explosions.Add(new ExplosionState {
+            Id = s.NextExplosionId++,
+            X = e.X + ENTITY_SIZE * 0.5f - EXPLOSION_SIZE * 0.5f,
+            Y = e.Y + ENTITY_SIZE * 0.5f - EXPLOSION_SIZE * 0.5f,
+            Timer = 0,
+            Frame = 0,
+            IsPlayer = false,
+          });
+
+          if (e.Phase == EnemyPhase.TractorBeam) {
+            s.TractorBeamActive = false;
+            s.TractorBeamCommanderId = -1;
+            if (s.Player.InBeam) {
+              var p3 = s.Player;
+              p3.InBeam = false;
+              s.Player = p3;
+            }
+          }
+          e.Phase = EnemyPhase.Dead;
+        }
+        s.Enemies[ei] = e;
+        break;
+      }
+    }
+  }
+
+  if (s.Player.Alive && s.Player.InvincibleTimer <= 0 && !s.Player.InBeam) {
+    for (int bi = 0; bi < s.Bullets.Count; bi++) {
+      var b = s.Bullets[bi];
+      if (!b.Active || b.Owner != BulletOwner.Enemy) continue;
+
+      if (GCollision.BulletHitsEntity(b, s.Player.X, s.Player.Y, ENTITY_SIZE)) {
+        b.Active = false;
+        s.Bullets[bi] = b;
+        s = KillPlayer(s);
+        break;
+      }
+    }
+  }
+
+  if (s.Player.Alive && s.Player.InvincibleTimer <= 0 && !s.Player.InBeam) {
+    for (int ei = 0; ei < s.Enemies.Count; ei++) {
+      var e = s.Enemies[ei];
+      if (e.Phase != EnemyPhase.Diving) continue;
+
+      if (GCollision.Overlaps(s.Player.X, s.Player.Y, ENTITY_SIZE, ENTITY_SIZE,
+      e.X, e.Y, ENTITY_SIZE, ENTITY_SIZE)) {
+        e.Phase = EnemyPhase.Dead;
+        s.Explosions.Add(new ExplosionState {
+          Id = s.NextExplosionId++,
+          X = e.X + ENTITY_SIZE * 0.5f - EXPLOSION_SIZE * 0.5f,
+          Y = e.Y + ENTITY_SIZE * 0.5f - EXPLOSION_SIZE * 0.5f,
+          Timer = 0, Frame = 0, IsPlayer = false,
+        });
+        s.Enemies[ei] = e;
+        s = KillPlayer(s);
+        break;
+      }
+    }
+  }
+
+  return s;
+}
+
+GameState KillPlayer(GameState s) {
+  var p = s.Player;
+  s.Explosions.Add(new ExplosionState {
+    Id = s.NextExplosionId++,
+    X = p.X + ENTITY_SIZE * 0.5f - EXPLOSION_SIZE * 0.5f,
+    Y = p.Y + ENTITY_SIZE * 0.5f - EXPLOSION_SIZE * 0.5f,
+    Timer = 0, Frame = 0, IsPlayer = true,
+  });
+  p.Alive = false;
+  p.DualShip = false;
+  s.Lives--;
+  s.Player = p;
+  return s;
+}
+
+GameState UpdateExplosions(GameState s, float dt) {
+  bool playerNeedsRespawn = false;
+  for (int i = s.Explosions.Count - 1; i >= 0; i--) {
+    var ex = s.Explosions[i];
+    ex.Timer += dt;
+    int totalFrames = ex.IsPlayer ? 4 : 5;
+    ex.Frame = Mathf.Min((int)(ex.Timer / EXPLOSION_DURATION * totalFrames), totalFrames - 1);
+    s.Explosions[i] = ex;
+
+    if (ex.Timer >= EXPLOSION_DURATION) {
+      if (ex.IsPlayer && !s.Player.Alive && s.Lives > 0) {
+        playerNeedsRespawn = true;
+      }
+    }
+  }
+  s.Explosions.RemoveAll(e => e.Timer >= EXPLOSION_DURATION);
+
+  if (playerNeedsRespawn) {
+    var p = s.Player;
+    p.Alive = true;
+    p.Captured = false;
+    p.X = VIEWPORT_W * 0.5f - ENTITY_SIZE * 0.5f;
+    p.Y = VIEWPORT_H - ENTITY_SIZE - 20;
+    p.InvincibleTimer = INVINCIBLE_DURATION;
+    s.Player = p;
+  }
+
+  return s;
+}
+
+GameState UpdateTractorBeam(GameState s, float dt) {
+  if (!s.TractorBeamActive || !s.Player.Alive) return s;
+
+  for (int i = 0; i < s.Enemies.Count; i++) {
+    var e = s.Enemies[i];
+    if (e.Id != s.TractorBeamCommanderId) continue;
+    if (e.Phase != EnemyPhase.TractorBeam) break;
+    if (e.TractorPhase != 1) break;
+
+    float beamCenterX = e.X + ENTITY_SIZE * 0.5f;
+    float playerCenterX = s.Player.X + ENTITY_SIZE * 0.5f;
+    float beamHalfWidth = 48f;
+    float distX = Mathf.Abs(playerCenterX - beamCenterX);
+
+    var p = s.Player;
+
+    if (p.InBeam) {
+      // Player is caught — freeze movement, pull upward
+      float pullSpeed = 100f * dt;
+      p.Y -= pullSpeed;
+
+      float captureY = e.Y + ENTITY_SIZE;
+      if (p.Y <= captureY) {
+        // Reached commander — captured
+        p.Y = captureY;
+        p.Alive = false;
+        p.Captured = true;
+        p.InBeam = false;
+        s.Player = p;
+        e.HasCapturedShip = true;
+        s.Lives--;
+
+        // Start returning to formation
+        e.TractorPhase = 2;
+        e.DiveT = 0;
+        Vec2 formPos = Formation.GetFormationPos(e.FormationRow, e.FormationCol) + new Vec2(s.FormationSwayX, 0);
+        e.DivePath = Paths.MakeReturnPath(new Vec2(e.X, e.Y), formPos);
+        s.Enemies[i] = e;
+
+        if (s.Lives > 0) {
+          var pl2 = s.Player;
+          pl2.Alive = true;
+          pl2.Captured = false;
+          pl2.InBeam = false;
+          pl2.X = VIEWPORT_W * 0.5f - ENTITY_SIZE * 0.5f;
+          pl2.Y = VIEWPORT_H - ENTITY_SIZE - 20;
+          pl2.InvincibleTimer = INVINCIBLE_DURATION;
+          s.Player = pl2;
+        }
+      } else {
+        s.Player = p;
+      }
+    } else if (distX < beamHalfWidth) {
+      // Player just entered the beam — catch them
+      p.InBeam = true;
+      s.Player = p;
+      // Extend the beam timer so the pull animation has time
+      e.TractorBeamTimer = Mathf.Min(e.TractorBeamTimer, TRACTOR_BEAM_DURATION - 4f);
+      s.Enemies[i] = e;
+    }
+    break;
+  }
+
+  return s;
+}
+
+GameState TickWaveCleared(GameState s, float dt) {
+  s.PhaseTimer += dt;
+  if (s.PhaseTimer >= WAVE_CLEARED_DURATION) {
+    s.Wave++;
+    if (s.Wave > 3) {
+      s.Phase = GamePhase.Victory;
+    } else {
+      s.Phase = GamePhase.WaveIntro;
+      s.PhaseTimer = 0;
+      var enemies = Formation.CreateWave(s.Wave, ref s.NextEnemyId);
+      s.Enemies = enemies;
+      s.Bullets.Clear();
+      s.Explosions.Clear();
+      s.DiveTimer = 2f;
+      s.TractorBeamActive = false;
+      s.TractorBeamCommanderId = -1;
+    }
+  }
+  return s;
+}

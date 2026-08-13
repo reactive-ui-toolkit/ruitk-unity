@@ -53,7 +53,7 @@ public sealed class StaleAdditionalTextTests
     private static string Component(string labelText) =>
         "@namespace Ruitk.Samples.FunctionalComponents\n"
         + "\n"
-        + "component ColdProbe {\n"
+        + "VirtualNode ColdProbe() {\n"
         + "  return (\n"
         + "    <Label text=\"" + labelText + "\" />\n"
         + "  );\n"

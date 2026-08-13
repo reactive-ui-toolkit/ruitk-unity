@@ -81,9 +81,9 @@ namespace UitkxLanguageServer.Tests
         public void SameName_SameExplicitNamespace_0113Fires()
         {
             string a = F("a/Board.uitkx",
-                "@namespace Shared.Ns\ncomponent Board {\n  return (<VisualElement />);\n}\n");
+                "@namespace Shared.Ns\nVirtualNode Board() {\n  return (<VisualElement />);\n}\n");
             F("b/Board.uitkx",
-                "@namespace Shared.Ns\ncomponent Board {\n  return (<VisualElement />);\n}\n");
+                "@namespace Shared.Ns\nVirtualNode Board() {\n  return (<VisualElement />);\n}\n");
 
             var publisher = MakePublisher(out _);
             var ds = Parse(File.ReadAllText(a), a);

@@ -9,7 +9,8 @@ namespace Ruitk.SourceGenerator.Tests
     /// <summary>
     /// ES-modules campaign (Plans~/archive/ES_MODULES_EXECUTION_PLAN.md M1, U-04): plain
     /// (wrapper-keyword-free) top-level declarations classify from the signature alone
-    /// (G-03), full export surface (default/list), and the mixed-style guard (U-08/2108).
+    /// (G-03), full export surface (default/list), and the mixed-style guard (U-08; the
+    /// 2320 removal error since 0.16.0).
     /// </summary>
     public sealed class PlainDeclarationParsingTests
     {
@@ -191,15 +192,22 @@ namespace Ruitk.SourceGenerator.Tests
             Assert.Contains(diags, d => d.Code == "UITKX2324");
         }
 
-        // ── Mixed-style guard (U-08 / Unity-local 2108) ─────────────────────
+        // ── Mixed-style guard (U-08, retired 2108 → the 2320 removal error) ─
 
         [Fact]
-        public void MixedFile_PlainFirst_ThenWrapperKeyword_Emits2108()
+        public void MixedFile_PlainFirst_ThenWrapperKeyword_IsAnError()
         {
+            // 0.16.0: a wrapper keyword inside a plain file is the mode-independent
+            // 2320 mixed-file removal error (2108 retired; the Error severity must
+            // survive the codemod's migration parse so mixed files freeze).
             var (ds, diags) = Parse(
                 "int MaxItems = 5;\n" +
-                "component Foo {\n  return ( <Spacer /> );\n}\n");
-            Assert.Contains(diags, d => d.Code == "UITKX2108");
+                "compo" + "nent Foo {\n  return ( <Spacer /> );\n}\n");
+            Assert.Contains(diags, d =>
+                d.Severity == ParseSeverity.Error
+                && d.Code == "UITKX2320"
+                && d.Message.Contains("cannot be mixed"));
+            Assert.DoesNotContain(diags, d => d.Code == "UITKX2108");
             Assert.False(ds.UsesLegacySyntax);
         }
 
@@ -264,7 +272,7 @@ namespace Ruitk.SourceGenerator.Tests
         public void EmptyFile_KeepsBaselineDiagnostics_NotAnEmptyNewModeModule()
         {
             // Audit F3: committing an empty/imports-only file as a zero-declaration new-mode
-            // set let the formatter fabricate `component Component { … }` out of nothing.
+            // set let the formatter fabricate `VirtualNode Component() { … }` out of nothing.
             // An empty file falls back to the legacy dispatch and its baseline 2105.
             var (ds, diags) = Parse("");
             Assert.Contains(diags, d => d.Code == "UITKX2105");

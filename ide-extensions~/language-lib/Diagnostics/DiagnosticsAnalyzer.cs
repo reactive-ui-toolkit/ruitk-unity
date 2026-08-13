@@ -135,6 +135,7 @@ namespace Ruitk.Language.Diagnostics
             if (d.IsFunctionStyle && !d.FunctionParams.IsDefaultOrEmpty)
             {
                 CheckUnusedParameters(d, parseResult.RootNodes, diags);
+                CheckDuplicatePropNames(d, diags);
             }
 
             // -- T2: UITKX0120 - Asset path not found -------------------------
@@ -143,18 +144,8 @@ namespace Ruitk.Language.Diagnostics
                 CheckAssetPaths(sourceText, filePath, diags);
             }
 
-            // -- T2: UITKX0211 - `const` in module body breaks HMR ------------
-            // Module-scope `const` is inlined at IL emit time by the C# compiler.
-            // The HMR pipeline can refresh `static readonly` slots via the
-            // [UitkxHmrSwap] machinery (StaticReadonlyStripper +
-            // UitkxHmrModuleStaticSwapper), but consts have no slot - every
-            // consumer's IL carries the literal value. Editing the const is
-            // invisible until full domain reload, which contradicts the HMR
-            // promise. Warn the user to use `static readonly` instead.
-            if (!d.ModuleDeclarations.IsDefaultOrEmpty)
-            {
-                CheckConstInModuleBodies(d, diags);
-            }
+            // (UITKX0211 const-in-module retired with the legacy module grammar in
+            // 0.16.0 — plain-dialect member bodies have no field-position const.)
 
             return diags;
         }
@@ -808,6 +799,11 @@ namespace Ruitk.Language.Diagnostics
 
             foreach (var p in d.FunctionParams)
             {
+                // C# discard convention: an underscore-prefixed parameter is
+                // deliberately unused (matches IDE0060's escape hatch).
+                if (p.Name.StartsWith("_", StringComparison.Ordinal))
+                    continue;
+
                 var nameRx = new Regex(@"\b" + Regex.Escape(p.Name) + @"\b");
 
                 // 1. Used in markup?  Simple text search is sufficient.
@@ -833,6 +829,38 @@ namespace Ruitk.Language.Diagnostics
                     EndLine    = line,
                     EndColumn  = endCol,
                 });
+            }
+        }
+
+        /// <summary>
+        /// UITKX0114 - Two parameters that collapse to the same PROP name
+        /// (<c>_count</c> and <c>count</c> both expose the prop <c>count</c> —
+        /// the leading underscore is the deliberately-unused marker, not part
+        /// of the contract). Anchored at the LATER parameter.
+        /// </summary>
+        private static void CheckDuplicatePropNames(DirectiveSet d, List<ParseDiagnostic> diags)
+        {
+            var seen = new Dictionary<string, string>(System.StringComparer.Ordinal);
+            foreach (var p in d.FunctionParams)
+            {
+                string propName = p.PropSourceName;
+                if (seen.TryGetValue(propName, out string firstName))
+                {
+                    int col    = p.NameColumn >= 0 ? p.NameColumn : 0;
+                    int line   = p.SourceLine > 0 ? p.SourceLine : d.ComponentDeclarationLine;
+                    diags.Add(new ParseDiagnostic
+                    {
+                        Code       = DiagnosticCodes.DuplicatePropName,
+                        Severity   = ParseSeverity.Error,
+                        Message    = $"Parameters '{firstName}' and '{p.Name}' both expose the prop '{propName}' — a leading underscore marks a parameter unused without renaming its prop.",
+                        SourceLine = line,
+                        SourceColumn = col,
+                        EndLine    = line,
+                        EndColumn  = col + p.Name.Length,
+                    });
+                    continue;
+                }
+                seen[propName] = p.Name;
             }
         }
 
@@ -1217,75 +1245,6 @@ namespace Ruitk.Language.Diagnostics
                 { ".uss",  new HashSet<string> { "StyleSheet" } },
                 { ".renderTexture", new HashSet<string> { "RenderTexture" } },
             };
-
-        // -- UITKX0211 - `const` in module body breaks HMR ------------------
-
-        // Matches `const <type> <name> =` at the start of a logical line inside
-        // a module body. The body is RAW C# text from DirectiveParser, so we
-        // can't use Roslyn here (would force a full Roslyn dep on language-lib).
-        // The regex tolerates optional access / static / new modifiers before
-        // `const`. The captured `name` group is used in the diagnostic message.
-        // Line-comment false positives are filtered explicitly below.
-        private static readonly Regex s_constInModuleRe = new Regex(
-            @"(?m)^[ \t]*(?:(?:public|private|internal|protected|new|static)\s+)*const\s+[A-Za-z_][\w.<>?\[\],\s]*?\s+(?<name>[A-Za-z_]\w*)\s*=",
-            RegexOptions.CultureInvariant | RegexOptions.Compiled
-        );
-
-        /// <summary>
-        /// UITKX0211 - Emits an HMR-invisibility warning for every top-level
-        /// <c>const</c> declaration inside a <c>module { ... }</c> body. Const
-        /// fields are inlined into every consumer's IL at compile time, so HMR
-        /// edits to their value never propagate. Recommend <c>static readonly</c>
-        /// which the SG's stripper / HMR static-swapper pipeline already
-        /// handles correctly via the <c>[UitkxHmrSwap]</c> attribute.
-        /// </summary>
-        private static void CheckConstInModuleBodies(
-            DirectiveSet d,
-            List<ParseDiagnostic> diags)
-        {
-            foreach (var mod in d.ModuleDeclarations)
-            {
-                if (string.IsNullOrEmpty(mod.Body))
-                    continue;
-
-                foreach (Match m in s_constInModuleRe.Matches(mod.Body))
-                {
-                    // Cheap false-positive filter: skip when the match position
-                    // sits after a `//` on its own line (comment).
-                    int lineStart = m.Index;
-                    while (lineStart > 0 && mod.Body[lineStart - 1] != '\n')
-                        lineStart--;
-                    string leading = mod.Body.Substring(lineStart, m.Index - lineStart);
-                    if (leading.IndexOf("//", StringComparison.Ordinal) >= 0)
-                        continue;
-
-                    // Body line -> source line: BodyStartLine is the line of the
-                    // first body statement (immediately after `{`); count '\n'
-                    // from body start to the match position.
-                    int newlinesBefore = 0;
-                    for (int i = 0; i < m.Index; i++)
-                        if (mod.Body[i] == '\n')
-                            newlinesBefore++;
-
-                    int sourceLine = mod.BodyStartLine + newlinesBefore;
-                    string fieldName = m.Groups["name"].Success ? m.Groups["name"].Value : "<unnamed>";
-
-                    diags.Add(new ParseDiagnostic
-                    {
-                        Code = DiagnosticCodes.ConstInModule,
-                        Severity = ParseSeverity.Warning,
-                        Message =
-                            $"'const {fieldName}' is inlined at compile time and will not "
-                            + "update under HMR. Use 'static readonly' so the HMR pipeline "
-                            + "can refresh the value across edit-save cycles.",
-                        SourceLine = sourceLine,
-                        SourceColumn = 0,
-                        EndLine = sourceLine,
-                        EndColumn = 9999,
-                    });
-                }
-            }
-        }
 
         /// <summary>
         /// UITKX0120 - Check that every <c>Asset&lt;T&gt;("path")</c>,

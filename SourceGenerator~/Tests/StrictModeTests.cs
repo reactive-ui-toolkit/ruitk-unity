@@ -94,8 +94,8 @@ namespace Ruitk.SourceGenerator.Tests
                 Usings: ImmutableArray<string>.Empty, UssFiles: ImmutableArray<string>.Empty,
                 Injects: ImmutableArray<(string, string)>.Empty, MarkupStartLine: 1, MarkupStartIndex: 0)
             {
-                HookDeclarations = ImmutableArray.Create(new HookDeclaration(
-                    "useLocal", null, ImmutableArray<FunctionParam>.Empty, null, "return 0;", 1, 1, 0, 0)),
+                MemberDeclarations = ImmutableArray.Create(new MemberDeclaration(
+                    "useLocal", DeclKind.Hook, false, "int", "", "return 0;", false, 1, 0, 1, 0, 0)),
             };
             var peers = new[] { new PeerExport("useLocal", "C:/other.uitkx", ExportKind.Hook) };
             var findings = Detect(ds, Importer, "var x = useLocal();", peers, NoBuiltins);

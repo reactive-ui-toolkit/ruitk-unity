@@ -1,4 +1,14 @@
-export VirtualNode ShowcaseNewComponentsPanel(bool foldoutOpen = true, ChangeEventHandler<bool>? onFoldoutChange = null, float sliderValue = 0.5f, ChangeEventHandler<float>? onSliderChange = null, int sliderIntValue = 5, ChangeEventHandler<int>? onSliderIntChange = null, List<string>? ddChoices = null, string ddValue = "", ChangeEventHandler<string>? onDdChange = null) {
+export VirtualNode ShowcaseNewComponentsPanel(
+  bool foldoutOpen = true,
+  ChangeEventHandler<bool>? onFoldoutChange = null,
+  float sliderValue = 0.5f,
+  ChangeEventHandler<float>? onSliderChange = null,
+  int sliderIntValue = 5,
+  ChangeEventHandler<int>? onSliderIntChange = null,
+  List<string>? ddChoices = null,
+  string ddValue = "",
+  ChangeEventHandler<string>? onDdChange = null
+) {
   var groupContentStyle = new Style {
     (PaddingLeft, 8f), (PaddingRight, 8f),
     (PaddingTop, 6f), (PaddingBottom, 6f),

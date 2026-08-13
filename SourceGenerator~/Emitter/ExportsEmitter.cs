@@ -139,7 +139,7 @@ namespace Ruitk.SourceGenerator.Emitter
                 {
                     var hook = new HookDeclaration(
                         Name: m.Name,
-                        GenericParams: null,
+                        GenericParams: m.TypeParamsText,
                         Params: m.Params,
                         ReturnType: NormalizeVoid(m.ReturnTypeText),
                         Body: m.IsExpressionBodied ? "return " + m.BodyText + ";" : m.BodyText,
@@ -171,9 +171,13 @@ namespace Ruitk.SourceGenerator.Emitter
                     string body = EmitContext.ResolveAssetPaths(m.BodyText, filePath, diagnostics);
                     string ret = NormalizeVoid(m.ReturnTypeText) ?? "void";
                     string paramsText = m.ParamsText ?? string.Empty;
+                    // F9: a generic util emits `Name<T>(…)`; ModuleBodyRewriter already
+                    // handles generic methods (MethodInfo-cache trampoline, not a delegate
+                    // field), so generics flow through the same rewrite unchanged.
+                    string typeParams = m.TypeParamsText ?? string.Empty;
                     string synthesized = m.IsExpressionBodied
-                        ? $"{access} static {ret} {m.Name}({paramsText}) => {body};"
-                        : $"{access} static {ret} {m.Name}({paramsText})\n{{\n{body}\n}}";
+                        ? $"{access} static {ret} {m.Name}{typeParams}({paramsText}) => {body};"
+                        : $"{access} static {ret} {m.Name}{typeParams}({paramsText})\n{{\n{body}\n}}";
                     AppendViaModuleRewriter(sb, synthesized, m, linePath, diagnostics);
                     break;
                 }
@@ -311,12 +315,15 @@ namespace Ruitk.SourceGenerator.Emitter
 
             // Method-shaped (util/hook): re-state the signature and forward. R5 constraint:
             // ref/out/in/params modifiers are forwarded explicitly via the parsed param types
-            // (TryReadTypeName keeps them as part of the type text when written).
+            // (TryReadTypeName keeps them as part of the type text when written). F9: a generic
+            // member forwards through a generic bridge whose own type parameters close the
+            // target's.
             string ret = target.ReturnTypeText ?? "void";
+            string typeParams = target.TypeParamsText ?? string.Empty;
             string paramList = BuildParamList(target.Params);
             string argNames = BuildArgNames(target.Params);
             result.Add(
-                $"        internal static {ret} {alias}({paramList}) => global::{targetNs}.__Exports.{target.Name}({argNames});");
+                $"        internal static {ret} {alias}{typeParams}({paramList}) => global::{targetNs}.__Exports.{target.Name}{typeParams}({argNames});");
         }
 
         private static string BuildParamList(ImmutableArray<FunctionParam> ps)

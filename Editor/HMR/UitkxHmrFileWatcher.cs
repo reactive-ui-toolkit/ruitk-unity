@@ -37,7 +37,7 @@ namespace Ruitk.EditorSupport.HMR
         /// </summary>
         public event Action<string> OnUitkxDeleted;
 
-        private FileSystemWatcher _watcher;
+        private readonly List<FileSystemWatcher> _watchers = new();
         private readonly Dictionary<string, int> _pendingChanges = new();
         private readonly Dictionary<string, int> _pendingUssChanges = new();
         private readonly Dictionary<string, int> _pendingDeletions = new();
@@ -63,62 +63,80 @@ namespace Ruitk.EditorSupport.HMR
         private const int FullSweepMs = 2000;
         private int _lastFullSweepTick;
         private int _sweepRunning; // Interlocked reentrancy guard (threadpool sweep)
-        private string _watchRoot;
+        private string[] _watchRoots = Array.Empty<string>();
 
-        public void Start(string watchRoot)
+        /// <summary>
+        /// Starts watching every root in <paramref name="watchRoots"/> (one
+        /// FileSystemWatcher each). Roots are the project's Assets/ folder PLUS every
+        /// writable package location (embedded / local file: installs) — a .uitkx
+        /// inside a package raises no event from an Assets/-only watcher, which left
+        /// HMR structurally blind to package-resident files (the FSW is the PRIMARY
+        /// event source during play mode, where Unity's asset refresh — and with it
+        /// the AssetPostprocessor safety net — may be deferred by user preferences).
+        /// </summary>
+        public void Start(IReadOnlyList<string> watchRoots)
         {
-            if (_watcher != null)
+            if (_watchers.Count > 0)
                 Stop();
 
-            _watchRoot = watchRoot;
+            var roots = new List<string>();
+            foreach (var r in watchRoots)
+                if (!string.IsNullOrEmpty(r) && Directory.Exists(r))
+                    roots.Add(r);
+            _watchRoots = roots.ToArray();
             _lastFullSweepTick = Environment.TickCount;
 
-            _watcher = new FileSystemWatcher
+            foreach (string root in _watchRoots)
             {
-                Path = watchRoot,
-                IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
-                EnableRaisingEvents = true,
-            };
+                var watcher = new FileSystemWatcher
+                {
+                    Path = root,
+                    IncludeSubdirectories = true,
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
+                    EnableRaisingEvents = true,
+                };
 
-            _watcher.Changed += OnFileSystemEvent;
-            _watcher.Created += OnFileSystemEvent;
-            _watcher.Deleted += (s, e) =>
-            {
-                if (TraceEnabled)
-                    Debug.Log($"[HMR][trace] FSW Deleted {e.FullPath}");
-                EnqueueDeletion(e.FullPath);
-            };
-            _watcher.Renamed += (s, e) =>
-            {
-                if (TraceEnabled)
-                    Debug.Log($"[HMR][trace] FSW Renamed {e.OldFullPath} -> {e.FullPath}");
-                // A rename is a change of the NEW path plus a deletion of the OLD
-                // path — without the second half, a renamed member file's previous
-                // identity (registry entries, import edges) is never evicted.
-                EnqueueDeletion(e.OldFullPath);
-                OnFileSystemEvent(
-                    s,
-                    new FileSystemEventArgs(
-                        WatcherChangeTypes.Changed,
-                        Path.GetDirectoryName(e.FullPath),
-                        Path.GetFileName(e.FullPath)
-                    )
-                );
-            };
-            // Overflow visibility: Mono's FSW drops events silently when its 8 KB
-            // buffer overflows (see the AssetPostprocessor comment below). Without
-            // this handler a dropped save is indistinguishable from a save that
-            // never happened. Subscribing an event does not touch the fragile FSW
-            // configuration (Path/filters/EnableRaisingEvents stay exactly as-is).
-            _watcher.Error += (s, e) =>
-            {
-                Debug.LogWarning(
-                    "[HMR] File watcher error — OS file events may have been lost. "
-                        + "If a save produced no '[HMR] Save:' line, re-save the file. "
-                        + $"({e.GetException()?.Message ?? "unknown"})"
-                );
-            };
+                watcher.Changed += OnFileSystemEvent;
+                watcher.Created += OnFileSystemEvent;
+                watcher.Deleted += (s, e) =>
+                {
+                    if (TraceEnabled)
+                        Debug.Log($"[HMR][trace] FSW Deleted {e.FullPath}");
+                    EnqueueDeletion(e.FullPath);
+                };
+                watcher.Renamed += (s, e) =>
+                {
+                    if (TraceEnabled)
+                        Debug.Log($"[HMR][trace] FSW Renamed {e.OldFullPath} -> {e.FullPath}");
+                    // A rename is a change of the NEW path plus a deletion of the OLD
+                    // path — without the second half, a renamed member file's previous
+                    // identity (registry entries, import edges) is never evicted.
+                    EnqueueDeletion(e.OldFullPath);
+                    OnFileSystemEvent(
+                        s,
+                        new FileSystemEventArgs(
+                            WatcherChangeTypes.Changed,
+                            Path.GetDirectoryName(e.FullPath),
+                            Path.GetFileName(e.FullPath)
+                        )
+                    );
+                };
+                // Overflow visibility: Mono's FSW drops events silently when its 8 KB
+                // buffer overflows (see the AssetPostprocessor comment below). Without
+                // this handler a dropped save is indistinguishable from a save that
+                // never happened. Subscribing an event does not touch the fragile FSW
+                // configuration (Path/filters/EnableRaisingEvents stay exactly as-is).
+                watcher.Error += (s, e) =>
+                {
+                    Debug.LogWarning(
+                        "[HMR] File watcher error — OS file events may have been lost. "
+                            + "If a save produced no '[HMR] Save:' line, re-save the file. "
+                            + $"({e.GetException()?.Message ?? "unknown"})"
+                    );
+                };
+
+                _watchers.Add(watcher);
+            }
 
             // Seed the mtime map so the first directory-scan recovery pass has a baseline
             // (otherwise every pre-existing file would look "changed" on the first folder
@@ -128,16 +146,17 @@ namespace Ruitk.EditorSupport.HMR
                 lock (_lock)
                 {
                     _lastSeenWriteTicks.Clear();
-                    foreach (var f in Directory.EnumerateFiles(
-                                 watchRoot, "*.uitkx", SearchOption.AllDirectories))
-                    {
-                        try
+                    foreach (string root in _watchRoots)
+                        foreach (var f in Directory.EnumerateFiles(
+                                     root, "*.uitkx", SearchOption.AllDirectories))
                         {
-                            _lastSeenWriteTicks[Path.GetFullPath(f)] =
-                                File.GetLastWriteTimeUtc(f).Ticks;
+                            try
+                            {
+                                _lastSeenWriteTicks[Path.GetFullPath(f)] =
+                                    File.GetLastWriteTimeUtc(f).Ticks;
+                            }
+                            catch { }
                         }
-                        catch { }
-                    }
                 }
             }
             catch (Exception ex)
@@ -166,12 +185,13 @@ namespace Ruitk.EditorSupport.HMR
 
             UitkxHmrAssetPostprocessor.Unregister(this);
 
-            if (_watcher != null)
+            foreach (var watcher in _watchers)
             {
-                _watcher.EnableRaisingEvents = false;
-                _watcher.Dispose();
-                _watcher = null;
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
             }
+            _watchers.Clear();
+            _watchRoots = Array.Empty<string>();
 
             lock (_lock)
             {
@@ -352,25 +372,26 @@ namespace Ruitk.EditorSupport.HMR
                 return;
 
             int sweepNow = Environment.TickCount;
-            if (sweepNow - _lastFullSweepTick >= FullSweepMs && _watchRoot != null
+            if (sweepNow - _lastFullSweepTick >= FullSweepMs && _watchRoots.Length > 0
                 && System.Threading.Interlocked.CompareExchange(ref _sweepRunning, 1, 0) == 0)
             {
                 _lastFullSweepTick = sweepNow;
-                string root = _watchRoot;
-                // Threadpool: a full Assets-tree stat walk must never hitch the editor
+                string[] roots = _watchRoots;
+                // Threadpool: a full watched-tree stat walk must never hitch the editor
                 // frame. CheckFileForMissedWrite is lock-guarded and Debug.Log is
                 // thread-safe; recovered paths surface via the normal debounced pump.
                 System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                 {
                     try
                     {
-                        foreach (var f in Directory.EnumerateFiles(
-                                     root, "*.uitkx", SearchOption.AllDirectories))
-                        {
-                            if (_disposed)
-                                break;
-                            CheckFileForMissedWrite(f);
-                        }
+                        foreach (string root in roots)
+                            foreach (var f in Directory.EnumerateFiles(
+                                         root, "*.uitkx", SearchOption.AllDirectories))
+                            {
+                                if (_disposed)
+                                    return;
+                                CheckFileForMissedWrite(f);
+                            }
                     }
                     catch { /* best-effort safety net */ }
                     finally

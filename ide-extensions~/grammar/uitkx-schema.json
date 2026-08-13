@@ -318,23 +318,11 @@
   "directives": [
     {
       "name": "namespace",
-      "description": "C# namespace for the generated partial class."
-    },
-    {
-      "name": "component",
-      "description": "(deprecated — ES-modules campaign) Name of the component class. Write a plain `export VirtualNode Name(...) { ... }` declaration instead; kept for the deprecation window."
+      "description": "C# namespace override for the generated types (rare escape hatch — namespaces are file-keyed by default)."
     },
     {
       "name": "using",
-      "description": "Adds a using directive to the generated file."
-    },
-    {
-      "name": "props",
-      "description": "Declares the props type consumed by this component."
-    },
-    {
-      "name": "key",
-      "description": "Sets a static key on the component root element."
+      "description": "Adds a using directive to the generated file. Prefer the unified `import \"@Namespace\"` spelling (they are equivalent)."
     },
     {
       "name": "uss",
@@ -1398,12 +1386,12 @@
         },
         {
           "name": "selectedIndexChanged",
-          "type": "Action",
-          "description": "Callback when selected tab changes."
+          "type": "TabIndexEventHandler",
+          "description": "Callback when selected tab changes — delegate void(int index)."
         },
         {
           "name": "activeTabChanged",
-          "type": "Action",
+          "type": "TabChangedEventHandler",
           "description": "Callback when active tab changes."
         },
         {
@@ -1633,8 +1621,8 @@
         },
         {
           "name": "enumType",
-          "type": "Type",
-          "description": "The System.Type of the enum."
+          "type": "string",
+          "description": "Assembly-qualified name of the enum type, e.g. typeof(TextAnchor).AssemblyQualifiedName."
         },
         {
           "name": "name",

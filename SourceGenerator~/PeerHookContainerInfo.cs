@@ -12,8 +12,9 @@ namespace Ruitk.SourceGenerator
         /// <summary>Namespace declared in the hook file (<c>@namespace</c>).</summary>
         string Namespace,
         /// <summary>
-        /// Generated container class name (e.g. <c>TicTacToeHooks</c>).
-        /// Derived from the filename by <see cref="Emitter.HookEmitter.DeriveContainerClassName"/>.
+        /// Generated container class name — always <c>__Exports</c> since the 0.16.0
+        /// legacy wave (the filename-derived <c>{Stem}Hooks</c> naming died with the
+        /// wrapper grammar).
         /// </summary>
         string ClassName
     )

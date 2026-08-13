@@ -26,8 +26,7 @@ namespace MyGame.UI.PlayerCard.PlayerCard    // ← file-keyed: folders + FILE S
     }
 }
 // Each companion file is its OWN module with its own namespace — its members live on a
-// per-file __Exports container and are brought in by the imports above (the legacy
-// same-name partial-class merge is deprecated: UITKX2107).`
+// per-file __Exports container and are brought in by the imports above.`
 
 export const EXAMPLE_DIRECTORY = `Assets/
   UI/
@@ -64,9 +63,9 @@ export Style CardStyle = new Style {
   (BackgroundColor, Hex("#1a1a2e"))
 };`
 
-export const EXAMPLE_TYPES = `// Nested types (enums, structs, classes) have no plain-declaration form —
+export const EXAMPLE_TYPES = `// Type definitions (enums, structs, classes) have no plain-declaration form —
 // declare them in a hand-written .cs beside the components (ambient C# is never
-// policed), or keep a legacy module file through the deprecation window:
+// policed by the uitkx toolchain):
 // PlayerCardTypes.cs
 namespace MyGame.UI {
   public enum PlayerRank { Bronze, Silver, Gold, Diamond }

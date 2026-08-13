@@ -146,6 +146,26 @@ parity contract tests run against the new SG.
 - **VS Code `uitkx.server.path` setting** can override the bundled
   `server/` directory for a developer-local LSP build. Check user
   settings if behaviour differs from a fresh F5.
+- **F5 opens an empty Extension Development Host every time ("it keeps
+  forgetting my project").** The owner presses F5 from the REPO ROOT
+  workspace, so the config that runs is the **machine-local, untracked
+  `.vscode/launch.json` at the repo root** — not the tracked
+  `ide-extensions~/vscode/.vscode/launch.json` (that one only applies when
+  the extension folder itself is opened as the workspace). The root config
+  pins the dev-host workspace with a `--file-uri=…ReactiveUIToolkit.code-workspace`
+  argument pointing into the consumer Unity project's embedded package
+  clone, and runs the npm build as a preLaunchTask. Two standing facts:
+  (1) VS Code does NOT error when that pinned path no longer exists — it
+  silently opens an empty window on every F5, which presents as "the dev
+  host stopped remembering my folder" (bit us after the 0.12 rebrand +
+  `Assets/` → `Packages/` package move). Fix: search the consumer project
+  for `*.code-workspace` and repoint the `--file-uri`. (2) The pin is a
+  machine-local path, which is exactly WHY that file is untracked — never
+  move it into a tracked file; the machine-paths gate forbids it. The same
+  untracked `.vscode/settings.json` chain has previously overridden
+  extension behaviour (`formatOnSave` off for `[uitkx]`) — when F5
+  behaviour diverges from a clean install, read the repo-root `.vscode/`
+  files FIRST, before theorizing about the extension.
 
 ## After rebuild
 

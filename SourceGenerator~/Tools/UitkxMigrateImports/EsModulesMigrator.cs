@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -31,10 +32,13 @@ namespace Ruitk.SourceGenerator.Tools
     ///   <item><description>format — <see cref="AstFormatter"/> last.</description></item>
     /// </list>
     /// The zero-diagnostics gate (§7.1 step 7) is the caller's job (SamplesCorpusGateTests +
-    /// VERIFY-UNITY in M7). Files whose shapes the plain dialect cannot express (generic hooks,
-    /// modules with properties/nested types/attributed members/initializer-less fields), files
-    /// with parse errors, and files with declarations sharing a source line are SKIPPED whole-set
-    /// with a reported error — they stay legacy and keep compiling under the deprecation window.
+    /// VERIFY-UNITY in M7). Files whose shapes the plain dialect cannot express (modules with
+    /// properties/nested types/attributed members/initializer-less fields — move those members
+    /// to ambient C#, ruling D2), files with parse errors, and files with declarations sharing
+    /// a source line are SKIPPED whole-set with a reported error. Generic hooks and generic
+    /// module methods migrate to generic declaration heads (F9, 0.16.0). Companion-file module
+    /// members auto-export regardless of modifiers (the partial-class merge made them all
+    /// reachable pre-migration).
     /// </summary>
     public static class EsModulesMigrator
     {
@@ -62,14 +66,26 @@ namespace Ruitk.SourceGenerator.Tools
             // exploded output). They fail loudly and drag their companion set with them.
             var newMode = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var parseErrors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            // Pre-migration folder-keyed namespaces of stamp-less legacy files: after those
+            // files migrate to file-keyed namespaces, an `import "@OldFolderNs"` in ANY file
+            // points at a namespace that no longer has members (PC-12b). Collected here to
+            // warn on survivors after the rewrite.
+            var preMigrationNamespaces = new HashSet<string>(StringComparer.Ordinal);
             foreach (var f in files)
             {
                 var probeDiags = new List<ParseDiagnostic>();
-                var dsProbe = DirectiveParser.Parse(f.Text, f.AbsPath, probeDiags);
+                var dsProbe = DirectiveParser.ParseLegacyForMigration(f.Text, f.AbsPath, probeDiags);
                 if (!dsProbe.UsesLegacySyntax)
                 {
                     newMode.Add(f.AbsPath);
                     continue;
+                }
+                if (!dsProbe.HasExplicitNamespace)
+                {
+                    string? oldNs = EffectiveNamespace.Resolve(
+                        hasExplicitNamespace: false, dsProbe.Namespace, f.AbsPath, fileKeyed: false);
+                    if (!string.IsNullOrEmpty(oldNs))
+                        preMigrationNamespaces.Add(oldNs!);
                 }
                 var errDiags = probeDiags.Where(d => d.Severity == ParseSeverity.Error).ToList();
                 if (errDiags.Count > 0)
@@ -100,7 +116,7 @@ namespace Ruitk.SourceGenerator.Tools
 
             foreach (var f in current)
             {
-                var ds = DirectiveParser.Parse(f.Text, f.AbsPath, new List<ParseDiagnostic>());
+                var ds = DirectiveParser.ParseLegacyForMigration(f.Text, f.AbsPath, new List<ParseDiagnostic>());
                 if (!ds.UsesLegacySyntax)
                 {
                     rewritten[f.AbsPath] = f.Text; // already migrated — pass through (idempotence)
@@ -190,6 +206,22 @@ namespace Ruitk.SourceGenerator.Tools
                 string original = files.First(x => x.AbsPath == f.AbsPath).Text;
                 if (!string.Equals(text, original, StringComparison.Ordinal))
                     output[f.AbsPath] = text;
+
+                // PC-12b: a surviving `import "@X"` / `@using X` aimed at a PRE-migration
+                // folder namespace is now dead - the members moved to file-keyed namespaces.
+                // Warn (never silently rewrite): the editor's UITKX2316/2305 quick-fixes name
+                // the exact replacement imports.
+                if (isMigrated && preMigrationNamespaces.Count > 0)
+                    foreach (Match nsImp in Regex.Matches(text,
+                        "^(?:import\\s+\"@([\\w.]+)\"|@using\\s+([\\w.]+))\\s*$", RegexOptions.Multiline))
+                    {
+                        string nsRef = nsImp.Groups[1].Success ? nsImp.Groups[1].Value : nsImp.Groups[2].Value;
+                        if (preMigrationNamespaces.Contains(nsRef))
+                            errors.Add(new UitkxMigrator.MigrationError(f.AbsPath,
+                                $"import \"@{nsRef}\" points at a pre-migration folder namespace whose members "
+                                + "moved to file-keyed namespaces - replace it with explicit imports "
+                                + "(the editor's UITKX2316/2305 quick-fixes list the exact names)"));
+                    }
             }
             return output;
         }
@@ -217,14 +249,15 @@ namespace Ruitk.SourceGenerator.Tools
             if (!ds.HookDeclarations.IsDefaultOrEmpty)
                 foreach (var h in ds.HookDeclarations)
                 {
-                    if (!string.IsNullOrEmpty(h.GenericParams))
-                        return $"generic hook '{h.Name}' — the plain dialect has no generic declaration heads";
                     // BodyEndOffset is the exact index of the closing `}` (parser contract), so
                     // its line IS the last line of the declaration — never scan the text for a
                     // `}`-first line: when the brace shares a line with the last statement, a
                     // scan latches onto the NEXT declaration's brace and deletes it wholesale.
                     int closeLine = LineAt(src, h.BodyEndOffset);
                     string ret = string.IsNullOrEmpty(h.ReturnType) ? "void" : h.ReturnType!;
+                    // F9: generic hooks migrate to generic declaration heads verbatim
+                    // (`export (T v, Action<T> set) useSel<T>(…)`).
+                    string typeParams = h.GenericParams ?? string.Empty;
                     string paramList = string.Join(", ", h.Params.IsDefaultOrEmpty
                         ? Enumerable.Empty<string>()
                         : h.Params.Select(p => p.DefaultValue != null
@@ -233,7 +266,7 @@ namespace Ruitk.SourceGenerator.Tools
                     var body = SliceLines(src, h.BodyStartOffset, h.BodyEndOffset);
                     var repl = new List<string>
                     {
-                        $"{(h.IsExported ? "export " : "")}{ret} {h.Name}({paramList}) {{"
+                        $"{(h.IsExported ? "export " : "")}{ret} {h.Name}{typeParams}({paramList}) {{"
                     };
                     repl.AddRange(body);
                     repl.Add("}");
@@ -244,7 +277,13 @@ namespace Ruitk.SourceGenerator.Tools
             if (!ds.ModuleDeclarations.IsDefaultOrEmpty)
                 foreach (var m in ds.ModuleDeclarations)
                 {
-                    string? reason = ExplodeModule(m, out var hoisted, out var memberNames, warnings);
+                    // Companion files (dotted stem, e.g. X.style.uitkx): every hoisted member
+                    // auto-exports. Pre-migration, ALL companion members - public or not -
+                    // were reachable from the base file through the partial-class merge; a
+                    // public-only rule silently strands the common modifier-less style
+                    // companion shape at CS0103 (T15, the highest-frequency field break).
+                    bool exportAll = Path.GetFileNameWithoutExtension(f.AbsPath).Contains('.');
+                    string? reason = ExplodeModule(m, exportAll, out var hoisted, out var memberNames, warnings);
                     if (reason != null)
                         return $"module '{m.Name}': {reason}";
                     int closeLine = LineAt(src, m.BodyEndOffset);
@@ -303,13 +342,15 @@ namespace Ruitk.SourceGenerator.Tools
         /// <summary>
         /// Hoists a legacy module body's members to plain declarations. Null on success;
         /// else the reason the shape cannot be expressed in the plain dialect. Comment/doc
-        /// trivia is preserved verbatim; only explicitly <c>public</c> members export (C#
-        /// class members default to private); <c>const</c> migrates with a per-member warning.
+        /// trivia is preserved verbatim. Export rule: explicitly <c>public</c> members export;
+        /// with <paramref name="exportAll"/> (companion files) EVERY member exports, because
+        /// the partial-class merge made all companion members reachable regardless of
+        /// modifiers. <c>const</c> migrates with a per-member warning.
         /// <paramref name="exportedNames"/> carries the exported member names only (the
         /// companion member-import pass must never import a file-private name).
         /// </summary>
         private static string? ExplodeModule(
-            ModuleDeclaration m, out List<string> hoisted, out List<string> exportedNames,
+            ModuleDeclaration m, bool exportAll, out List<string> hoisted, out List<string> exportedNames,
             List<string> warnings)
         {
             hoisted = new List<string>();
@@ -337,18 +378,24 @@ namespace Ruitk.SourceGenerator.Tools
                             return $"member '{firstName}' has attributes — the plain dialect has no attribute form";
                         bool isPublic = field.Modifiers.Any(SyntaxKind.PublicKeyword);
                         bool isConst = field.Modifiers.Any(SyntaxKind.ConstKeyword);
+                        bool fieldExports = isPublic || exportAll;
                         string type = field.Declaration.Type.ToString();
                         foreach (var v in field.Declaration.Variables)
                         {
                             if (v.Initializer == null)
                                 return $"field '{v.Identifier.Text}' has no initializer — plain values require '= …'";
-                            string prefix = isPublic ? "export " : "";
+                            string prefix = fieldExports ? "export " : "";
                             hoisted.Add($"{prefix}{type} {v.Identifier.Text} = {v.Initializer.Value};");
                             if (isConst)
                                 warnings.Add($"module '{m.Name}': const member '{v.Identifier.Text}' migrated to a "
                                     + "plain value — const-ness is lost (const-required contexts will fail at C# compile)");
-                            if (isPublic)
+                            if (fieldExports)
+                            {
                                 exportedNames.Add(v.Identifier.Text);
+                                if (!isPublic)
+                                    warnings.Add($"module '{m.Name}': companion member '{v.Identifier.Text}' "
+                                        + "auto-exported (it was reachable through the partial-class merge)");
+                            }
                         }
                         break;
                     }
@@ -356,19 +403,23 @@ namespace Ruitk.SourceGenerator.Tools
                     {
                         if (method.AttributeLists.Count > 0)
                             return $"member '{method.Identifier.Text}' has attributes — the plain dialect has no attribute form";
-                        if (method.TypeParameterList != null)
-                            return $"generic method '{method.Identifier.Text}' — the plain dialect has no generic declaration heads";
+                        if (method.ConstraintClauses.Count > 0)
+                            return $"generic method '{method.Identifier.Text}' has where-constraints — the plain "
+                                + "dialect has no constraint form (move it to ambient C#)";
                         bool isPublic = method.Modifiers.Any(SyntaxKind.PublicKeyword);
-                        string prefix = isPublic ? "export " : "";
+                        bool methodExports = isPublic || exportAll;
+                        string prefix = methodExports ? "export " : "";
                         string ret = method.ReturnType.ToString();
+                        // F9: generic module methods migrate to generic declaration heads.
+                        string typeParams = method.TypeParameterList?.ToString() ?? string.Empty;
                         string plist = method.ParameterList.Parameters.ToFullString().Trim();
                         if (method.ExpressionBody != null)
                         {
-                            hoisted.Add($"{prefix}{ret} {method.Identifier.Text}({plist}) => {method.ExpressionBody.Expression};");
+                            hoisted.Add($"{prefix}{ret} {method.Identifier.Text}{typeParams}({plist}) => {method.ExpressionBody.Expression};");
                         }
                         else if (method.Body != null)
                         {
-                            hoisted.Add($"{prefix}{ret} {method.Identifier.Text}({plist}) {{");
+                            hoisted.Add($"{prefix}{ret} {method.Identifier.Text}{typeParams}({plist}) {{");
                             foreach (var bodyLine in DedentBlock(method.Body))
                                 hoisted.Add(bodyLine);
                             hoisted.Add("}");
@@ -377,8 +428,13 @@ namespace Ruitk.SourceGenerator.Tools
                         {
                             return $"method '{method.Identifier.Text}' has no body";
                         }
-                        if (isPublic)
+                        if (methodExports)
+                        {
                             exportedNames.Add(method.Identifier.Text);
+                            if (!isPublic)
+                                warnings.Add($"module '{m.Name}': companion member '{method.Identifier.Text}' "
+                                    + "auto-exported (it was reachable through the partial-class merge)");
+                        }
                         break;
                     }
                     default:
@@ -452,7 +508,7 @@ namespace Ruitk.SourceGenerator.Tools
             bool importerRemainsLegacy,
             List<UitkxMigrator.MigrationError> notes)
         {
-            var ds = DirectiveParser.Parse(text, absPath, new List<ParseDiagnostic>());
+            var ds = DirectiveParser.ParseLegacyForMigration(text, absPath, new List<ParseDiagnostic>());
             if (ds.Imports.IsDefaultOrEmpty && memberNamesByFile.Count == 0)
                 return text;
 
@@ -507,7 +563,7 @@ namespace Ruitk.SourceGenerator.Tools
             {
                 string setKey = SetKey(absPath);
                 var selfNames = new HashSet<string>(StringComparer.Ordinal);
-                var dsSelf = DirectiveParser.Parse(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
+                var dsSelf = DirectiveParser.ParseLegacyForMigration(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
                 foreach (var c in dsSelf.ComponentDeclarations) selfNames.Add(c.Name);
                 foreach (var md in dsSelf.MemberDeclarations) selfNames.Add(md.Name);
                 var neededBySpec = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
@@ -520,7 +576,7 @@ namespace Ruitk.SourceGenerator.Tools
                         continue;
 
                     var already = new HashSet<string>(StringComparer.Ordinal);
-                    var dsNow = DirectiveParser.Parse(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
+                    var dsNow = DirectiveParser.ParseLegacyForMigration(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
                     if (!dsNow.Imports.IsDefaultOrEmpty)
                         foreach (var imp in dsNow.Imports)
                             foreach (var n in imp.Names)
@@ -539,7 +595,7 @@ namespace Ruitk.SourceGenerator.Tools
                 if (neededBySpec.Count > 0)
                 {
                     int insertAt = 0;
-                    var dsNow = DirectiveParser.Parse(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
+                    var dsNow = DirectiveParser.ParseLegacyForMigration(string.Join("\n", lines), absPath, new List<ParseDiagnostic>());
                     if (!dsNow.Imports.IsDefaultOrEmpty)
                         insertAt = dsNow.Imports.Max(i => i.Line); // after the last import line (1-based → insert index)
                     var newLines = neededBySpec

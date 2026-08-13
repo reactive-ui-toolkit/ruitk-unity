@@ -33,11 +33,11 @@ const DIAGS: [string, string][] = [
   ['UITKX2303', 'duplicate import of `X` (already imported from another specifier)'],
   ['UITKX2304', 'unused import `X` (warning)'],
   ['UITKX2305', '`X` is defined in a peer file but not imported — the message names the exact import line to add. Error for component tags (<X> is uitkx-only syntax); warning for bare hook-call / module member-access matches (plain C# can legitimately produce those shapes)'],
-  ['UITKX2306', 'value-import cycle: hooks/modules load eagerly, so a cycle among their imports is an error (components are exempt)'],
+  ['UITKX2306', 'value-import cycle: hooks/values load eagerly, so a cycle among their imports is an error (components are exempt)'],
   ['UITKX2307', '`X` is used like a hook but no file exports it (warning — a hand-written C# hook resolves ambiently and looks identical)'],
   ['UITKX2308', 'import crosses a module/root boundary — imports are asmdef-scoped in v1'],
   ['UITKX2309', 'import must appear in the preamble, before the first declaration'],
-  ['UITKX2311', 'export mismatch across parts merging into one type (e.g. a `component` and a same-named `module` disagree) — the component wins; align them (warning)'],
+  ['UITKX2311', 'export mismatch across declarations merging into one generated type (e.g. two same-named declarations disagree on `export`) — the component wins; align them (warning)'],
   ['UITKX2312', 'hook-container merge conflict: same-named containers in two files disagree (duplicate hook or accessibility)'],
   ['UITKX2314', '`~/` root is not configured or the path resolves outside the project — set `"root"` in uitkx.config.json'],
   ['UITKX2316', 'unknown namespace — a `@using`/`import "@Ns"` whose namespace resolves nowhere in the assembly or its references (the namespace analogue of 2300). Editor error; build warning (the emitted `using`’s CS0246 stays the real gate)'],
@@ -123,7 +123,7 @@ export const UitkxImportsPage: FC = () => (
       Mixed declarations
     </Typography>
     <Typography variant="body1" paragraph>
-      A file can declare any mix of components, hooks, and modules, in any order. The old
+      A file can declare any mix of components, hooks, and values, in any order. The old
       &ldquo;one component per file&rdquo; and companion-file naming rules are no longer enforced
       by the compiler — they are documentation conventions (see below).
     </Typography>
@@ -146,8 +146,8 @@ export const UitkxImportsPage: FC = () => (
       </ListItem>
       <ListItem>
         <ListItemText
-          primary="Hooks in a .hooks file, modules in a .style/.types/.utils file"
-          secondary="Keeping reusable hooks and modules in their own companion files signals intent and keeps component files focused. Inlining a small local hook/module in the component file is fine."
+          primary="Hooks in a .hooks file, values in a .style/.utils file"
+          secondary="Keeping reusable hooks and values in their own companion files signals intent and keeps component files focused. Inlining a small local hook/value in the component file is fine."
         />
       </ListItem>
       <ListItem>

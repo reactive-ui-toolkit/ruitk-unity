@@ -1,5 +1,6 @@
 import { GameScreen } from "./components/GameScreen/GameScreen"
 import { MainMenu } from "./components/MainMenu/MainMenu"
+import * as Styles from "./GalagaGameStyles.style"
 
 export VirtualNode GalagaGame() {
   var (screen, setScreen) = useState(GalagaScreen.MainMenu);

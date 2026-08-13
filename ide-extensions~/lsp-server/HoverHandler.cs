@@ -583,9 +583,7 @@ public sealed class HoverHandler : IHoverHandler
         name switch
         {
             "namespace" => "@namespace My.Game.Ui",
-            "component" => "@component InventoryPanel",
             "using" => "@using UnityEngine",
-            "props" => "@props InventoryPanelProps",
             "if" => "@if (show)\n{\n    <Label text=\"Visible\" />\n}",
             "else" => "@else\n{\n    <Label text=\"Hidden\" />\n}",
             "foreach" => "@foreach (var item in items)\n{\n    <Label text={item.Name} />\n}",

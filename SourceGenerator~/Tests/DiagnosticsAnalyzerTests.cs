@@ -48,7 +48,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0102_FunctionStyle_NoWarning()
     {
-        var diags = Analyze("component Foo {\n  return (\n    <Label/>\n  );\n}");
+        var diags = Analyze("VirtualNode Foo() {\n  return (\n    <Label/>\n  );\n}");
         Assert.False(HasDiag(diags, DiagnosticCodes.MissingComponent));
     }
 
@@ -60,14 +60,14 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0103_FilenameMismatch_NotFlagged()
     {
-        var diags = Analyze("component WrongName {\n  return (\n    <Label/>\n  );\n}", path: "Correct.uitkx");
+        var diags = Analyze("VirtualNode WrongName() {\n  return (\n    <Label/>\n  );\n}", path: "Correct.uitkx");
         Assert.False(HasDiag(diags, DiagnosticCodes.FilenameMismatch));
     }
 
     [Fact]
     public void UITKX0103_FilenameMatches_NoWarning()
     {
-        var diags = Analyze("component Test {\n  return (\n    <Label/>\n  );\n}", path: "Test.uitkx");
+        var diags = Analyze("VirtualNode Test() {\n  return (\n    <Label/>\n  );\n}", path: "Test.uitkx");
         Assert.False(HasDiag(diags, DiagnosticCodes.FilenameMismatch));
     }
 
@@ -76,7 +76,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0104_DuplicateKey()
     {
-        var source = "component C {\n  return (\n    <Box>\n      <Label key=\"a\"/>\n      <Label key=\"a\"/>\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      <Label key=\"a\"/>\n      <Label key=\"a\"/>\n    </Box>\n  );\n}";
         var diags = Analyze(source);
         Assert.True(HasDiag(diags, DiagnosticCodes.DuplicateKey));
     }
@@ -84,7 +84,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0104_UniqueKeys_NoWarning()
     {
-        var source = "component C {\n  return (\n    <Box>\n      <Label key=\"a\"/>\n      <Label key=\"b\"/>\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      <Label key=\"a\"/>\n      <Label key=\"b\"/>\n    </Box>\n  );\n}";
         var diags = Analyze(source);
         Assert.False(HasDiag(diags, DiagnosticCodes.DuplicateKey));
     }
@@ -95,7 +95,7 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0105_UnknownElement_WhenIndexProvided()
     {
         var knownElems = new HashSet<string> { "Label", "Box" };
-        var source = "component C {\n  return (\n    <UnknownWidget/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <UnknownWidget/>\n  );\n}";
         var diags = Analyze(source, projectElements: knownElems);
         Assert.True(HasDiag(diags, DiagnosticCodes.UnknownElement));
     }
@@ -104,7 +104,7 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0105_KnownElement_NoWarning()
     {
         var knownElems = new HashSet<string> { "Label", "Box" };
-        var source = "component C {\n  return (\n    <Label/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label/>\n  );\n}";
         var diags = Analyze(source, projectElements: knownElems);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnknownElement));
     }
@@ -112,7 +112,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0105_NullIndex_Skipped()
     {
-        var source = "component C {\n  return (\n    <Anything/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Anything/>\n  );\n}";
         var diags = Analyze(source, projectElements: null);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnknownElement));
     }
@@ -122,7 +122,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0106_MissingKeyInForeach()
     {
-        var source = "component C {\n  return (\n    <Box>\n      @foreach (var x in items) {\n        <Label/>\n      }\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      @foreach (var x in items) {\n        <Label/>\n      }\n    </Box>\n  );\n}";
         var diags = Analyze(source);
         Assert.True(HasDiag(diags, DiagnosticCodes.MissingKey));
     }
@@ -130,7 +130,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0106_HasKey_NoWarning()
     {
-        var source = "component C {\n  return (\n    <Box>\n      @foreach (var x in items) {\n        <Label key={x}/>\n      }\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      @foreach (var x in items) {\n        <Label key={x}/>\n      }\n    </Box>\n  );\n}";
         var diags = Analyze(source);
         Assert.False(HasDiag(diags, DiagnosticCodes.MissingKey));
     }
@@ -140,7 +140,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0107_NoReturn_NoWarning()
     {
-        var source = "component C {\n  int x = 5;\n  return (\n    <Label/>\n  );\n}";
+        var source = "VirtualNode C() {\n  int x = 5;\n  return (\n    <Label/>\n  );\n}";
         var diags = Analyze(source);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnreachableAfterReturn));
     }
@@ -148,7 +148,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0107_FunctionStyle_UnreachableAfterReturn()
     {
-        var source = "component Foo {\n  return (\n    <Label/>\n  );\n  int dead = 0;\n}";
+        var source = "VirtualNode Foo() {\n  return (\n    <Label/>\n  );\n  int dead = 0;\n}";
         var diags = Analyze(source);
         Assert.True(HasDiag(diags, DiagnosticCodes.UnreachableAfterReturn));
     }
@@ -158,7 +158,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0108_MultipleRenderRoots()
     {
-        var source = "component C {\n  return (\n    <Label/>\n    <Box/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label/>\n    <Box/>\n  );\n}";
         var diags = Analyze(source);
         Assert.True(HasDiag(diags, DiagnosticCodes.MultipleRenderRoots));
     }
@@ -166,7 +166,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0108_SingleRoot_NoWarning()
     {
-        var source = "component C {\n  return (\n    <Box>\n      <Label/>\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      <Label/>\n    </Box>\n  );\n}";
         var diags = Analyze(source);
         Assert.False(HasDiag(diags, DiagnosticCodes.MultipleRenderRoots));
     }
@@ -182,7 +182,7 @@ public sealed class DiagnosticsAnalyzerTests
         {
             ["Label"] = new HashSet<string> { "text", "style" }
         };
-        var source = "component C {\n  return (\n    <Label bogus=\"hi\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label bogus=\"hi\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
         Assert.True(HasDiag(diags, DiagnosticCodes.UnknownAttribute));
     }
@@ -194,7 +194,7 @@ public sealed class DiagnosticsAnalyzerTests
         {
             ["Label"] = new HashSet<string> { "text", "style" }
         };
-        var source = "component C {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnknownAttribute));
     }
@@ -219,7 +219,7 @@ public sealed class DiagnosticsAnalyzerTests
         {
             ["Foo"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "text", "key", "ref" },
         };
-        var source = "component C {\n  return (\n    <Foo text=\"hi\" style=\"x\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\" style=\"x\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
         Assert.Contains(diags, d => d.Code == DiagnosticCodes.UnknownAttribute && d.Message.Contains("style"));
     }
@@ -232,7 +232,7 @@ public sealed class DiagnosticsAnalyzerTests
         {
             ["Foo"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "text", "key", "ref" },
         };
-        var source = "component C {\n  return (\n    <Foo text=\"hi\" key=\"k\" ref=\"r\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\" key=\"k\" ref=\"r\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnknownAttribute));
     }
@@ -244,7 +244,7 @@ public sealed class DiagnosticsAnalyzerTests
         {
             ["Foo"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "text", "key", "ref" },
         };
-        var source = "component C {\n  return (\n    <Foo text=\"hi\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnknownAttribute));
     }
@@ -259,7 +259,7 @@ public sealed class DiagnosticsAnalyzerTests
         {
             ["Foo"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "text", "key", "ref" },
         };
-        var source = "component C {\n  return (\n    <Foo text=\"hi\" extraProps=\"x\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\" extraProps=\"x\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
         Assert.Contains(diags, d => d.Code == DiagnosticCodes.UnknownAttribute && d.Message.Contains("extraProps"));
     }
@@ -277,7 +277,7 @@ public sealed class DiagnosticsAnalyzerTests
                 "style", "key", "ref", "name", "className", "extraProps",
             },
         };
-        var source = "component C {\n  return (\n    <Box style=\"x\" extraProps=\"y\"/>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box style=\"x\" extraProps=\"y\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnknownAttribute));
     }
@@ -287,7 +287,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0111_UnusedParam_FunctionStyle()
     {
-        var source = "component Foo(string name) {\n  return (\n    <Label text=\"static\"/>\n  );\n}";
+        var source = "VirtualNode Foo(string name) {\n  return (\n    <Label text=\"static\"/>\n  );\n}";
         var diags = Analyze(source);
         Assert.True(HasDiag(diags, DiagnosticCodes.UnusedParameter));
     }
@@ -295,7 +295,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0111_UsedParam_NoWarning()
     {
-        var source = "component Foo(string name) {\n  return (\n    <Label text={name}/>\n  );\n}";
+        var source = "VirtualNode Foo(string name) {\n  return (\n    <Label text={name}/>\n  );\n}";
         var diags = Analyze(source);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnusedParameter));
     }
@@ -304,7 +304,7 @@ public sealed class DiagnosticsAnalyzerTests
     // still receive UITKX0107/0111 — DiagnosticsAnalyzer reads d.FunctionReturnEndLine/
     // FunctionBodyEndLine/FunctionParams off the singular DirectiveSet fields, which the
     // plain-declaration parser mirrors from the first ComponentDeclaration (parity with the
-    // legacy `component X(...) {...}` path). ──────────────────────────────────────────
+    // legacy `VirtualNode X(...) {...}` path). ──────────────────────────────────────────
 
     [Fact]
     public void UITKX0111_UnusedParam_PlainDeclarationComponent()
@@ -320,6 +320,43 @@ public sealed class DiagnosticsAnalyzerTests
         var source = "export VirtualNode Foo(string name) {\n  return (\n    <Label text={name}/>\n  );\n}";
         var diags = Analyze(source);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnusedParameter));
+    }
+
+    [Fact]
+    public void UITKX0111_UnderscorePrefixedParam_IsDeliberatelyUnused_NoWarning()
+    {
+        // C# discard convention (field find): renaming an unused parameter to
+        // `_name` must acknowledge and silence the diagnostic, matching IDE0060.
+        var source = "export VirtualNode Foo(string _name, Action<int>? _onChanged = null) {\n  return (\n    <Label text=\"static\"/>\n  );\n}";
+        var diags = Analyze(source);
+        Assert.False(HasDiag(diags, DiagnosticCodes.UnusedParameter));
+    }
+
+    [Fact]
+    public void UITKX0114_UnderscoreAndBareParam_CollideOnPropName()
+    {
+        // `_count` and `count` both expose the prop `count` (the underscore is
+        // the deliberately-unused marker, not part of the contract) — ambiguous.
+        var source = "export VirtualNode Foo(int _count, int count) {\n  return (\n    <Label text={count.ToString()}/>\n  );\n}";
+        var diags = Analyze(source);
+        Assert.True(HasDiag(diags, DiagnosticCodes.DuplicatePropName));
+    }
+
+    [Fact]
+    public void UITKX0114_DistinctPropNames_NoDiagnostic()
+    {
+        var source = "export VirtualNode Foo(int _count, string title) {\n  return (\n    <Label text={title}/>\n  );\n}";
+        var diags = Analyze(source);
+        Assert.False(HasDiag(diags, DiagnosticCodes.DuplicatePropName));
+    }
+
+    [Fact]
+    public void PropSourceName_StripsLeadingUnderscores_KeepsBareUnderscore()
+    {
+        Assert.Equal("x", Ruitk.Language.Parser.FunctionParam.ToPropSourceName("_x"));
+        Assert.Equal("x", Ruitk.Language.Parser.FunctionParam.ToPropSourceName("__x"));
+        Assert.Equal("_", Ruitk.Language.Parser.FunctionParam.ToPropSourceName("_"));
+        Assert.Equal("x", Ruitk.Language.Parser.FunctionParam.ToPropSourceName("x"));
     }
 
     [Fact]
@@ -356,89 +393,16 @@ public sealed class DiagnosticsAnalyzerTests
         // U-12: must match the SourceGenerator's severity (UitkxDiagnostics.ForeachMissingKey
         // = Warning). This was Error here — the editor blocked on something the build only
         // warned about.
-        var source = "component C {\n  return (\n    <Box>\n      @foreach (var x in items) {\n        <Label/>\n      }\n    </Box>\n  );\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Box>\n      @foreach (var x in items) {\n        <Label/>\n      }\n    </Box>\n  );\n}";
         var diags = Analyze(source);
         var mk = diags.FirstOrDefault(d => d.Code == DiagnosticCodes.MissingKey);
         Assert.NotNull(mk);
         Assert.Equal(ParseSeverity.Warning, mk.Severity);
     }
 
-    // ── UITKX0211: const in module body breaks HMR ─────────────────────────
-    //
-    // Module-scope `const` is inlined into every consumer's IL at C# emit
-    // time, so HMR edits to the constant's value never propagate. The
-    // analyzer must flag it as a Warning so the user notices BEFORE shipping
-    // a value into prod that won't refresh on save during dev. See
-    // TECH_DEBT_20_21_22_RESOLUTION_PLAN.md §6.
-
-    [Fact]
-    public void UITKX0211_ConstInModule_Fires()
-    {
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  public const int X = 42;\n"
-            + "}";
-        var diags = Analyze(source);
-        Assert.True(HasDiag(diags, DiagnosticCodes.ConstInModule));
-    }
-
-    [Fact]
-    public void UITKX0211_ConstInModule_IsWarningSeverity()
-    {
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  public const float Pi = 3.14f;\n"
-            + "}";
-        var diags = Analyze(source);
-        var d = diags.FirstOrDefault(x => x.Code == DiagnosticCodes.ConstInModule);
-        Assert.NotNull(d);
-        Assert.Equal(ParseSeverity.Warning, d!.Severity);
-    }
-
-    [Fact]
-    public void UITKX0211_StaticReadonlyInModule_NoWarning()
-    {
-        // The recommended replacement: static readonly fields survive HMR via
-        // UitkxHmrModuleStaticSwapper. Must NOT fire UITKX0211.
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  public static readonly int X = 42;\n"
-            + "}";
-        var diags = Analyze(source);
-        Assert.False(HasDiag(diags, DiagnosticCodes.ConstInModule));
-    }
-
-    [Fact]
-    public void UITKX0211_CommentedConstInModule_NoWarning()
-    {
-        // The regex-based detector is line-aware and must skip lines whose
-        // const declaration sits behind a `//` comment. Regression guard.
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  // const int X = 42;\n"
-            + "  public static readonly int Y = 1;\n"
-            + "}";
-        var diags = Analyze(source);
-        Assert.False(HasDiag(diags, DiagnosticCodes.ConstInModule));
-    }
-
-    [Fact]
-    public void UITKX0211_MultipleConstsInModule_FiresPerDecl()
-    {
-        var source =
-            "@namespace Test\n"
-            + "module M {\n"
-            + "  public const int A = 1;\n"
-            + "  public const int B = 2;\n"
-            + "}";
-        var diags = Analyze(source);
-        int count = diags.Count(d => d.Code == DiagnosticCodes.ConstInModule);
-        Assert.Equal(2, count);
-    }
+    // (The UITKX0211 const-in-module tests were removed with the legacy module
+    // grammar — 0.16.0. Plain-dialect member bodies have no field-position const,
+    // so the check has no subject.)
 
     // ── UITKX0120: Asset not found ─────────────────────────────────────────
 
@@ -446,7 +410,7 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0120_AssetCall_MissingFile_ReportsError()
     {
         // Resolved path won't exist on disk → should trigger UITKX0120
-        var source = "component Card {\n  return (\n    <Label text={Asset<Texture2D>(\"./avatar.png\").name} />\n  );\n}";
+        var source = "VirtualNode Card() {\n  return (\n    <Label text={Asset<Texture2D>(\"./avatar.png\").name} />\n  );\n}";
         var diags = Analyze(source, "Assets/UI/Card.uitkx");
         Assert.True(HasDiag(diags, DiagnosticCodes.AssetNotFound),
             $"Expected UITKX0120. Got: [{string.Join(", ", diags.Select(d => d.Code))}]");
@@ -455,7 +419,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0120_UssDirective_MissingFile_ReportsError()
     {
-        var source = "@uss \"./Card.uss\"\ncomponent Card {\n  return (\n    <Label/>\n  );\n}";
+        var source = "@uss \"./Card.uss\"\nVirtualNode Card() {\n  return (\n    <Label/>\n  );\n}";
         var diags = Analyze(source, "Assets/UI/Card.uitkx");
         Assert.True(HasDiag(diags, DiagnosticCodes.AssetNotFound));
     }
@@ -463,7 +427,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0120_AstCall_MissingFile_ReportsError()
     {
-        var source = "component Card {\n  return (\n    <Label text={Ast<Sprite>(\"./icon.png\").name} />\n  );\n}";
+        var source = "VirtualNode Card() {\n  return (\n    <Label text={Ast<Sprite>(\"./icon.png\").name} />\n  );\n}";
         var diags = Analyze(source, "Assets/UI/Card.uitkx");
         Assert.True(HasDiag(diags, DiagnosticCodes.AssetNotFound));
     }
@@ -471,7 +435,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0120_DiagnosticIsSeverityError()
     {
-        var source = "component Card {\n  return (\n    <Label text={Asset<Texture2D>(\"./missing.png\").name} />\n  );\n}";
+        var source = "VirtualNode Card() {\n  return (\n    <Label text={Asset<Texture2D>(\"./missing.png\").name} />\n  );\n}";
         var diags = Analyze(source, "Assets/UI/Card.uitkx");
         var assetDiag = diags.FirstOrDefault(d => d.Code == DiagnosticCodes.AssetNotFound);
         Assert.NotNull(assetDiag);
@@ -481,7 +445,7 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0120_NoAssetCalls_NoDiagnostic()
     {
-        var source = "component Card {\n  return (\n    <Label text=\"hello\" />\n  );\n}";
+        var source = "VirtualNode Card() {\n  return (\n    <Label text=\"hello\" />\n  );\n}";
         var diags = Analyze(source, "Assets/UI/Card.uitkx");
         Assert.False(HasDiag(diags, DiagnosticCodes.AssetNotFound));
     }
@@ -493,7 +457,7 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0013_CommentMentioningHook_NoFalsePositive()
     {
         var source =
-            "component Foo {\n"
+            "VirtualNode Foo() {\n"
             + "    var (n, setN) = useState(0);\n"
             + "    return (\n"
             + "        <Box>\n"
@@ -512,7 +476,7 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0013_UnderscorePrefixedIdentifier_NoFalsePositive()
     {
         var source =
-            "component Foo {\n"
+            "VirtualNode Foo() {\n"
             + "    var (n, setN) = useState(0);\n"
             + "    return (\n"
             + "        <Box>\n"
@@ -531,7 +495,7 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0013_HookMentionedInsideStringLiteral_NoFalsePositive()
     {
         var source =
-            "component Foo {\n"
+            "VirtualNode Foo() {\n"
             + "    var (n, setN) = useState(0);\n"
             + "    return (\n"
             + "        <Box>\n"
@@ -550,7 +514,7 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0013_RealHookCallInsideIf_StillErrors()
     {
         var source =
-            "component Foo {\n"
+            "VirtualNode Foo() {\n"
             + "    var flag = true;\n"
             + "    return (\n"
             + "        <Box>\n"
@@ -569,7 +533,7 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0016_MemberAccessNamedUseState_NoFalsePositive()
     {
         var source =
-            "component Foo {\n"
+            "VirtualNode Foo() {\n"
             + "    return (\n"
             + "        <Button onClick={() => obj.useState(1)} />\n"
             + "    );\n"

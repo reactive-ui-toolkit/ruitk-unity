@@ -15,7 +15,7 @@ namespace Ruitk.SourceGenerator.Tests
     /// ES-modules audit wave (Plans~/archive/ES_MODULES_AUDIT_FINDINGS.md): regression pins for the
     /// execution-verified parser/detector/formatter defects (F1-F11, P1/P2), the shared-parser
     /// dotted-closing-tag fix (H2), the payload/bridge/tag-map additions (F7b, H1/H3/H4), and
-    /// the 2108 mixed-mode mirror direction (PC-6).
+    /// the mixed-mode mirror direction (PC-6; the 2320 removal error since 0.16.0).
     /// </summary>
     public sealed class EsModulesAuditWaveTests
     {
@@ -62,13 +62,38 @@ namespace Ruitk.SourceGenerator.Tests
         // ── F9: generic declarations get a targeted diagnostic ───────────────
 
         [Fact]
-        public void F9_GenericDeclaration_GetsTargetedError_NotWholeFileFallback()
+        public void F9_GenericDeclaration_ParsesAsGenericUtil()
         {
-            var (_, diags) = Parse("export T Identity<T>(T v) { return v; }\n");
+            // F9 closed (0.16.0): generic declaration heads are first-class.
+            var (ds, diags) = Parse("export T Identity<T>(T v) { return v; }\n");
+            Assert.DoesNotContain(diags, d => d.Severity == ParseSeverity.Error);
+            var m = Assert.Single(ds.MemberDeclarations);
+            Assert.Equal("Identity", m.Name);
+            Assert.Equal("<T>", m.TypeParamsText);
+            Assert.Equal("T", m.ReturnTypeText);
+        }
+
+        [Fact]
+        public void F9_GenericHook_TupleReturn_Parses()
+        {
+            var (ds, diags) = Parse(
+                "export (T selected, System.Action<T> select) useSelection<T, TExtra>(System.Collections.Generic.List<T> items) {\n" +
+                "  return (default, _ => {});\n" +
+                "}\n");
+            Assert.DoesNotContain(diags, d => d.Severity == ParseSeverity.Error);
+            var m = Assert.Single(ds.MemberDeclarations);
+            Assert.Equal("useSelection", m.Name);
+            Assert.Equal("<T, TExtra>", m.TypeParamsText);
+            Assert.Equal(DeclKind.Hook, m.Kind);
+        }
+
+        [Fact]
+        public void F9_GenericComponent_GetsTargetedError()
+        {
+            var (_, diags) = Parse(
+                "export VirtualNode Card<T>(T item) {\n  return (<VisualElement />);\n}\n");
             Assert.Contains(diags, d =>
-                d.Code == "UITKX2105" && d.Message.Contains("generic declarations are not supported"));
-            Assert.DoesNotContain(diags, d =>
-                d.Message.Contains("does not contain a valid function-style component"));
+                d.Code == "UITKX2105" && d.Message.Contains("cannot be generic"));
         }
 
         // ── F10: multi-line heads keep the line counter in sync ──────────────
@@ -92,41 +117,73 @@ namespace Ruitk.SourceGenerator.Tests
         public void P1_MalformedHookHeader_ReportsInsteadOfThrowing()
         {
             var diags = new List<ParseDiagnostic>();
+            DirectiveSet ds = null;
             var ex = Record.Exception(() =>
-                DirectiveParser.Parse("hook 123 {}\n", "C:/p/Assets/UI/Bad.uitkx", diags));
+                ds = DirectiveParser.Parse("hook 123 {}\n", "C:/p/Assets/UI/Bad.uitkx", diags));
             Assert.Null(ex);
             Assert.Contains(diags, d => d.Severity == ParseSeverity.Error);
+            // Review-pass fix: the legacy classification must survive a structurally
+            // failed hook/module parse — losing it made the SG's legacy gate miss and,
+            // worse, made the codemod's already-migrated probe pass the broken file
+            // through byte-untouched instead of freezing it into the report.
+            Assert.True(ds.UsesLegacySyntax);
         }
 
-        // ── PC-6: 2108 fires in BOTH mixed-mode directions ──────────────────
+        // ── PC-6: the removal error fires in BOTH mixed-mode directions ─────
 
         [Fact]
-        public void PC6_PlainDeclarationAfterLegacyComponent_Emits2108()
+        public void PC6_WrapperKeywordAfterPlainDeclaration_IsAnError()
         {
+            // 0.16.0: a wrapper keyword inside a plain file is the mode-independent
+            // 2320 mixed-file removal error (2108 retired). Keyword split across
+            // concatenation: deliberately-legacy fixture, must survive any future
+            // fixture-modernizer sweep.
             var (_, diags) = Parse(
-                "component Foo {\n" +
+                "export int Gap = 8;\n" +
+                "compo" + "nent Foo {\n" +
                 "  return (<Box/>);\n" +
-                "}\n" +
-                "export int Gap = 8;\n");
-            Assert.Contains(diags, d => d.Code == "UITKX2108");
+                "}\n");
+            Assert.Contains(diags, d =>
+                d.Severity == ParseSeverity.Error
+                && d.Code == "UITKX2320"
+                && d.Message.Contains("cannot be mixed"));
+            Assert.DoesNotContain(diags, d => d.Code == "UITKX2108");
         }
 
         [Fact]
-        public void PC6_PlainDeclarationAfterLegacyHook_Emits2108()
+        public void PC6_LegacyFirstDeclaration_GetsRemovalError()
         {
             var (_, diags) = Parse(
-                "export hook useThing() -> (int) {\n" +
+                "ho" + "ok useThing() -> (int) {\n" +
                 "  return (1);\n" +
-                "}\n" +
-                "export int Gap = 8;\n");
-            Assert.Contains(diags, d => d.Code == "UITKX2108");
+                "}\n");
+            Assert.Contains(diags, d =>
+                d.Code == "UITKX2320" && d.Severity == ParseSeverity.Error
+                && d.Message.Contains("UitkxMigrateImports"));
+        }
+
+        [Fact]
+        public void PC6_LegacyModuleFirstDeclaration_GetsRemovalError()
+        {
+            // D3 requires the removal error per wrapper keyword — `module` had no
+            // Error-severity pin (the codemod suite exercises it only at Warning
+            // severity under ParseLegacyForMigration).
+            var (ds, diags) = Parse(
+                "mod" + "ule Tokens {\n" +
+                "  public static readonly int Gap = 8;\n" +
+                "}\n");
+            Assert.Contains(diags, d =>
+                d.Code == "UITKX2320" && d.Severity == ParseSeverity.Error
+                && d.Message.Contains("'module'")
+                && d.Message.Contains("UitkxMigrateImports"));
+            Assert.True(ds.UsesLegacySyntax);
         }
 
         [Fact]
         public void PC6_BareStatementAfterLegacyComponent_Stays2105()
         {
             var (_, diags) = Parse(
-                "component Foo {\n" +
+                "VirtualNode Foo() {\n" +
                 "  return (<Box/>);\n" +
                 "}\n" +
                 "DoThing();\n");
@@ -237,51 +294,10 @@ namespace Ruitk.SourceGenerator.Tests
                 ds, "C:/p/Assets/UI", "C:/p/Assets", "Game",
                 _ => true, _ => "Game", (_, _) => true, parseTargetFile);
 
-        [Fact]
-        public void F7_RenameImport_AgainstLegacyTarget_Emits2109()
-        {
-            var ds = DetectorDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray.Create("useThing"), "./LegacyHooks", 1, 0, ImmutableArray<int>.Empty,
-                    Aliases: ImmutableArray.Create<string?>("useOther"))),
-            };
-            var target = DetectorDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, _ => target);
-            Assert.Contains(findings, f => f.Code == "UITKX2109");
-        }
-
-        [Fact]
-        public void F11_DefaultImport_AgainstLegacyTarget_Only2109_No2326()
-        {
-            var ds = DetectorDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray<string>.Empty, "./Legacy", 1, 0, ImmutableArray<int>.Empty,
-                    IsDefault: true, DefaultAlias: "Thing")),
-            };
-            var target = DetectorDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, _ => target);
-            Assert.Contains(findings, f => f.Code == "UITKX2109");
-            Assert.DoesNotContain(findings, f => f.Code == "UITKX2326");
-        }
-
-        [Fact]
-        public void PC2_FamilyMessages_UseSingleQuotes()
-        {
-            var ds = DetectorDs() with
-            {
-                Imports = ImmutableArray.Create(new ImportDeclaration(
-                    ImmutableArray<string>.Empty, "./Shapes", 1, 0, ImmutableArray<int>.Empty,
-                    IsStar: true, StarAlias: "Shapes")),
-            };
-            var target = DetectorDs() with { UsesLegacySyntax = true };
-            var findings = Validate(ds, _ => target);
-            var f2109 = findings.Find(f => f.Code == "UITKX2109");
-            Assert.NotNull(f2109);
-            Assert.Contains("'Shapes.uitkx'", f2109!.Message);
-            Assert.DoesNotContain("`", f2109.Message);
-        }
+        // (The F7/F11/PC-2 UITKX2109 tests were removed with the legacy grammar — 0.16.0.
+        // A legacy target now errors at parse, so the migrate-first import gate has no
+        // subject; 2326/2110 behavior on modern targets is pinned by
+        // ImportSurfaceValidationTests.)
 
         // ── F7b/star-gap/bridges/tag-maps: ImportScopeFacts against real files ──
 
@@ -310,7 +326,7 @@ namespace Ruitk.SourceGenerator.Tests
         {
             using var tmp = new TempUitkxDir();
             tmp.Write("LegacyHooks.uitkx",
-                "export hook useThing() -> (int) {\n  return (1);\n}\n");
+                "export (int) useThing() {\n  return (1);\n}\n");
             string importer = tmp.Write("Screen.uitkx",
                 "import { useThing as useOther } from \"./LegacyHooks\"\n" +
                 "export VirtualNode Screen() {\n  return (<Box/>);\n}\n");
@@ -321,18 +337,20 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
-        public void F7b_UnaliasedImportFromLegacyTarget_KeepsPayload()
+        public void F7b_UnaliasedMemberImport_GetsExportsContainerPayload()
         {
+            // 0.16.0: legacy {Stem}Hooks containers are gone - every member target is a
+            // per-file __Exports container.
             using var tmp = new TempUitkxDir();
             tmp.Write("LegacyHooks.uitkx",
-                "export hook useThing() -> (int) {\n  return (1);\n}\n");
+                "export (int) useThing() {\n  return (1);\n}\n");
             string importer = tmp.Write("Screen.uitkx",
                 "import { useThing } from \"./LegacyHooks\"\n" +
                 "export VirtualNode Screen() {\n  return (<Box/>);\n}\n");
 
             var (ds, _) = Parse(File.ReadAllText(importer), importer);
             var payloads = ImportScopeFacts.ComputeInjectedUsingPayloads(ds, importer);
-            Assert.Contains(payloads, p => p.StartsWith("static ") && p.Contains("LegacyHooksHooks"));
+            Assert.Contains(payloads, p => p.StartsWith("static ") && p.Contains("__Exports"));
         }
 
         [Fact]
@@ -817,16 +835,17 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
-        public void P2_LegacyMixedFile_IsLeftUntouched()
+        public void P2_MixedModernFile_FormatsIdempotently()
         {
             string src =
-                "component Foo {\n" +
+                "VirtualNode Foo() {\n" +
                 "  return (<Box/>);\n" +
                 "}\n" +
-                "export hook useThing() -> (int) {\n" +
+                "export (int) useThing() {\n" +
                 "  return (1);\n" +
                 "}\n";
-            Assert.Equal(N(src), N(s_fmt.Format(src)));
+            string once = N(s_fmt.Format(src));
+            Assert.Equal(once, N(s_fmt.Format(once)));
         }
 
         [Fact]

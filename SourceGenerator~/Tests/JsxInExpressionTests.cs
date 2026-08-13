@@ -20,10 +20,10 @@ namespace Ruitk.SourceGenerator.Tests;
 public class JsxInExpressionTests
 {
     private static string Wrap(string markup) =>
-        "component MyComp {\n  return (\n" + markup + "\n  );\n}";
+        "VirtualNode MyComp() {\n  return (\n" + markup + "\n  );\n}";
 
     private static string WrapWithSetup(string setup, string markup) =>
-        "component MyComp {\n" + setup + "\n  return (\n" + markup + "\n  );\n}";
+        "VirtualNode MyComp() {\n" + setup + "\n  return (\n" + markup + "\n  );\n}";
 
     // ── Child expression: {cond ? <A/> : <B/>} ──────────────────────────────
 

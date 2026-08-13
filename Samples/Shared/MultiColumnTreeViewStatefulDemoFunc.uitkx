@@ -2,7 +2,21 @@ import { IntroCounterFunc } from "./IntroCounterFunc"
 import "@UnityEngine.UIElements"
 import "@Ruitk.Samples.UITKXShared"
 
-export VirtualNode MultiColumnTreeViewStatefulDemoFunc(IReadOnlyList<MultiColumnTreeViewRowState>? rows = null, List<SortedColumnDef>? sortDefs = null, Dictionary<string, float>? columnWidths = null, Dictionary<string, bool>? columnVisibility = null, Dictionary<string, int>? columnDisplayIndex = null, Action? addParent = null, Action? addChild = null, Action? setParent = null, Action? setChild = null, Action? deleteLast = null, ColumnSortEventHandler? onSortChanged = null, ColumnLayoutEventHandler? onLayoutChanged = null, Action<int>? onCountChanged = null) {
+export VirtualNode MultiColumnTreeViewStatefulDemoFunc(
+  IReadOnlyList<MultiColumnTreeViewRowState>? rows = null,
+  List<SortedColumnDef>? sortDefs = null,
+  Dictionary<string, float>? columnWidths = null,
+  Dictionary<string, bool>? columnVisibility = null,
+  Dictionary<string, int>? columnDisplayIndex = null,
+  Action? addParent = null,
+  Action? addChild = null,
+  Action? setParent = null,
+  Action? setChild = null,
+  Action? deleteLast = null,
+  ColumnSortEventHandler? onSortChanged = null,
+  ColumnLayoutEventHandler? onLayoutChanged = null,
+  Action<int>? onCountChanged = null
+) {
   var safeRows = rows ?? Array.Empty<MultiColumnTreeViewRowState>();
 
   List<TreeViewItemData<object>> BuildRoots()
