@@ -14,9 +14,11 @@ Companion sets migrate atomically, files whose generated namespace would move ge
 
 **Fix - long declaration heads wrap again.** The legacy formatter wrapped over-width heads; the plain path silently did not. Parameters one per line, tuple returns ahead of the name.
 
-**Under the hood**, the dead machinery went with the grammar: the SG's module emitter, HMR's legacy container emitter and companion->parent save redirect (every file compiles itself; parents rebuild via the import fan-out), the LSP's legacy document generators, and diagnostics `UITKX2107`/`2108`/`2109`/`0211` (retired, IDs reserved). Docs gain a dedicated 0.16 migration page and the new Mounting & Roots page.
+**Under the hood**, the dead machinery went with the grammar: the SG's module emitter, HMR's legacy container emitter, the LSP's legacy generators, and diagnostics `UITKX2107`/`2108`/`2109`/`0211` (retired, IDs reserved). Docs gain a 0.16 migration page plus Mounting & Roots.
 
-**Tests.** 1819/1819 SG, 155/155 LSP.
+**Also shipped.** Underscore-marked params stay unused WITHOUT renaming their prop (`_onChanged` still exposes `onChanged`; declaring both is `UITKX0114`). Import specifiers accept single quotes. HMR runs on Unity 6000.5 and hot-swaps `.uitkx` inside embedded/local packages. `.uitkx` files wear the toolkit icon in VS Code.
+
+**Tests.** 1855/1855 SG, 172/172 LSP.
 
 VS Code **1.9.1 -> 1.10.0** | VS 2022 **1.9.1 -> 1.10.0**.
 
