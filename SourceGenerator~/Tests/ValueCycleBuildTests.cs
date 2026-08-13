@@ -23,7 +23,7 @@ namespace Ruitk.SourceGenerator.Tests
                 {
                     ("SelfHook.uitkx",
                         "import { useSelf } from \"./SelfHook\"\n"
-                        + "export hook useSelf() {\n  return 1;\n}"),
+                        + "export void useSelf() {\n  return 1;\n}"),
                 },
                 primaryFileName: "SelfHook.uitkx");
 
@@ -38,10 +38,10 @@ namespace Ruitk.SourceGenerator.Tests
             // a phantom B→A edge and report A→B→A → spurious 2306 on both files.
             var a =
                 "import { useB } from \"./BHooks\"\n"
-                + "export hook useA() {\n  return useB();\n}";
+                + "export void useA() {\n  return useB();\n}";
             var b =
                 "/*\nimport { useA } from \"./AHooks\"\n*/\n"
-                + "export hook useB() {\n  return 1;\n}";
+                + "export void useB() {\n  return 1;\n}";
 
             var result = GeneratorTestHelper.RunMultiple(
                 new[] { ("AHooks.uitkx", a), ("BHooks.uitkx", b) },
@@ -57,10 +57,10 @@ namespace Ruitk.SourceGenerator.Tests
             // (family-wide TDZ-parity policy) so the fixes above didn't disable 2306.
             var a =
                 "import { useB } from \"./BHooks\"\n"
-                + "export hook useA() {\n  return useB();\n}";
+                + "export void useA() {\n  return useB();\n}";
             var b =
                 "import { useA } from \"./AHooks\"\n"
-                + "export hook useB() {\n  return useA();\n}";
+                + "export void useB() {\n  return useA();\n}";
 
             var result = GeneratorTestHelper.RunMultiple(
                 new[] { ("AHooks.uitkx", a), ("BHooks.uitkx", b) },

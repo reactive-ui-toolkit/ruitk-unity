@@ -134,7 +134,7 @@ public class PackageLayoutDiscoveryTests
             "{ \"namespacePrefix\": \"Ruitk.Samples\" }");
         File.WriteAllText(
             Path.Combine(compDir, "HelloPkg.uitkx"),
-            "export component HelloPkg {\n  return (<Box />);\n}");
+            "export VirtualNode HelloPkg() {\n  return (<Box />);\n}");
 
         // The VirtualNode stub satisfies pipeline Guard 1; its tree path (inside the
         // package) is what FindCompilationAsmdefRoot derives the scan root from.

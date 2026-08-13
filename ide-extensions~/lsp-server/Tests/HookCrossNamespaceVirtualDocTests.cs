@@ -13,11 +13,11 @@ using Xunit;
 
 namespace UitkxLanguageServer.Tests;
 
-// LSP-side parity for SG Stage 3d cross-namespace hook resolution (Issue #18).
-// The host's EnrichWithPeerHookUsings must inject `using static <HookNs>.<X>Hooks;`
-// into the virtual document for any peer hook file that belongs to the same
-// asmdef as the consumer .uitkx, regardless of whether it shares the consumer's
-// namespace. This mirrors the SG fix in UitkxPipeline Stage 3d.
+// LSP-side parity for SG cross-namespace hook resolution (Issue #18, reshaped by
+// the 0.16.0 legacy wave): the virtual document must carry the import-driven
+// `using static <HookNs>.__Exports;` payload (shared ImportScopeFacts route) for
+// every peer hook file the consumer explicitly imports, regardless of whether it
+// shares the consumer's namespace. Mirrors the SG's ResolveInjectedUsings.
 [Collection("Roslyn")]
 public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposable
 {
@@ -50,13 +50,14 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
         // scan picks the hook up without any WorkspaceIndex priming.
         var hookContent =
             "@namespace MyApp.Hooks\n\n"
-            + "hook useFlag() -> bool {\n"
+            + "export bool useFlag() {\n"
             + "  var (v, _) = useState(false);\n"
             + "  return v;\n"
             + "}\n";
         var consumerContent =
-            "@namespace MyApp.UI\n\n"
-            + "component ConsumerComp {\n"
+            "import { useFlag } from \"./UseFlag.hooks\"\n"
+            + "@namespace MyApp.UI\n\n"
+            + "VirtualNode ConsumerComp() {\n"
             + "  return (\n"
             + "    <VisualElement />\n"
             + "  );\n"
@@ -72,8 +73,9 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
 
         var vdoc = _host.GetVirtualDocument(consumerPath);
         Assert.NotNull(vdoc);
-        // FQN must use the HOOK file's namespace, not the consumer's.
-        Assert.Contains("using static MyApp.Hooks.UseFlagHooks;", vdoc!.Text);
+        // FQN must use the HOOK file's namespace, not the consumer's; the container
+        // is the per-file __Exports (0.16.0 - the legacy {Stem}Hooks container is gone).
+        Assert.True(vdoc!.Text.Contains("MyApp.Hooks.__Exports"), vdoc.Text);
     }
 
     [Fact]
@@ -91,12 +93,13 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
         File.WriteAllText(Path.Combine(_tempDir, "uitkx.config.json"),
             "{ \"namespacePrefix\": \"TestApp.Derived\" }\n");
         var hookContent =
-            "hook useFlag() -> bool {\n"
+            "export bool useFlag() {\n"
             + "  var (v, _) = useState(false);\n"
             + "  return v;\n"
             + "}\n";
         var consumerContent =
-            "component ConsumerComp {\n"
+            "import { useFlag } from \"./UseFlag.hooks\"\n"
+            + "VirtualNode ConsumerComp() {\n"
             + "  return (\n"
             + "    <VisualElement />\n"
             + "  );\n"
@@ -112,8 +115,10 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
 
         var vdoc = _host.GetVirtualDocument(consumerPath);
         Assert.NotNull(vdoc);
-        Assert.Contains("using static TestApp.Derived.UseFlagHooks;", vdoc!.Text);
-        Assert.DoesNotContain("Ruitk.FunctionStyle.UseFlagHooks", vdoc.Text);
+        // Effective (derived) namespace + the per-file __Exports container (0.16.0).
+        Assert.Contains("TestApp.Derived.", vdoc!.Text);
+        Assert.Contains("__Exports", vdoc.Text);
+        Assert.DoesNotContain("Ruitk.FunctionStyle.", vdoc.Text);
     }
 
     [Fact]
@@ -125,13 +130,13 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
         // the hook method's signature is scaffold (no source-map entry), so the peer
         // text-search fallback was the only route — and it only knew bare `hook `.
         var hookContent =
-            "export hook useFlag() -> bool {\n"
+            "export bool useFlag() {\n"
             + "  var (v, _) = useState(false);\n"
             + "  return v;\n"
             + "}\n";
         var consumerContent =
             "import { useFlag } from \"./UseFlag.hooks\"\n\n"
-            + "component ConsumerComp {\n"
+            + "VirtualNode ConsumerComp() {\n"
             + "  var flag = useFlag();\n"
             + "  return (\n"
             + "    <VisualElement />\n"
@@ -181,6 +186,132 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
     }
 
     [Fact]
+    public async Task GoToDefinition_OnFirstMemberOfStyleFile_ReturnsCursorForReferencesFallback()
+    {
+        // Field find (StressTest.style.uitkx): a member-only file carries
+        // FunctionSetupStartLine == MarkupStartLine == its FIRST declaration's line
+        // with EMPTY setup code, so the setup-var scan's derived range collapsed
+        // onto exactly that line and `export Style container =` false-matched the
+        // `Type name =` variable shape — the click on the FIRST member jumped
+        // within its own line instead of returning the exact cursor position that
+        // triggers VS Code's Find All References fallback. Later members (outside
+        // the one-line range) always worked.
+        var styleContent =
+            "export Style container = new Style {\n"
+            + "  Padding = 10f,\n"
+            + "};\n"
+            + "\n"
+            + "export Style headerBar = new Style {\n"
+            + "  Margin = 4f,\n"
+            + "};\n";
+
+        string stylePathRaw = Path.Combine(_tempDir, "Panel.style.uitkx");
+        File.WriteAllText(stylePathRaw, styleContent);
+        var uri = OmniSharp.Extensions.LanguageServer.Protocol.DocumentUri
+            .FromFileSystemPath(stylePathRaw);
+
+        var store = new DocumentStore();
+        store.Set(uri, styleContent);
+        var handler = new DefinitionHandler(store, new WorkspaceIndex(), _host);
+
+        // Mid-name cursors: `container` line 0 col 15, `headerBar` line 4 col 15.
+        foreach (var (line0, char0) in new[] { (0, 15), (4, 15) })
+        {
+            var result = await handler.Handle(
+                new OmniSharp.Extensions.LanguageServer.Protocol.Models.DefinitionParams
+                {
+                    TextDocument = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .TextDocumentIdentifier(uri),
+                    Position = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .Position(line0, char0),
+                },
+                CancellationToken.None);
+
+            Assert.NotNull(result);
+            var loc = result!.First().Location;
+            Assert.NotNull(loc);
+            // The EXACT cursor position must come back — that is what makes the
+            // client run Find All References instead of jumping the cursor.
+            Assert.Equal(line0, (int)loc!.Range.Start.Line);
+            Assert.Equal(char0, (int)loc.Range.Start.Character);
+        }
+    }
+
+    [Fact]
+    public async Task References_OnStyleFileExports_FindConsumerUsages()
+    {
+        // Field repro (TicTacToe.style.uitkx): Find All References on the FIRST
+        // export of a member-only style file returned nothing while later exports
+        // worked. Mirrors the real server flow — the handler ensures the Roslyn
+        // vdoc itself, so the C# path (not just the text fallback) is exercised,
+        // with the consumer present as a same-dir peer.
+        var styleContent =
+            "import \"@static Ruitk.Props.Typed.StyleKeys\"\n"
+            + "\n"
+            + "export Style containerStyle = new Style\n"
+            + "{\n"
+            + "  FlexGrow = 1,\n"
+            + "};\n"
+            + "\n"
+            + "export Style ButtonStyles = new Style\n"
+            + "{\n"
+            + "  Padding = 10f,\n"
+            + "};\n";
+        var consumerContent =
+            "import { ButtonStyles, containerStyle } from \"./Board.style\"\n"
+            + "\n"
+            + "export VirtualNode Board() {\n"
+            + "  return (\n"
+            + "    <VisualElement style={containerStyle}>\n"
+            + "      <Button style={ButtonStyles} />\n"
+            + "    </VisualElement>\n"
+            + "  );\n"
+            + "}\n";
+
+        string stylePathRaw = Path.Combine(_tempDir, "Board.style.uitkx");
+        string consumerPathRaw = Path.Combine(_tempDir, "Board.uitkx");
+        File.WriteAllText(stylePathRaw, styleContent);
+        File.WriteAllText(consumerPathRaw, consumerContent);
+
+        var styleUri = OmniSharp.Extensions.LanguageServer.Protocol.DocumentUri
+            .FromFileSystemPath(stylePathRaw);
+        var consumerUri = OmniSharp.Extensions.LanguageServer.Protocol.DocumentUri
+            .FromFileSystemPath(consumerPathRaw);
+
+        var store = new DocumentStore();
+        store.Set(styleUri, styleContent);
+        store.Set(consumerUri, consumerContent);
+        var handler = new ReferencesHandler(store, new WorkspaceIndex(), _host);
+
+        foreach (var name in new[] { "containerStyle", "ButtonStyles" })
+        {
+            int declOffset = styleContent.IndexOf(name, StringComparison.Ordinal);
+            int line0 = styleContent.Substring(0, declOffset).Count(c => c == '\n');
+            int lineStart = styleContent.LastIndexOf('\n', declOffset - 1) + 1;
+            int char0 = declOffset - lineStart + 2;
+
+            var result = await handler.Handle(
+                new OmniSharp.Extensions.LanguageServer.Protocol.Models.ReferenceParams
+                {
+                    TextDocument = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .TextDocumentIdentifier(styleUri),
+                    Position = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .Position(line0, char0),
+                    Context = new OmniSharp.Extensions.LanguageServer.Protocol.Models
+                        .ReferenceContext { IncludeDeclaration = true },
+                },
+                CancellationToken.None);
+
+            int inConsumer = result == null ? 0 : result.Count(l =>
+                l.Uri.GetFileSystemPath().EndsWith(
+                    "Board.uitkx", StringComparison.OrdinalIgnoreCase));
+            Assert.True(inConsumer > 0,
+                $"{name}: expected consumer references, got "
+                + (result == null ? "null" : $"{result.Count()} location(s), none in Board.uitkx"));
+        }
+    }
+
+    [Fact]
     public async Task Rename_HookFromCallSite_AlsoRenamesImportListName()
     {
         // F2 on the CALL site renames the declaration (hook path) and every C#
@@ -189,13 +320,13 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
         // the rename leaves the file broken (import binds a name that no longer
         // exists → UITKX2300).
         var hookContent =
-            "export hook useFlag() -> bool {\n"
+            "export bool useFlag() {\n"
             + "  var (v, _) = useState(false);\n"
             + "  return v;\n"
             + "}\n";
         var consumerContent =
             "import { useFlag } from \"./UseFlag.hooks\"\n\n"
-            + "component ConsumerComp {\n"
+            + "VirtualNode ConsumerComp() {\n"
             + "  var flag = useFlag();\n"
             + "  return (\n"
             + "    <VisualElement />\n"
@@ -249,16 +380,14 @@ public sealed class HookCrossNamespaceVirtualDocTests : IAsyncLifetime, IDisposa
     [Fact]
     public async Task Formatting_ModuleCompanionFile_FixesIndentation()
     {
-        // Style-module companion with a misindented closing `};` — the formatting
-        // handler must return an edit that canonicalizes it (field-reported as
-        // "formatting doesn't work" on a .style.uitkx).
+        // Style companion (modern export value, 0.16.0) with a misindented closing
+        // `};` — the formatting handler must return an edit that canonicalizes it
+        // (field-reported as "formatting doesn't work" on a .style.uitkx).
         var styleContent =
-            "export module HmrTests {\n"
-            + "  public static readonly Style container = new Style {\n"
-            + "    BackgroundColor = ColorGray,\n"
-            + "    Padding = 10f,\n"
-            + "      };\n"
-            + "}\n";
+            "export Style container = new Style {\n"
+            + "  BackgroundColor = ColorGray,\n"
+            + "  Padding = 10f,\n"
+            + "    };\n";
         string stylePathRaw = Path.Combine(_tempDir, "HmrTests.style.uitkx");
         File.WriteAllText(stylePathRaw, styleContent);
         var uri = OmniSharp.Extensions.LanguageServer.Protocol.DocumentUri

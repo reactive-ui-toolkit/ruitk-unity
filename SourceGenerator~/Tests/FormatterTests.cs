@@ -11,7 +11,7 @@ public class FormatterTests
         var formatter = new AstFormatter(FormatterOptions.Default);
         var source =
             """
-            component MyComp {
+            VirtualNode MyComp() {
                 if (mode == "normal")
                 {
                     setMode("active")
@@ -35,7 +35,7 @@ public class FormatterTests
         var formatter = new AstFormatter(FormatterOptions.Default);
         var source =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 var (count, setCount) = useState(0)
                 return (
                     <Box>
@@ -47,7 +47,7 @@ public class FormatterTests
 
         var formatted = formatter.Format(source, "Test.uitkx").Replace("\r\n", "\n");
 
-        Assert.StartsWith("component CounterPanel {\n", formatted);
+        Assert.StartsWith("VirtualNode CounterPanel() {\n", formatted);
         Assert.Contains("var (count, setCount) = useState(0)", formatted);
         Assert.Contains("\n  return (\n", formatted);
         Assert.Contains("\n  );\n", formatted);
@@ -60,11 +60,11 @@ public class FormatterTests
     public void Format_FunctionStyle_WithNoSetup_FormatsReturnMarkup()
     {
         var formatter = new AstFormatter(FormatterOptions.Default);
-        var source = "component HelloWorld { return (<Label text=\"Hi\"/>); }";
+        var source = "VirtualNode HelloWorld() { return (<Label text=\"Hi\"/>); }";
 
         var formatted = formatter.Format(source, "Test.uitkx").Replace("\r\n", "\n");
 
-        Assert.Contains("component HelloWorld {", formatted);
+        Assert.Contains("VirtualNode HelloWorld() {", formatted);
         Assert.Contains("return (", formatted);
         Assert.Contains("<Label text=\"Hi\" />", formatted);
         Assert.Contains(");", formatted);

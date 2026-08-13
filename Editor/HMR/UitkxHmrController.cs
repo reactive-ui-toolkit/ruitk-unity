@@ -88,10 +88,12 @@ namespace Ruitk.EditorSupport.HMR
 
         // Matches a preamble file-import line (single line), covering the full ES import
         // surface (ES-modules campaign, G-05): named `import { A, B as C } from "spec"`,
-        // namespace `import * as X from "spec"`, and default `import X from "spec"`. The
-        // namespace-import form `import "@Ns"` has no `from` clause and never matches.
+        // namespace `import * as X from "spec"`, and default `import X from "spec"`, with
+        // either quote style (closing quote must match — backreference). The specifier is
+        // group 2. The namespace-import form `import "@Ns"` has no `from` clause and
+        // never matches.
         private static readonly Regex s_importLineRegex = new Regex(
-            @"^\s*import\s*(?:\{[^}]*\}|\*\s*as\s+[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)\s*from\s*""([^""]+)""",
+            @"^\s*import\s*(?:\{[^}]*\}|\*\s*as\s+[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)\s*from\s*([""'])([^""']+)\1",
             RegexOptions.Multiline | RegexOptions.CultureInvariant
         );
 
@@ -232,21 +234,15 @@ namespace Ruitk.EditorSupport.HMR
             // Lock assembly reloads
             _suppressor.Lock();
 
-            // Start watching
-            string assetsPath = Path.GetFullPath(UnityEngine.Application.dataPath);
+            // Start watching — Assets/ plus every writable package root (embedded /
+            // local file: installs): a package-resident .uitkx raises no event from
+            // an Assets/-only watcher, leaving HMR blind to it (GEN-1's HMR leg).
             _watcher.OnUitkxChanged += OnUitkxFileChanged;
             _watcher.OnUssChanged += OnUssFileChanged;
             _watcher.OnUitkxDeleted += OnUitkxFileDeleted;
             _watcher.TraceEnabled = VerboseWatcherTrace;
-            _watcher.Start(assetsPath);
-
-            // Seed the workspace-wide hook-container registry so HMR recompiles
-            // can resolve cross-directory `using static <Ns>.<HookContainer>;`
-            // directives without scanning the project on every recompile. This
-            // mirrors what the SG's UitkxGenerator pre-scan does at compile
-            // time. The seed runs on a background thread; the first recompile
-            // gates briefly via TryWaitForSeed.
-            HookContainerRegistry.Seed(assetsPath);
+            var watchRoots = BuildWatchRoots();
+            _watcher.Start(watchRoots);
 
             // UITKX Fast Refresh: wire the renderer-walk callback the
             // Refresh runtime needs to dispatch PerformRefresh. Doing it
@@ -261,10 +257,11 @@ namespace Ruitk.EditorSupport.HMR
             // import or @uss edge edited while HMR was stopped, with no domain reload
             // in between, stayed invisible, so a member-file save fanned out to NOBODY:
             // zero logs, zero screen change; a domain reload "fixed" it by forcing a
-            // fresh map. Both builders clear their map first; the cost is one read of
-            // each .uitkx at Start, same order as HookContainerRegistry's seed scan.
-            BuildUssDependencyMap(assetsPath);
-            BuildImportDependencyMap(assetsPath);
+            // fresh map. Both builders clear their map first and span the SAME roots
+            // the watcher covers — an Assets/-only graph would give package files
+            // empty fan-out edges; the cost is one read of each .uitkx at Start.
+            BuildUssDependencyMap(watchRoots);
+            BuildImportDependencyMap(watchRoots);
 
             // Hook lifecycle events
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
@@ -312,9 +309,10 @@ namespace Ruitk.EditorSupport.HMR
             _watcher.OnUitkxDeleted -= OnUitkxFileDeleted;
             _watcher.Stop();
 
-            // Drop the workspace-wide hook-container index; a fresh seed runs
-            // on the next Start.
-            HookContainerRegistry.Reset();
+            // Drop the path→asmdef cache so a fresh session re-resolves moved files
+            // (previously done by the hook-container registry's Reset, removed with
+            // the legacy grammar in 0.16.0).
+            AsmdefResolver.InvalidateAll();
 
             _pendingRetryPaths.Clear();
             _compileQueue.Clear();
@@ -366,18 +364,9 @@ namespace Ruitk.EditorSupport.HMR
                 return;
             }
 
-            // The originally-changed file drives the import reverse-edge fan-out below (importers
-            // reference it by its own path, before any companion redirect).
-            string changedPath = uitkxPath;
-
-            // Keep the workspace-wide hook-container index in sync with disk so
-            // a newly added or edited hook file is visible to the next recompile.
-            HookContainerRegistry.Invalidate(uitkxPath);
-
-            // If this is a companion .uitkx file (e.g. Foo.style.uitkx),
-            // redirect to compile the parent component file (Foo.uitkx)
-            // so the companion's module/hook members are included.
-            uitkxPath = ResolveParentComponentFile(uitkxPath);
+            // Every file compiles itself — the legacy companion-parent redirect died
+            // with the wrapper grammar (0.16.0); the parent is reached through the
+            // import reverse-edge fan-out below instead.
 
             // ── UITKX Fast Refresh ─────────────────────────────────────────
             // The Family handle indirection means a single Register call — emitted by
@@ -393,19 +382,14 @@ namespace Ruitk.EditorSupport.HMR
             if (fanOutToImporters)
             {
                 int importerCount =
-                    _importDependents.TryGetValue(NormalizeImportPath(changedPath), out var deps)
+                    _importDependents.TryGetValue(NormalizeImportPath(uitkxPath), out var deps)
                         ? deps.Count
                         : 0;
-                bool redirected = !string.Equals(
-                    uitkxPath, changedPath, StringComparison.OrdinalIgnoreCase);
                 // Routine save-trail line — verbose-gated (field-debugging tier; the
                 // anomaly lines — recovered save, watcher error, evictions — stay on).
                 if (VerboseWatcherTrace)
                     Debug.Log(
-                    $"[HMR] Save: {Path.GetFileName(changedPath)} → "
-                        + (redirected
-                            ? $"companion parent {Path.GetFileName(uitkxPath)}"
-                            : "self compile")
+                    $"[HMR] Save: {Path.GetFileName(uitkxPath)} → self compile"
                         + $"; importers: {importerCount}"
                         + (queued ? string.Empty : " (already queued)")
                 );
@@ -421,7 +405,7 @@ namespace Ruitk.EditorSupport.HMR
             // non-component export edits: an importer's IL still references the old symbols. Walk
             // the reverse import edges and recompile each importer so those references refresh.
             if (fanOutToImporters)
-                FanOutToImporters(changedPath);
+                FanOutToImporters(uitkxPath);
         }
 
         /// <summary>
@@ -539,66 +523,6 @@ namespace Ruitk.EditorSupport.HMR
             if (_compileQueue.Count > 0)
                 EditorApplication.delayCall += DrainCompileQueueIfIdle;
         }
-
-        /// <summary>
-        /// If <paramref name="uitkxPath"/> is a companion file (e.g. Foo.style.uitkx,
-        /// Foo.hooks.uitkx), returns the parent component file path (Foo.uitkx).
-        /// Otherwise returns the original path unchanged.
-        ///
-        /// Mixed-decl note (plan §8): with multi-component / mixed-decl files a companion
-        /// no longer maps 1:1 to a single owning component, and a hook/module may be
-        /// consumed across files via <c>import</c>. This resolver is deliberately kept
-        /// ADDITIVE — it recompiles the same-stem parent when one exists, which is always
-        /// a superset of the historically-correct behavior — rather than trying to infer
-        /// the true owner set and prune. Cross-file consumers are covered separately by the
-        /// import reverse-edge fan-out (<see cref="FanOutToImporters"/>), so an over-broad
-        /// (never a too-narrow) recompile here is the safe failure mode. Deleting this blind
-        /// would risk a CS0103 (missing partial) on the pre-import single-file convention.
-        /// </summary>
-        private static string ResolveParentComponentFile(string uitkxPath)
-        {
-            // Companion files have double extensions: ComponentName.suffix.uitkx
-            var fileName = Path.GetFileName(uitkxPath); // "Foo.style.uitkx"
-            var withoutExt = Path.GetFileNameWithoutExtension(fileName); // "Foo.style"
-
-            // If the base name still contains a dot, it's a companion
-            int dotIdx = withoutExt.IndexOf('.');
-            if (dotIdx > 0)
-            {
-                // LEGACY-ONLY redirect (ES-modules campaign, U-07/M4): the companion-merge
-                // model is what makes "compile the parent instead" correct — the companion's
-                // module partial merges into the parent's class. A NEW-MODE (plain-declaration)
-                // file is its own module: compile IT, and let the import reverse-edge fan-out
-                // recompile the parent. The check is content-based (a legacy wrapper keyword at
-                // any line start), not filename-based — the dotted-name convention is shared by
-                // both worlds.
-                try
-                {
-                    string content = File.ReadAllText(uitkxPath);
-                    if (!s_legacyWrapperKeywordRegex.IsMatch(content))
-                        return uitkxPath;
-                }
-                catch { /* unreadable mid-write — fall through to the legacy redirect */ }
-
-                string componentName = withoutExt.Substring(0, dotIdx); // "Foo"
-                string dir = Path.GetDirectoryName(uitkxPath);
-                string parentPath = Path.Combine(dir, componentName + ".uitkx");
-                if (File.Exists(parentPath))
-                    return parentPath;
-            }
-            return uitkxPath;
-        }
-
-        // A legacy wrapper-keyword declaration head at a line start ([export] component/hook/
-        // module) — the file-mode discriminator ResolveParentComponentFile keys on (mirror of
-        // the parser's first-declaration mode rule, cheap enough for a per-save file event).
-        // The keyword must be followed by an identifier start (`component Foo`) so body text in
-        // a new-mode file (`module.Init();`, `component = Make();`) can never false-classify
-        // the file as legacy and misroute the save to the base file (audit L3).
-        private static readonly Regex s_legacyWrapperKeywordRegex = new Regex(
-            @"^\s*(?:export\s+)?(?:component|hook|module)\s+[A-Za-z_]",
-            RegexOptions.Multiline | RegexOptions.CultureInvariant
-        );
 
         private void ProcessFileChange(string uitkxPath)
         {
@@ -979,12 +903,11 @@ namespace Ruitk.EditorSupport.HMR
 
             // Rename/delete cleanup (rename-flow field find): drop every registration keyed
             // by the dead path so a renamed member file's OLD identity cannot linger — its
-            // hot DLL as a cross-reference for later compiles, its hook-container index
-            // entry, or its own outgoing import edges. Reverse edges (consumers importing
-            // this path) deliberately stay: the map is keyed by target path, so they become
-            // live again if the file is re-created, and a consumer whose import line still
-            // names the dead file fails its own compile with the right diagnostic.
-            HookContainerRegistry.Invalidate(uitkxPath);
+            // hot DLL as a cross-reference for later compiles, or its own outgoing import
+            // edges. Reverse edges (consumers importing this path) deliberately stay: the
+            // map is keyed by target path, so they become live again if the file is
+            // re-created, and a consumer whose import line still names the dead file fails
+            // its own compile with the right diagnostic.
             _compiler?.EvictFileRegistration(uitkxPath);
             string importerAbs = NormalizeImportPath(uitkxPath);
             foreach (var kv in _importDependents)
@@ -999,12 +922,11 @@ namespace Ruitk.EditorSupport.HMR
                 return;
 
             // Also update the cached StyleSheet in the registry so PropsApplier
-            // picks up the new version on reconcile.
-            string normalized = ussPath.Replace('\\', '/');
-            int assetsIdx = normalized.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
-            if (assetsIdx >= 0)
+            // picks up the new version on reconcile. Layout-aware: a package-resident
+            // .uss maps to a "Packages/<id>/…" asset path, not "Assets/…".
+            string assetRelative = AbsoluteToAssetPath(ussPath);
+            if (assetRelative != null)
             {
-                string assetRelative = normalized.Substring(assetsIdx + 1); // "Assets/..."
                 AssetDatabase.ImportAsset(assetRelative, ImportAssetOptions.ForceSynchronousImport);
                 var sheet = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.StyleSheet>(
                     assetRelative
@@ -1033,21 +955,22 @@ namespace Ruitk.EditorSupport.HMR
         /// Scans all .uitkx files under assetsRoot for @uss directives and builds
         /// a reverse map: absolute .uss path → list of .uitkx paths that import it.
         /// </summary>
-        private void BuildUssDependencyMap(string assetsRoot)
+        private void BuildUssDependencyMap(IReadOnlyList<string> roots)
         {
             _ussDependents.Clear();
             try
             {
-                foreach (
-                    string uitkxPath in Directory.EnumerateFiles(
-                        assetsRoot,
-                        "*.uitkx",
-                        SearchOption.AllDirectories
+                foreach (string root in roots)
+                    foreach (
+                        string uitkxPath in Directory.EnumerateFiles(
+                            root,
+                            "*.uitkx",
+                            SearchOption.AllDirectories
+                        )
                     )
-                )
-                {
-                    RegisterUssDependencies(uitkxPath);
-                }
+                    {
+                        RegisterUssDependencies(uitkxPath);
+                    }
             }
             catch (Exception ex)
             {
@@ -1056,25 +979,27 @@ namespace Ruitk.EditorSupport.HMR
         }
 
         /// <summary>
-        /// Scans every <c>.uitkx</c> under <paramref name="assetsRoot"/> for <c>import</c> lines and
-        /// builds the reverse map (imported file → importers), mirroring the USS map (import/export
-        /// grammar §8). Called once at Start(); individual files are refreshed on each edit.
+        /// Scans every <c>.uitkx</c> under each of <paramref name="roots"/> for <c>import</c> lines
+        /// and builds the reverse map (imported file → importers), mirroring the USS map
+        /// (import/export grammar §8). Called once at Start() with the watcher's own roots;
+        /// individual files are refreshed on each edit.
         /// </summary>
-        private void BuildImportDependencyMap(string assetsRoot)
+        private void BuildImportDependencyMap(IReadOnlyList<string> roots)
         {
             _importDependents.Clear();
             try
             {
-                foreach (
-                    string uitkxPath in Directory.EnumerateFiles(
-                        assetsRoot,
-                        "*.uitkx",
-                        SearchOption.AllDirectories
+                foreach (string root in roots)
+                    foreach (
+                        string uitkxPath in Directory.EnumerateFiles(
+                            root,
+                            "*.uitkx",
+                            SearchOption.AllDirectories
+                        )
                     )
-                )
-                {
-                    RegisterImportDependencies(uitkxPath);
-                }
+                    {
+                        RegisterImportDependencies(uitkxPath);
+                    }
             }
             catch (Exception ex)
             {
@@ -1105,7 +1030,7 @@ namespace Ruitk.EditorSupport.HMR
 
                 foreach (Match m in s_importLineRegex.Matches(content))
                 {
-                    string target = ResolveImportSpecifier(importerDir, uitkxPath, m.Groups[1].Value);
+                    string target = ResolveImportSpecifier(importerDir, uitkxPath, m.Groups[2].Value);
                     if (target == null)
                         continue;
                     if (!_importDependents.TryGetValue(target, out var set))
@@ -1300,7 +1225,7 @@ namespace Ruitk.EditorSupport.HMR
                 return false;
 
             bool anyCompiled = false;
-            string assetsDir = Path.GetFullPath(UnityEngine.Application.dataPath);
+            var searchRoots = BuildWatchRoots();
 
             foreach (Match m in matches)
             {
@@ -1310,8 +1235,14 @@ namespace Ruitk.EditorSupport.HMR
                 if (_compiler.HmrAssemblyPaths.ContainsKey(missingName))
                     continue;
 
-                // Search for a matching .uitkx file on disk
-                string uitkxPath = FindUitkxByComponentName(assetsDir, missingName);
+                // Search for a matching .uitkx file on disk (same roots the watcher covers)
+                string uitkxPath = null;
+                foreach (string root in searchRoots)
+                {
+                    uitkxPath = FindUitkxByComponentName(root, missingName);
+                    if (uitkxPath != null)
+                        break;
+                }
                 if (
                     uitkxPath == null
                     || uitkxPath.Equals(failedPath, StringComparison.OrdinalIgnoreCase)
@@ -1346,7 +1277,75 @@ namespace Ruitk.EditorSupport.HMR
         }
 
         /// <summary>
-        /// Search Assets/ recursively for a .uitkx file whose name matches
+        /// Absolute filesystem path → project asset path ("Assets/…" or
+        /// "Packages/&lt;id&gt;/…"), or null when the file is in neither surface.
+        /// Package paths resolve through <see cref="UnityEditor.PackageManager.PackageInfo"/>
+        /// so embedded and local (<c>file:</c>) layouts both map correctly — the
+        /// package's ASSET path uses its id, which need not equal its folder name.
+        /// </summary>
+        private static string AbsoluteToAssetPath(string absolutePath)
+        {
+            string full;
+            try { full = Path.GetFullPath(absolutePath).Replace('\\', '/'); }
+            catch { return null; }
+
+            string assetsRoot = Path.GetFullPath(UnityEngine.Application.dataPath).Replace('\\', '/');
+            if (full.StartsWith(assetsRoot + "/", StringComparison.OrdinalIgnoreCase))
+                return "Assets" + full.Substring(assetsRoot.Length);
+
+            try
+            {
+                foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
+                {
+                    if (string.IsNullOrEmpty(package.resolvedPath))
+                        continue;
+                    string root = Path.GetFullPath(package.resolvedPath).Replace('\\', '/');
+                    if (full.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase))
+                        return package.assetPath + full.Substring(root.Length);
+                }
+            }
+            catch { /* package manager unavailable — Assets/ answer above still served */ }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The roots the HMR watcher (and dependency discovery) must cover: the
+        /// project's Assets/ folder plus the resolved location of every WRITABLE
+        /// package (embedded and local <c>file:</c> installs — the layouts whose
+        /// .uitkx files a developer can actually edit). Immutable cache packages
+        /// are excluded: their content cannot change mid-session.
+        /// </summary>
+        private static List<string> BuildWatchRoots()
+        {
+            var roots = new List<string>
+            {
+                Path.GetFullPath(UnityEngine.Application.dataPath),
+            };
+            try
+            {
+                foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
+                {
+                    if (package.source != UnityEditor.PackageManager.PackageSource.Embedded
+                        && package.source != UnityEditor.PackageManager.PackageSource.Local)
+                        continue;
+                    if (string.IsNullOrEmpty(package.resolvedPath))
+                        continue;
+                    string full = Path.GetFullPath(package.resolvedPath);
+                    if (Directory.Exists(full) && !roots.Contains(full))
+                        roots.Add(full);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    $"[HMR] Package-root discovery failed ({ex.Message}) — watching Assets/ only.");
+            }
+            return roots;
+        }
+
+        /// <summary>
+        /// Search a watch root recursively for a .uitkx file whose name matches
         /// the given component name (case-insensitive).
         /// </summary>
         private static string FindUitkxByComponentName(string assetsDir, string componentName)

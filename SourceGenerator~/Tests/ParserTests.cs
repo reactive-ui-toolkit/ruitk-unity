@@ -36,11 +36,11 @@ public class ParserTests
 
     /// Wraps markup in a minimal function-style component for test convenience.
     private static string Wrap(string markup) =>
-        "component MyComp {\n  return (\n" + markup + "\n  );\n}";
+        "VirtualNode MyComp() {\n  return (\n" + markup + "\n  );\n}";
 
     /// Wraps code + markup in a function-style component (code runs before return).
     private static string WrapWithCode(string code, string markup) =>
-        "component MyComp {\n  " + code + "\n  return (\n" + markup + "\n  );\n}";
+        "VirtualNode MyComp() {\n  " + code + "\n  return (\n" + markup + "\n  );\n}";
 
     // ── Directive parsing ─────────────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ public class ParserTests
     {
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 var (count, setCount) = useState(0);
                 return (
                     <Box><Label text={$"{count}"} /></Box>
@@ -74,7 +74,7 @@ public class ParserTests
     public void DuplicateNamespace_YieldsTargetedDiagnostic_NotWholeFileFailure()
     {
         const string src =
-            "@namespace First.Ns\n@namespace Second.Ns\ncomponent Foo {\n    return (\n        <Label text=\"x\" />\n    );\n}\n";
+            "@namespace First.Ns\n@namespace Second.Ns\nVirtualNode Foo() {\n    return (\n        <Label text=\"x\" />\n    );\n}\n";
 
         var set = ParseDirectives(src, out var diags);
 
@@ -88,7 +88,7 @@ public class ParserTests
     public void DuplicateNamespace_MarkupStillParses()
     {
         const string src =
-            "@namespace First.Ns\n@namespace Second.Ns\ncomponent Foo {\n    return (\n        <Label text=\"x\" />\n    );\n}\n";
+            "@namespace First.Ns\n@namespace Second.Ns\nVirtualNode Foo() {\n    return (\n        <Label text=\"x\" />\n    );\n}\n";
 
         var nodes = ParseMarkup(src, out var diags);
         Assert.Single(nodes);
@@ -188,7 +188,7 @@ public class ParserTests
     {
         const string src =
             """
-            component Foo {
+            VirtualNode Foo() {
                 return (
                     <Box>
                         @if (true)
@@ -213,7 +213,7 @@ public class ParserTests
     {
         const string src =
             """
-            component Foo {
+            VirtualNode Foo() {
                 return (
                     <Box>
                         @if (true)
@@ -367,7 +367,7 @@ public class ParserTests
     public void MultilineTextContent_ReportsStartLine()
     {
         const string src =
-            "component Foo {\n    return (\n        <Label>\n            line one\n            line two\n        </Label>\n    );\n}\n";
+            "VirtualNode Foo() {\n    return (\n        <Label>\n            line one\n            line two\n        </Label>\n    );\n}\n";
         var nodes = ParseMarkup(src, out _);
         var label = Assert.IsType<ElementNode>(nodes[0]);
         var textNode = Assert.IsType<TextNode>(label.Children[0]);
@@ -381,7 +381,7 @@ public class ParserTests
     {
         const string src =
             """
-            component Foo {
+            VirtualNode Foo() {
                 return (
                     <Box>
                         @if (true) {
@@ -422,7 +422,7 @@ public class ParserTests
 
             const string src =
                 """
-                component CounterPanel {
+                VirtualNode CounterPanel() {
                     return (<Box />);
                 }
                 """;
@@ -450,7 +450,7 @@ public class ParserTests
             // file banner
             /* parser should skip this block comment */
             <!-- and this UITKX comment -->
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 return (<Box />);
             }
             """;
@@ -468,7 +468,7 @@ public class ParserTests
     {
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 var (count, setCount) = useState(0);
                 <Box />
             }
@@ -481,7 +481,7 @@ public class ParserTests
     [Fact]
     public void Directives_FunctionStyle_NonPascalName_EmitsUITKX2100()
     {
-        const string src = "component counterPanel { return (<Box />); }";
+        const string src = "VirtualNode counterPanel() { return (<Box />); }";
 
         ParseDirectives(src, out var diags);
         Assert.Contains(diags, d => d.Code == "UITKX2100");
@@ -492,7 +492,7 @@ public class ParserTests
     {
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 var count = 1;
                 return (count);
             }
@@ -507,7 +507,7 @@ public class ParserTests
     {
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 return count;
             }
             """;
@@ -523,7 +523,7 @@ public class ParserTests
     {
         const string src =
             """
-            component SoundEffect {
+            VirtualNode SoundEffect() {
                 useEffect(() => {
                     Play();
                     return null;
@@ -567,7 +567,7 @@ public class ParserTests
     {
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 if (hidden) { return null; }
                 return (<Box />);
             }
@@ -585,7 +585,7 @@ public class ParserTests
     {
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 return nullableThing;
             }
             """;
@@ -595,18 +595,20 @@ public class ParserTests
     }
 
     [Fact]
-    public void Directives_FunctionStyle_WithTrailingDirective_EmitsUITKX2104()
+    public void Directives_TrailingNamespaceDirective_IsAnError()
     {
+        // @namespace stays a live preamble escape hatch (ruling D1); AFTER declarations
+        // it is a top-level error like any other stray directive.
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 return (<Box />);
             }
             @namespace Test.NS
             """;
 
         ParseDirectives(src, out var diags);
-        Assert.Contains(diags, d => d.Code == "UITKX2104");
+        Assert.Contains(diags, d => d.Severity == ParseSeverity.Error);
     }
 
     // ── Mixed-decl v1 (leg 3): a file is a SEQUENCE of declarations ──────────────
@@ -617,7 +619,7 @@ public class ParserTests
         // §5 (import/export grammar): @uss is legal in any file — the old UITKX2210 hard error
         // (hook/module files may not carry @uss) is lifted.
         const string src =
-            "@uss \"styles.uss\"\nhook useThing() {\n    return 0;\n}\n";
+            "@uss \"styles.uss\"\nvoid useThing() {\n    return 0;\n}\n";
 
         ParseDirectives(src, out var diags);
 
@@ -629,10 +631,10 @@ public class ParserTests
     {
         const string src =
             """
-            component First {
+            VirtualNode First() {
                 return (<Box />);
             }
-            component Second {
+            VirtualNode Second() {
                 return (<Label text="x" />);
             }
             """;
@@ -648,29 +650,26 @@ public class ParserTests
     }
 
     [Fact]
-    public void MixedDecl_ComponentThenHookAndModule_AllParsed()
+    public void MixedDecl_ComponentThenHookAndValue_AllParsed()
     {
         const string src =
             """
-            component Screen {
+            VirtualNode Screen() {
                 return (<Box />);
             }
-            export hook useCounter(int start) {
-                return start;
+            export void useCounter(int start) {
             }
-            module Styles {
-                public static int Gap = 4;
-            }
+            export int Gap = 4;
             """;
 
         var set = ParseDirectives(src, out var diags);
 
         Assert.DoesNotContain(diags, d => d.Severity == ParseSeverity.Error);
         Assert.Single(set.ComponentDeclarations);
-        Assert.Single(set.HookDeclarations);
-        Assert.Single(set.ModuleDeclarations);
-        Assert.True(set.HookDeclarations[0].IsExported);
-        Assert.False(set.ModuleDeclarations[0].IsExported);
+        Assert.Equal(2, set.MemberDeclarations.Length);
+        Assert.Contains(set.MemberDeclarations, m => m.Kind == DeclKind.Hook && m.Name == "useCounter");
+        Assert.Contains(set.MemberDeclarations, m => m.Kind == DeclKind.Value && m.Name == "Gap");
+        Assert.All(set.MemberDeclarations, m => Assert.True(m.IsExported));
     }
 
     [Fact]
@@ -678,10 +677,10 @@ public class ParserTests
     {
         const string src =
             """
-            component First {
+            VirtualNode First() {
                 return (<Box />);
             }
-            export component Second {
+            export VirtualNode Second() {
                 return (<Label text="x" />);
             }
             """;
@@ -701,7 +700,7 @@ public class ParserTests
             """
             using MyGame.Models;
             using System.Collections.Generic;
-            component PlayerHUD {
+            VirtualNode PlayerHUD() {
                 return (<Box />);
             }
             """;
@@ -720,7 +719,7 @@ public class ParserTests
         const string src =
             """
             @namespace MyGame.UI
-            component PlayerHUD {
+            VirtualNode PlayerHUD() {
                 return (<Box />);
             }
             """;
@@ -740,7 +739,7 @@ public class ParserTests
             """
             using System.Collections.Generic;
             @namespace MyGame.Screens
-            component PlayerHUD {
+            VirtualNode PlayerHUD() {
                 return (<Box />);
             }
             """;
@@ -775,7 +774,7 @@ public class ParserTests
             const string src =
                 """
                 @namespace InlineNamespace
-                component PlayerHUD {
+                VirtualNode PlayerHUD() {
                     return (<Box />);
                 }
                 """;
@@ -812,7 +811,7 @@ public class ParserTests
     {
         const string src =
             """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 var (count, setCount) = useState(0);
                 return (
                     <Box><Label text={$"{count}"} /></Box>
@@ -978,7 +977,7 @@ public class ParserTests
     {
         const string src =
             """
-            component Counter(int count = 0) {
+            VirtualNode Counter(int count = 0) {
               var inlineNode = (
                 <VisualElement>
                   <Button text="-5" onClick={_ => setCount(count - 5)} />
@@ -1013,7 +1012,7 @@ public class ParserTests
     {
         const string src =
             """
-            component Counter(int count = 0) {
+            VirtualNode Counter(int count = 0) {
               var inlineNode = (
                 <VisualElement>
                   <Button text="-5" onClick={_ => setCount(count - 5)} />
@@ -1044,7 +1043,7 @@ public class ParserTests
         // leaked into the JSX-splice scaffold and broke Roslyn's scaffold parse.
         const string src =
             """
-            component Counter(int count = 0) {
+            VirtualNode Counter(int count = 0) {
               /* old UI: (<Label/>) was removed */
               var x = count;
 
@@ -1066,7 +1065,7 @@ public class ParserTests
         // not appear in SetupCodeMarkupRanges at all.
         const string src =
             """
-            component Counter(int count = 0) {
+            VirtualNode Counter(int count = 0) {
               /* old UI: (<Label/>) was removed */
               var x = count;
 

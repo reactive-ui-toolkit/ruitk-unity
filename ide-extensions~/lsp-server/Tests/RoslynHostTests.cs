@@ -61,7 +61,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     {
         // Use the same source pattern that works in SemanticModel_ResolvesBclType.
         var source =
-            "component C {\n  string msg = \"hello\";\n  return (\n    <Label text={msg}/>\n  )\n}";
+            "VirtualNode C() {\n  string msg = \"hello\";\n  return (\n    <Label text={msg}/>\n  )\n}";
         var path = "c:/test/VirtualDocTest.uitkx";
         var parseResult = Parse(source, path);
         await _host.EnsureReadyAsync(path, source, parseResult, CancellationToken.None);
@@ -79,7 +79,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     [Fact]
     public async Task EnsureReady_CreatesRoslynDocument()
     {
-        var source = "component C {\n  return (\n    <Label text=\"hi\"/>\n  )\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"hi\"/>\n  )\n}";
         await EnsureReady(source);
 
         var doc = _host.GetRoslynDocument("c:/test/Test.uitkx");
@@ -92,7 +92,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     public async Task SemanticModel_ResolvesBclType()
     {
         var source =
-            "component C {\n  string msg = \"hello\";\n  return (\n    <Label text={msg}/>\n  )\n}";
+            "VirtualNode C() {\n  string msg = \"hello\";\n  return (\n    <Label text={msg}/>\n  )\n}";
         await EnsureReady(source);
 
         var doc = _host.GetRoslynDocument("c:/test/Test.uitkx");
@@ -114,7 +114,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     public async Task SemanticModel_FunctionStyle_ResolvesBclType()
     {
         var source =
-            "component Counter {\n  int count = 0;\n  string s = count.ToString();\n  return (\n    <Label text={s}/>\n  );\n}";
+            "VirtualNode Counter() {\n  int count = 0;\n  string s = count.ToString();\n  return (\n    <Label text={s}/>\n  );\n}";
         await EnsureReady(source);
 
         var doc = _host.GetRoslynDocument("c:/test/Test.uitkx");
@@ -130,7 +130,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     public async Task HoverTypeInfo_StringVariable()
     {
         var source =
-            "component C {\n  string greeting = \"hello\";\n  return (\n    <Label text={greeting}/>\n  )\n}";
+            "VirtualNode C() {\n  string greeting = \"hello\";\n  return (\n    <Label text={greeting}/>\n  )\n}";
         await EnsureReady(source);
 
         var vdoc = _host.GetVirtualDocument("c:/test/Test.uitkx");
@@ -166,7 +166,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     [Fact]
     public async Task VirtualDoc_ExpressionRegion_IsInCSharp()
     {
-        var source = "component C {\n  return (\n    <Label text={myVar}/>\n  )\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text={myVar}/>\n  )\n}";
         await EnsureReady(source);
 
         var vdoc = _host.GetVirtualDocument("c:/test/Test.uitkx");
@@ -179,7 +179,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     [Fact]
     public async Task VirtualDoc_MarkupRegion_IsNotCSharp()
     {
-        var source = "component C {\n  return (\n    <Label text=\"plain\"/>\n  )\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label text=\"plain\"/>\n  )\n}";
         await EnsureReady(source);
 
         var vdoc = _host.GetVirtualDocument("c:/test/Test.uitkx");
@@ -194,7 +194,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     [Fact]
     public async Task EnsureReady_Idempotent_SameSource()
     {
-        var source = "component C {\n  return (\n    <Label/>\n  )\n}";
+        var source = "VirtualNode C() {\n  return (\n    <Label/>\n  )\n}";
         await EnsureReady(source);
         await EnsureReady(source); // should short-circuit
 
@@ -214,7 +214,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
         // can never contain the CS1503, so the mapper's containment check misses
         // it. The host must drop it via the enclosing-lambda-node check instead.
         var source =
-            "component Test {\n"
+            "VirtualNode Test() {\n"
             + "  var (playerTurn, setPlayerTurn) = useState<string>(\"X\");\n"
             + "  System.Func<int, System.Action<int>> handleClick = row => col2 => {\n"
             + "    if (row > 2) {\n"
@@ -239,7 +239,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     {
         // `unused` is declared but never referenced in markup or other code.
         var source =
-            "component Test {\n  int unused = 42;\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
+            "VirtualNode Test() {\n  int unused = 42;\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
         await EnsureReady(source);
 
         var diags = _host.GetLatestDiagnostics("c:/test/Test.uitkx");
@@ -251,7 +251,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     {
         // `count` IS referenced in expression {count.ToString()}.
         var source =
-            "component Test {\n  int count = 42;\n  return (\n    <Label text={count.ToString()}/>\n  );\n}";
+            "VirtualNode Test() {\n  int count = 42;\n  return (\n    <Label text={count.ToString()}/>\n  );\n}";
         await EnsureReady(source);
 
         var diags = _host.GetLatestDiagnostics("c:/test/Test.uitkx");
@@ -263,7 +263,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     {
         // Lambda discard param `_` must NOT be flagged as unused.
         var source =
-            "component Test {\n  var (count, setCount) = useState(0);\n  return (\n    <Button text=\"+1\" onClick={_ => setCount(count + 1)} />\n  );\n}";
+            "VirtualNode Test() {\n  var (count, setCount) = useState(0);\n  return (\n    <Button text=\"+1\" onClick={_ => setCount(count + 1)} />\n  );\n}";
         await EnsureReady(source);
 
         var diags = _host.GetLatestDiagnostics("c:/test/Test.uitkx");
@@ -278,7 +278,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
     {
         // Loop variable `item` is used in expression check — no false positive.
         var source =
-            "component Test {\n  var items = new string[] { \"a\", \"b\" };\n  return (\n    <VisualElement>\n      @foreach (var item in items) {\n        <Label text={item} />\n      }\n    </VisualElement>\n  );\n}";
+            "VirtualNode Test() {\n  var items = new string[] { \"a\", \"b\" };\n  return (\n    <VisualElement>\n      @foreach (var item in items) {\n        <Label text={item} />\n      }\n    </VisualElement>\n  );\n}";
         await EnsureReady(source);
 
         var diags = _host.GetLatestDiagnostics("c:/test/Test.uitkx");
@@ -296,7 +296,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
         // matching the diagnostic message (which is identical to a real Func<T,T> mismatch
         // — see IsStateSetterInvocation's doc comment).
         var source =
-            "component Test {\n  var (count, setCount) = useState(0);\n  setCount(5);\n  return (\n    <Label text=\"hi\" />\n  );\n}";
+            "VirtualNode Test() {\n  var (count, setCount) = useState(0);\n  setCount(5);\n  return (\n    <Label text=\"hi\" />\n  );\n}";
         await EnsureReady(source);
 
         var diags = _host.GetLatestDiagnostics("c:/test/Test.uitkx");
@@ -315,7 +315,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
         // argument's type against T. Only a value assignable to T is the harmless
         // .Set(_ => value) sugar case; this is not.
         var source =
-            "component Test {\n  var (snapshot, setSnapshot) = useState(\"a\");\n  setSnapshot(42);\n  return (\n    <Label text=\"hi\" />\n  );\n}";
+            "VirtualNode Test() {\n  var (snapshot, setSnapshot) = useState(\"a\");\n  setSnapshot(42);\n  return (\n    <Label text=\"hi\" />\n  );\n}";
         await EnsureReady(source);
 
         var diags = _host.GetLatestDiagnostics("c:/test/Test.uitkx");
@@ -330,7 +330,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
         // mismatch — its message is byte-identical to the state-setter case, so only the
         // semantic-model check (the invoked expression's static type) can tell them apart.
         var source =
-            "component Test {\n  void Foo(System.Func<int,int> f) { }\n  Foo(5);\n  return (\n    <Label text=\"hi\" />\n  );\n}";
+            "VirtualNode Test() {\n  void Foo(System.Func<int,int> f) { }\n  Foo(5);\n  return (\n    <Label text=\"hi\" />\n  );\n}";
         await EnsureReady(source);
 
         var diags = _host.GetLatestDiagnostics("c:/test/Test.uitkx");
@@ -349,7 +349,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
         // the Unnecessary diagnostic tag, even though the real generated switch (see
         // CSharpEmitter.EmitSwitchNode) has proper case branching and compiles fine.
         var source =
-            "component Test {\n"
+            "VirtualNode Test() {\n"
             + "  string mode = \"a\";\n"
             + "  return (\n"
             + "    @switch (mode) {\n"
@@ -375,7 +375,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
         // `ReadInside`. The analyzer must union Captured into the read set
         // to avoid a false positive — captured locals are by definition used.
         var source =
-            "component Test {\n  var (count, setCount) = useState(0);\n  return (\n    <Button text=\"+1\" onClick={_ => setCount(count + 1)} />\n  );\n}";
+            "VirtualNode Test() {\n  var (count, setCount) = useState(0);\n  return (\n    <Button text=\"+1\" onClick={_ => setCount(count + 1)} />\n  );\n}";
         await EnsureReady(source);
 
         var diags = _host.GetLatestDiagnostics("c:/test/Test.uitkx");
@@ -399,7 +399,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
         // in the deferred Pattern-B emission path) when an attribute lambda body
         // contains a JSX literal that gets stripped by EmitMappedExpressionStrippingJsx.
         var source =
-            "component Test {\n"
+            "VirtualNode Test() {\n"
             + "  var (n, setN) = useState(0);\n"
             + "  return (\n"
             + "    <Button text=\"+\" onClick={e => setN(n + 1)} />\n"
@@ -422,7 +422,7 @@ public sealed class RoslynHostTests : IAsyncLifetime
         //
         // Repro: ternary with two JSX branches inside an inline expression check.
         var source =
-            "component Test {\n"
+            "VirtualNode Test() {\n"
             + "  var cond = true;\n"
             + "  return (\n"
             + "    <VisualElement>\n"

@@ -1,3 +1,5 @@
+import * as MenuStyles from "./MenuStyles.style"
+
 export VirtualNode Menu(Action? onRestart = null) {
   var navigate = RouterHooks.UseNavigate();
   string location = RouterHooks.UseLocation();

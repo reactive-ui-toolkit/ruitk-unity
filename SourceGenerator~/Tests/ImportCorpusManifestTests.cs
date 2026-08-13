@@ -19,9 +19,15 @@ namespace Ruitk.SourceGenerator.Tests
     /// </summary>
     public sealed class ImportCorpusManifestTests
     {
-        /// <summary>The family-frozen hash as shipped by Unreal leg 1 (plans/family-corpus.hash).</summary>
+        /// <summary>The family-frozen hash (plans/family-corpus.hash). Re-frozen by the Unity
+        /// leg's 0.16.0 legacy-syntax removal (D4): the 16 wrapper-scaffolded fileScan cases
+        /// modernized in place (plain declaration heads; the two module-subject cases became
+        /// exported-value subjects). Siblings adopt the staged case edits
+        /// (Plans~/family-corpus-0.16-legacy-removal.patch) on their own removal waves and
+        /// re-converge on this value — until then the cross-repo hash match is EXPECTED to
+        /// diverge (recorded in Plans~/REMAINING_WORK.md).</summary>
         private const string FrozenFamilyHash =
-            "917dd8cdf6999647e991f7186bc3e97702c40ba656826d3a7141bdc87de52169";
+            "f8c06ee642bd0a0d021ba17cbe7e2739762bc5c47be8e09dfb2c330a50bab251";
 
         [Fact]
         public void PinnedHash_EqualsFrozenFamilyValue()

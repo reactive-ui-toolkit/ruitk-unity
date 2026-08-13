@@ -1,5 +1,6 @@
 import { HUD } from "../HUD/HUD"
 import { useGalagaGame } from "./GameScreen.hooks"
+import * as GameScreenStyles from "./GameScreenStyles.style"
 import "@UnityEngine.UIElements"
 import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes"
 import "@static Ruitk.Samples.Components.GalagaGame.GalagaTypes.C"

@@ -36,7 +36,7 @@ public sealed class NamespaceUsingDiagnosticsTests
     public void MisspelledNamespace_Error_AnchoredAtToken()
     {
         // @using Zzz.Totally.Bogus  →  payload starts at col 7
-        var ds = Parse("@namespace TestNs\n@using Zzz.Totally.Bogus\ncomponent C { return (<Box />); }\n");
+        var ds = Parse("@namespace TestNs\n@using Zzz.Totally.Bogus\nVirtualNode C() { return (<Box />); }\n");
         var diags = RoslynHost.ValidateNamespaceUsings(BuildComp(), ds);
 
         var d = Assert.Single(diags);
@@ -51,14 +51,14 @@ public sealed class NamespaceUsingDiagnosticsTests
     [Fact]
     public void ValidCoreNamespace_NoDiagnostic()
     {
-        var ds = Parse("@namespace TestNs\n@using System.Collections.Generic\ncomponent C { return (<Box />); }\n");
+        var ds = Parse("@namespace TestNs\n@using System.Collections.Generic\nVirtualNode C() { return (<Box />); }\n");
         Assert.Empty(RoslynHost.ValidateNamespaceUsings(BuildComp(), ds));
     }
 
     [Fact]
     public void NamespaceImportForm_AlsoValidated()
     {
-        var ds = Parse("@namespace TestNs\nimport \"@Zzz.Bogus\"\ncomponent C { return (<Box />); }\n");
+        var ds = Parse("@namespace TestNs\nimport \"@Zzz.Bogus\"\nVirtualNode C() { return (<Box />); }\n");
         var d = Assert.Single(RoslynHost.ValidateNamespaceUsings(BuildComp(), ds));
         Assert.Equal("UITKX2316", d.Code);
         // The import form omits the "@using" hint tail from the message.
@@ -69,7 +69,7 @@ public sealed class NamespaceUsingDiagnosticsTests
     public void ProjectDeclaredNamespace_Resolves()
     {
         // MyGame.Models exists in the compilation's syntax tree → no 2316.
-        var ds = Parse("@namespace TestNs\n@using MyGame.Models\ncomponent C { return (<Box />); }\n");
+        var ds = Parse("@namespace TestNs\n@using MyGame.Models\nVirtualNode C() { return (<Box />); }\n");
         Assert.Empty(RoslynHost.ValidateNamespaceUsings(BuildComp(), ds));
     }
 
@@ -77,14 +77,14 @@ public sealed class NamespaceUsingDiagnosticsTests
     public void OwnNamespace_NeverFlagged()
     {
         // A file legally using its own (not-yet-compiled) namespace must not be flagged.
-        var ds = Parse("@namespace My.Brand.New.Ns\n@using My.Brand.New.Ns\ncomponent C { return (<Box />); }\n");
+        var ds = Parse("@namespace My.Brand.New.Ns\n@using My.Brand.New.Ns\nVirtualNode C() { return (<Box />); }\n");
         Assert.Empty(RoslynHost.ValidateNamespaceUsings(BuildComp("namespace X {}"), ds));
     }
 
     [Fact]
     public void StaticPayload_NotFlagged()
     {
-        var ds = Parse("@namespace TestNs\nimport \"@static Doom.Nope.Type\"\ncomponent C { return (<Box />); }\n");
+        var ds = Parse("@namespace TestNs\nimport \"@static Doom.Nope.Type\"\nVirtualNode C() { return (<Box />); }\n");
         Assert.Empty(RoslynHost.ValidateNamespaceUsings(BuildComp(), ds));
     }
 }

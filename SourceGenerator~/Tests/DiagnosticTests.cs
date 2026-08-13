@@ -12,11 +12,11 @@ public class DiagnosticTests
 {
     /// Wraps markup in a minimal function-style component for test convenience.
     private static string Wrap(string markup) =>
-        "component MyComp {\n  return (\n" + markup + "\n  );\n}";
+        "VirtualNode MyComp() {\n  return (\n" + markup + "\n  );\n}";
 
     /// Wraps code + markup in a function-style component (code runs before return).
     private static string WrapWithCode(string code, string markup) =>
-        "component MyComp {\n  " + code + "\n  return (\n" + markup + "\n  );\n}";
+        "VirtualNode MyComp() {\n  " + code + "\n  return (\n" + markup + "\n  );\n}";
 
     // ── Rules of Hooks violations ─────────────────────────────────────────────
 
@@ -405,7 +405,7 @@ public class DiagnosticTests
     {
         var src = """
             @namespace Test.NS
-            component C {
+            VirtualNode C() {
               var x = @(123);
               return (
                 <box />
@@ -423,7 +423,7 @@ public class DiagnosticTests
         // Phase 2: @(expr) in markup is no longer supported — must use {expr}.
         var src = """
             @namespace Test.NS
-            component C {
+            VirtualNode C() {
               var childNode = 42;
               return (
                 <box>@(childNode)</box>
@@ -442,7 +442,7 @@ public class DiagnosticTests
         // legal {expr} inside JSX in setup code does not produce a spurious UITKX0306.
         var src = """
             @namespace Test.NS
-            component C {
+            VirtualNode C() {
               var childNode = 42;
               var el = (
                 <box>{childNode}</box>
@@ -462,7 +462,7 @@ public class DiagnosticTests
     {
         var src = """
             @namespace Test.NS
-            component C {
+            VirtualNode C() {
               var childNode = 42;
               var el = () => <box>{childNode}</box>;
               return (

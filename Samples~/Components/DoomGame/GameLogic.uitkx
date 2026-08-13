@@ -342,7 +342,13 @@ void FireHitscan(ref GameState st, int dmg, float spread) {
 // Phase 8: emit a hitscan tracer streak from muzzle to impact. Endpoints
 // are projected/clipped at render time. ColorIdx 1 = shotgun pellet (red
 // tinted), 0 = pistol/chaingun (yellow).
-void SpawnTracer(ref GameState st, PlayerState p, float ang, ShotHit hit, float spread) {
+void SpawnTracer(
+  ref GameState st,
+  PlayerState p,
+  float ang,
+  ShotHit hit,
+  float spread
+) {
   if (st.Tracers == null) return;
   float planeScale = (C.VIEWPORT_H * 0.5f) / Mathf.Tan(C.HALF_FOV);
   float pitchSlope = p.Pitch / planeScale;
@@ -364,7 +370,13 @@ void SpawnTracer(ref GameState st, PlayerState p, float ang, ShotHit hit, float 
   st.TracerCount++;
 }
 
-void SpawnProjectile(ref GameState st, MobjKind kind, int ownerId, int damage, float speed) {
+void SpawnProjectile(
+  ref GameState st,
+  MobjKind kind,
+  int ownerId,
+  int damage,
+  float speed
+) {
   ref var p = ref st.Player;
   float fwdX = Mathf.Cos(p.Angle), fwdY = Mathf.Sin(p.Angle);
   // Phase 7: vertical aim — apply pitch slope to projectile motion.
@@ -514,7 +526,13 @@ void UpdateProjectile(ref GameState st, int idx, float dt) {
   if ((m.X < 0 || m.X >= st.Map.Width || m.Y < 0 || m.Y >= st.Map.Height)) m.Id = 0;
 }
 
-void OnProjectileHit(ref GameState st, int idx, float x, float y, int hitMobjIdx) {
+void OnProjectileHit(
+  ref GameState st,
+  int idx,
+  float x,
+  float y,
+  int hitMobjIdx
+) {
   ref var m = ref st.Mobjs[idx];
   if (hitMobjIdx > 0) {
     DamageMobj(ref st, hitMobjIdx, m.Damage, m.OwnerId);
@@ -533,7 +551,14 @@ void OnProjectileHit(ref GameState st, int idx, float x, float y, int hitMobjIdx
   m.Id = 0;
 }
 
-void Splash(ref GameState st, float x, float y, float radius, int maxDmg, int ownerId) {
+void Splash(
+  ref GameState st,
+  float x,
+  float y,
+  float radius,
+  int maxDmg,
+  int ownerId
+) {
   for (int j = 1; j <= st.MobjCount; j++) {
     ref var t = ref st.Mobjs[j];
     if (t.Id == 0 || IsProjectile(t.Kind) || IsPickup(t.Kind) || t.Kind == MobjKind.Explosion) continue;
@@ -648,7 +673,13 @@ void DoAttack(ref GameState st, int idx, float dist, bool melee) {
   }
 }
 
-void SpawnEnemyProjectile(ref GameState st, int srcIdx, MobjKind kind, int damage, float speed) {
+void SpawnEnemyProjectile(
+  ref GameState st,
+  int srcIdx,
+  MobjKind kind,
+  int damage,
+  float speed
+) {
   ref var src = ref st.Mobjs[srcIdx];
   float ang = src.Angle;
   // Phase 7: enemy aims at the player's torso. Compute Z slope from src eye
@@ -873,7 +904,12 @@ float CeilingAboveIn(Sector sec, float footZ, float actorHeight) {
 // Phase 7: vertical physics for the player. Tracks Z (feet height) against
 // the floor of the player's current sector. Jump applies upward velocity
 // when on the ground; crouch lowers the view height temporarily.
-void UpdatePlayerVertical(ref GameState st, ref PlayerState p, InputCmd input, float dt) {
+void UpdatePlayerVertical(
+  ref GameState st,
+  ref PlayerState p,
+  InputCmd input,
+  float dt
+) {
   float floorZ = 0f;
   float ceilZ = 1f;
   if (st.SectorMap.IsValid && p.SectorId >= 0) {
@@ -1016,8 +1052,17 @@ export void CastFrame(ref GameState st) {
 //  - Sky / open ceilings: don't push winTop; sky shows through.
 //  - Closed door / terminal solid wall: emits Main clipped, ray ends.
 //  - Window collapses → ray bails early (perf win).
-ColumnInfo BuildColumnSector(ref GameState st, float ox, float oy, float rdx, float rdy,
-float angCos, float viewZ, float horizon, out float depthOut) {
+ColumnInfo BuildColumnSector(
+  ref GameState st,
+  float ox,
+  float oy,
+  float rdx,
+  float rdy,
+  float angCos,
+  float viewZ,
+  float horizon,
+  out float depthOut
+) {
   Raycast.Cast(st.SectorMap, new Vector2(ox, oy), st.Player.SectorId, new Vector2(rdx, rdy), out var hits);
   List<WallSeg> extras = null;
   List<FloorBand> bands = null;
@@ -1567,7 +1612,16 @@ bool HasLineOfSight(ref GameState st, float ax, float ay, float bx, float by) {
 // monsters from shooting through risers, low ceilings, or solid walls
 // that the tile-only check missed (a step-up cell is CellKind.Empty so
 // the old grid check let shots pass).
-bool HasLineOfSight3D(ref GameState st, float ax, float ay, float az, float bx, float by, float bz, int srcSector) {
+bool HasLineOfSight3D(
+  ref GameState st,
+  float ax,
+  float ay,
+  float az,
+  float bx,
+  float by,
+  float bz,
+  int srcSector
+) {
   if (!st.SectorMap.IsValid || srcSector < 0) {
     return HasLineOfSight(ref st, ax, ay, bx, by);
   }
@@ -1631,7 +1685,14 @@ bool HasLineOfSight3D(ref GameState st, float ax, float ay, float az, float bx, 
   return true;
 }
 
-int FindMobjInCone(ref GameState st, float ox, float oy, float ang, float range, float halfAngle) {
+int FindMobjInCone(
+  ref GameState st,
+  float ox,
+  float oy,
+  float ang,
+  float range,
+  float halfAngle
+) {
   int best = -1;
   float bestDist = range;
   for (int i = 1; i <= st.MobjCount; i++) {
@@ -1691,7 +1752,16 @@ ShotHit TraceShot(ref GameState st, float ox, float oy, float ang) {
   return new ShotHit { HitMobj = false, X = ox + rdx * wallDist, Y = oy + rdy * wallDist };
 }
 
-void MoveActor(ref GameState st, ref float x, ref float y, float dx, float dy, float radius, bool isPlayer, int selfIdx = -1) {
+void MoveActor(
+  ref GameState st,
+  ref float x,
+  ref float y,
+  float dx,
+  float dy,
+  float radius,
+  bool isPlayer,
+  int selfIdx = -1
+) {
   float nx = x + dx, ny = y + dy;
   // X axis
   if (!CollidesAt(ref st, nx, y, radius, isPlayer, selfIdx)) x = nx;
@@ -1723,7 +1793,14 @@ void MoveActor(ref GameState st, ref float x, ref float y, float dx, float dy, f
   }
 }
 
-bool CollidesAt(ref GameState st, float x, float y, float r, bool isPlayer, int selfIdx) {
+bool CollidesAt(
+  ref GameState st,
+  float x,
+  float y,
+  float r,
+  bool isPlayer,
+  int selfIdx
+) {
   // wall collision with circle vs cell. For the player we use Z-aware
   // blocking so they can step over short ledges and crouch under low
   // ceilings; monsters retain the old 2D blocker semantics.

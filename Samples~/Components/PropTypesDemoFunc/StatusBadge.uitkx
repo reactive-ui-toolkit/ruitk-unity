@@ -1,4 +1,7 @@
-export VirtualNode StatusBadge(string? label = null, Color statusColor = default) {
+export VirtualNode StatusBadge(
+  string? label = null,
+  Color statusColor = default
+) {
   var displayLabel = label ?? "<missing>";
 
   var badgeStyle = new Style {

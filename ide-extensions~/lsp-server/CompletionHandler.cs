@@ -309,26 +309,17 @@ public sealed class CompletionHandler : ICompletionHandler
 
     // ── Completion item builders ─────────────────────────────────────────────
 
-    // ── Function-style preamble items (@namespace / @using / component) ────
+    // ── Preamble + declaration items (directives, exports, imports) ────────
 
     private static IEnumerable<CompletionItem> FunctionStylePreambleItems(string prefix)
     {
         prefix ??= string.Empty;
 
+        // (@namespace and @using still parse — @namespace as a rare escape hatch,
+        // @using as a compatibility promise — but neither is offered here: new code
+        // takes the file-keyed namespace and the unified import "@Ns" spelling.)
         var candidates = new[]
         {
-            (
-                label: "@namespace",
-                insert: "@namespace ${1:My.Namespace}",
-                detail: "Declares the C# namespace for the generated component class.",
-                doc: "Sets the namespace for this component, e.g. `@namespace MyGame.UI`."
-            ),
-            (
-                label: "@using",
-                insert: "@using ${1:System.Collections.Generic}",
-                detail: "Imports a C# namespace into the generated component class.",
-                doc: "Adds a `using` directive to the generated file, e.g. `@using UnityEngine`.\n\nPrefer the unified `import \"@Namespace\"` form for new code (they are equivalent)."
-            ),
             (
                 label: "import \"@\"",
                 insert: "import \"@${1:Some.Namespace}\"",
@@ -389,24 +380,8 @@ public sealed class CompletionHandler : ICompletionHandler
                 detail: "Default import of a peer .uitkx file.",
                 doc: "Binds the target file's default export to a local name:\n```\nimport ScorePanel from \"./ScorePanel\"\n…  <ScorePanel />\n```\nThe target marks its default with `export default Name;`."
             ),
-            (
-                label: "component",
-                insert: "component ${1:MyComponent} {\n\treturn (\n\t\t$0\n\t);\n}",
-                detail: "(deprecated) Declares a wrapper-keyword component.",
-                doc: "**Deprecated (UITKX2320)** — write a plain `export VirtualNode Name(...) { … }` declaration instead; the `UitkxMigrateImports --es-modules` codemod rewrites existing files. The wrapper keyword is removed in a later minor."
-            ),
-            (
-                label: "hook",
-                insert: "hook ${1:useName}(${2}) -> ${3:ReturnType} {\n\t$0\n}",
-                detail: "(deprecated) Declares a wrapper-keyword hook.",
-                doc: "**Deprecated (UITKX2320)** — write a plain `export (ret) useName(...) { … }` declaration instead; the `UitkxMigrateImports --es-modules` codemod rewrites existing files. The wrapper keyword is removed in a later minor."
-            ),
-            (
-                label: "module",
-                insert: "module ${1:Name} {\n\t$0\n}",
-                detail: "(deprecated) Declares a wrapper-keyword module.",
-                doc: "**Deprecated (UITKX2320)** — write plain `export` declarations at the top level instead (importers use `import * as Name`); the `UitkxMigrateImports --es-modules` codemod rewrites existing files. The wrapper keyword is removed in a later minor."
-            ),
+            // (The component/hook/module wrapper-keyword items were removed with the
+            // legacy grammar in 0.16.0 — UITKX2320 is now an error naming the codemod.)
         };
 
         return candidates
@@ -1668,10 +1643,6 @@ public sealed class CompletionHandler : ICompletionHandler
         void Add(string n, bool exported) { if (exported && !already.Contains(n) && !names.Contains(n)) names.Add(n); }
         if (!ds.ComponentDeclarations.IsDefaultOrEmpty)
             foreach (var c in ds.ComponentDeclarations) Add(c.Name, c.IsExported);
-        if (!ds.HookDeclarations.IsDefaultOrEmpty)
-            foreach (var h in ds.HookDeclarations) Add(h.Name, h.IsExported);
-        if (!ds.ModuleDeclarations.IsDefaultOrEmpty)
-            foreach (var m in ds.ModuleDeclarations) Add(m.Name, m.IsExported);
         // Plain member declarations (ES-modules campaign, M5): values/utils/hooks on __Exports.
         if (!ds.MemberDeclarations.IsDefaultOrEmpty)
             foreach (var mem in ds.MemberDeclarations) Add(mem.Name, mem.IsExported);
@@ -1690,10 +1661,10 @@ public sealed class CompletionHandler : ICompletionHandler
         var empty = System.Array.Empty<string>();
         if (!Regex.IsMatch(lineText, @"^\s*import\b")) return empty;
 
-        var m = Regex.Match(lineText, "from\\s*\"");
+        var m = Regex.Match(lineText, "from\\s*([\"'])");
         if (!m.Success) return empty;
         int quoteStart = m.Index + m.Length;
-        int quoteEnd = lineText.IndexOf('"', quoteStart);
+        int quoteEnd = lineText.IndexOf(m.Groups[1].Value[0], quoteStart);
         int end = quoteEnd < 0 ? lineText.Length : quoteEnd;
         if (col0 < quoteStart || col0 > end) return empty;
 

@@ -37,10 +37,10 @@
 //  Why this design (no HMR-side rewriter)
 //  ──────────────────────────────────────
 //
-//  HMR's own emitter (Editor/HMR/HmrHookEmitter.EmitModules) writes module
-//  bodies VERBATIM — exactly the user's source, unchanged. That gives us a
-//  fresh `public static <Name>` MethodInfo on the HMR-loaded type with the
-//  user's new implementation, and the swapper can `CreateDelegate` to it
+//  HMR's own emitter (Editor/HMR/HmrHookEmitter.EmitExports) writes util
+//  method bodies VERBATIM — exactly the user's source, unchanged. That gives
+//  us a fresh `public static <Name>` MethodInfo on the HMR-loaded type with
+//  the user's new implementation, and the swapper can `CreateDelegate` to it
 //  directly. No `__<name>_body_h<hash>` companion has to exist on the HMR
 //  side, which keeps HMR's emit pipeline free of any Roslyn dependency.
 //

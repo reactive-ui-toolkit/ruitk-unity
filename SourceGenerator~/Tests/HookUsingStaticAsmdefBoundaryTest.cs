@@ -20,7 +20,7 @@ public class HookUsingStaticAsmdefBoundaryTest
         var hooksContent = @"
 @namespace MyApp.EditorOnly
 
-hook useEditorOnlyValue() -> int {
+int useEditorOnlyValue() {
   var (v, _) = useState(42);
   return v;
 }
@@ -28,7 +28,7 @@ hook useEditorOnlyValue() -> int {
         var componentContent = @"
 @namespace MyApp.UI
 
-component RuntimeComp {
+VirtualNode RuntimeComp() {
   return (
     <VisualElement />
   );

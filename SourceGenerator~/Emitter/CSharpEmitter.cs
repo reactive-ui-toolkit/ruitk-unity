@@ -211,17 +211,12 @@ namespace Ruitk.SourceGenerator.Emitter
             L("using static Ruitk.Props.Typed.CssHelpers;");
             L("using static Ruitk.AssetHelpers;");
             L("using UColor = UnityEngine.Color;");
-            // NEW-MODE files (ES-modules campaign, M7): user + injected usings are emitted
-            // INSIDE the namespace block instead of here. File-keyed namespaces make every
-            // file stem a member of its folder namespace, and C# resolves enclosing-namespace
-            // MEMBERS before file-level using-aliases — so a file-level `using Theme =
-            // {ns}.__Exports;` silently loses to the sibling namespace `…Folder.Theme` (found
-            // live: every star-imported member ref broke with CS0234). A using directive
-            // INSIDE the namespace declaration wins that lookup. Legacy files keep the
-            // file-level position byte-identically.
-            if (_directives.UsesLegacySyntax)
-                foreach (var u in _directives.Usings)
-                    L($"using {u};");
+            // User + injected usings are emitted INSIDE the namespace block, not here.
+            // File-keyed namespaces make every file stem a member of its folder namespace,
+            // and C# resolves enclosing-namespace MEMBERS before file-level using-aliases —
+            // so a file-level `using Theme = {ns}.__Exports;` silently loses to the sibling
+            // namespace `…Folder.Theme` (found live: every star-imported member ref broke
+            // with CS0234). A using directive INSIDE the namespace declaration wins.
             // `using static StyleKeys` imports string constants (e.g. FlexDirection = "flexDirection")
             // that collide with identically-named enums/structs from UnityEngine.UIElements.
             // We cannot import UIElements wholesale. Instead, targeted aliases import only
@@ -256,8 +251,8 @@ namespace Ruitk.SourceGenerator.Emitter
             // -- Namespace + class --------------------------------------------
             L($"namespace {_directives.Namespace}");
             L("{");
-            // New-mode: user + injected usings INSIDE the namespace (see the note above).
-            if (!_directives.UsesLegacySyntax && !_directives.Usings.IsDefaultOrEmpty)
+            // User + injected usings INSIDE the namespace (see the note above).
+            if (!_directives.Usings.IsDefaultOrEmpty)
             {
                 foreach (var u in _directives.Usings)
                     L($"    using {Ruitk.Language.ImportScopeFacts.GlobalizeUsingPayload(u)};");
@@ -284,18 +279,14 @@ namespace Ruitk.SourceGenerator.Emitter
                 }
             }
 
-            // Accessibility (§6), GATED behind StrictImports for the additive-then-flip contract:
-            //   • flag OFF → always `public partial class` (byte-identical legacy output).
-            //   • flag ON  → `export` → public, else `internal`.
-            // Under strict this DOES emit an explicit `internal` for a non-exported component, so a
-            // companion `.cs` declaring `public partial class Foo` becomes CS0262, and a cross-asmdef
-            // reference becomes CS0122. That is the intended strict contract — expose across files only
-            // what you `export`; keep the companion `internal` or add `export`. (The prior comment here
-            // claimed CS0262 "was already true before this change" — that was wrong: pre-feature the
-            // generated part was always `public`, so a public companion was safe.)
+            // Accessibility (§6): `export` → public, else `internal`. This DOES emit an explicit
+            // `internal` for a non-exported component, so a companion `.cs` declaring
+            // `public partial class Foo` becomes CS0262, and a cross-asmdef reference becomes
+            // CS0122. That is the intended contract — expose across files only what you `export`;
+            // keep the companion `internal` or add `export`. The IsDefaultOrEmpty disjunct covers
+            // declaration-less parses (error recovery), which stay public.
             bool componentExported =
-                !UitkxFeatureFlags.StrictImports
-                || _directives.ComponentDeclarations.IsDefaultOrEmpty
+                _directives.ComponentDeclarations.IsDefaultOrEmpty
                 || _directives.ComponentDeclarations[0].IsExported;
             L($"    {(componentExported ? "public" : "internal")} partial class {_directives.ComponentName}");
             L("    {");
@@ -419,7 +410,11 @@ namespace Ruitk.SourceGenerator.Emitter
             {
                 foreach (var fp in _directives.FunctionParams)
                 {
-                    string propName = ToPropName(fp.Name);
+                    // The LOCAL keeps the source name (setup code references it,
+                    // underscore and all); the PROPERTY comes from PropSourceName so
+                    // a leading-underscore "deliberately unused" marker never renames
+                    // the public prop.
+                    string propName = ToPropName(fp.PropSourceName);
                     L($"{I3}var {fp.Name} = props.{propName};");
                 }
                 L("");
@@ -1855,10 +1850,11 @@ namespace Ruitk.SourceGenerator.Emitter
             L($"    public sealed class {className} : global::Ruitk.Core.IProps");
             L("    {");
 
-            // Properties
+            // Properties (named from PropSourceName: a leading-underscore param
+            // keeps its unprefixed public prop)
             foreach (var fp in fps)
             {
-                string propName = ToPropName(fp.Name);
+                string propName = ToPropName(fp.PropSourceName);
                 string def = string.IsNullOrWhiteSpace(fp.DefaultValue)
                     ? "default"
                     : fp.DefaultValue!;
@@ -1874,7 +1870,7 @@ namespace Ruitk.SourceGenerator.Emitter
             bool firstEq = true;
             foreach (var fp in fps)
             {
-                string propName = ToPropName(fp.Name);
+                string propName = ToPropName(fp.PropSourceName);
                 string conjunction = firstEq ? "            return " : "                && ";
                 firstEq = false;
                 L(
@@ -1897,7 +1893,7 @@ namespace Ruitk.SourceGenerator.Emitter
             L("                int hash = 17;");
             foreach (var fp in fps)
             {
-                string propName = ToPropName(fp.Name);
+                string propName = ToPropName(fp.PropSourceName);
                 L(
                     $"                hash = hash * 31 + global::System.Collections.Generic.EqualityComparer<{fp.Type}>.Default.GetHashCode({propName}!);"
                 );
@@ -3941,9 +3937,9 @@ namespace Ruitk.SourceGenerator.Emitter
         ///
         /// <para>This method is a pure function of its inputs and is the single
         /// entry point used by every emitter (<see cref="CSharpEmitter"/>,
-        /// <see cref="HookEmitter"/>, <see cref="ModuleEmitter"/>) so that
-        /// <c>module</c> / <c>hook</c> bodies receive the same path-rewrite as
-        /// component setup code and JSX attributes.</para>
+        /// <see cref="HookEmitter"/>, <see cref="ExportsEmitter"/>) so that
+        /// member bodies receive the same path-rewrite as component setup code
+        /// and JSX attributes.</para>
         /// </summary>
         // H-03: bare paths ("styles.uss", no "./" prefix) used to pass through
         // AS-IS (unresolved) here while the LSP analyzer resolved them

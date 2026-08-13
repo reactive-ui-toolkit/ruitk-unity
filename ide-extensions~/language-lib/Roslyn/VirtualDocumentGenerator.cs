@@ -230,32 +230,13 @@ namespace Ruitk.Language.Roslyn
         /// <param name="uitkxFilePath">
         /// Absolute path to the .uitkx file, written into <c>#line</c> directives.
         /// </param>
-        /// <summary>
-        /// Lower a file's <c>import</c> declarations to hidden using-static (hook containers) and
-        /// alias (modules) scaffold lines, so C# IntelliSense inside setup code resolves imported
-        /// symbols (import/export grammar §10). Resolves each specifier to its target file, parses it,
-        /// and mirrors the real emit's injection forms. Filesystem-reads the target; degrades silently
-        /// (no using emitted) when a target is unresolvable/unreadable.
-        /// </summary>
-        private static void AppendImportUsings(
-            VirtualDocBuilder b, DirectiveSet d, string uitkxFilePath, HashSet<string> seen)
-        {
-            // Single source of truth (ImportScopeFacts): hook using-statics + module/component
-            // aliases with the target's EFFECTIVE (path-derived, config-aware) namespace — the raw
-            // parsed namespace was wrong for every stamp-less file. Shared with the HMR compiler
-            // (via reflection) so IntelliSense, hot reload, and the build agree.
-            foreach (string payload in Ruitk.Language.ImportScopeFacts
-                         .ComputeInjectedUsingPayloads(d, uitkxFilePath))
-            {
-                if (seen.Add(payload))
-                    b.Scaffold($"using {payload};\n");
-            }
-        }
-
-        /// <summary>Same payloads as <see cref="AppendImportUsings"/> but emitted INSIDE the
-        /// namespace block (ES-modules campaign, M7): file-keyed namespaces make sibling file
-        /// stems enclosing-namespace members, which shadow FILE-level using-aliases — the editor
-        /// must resolve exactly like the build (whose emitters made the same move).</summary>
+        /// <summary>Lower a file's <c>import</c> declarations to the same injected-using
+        /// payloads the real emit produces (single source of truth: ImportScopeFacts, with the
+        /// target's EFFECTIVE namespace — shared with the SG and, via reflection, the HMR
+        /// compiler), emitted INSIDE the namespace block (ES-modules campaign, M7): file-keyed
+        /// namespaces make sibling file stems enclosing-namespace members, which shadow
+        /// FILE-level using-aliases — the editor must resolve exactly like the build. Degrades
+        /// silently (no using emitted) when a target is unresolvable/unreadable.</summary>
         private static void AppendImportUsingsInsideNamespace(
             VirtualDocBuilder b, DirectiveSet d, string uitkxFilePath, HashSet<string> seen)
         {
@@ -304,36 +285,18 @@ namespace Ruitk.Language.Roslyn
                 if (seen.Add(u))
                     b.Scaffold($"using {u};\n");
             }
-            // New-mode files get their own usings INSIDE the namespace block (globalized) via
+            // The file's own usings go INSIDE the namespace block (globalized) via
             // AppendImportUsingsInsideNamespace — emitting them here too would both diverge from
             // the build's resolution AND poison `seen` so the inside-namespace pass skips them.
-            if (d.UsesLegacySyntax)
-                foreach (var u in d.Usings)
-                {
-                    string trimmed = u.Trim();
-                    if (!string.IsNullOrEmpty(trimmed) && seen.Add(trimmed))
-                        b.Scaffold($"using {trimmed};\n");
-                }
-            // Import/export grammar (leg 3, §10): lower imports to the same using-static (hook
-            // containers) / alias (modules) lines the real emit produces, so C# IntelliSense inside
-            // setup code resolves imported hooks/modules. Scaffold-only (hidden preamble) → the
-            // length-preserving source map is unaffected.
-            // NEW-MODE files (ES-modules campaign): these payloads are emitted INSIDE the
-            // namespace block instead (mirror of the real emitters) — file-keyed namespaces make
-            // sibling file stems enclosing-namespace members, which shadow FILE-level
-            // using-aliases; the editor must resolve exactly like the build.
-            if (d.UsesLegacySyntax)
-                AppendImportUsings(b, d, uitkxFilePath, seen);
+            // Import payloads are emitted INSIDE the namespace block too (mirror of the real
+            // emitters) — the editor must resolve exactly like the build.
             // Static / alias usings that cannot go through the simple "using X;" path
             foreach (var line in s_extraUsingLines)
                 b.Scaffold(line + "\n");
             b.Scaffold("\n");
 
-            // -- Hook/module file dispatch ------------------------------------
-            if (!d.HookDeclarations.IsDefaultOrEmpty)
-                return GenerateHookDocument(b, parseResult, source, uitkxFilePath);
-            if (!d.ModuleDeclarations.IsDefaultOrEmpty)
-                return GenerateModuleDocument(b, parseResult, source, uitkxFilePath);
+            // (The legacy hook/module document dispatch was removed in the 0.16.0 legacy
+            // wave — member files scaffold through the __Exports shape below.)
 
             // -- Namespace + class header -------------------------------------
             string ns = DocumentNamespace(d, uitkxFilePath);
@@ -342,24 +305,21 @@ namespace Ruitk.Language.Roslyn
                 : "Component";
             string escapedPath = EscapePathForLineDirective(uitkxFilePath);
 
-            // -- New-mode __Exports scaffold (ES-modules campaign, U-02/M5) ----
+            // -- __Exports scaffold (ES-modules campaign, U-02/M5) ----
             // Plain member declarations (values/utils/hooks) live on the per-file __Exports
             // container in the real build; scaffold the same shape here — with mapped bodies so
             // IntelliSense/diagnostics work inside them — plus stub bridges for aliased/default
             // member imports. The component partial (below) sees them bare-name through the
-            // own-exports using scaffolded by AppendImportUsings' caller path (same namespace is
-            // NOT enough for static-class members).
-            bool hasMembers = !d.UsesLegacySyntax && !d.MemberDeclarations.IsDefaultOrEmpty;
-            var bridges = d.UsesLegacySyntax
-                ? (IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue)>)
-                    System.Array.Empty<(string, string?, string?, bool)>()
-                : ImportScopeFacts.ComputeImportedMemberBridges(d, uitkxFilePath);
+            // own-exports using scaffolded right below (same namespace is NOT enough for
+            // static-class members).
+            bool hasMembers = !d.MemberDeclarations.IsDefaultOrEmpty;
+            var bridges = ImportScopeFacts.ComputeImportedMemberBridges(d, uitkxFilePath);
             if (hasMembers || bridges.Count > 0)
             {
                 b.Scaffold($"namespace {ns}\n{{\n");
                 AppendImportUsingsInsideNamespace(b, d, uitkxFilePath, seen);
                 b.Scaffold($"    using static global::{ns}.__Exports;\n\n");
-                EmitExportsScaffold(b, d, bridges, escapedPath);
+                EmitExportsScaffold(b, d, bridges, escapedPath, source);
                 if (string.IsNullOrEmpty(d.ComponentName))
                 {
                     b.Scaffold("}\n");
@@ -373,8 +333,7 @@ namespace Ruitk.Language.Roslyn
             }
 
             b.Scaffold($"namespace {ns}\n{{\n");
-            if (!d.UsesLegacySyntax)
-                AppendImportUsingsInsideNamespace(b, d, uitkxFilePath, seen);
+            AppendImportUsingsInsideNamespace(b, d, uitkxFilePath, seen);
             b.Scaffold($"    partial class {className}\n    {{\n");
             b.Scaffold("#line hidden\n");
 
@@ -406,7 +365,7 @@ namespace Ruitk.Language.Roslyn
         {
             string? effective = EffectiveNamespace.Resolve(
                 d.HasExplicitNamespace, d.Namespace, uitkxFilePath,
-                fileKeyed: !d.UsesLegacySyntax);
+                fileKeyed: true);
             if (!string.IsNullOrEmpty(effective))
                 return effective!;
             return !string.IsNullOrEmpty(d.Namespace) ? d.Namespace! : "Ruitk.Generated";
@@ -423,8 +382,9 @@ namespace Ruitk.Language.Roslyn
         private static void EmitExportsScaffold(
             VirtualDocBuilder b,
             DirectiveSet d,
-            IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue)> bridges,
-            string escapedPath)
+            IReadOnlyList<(string Alias, string? ReturnType, string? ParamsText, bool IsValue, string? TypeParams)> bridges,
+            string escapedPath,
+            string source)
         {
             b.Scaffold("    static partial class __Exports\n    {\n");
             b.Scaffold("#line hidden\n");
@@ -439,7 +399,9 @@ namespace Ruitk.Language.Roslyn
                     {
                         string type = m.ReturnTypeText
                             ?? ImportScopeFacts.ExtractNewInitializerTypeName(m.BodyText) ?? "object";
-                        b.Scaffold($"        {access} static {type} {m.Name} = ");
+                        b.Scaffold($"        {access} static {type} ");
+                        EmitMemberName(b, m, source);
+                        b.Scaffold(" = ");
                         b.Scaffold($"\n#line {m.BodyStartLine} \"{escapedPath}\"\n");
                         b.Mapped(m.BodyText, m.BodyStartOffset, SourceRegionKind.ModuleBody, m.BodyStartLine);
                         b.Scaffold("\n#line hidden\n");
@@ -451,10 +413,13 @@ namespace Ruitk.Language.Roslyn
                         || string.IsNullOrEmpty(m.ReturnTypeText)
                         ? "void" : m.ReturnTypeText!;
                     string paramsText = m.ParamsText ?? string.Empty;
+                    string typeParams = m.TypeParamsText ?? string.Empty;
                     var kind = m.Kind == DeclKind.Hook ? SourceRegionKind.HookBody : SourceRegionKind.ModuleBody;
                     if (m.IsExpressionBodied)
                     {
-                        b.Scaffold($"        {access} static {ret} {m.Name}({paramsText}) => ");
+                        b.Scaffold($"        {access} static {ret} ");
+                        EmitMemberName(b, m, source);
+                        b.Scaffold($"{typeParams}({paramsText}) => ");
                         b.Scaffold($"\n#line {m.BodyStartLine} \"{escapedPath}\"\n");
                         b.Mapped(m.BodyText, m.BodyStartOffset, kind, m.BodyStartLine);
                         b.Scaffold("\n#line hidden\n");
@@ -462,7 +427,9 @@ namespace Ruitk.Language.Roslyn
                     }
                     else
                     {
-                        b.Scaffold($"        {access} static {ret} {m.Name}({paramsText})\n");
+                        b.Scaffold($"        {access} static {ret} ");
+                        EmitMemberName(b, m, source);
+                        b.Scaffold($"{typeParams}({paramsText})\n");
                         b.Scaffold("        {\n");
                         b.Scaffold($"#line {m.BodyStartLine} \"{escapedPath}\"\n");
                         b.Mapped(m.BodyText, m.BodyStartOffset, kind, m.BodyStartLine);
@@ -472,7 +439,7 @@ namespace Ruitk.Language.Roslyn
                 }
             }
 
-            foreach (var (alias, retType, paramsText, isValue) in bridges)
+            foreach (var (alias, retType, paramsText, isValue, bridgeTypeParams) in bridges)
             {
                 if (isValue)
                 {
@@ -483,136 +450,45 @@ namespace Ruitk.Language.Roslyn
                     || string.Equals(retType!.Trim(), "void", StringComparison.Ordinal)
                     ? "void" : retType!;
                 string bridgeBody = bridgeRet == "void" ? "{ }" : "=> default!;";
-                b.Scaffold($"        internal static {bridgeRet} {alias}({paramsText ?? string.Empty}) {bridgeBody}\n");
+                b.Scaffold($"        internal static {bridgeRet} {alias}{bridgeTypeParams ?? string.Empty}({paramsText ?? string.Empty}) {bridgeBody}\n");
             }
 
             b.Scaffold("    }\n\n");
         }
 
-        // -- Hook document -----------------------------------------------------
-
         /// <summary>
-        /// Generates a virtual C# document for a .uitkx file containing hook
-        /// declarations. Each hook becomes a method inside a static container
-        /// class with hook stubs for IntelliSense.
+        /// Emits a member declaration's NAME token. The name is user-authored source
+        /// text, not scaffold — mapping it makes Roslyn authoritative for cursor-on-name
+        /// (semantic tokens, definition, references, rename) instead of falling to the
+        /// text-scan/TextMate heuristics. Emitted bytes are identical on both paths;
+        /// the position is verified against the source before mapping so a stale
+        /// <c>NameColumn</c> degrades to scaffold rather than mapping a wrong span.
         /// </summary>
-        private VirtualDocument GenerateHookDocument(
-            VirtualDocBuilder b,
-            ParseResult parseResult,
-            string source,
-            string uitkxFilePath
-        )
+        private static void EmitMemberName(VirtualDocBuilder b, MemberDeclaration m, string source)
         {
-            var d = parseResult.Directives;
-            string ns = DocumentNamespace(d, uitkxFilePath);
-            string escapedPath = EscapePathForLineDirective(uitkxFilePath);
-
-            // Derive class name same as HookEmitter - take the part before
-            // the first dot so any middle segment (.hooks, .style, ...) is ignored.
-            string fileName = System.IO.Path.GetFileNameWithoutExtension(uitkxFilePath);
-            int dot = fileName.IndexOf('.');
-            if (dot > 0)
-                fileName = fileName.Substring(0, dot);
-            if (fileName.Length > 0 && char.IsLower(fileName[0]))
-                fileName = char.ToUpper(fileName[0]) + fileName.Substring(1);
-            string containerClass = fileName + "Hooks";
-
-            b.Scaffold($"namespace {ns}\n{{\n");
-            b.Scaffold($"    static partial class {containerClass}\n    {{\n");
-            b.Scaffold("#line hidden\n");
-
-            // Ref<T> resolves to the workspace-shared canonical type
-            // (see component-document scaffold for details).
-
-            // -- Hook stubs (same as component stubs) --------------------------
-            // Sourced from Ruitk.Core.HookRegistry so the IDE stubs
-            // stay byte-identical with the (former) hand-maintained block here
-            // and the matching instance-form block emitted below.
-            b.Scaffold(global::Ruitk.Core.HookRegistry.GenerateVirtualDocStubs(staticForm: true));
-
-            // -- Emit each hook as a method ------------------------------------
-            foreach (var hook in d.HookDeclarations)
+            if (m.DeclarationLine > 0 && m.NameColumn >= 0)
             {
-                string genericSuffix = hook.GenericParams ?? string.Empty;
-                string returnType = string.IsNullOrEmpty(hook.ReturnType)
-                    ? "void"
-                    : hook.ReturnType!;
-
-                // Build parameter list
-                var paramSb = new StringBuilder();
-                if (!hook.Params.IsDefaultOrEmpty)
+                int offset = 0;
+                for (int line = 1; line < m.DeclarationLine && offset >= 0; line++)
                 {
-                    for (int pi = 0; pi < hook.Params.Length; pi++)
+                    offset = source.IndexOf('\n', offset);
+                    if (offset >= 0)
+                        offset++;
+                }
+                if (offset >= 0)
+                {
+                    int nameOffset = offset + m.NameColumn;
+                    if (nameOffset + m.Name.Length <= source.Length
+                        && string.CompareOrdinal(source, nameOffset, m.Name, 0, m.Name.Length) == 0)
                     {
-                        if (pi > 0)
-                            paramSb.Append(", ");
-                        var p = hook.Params[pi];
-                        paramSb.Append(p.Type).Append(' ').Append(p.Name);
-                        if (p.DefaultValue != null)
-                            paramSb.Append(" = ").Append(p.DefaultValue);
+                        b.Mapped(m.Name, nameOffset,
+                            m.Kind == DeclKind.Hook ? SourceRegionKind.HookBody : SourceRegionKind.ModuleBody,
+                            m.DeclarationLine);
+                        return;
                     }
                 }
-
-                b.Scaffold(
-                    $"        public static {returnType} {hook.Name}{genericSuffix}({paramSb})\n"
-                );
-                b.Scaffold("        {\n");
-                b.Scaffold($"#line {hook.BodyStartLine} \"{escapedPath}\"\n");
-
-                // Map the body text to source for IntelliSense
-                b.Mapped(
-                    hook.Body,
-                    hook.BodyStartOffset,
-                    SourceRegionKind.HookBody,
-                    hook.BodyStartLine
-                );
-
-                b.Scaffold("\n#line hidden\n");
-                b.Scaffold("        }\n\n");
             }
-
-            b.Scaffold("    }\n}\n");
-            return b.Build(uitkxFilePath);
-        }
-
-        // -- Module document ---------------------------------------------------
-
-        /// <summary>
-        /// Generates a virtual C# document for a .uitkx file containing module
-        /// declarations. Each module becomes a partial class with its body
-        /// source-mapped for IntelliSense.
-        /// </summary>
-        private VirtualDocument GenerateModuleDocument(
-            VirtualDocBuilder b,
-            ParseResult parseResult,
-            string source,
-            string uitkxFilePath
-        )
-        {
-            var d = parseResult.Directives;
-            string ns = DocumentNamespace(d, uitkxFilePath);
-            string escapedPath = EscapePathForLineDirective(uitkxFilePath);
-
-            b.Scaffold($"namespace {ns}\n{{\n");
-
-            foreach (var module in d.ModuleDeclarations)
-            {
-                b.Scaffold($"    partial class {module.Name}\n    {{\n");
-                b.Scaffold($"#line {module.BodyStartLine} \"{escapedPath}\"\n");
-
-                b.Mapped(
-                    module.Body,
-                    module.BodyStartOffset,
-                    SourceRegionKind.ModuleBody,
-                    module.BodyStartLine
-                );
-
-                b.Scaffold("\n#line hidden\n");
-                b.Scaffold("    }\n\n");
-            }
-
-            b.Scaffold("}\n");
-            return b.Build(uitkxFilePath);
+            b.Scaffold(m.Name);
         }
 
         // -- Function-style component ------------------------------------------

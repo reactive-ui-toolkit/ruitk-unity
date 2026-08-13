@@ -21,13 +21,21 @@ namespace Ruitk.Editor
     ///
     /// HOW IT WORKS (fast, incremental — no CleanBuildCache stall)
     /// ──────────────────────────────────────────────────────────
-    /// A .uitkx file is an AdditionalFile of whatever assembly its folder's .asmdef
-    /// defines (e.g. Samples/*.uitkx → Ruitk.Samples; .uitkx with no ancestor
+    /// A .uitkx file belongs to whatever assembly its folder's .asmdef defines
+    /// (e.g. Samples/*.uitkx → Ruitk.Samples; .uitkx with no ancestor
     /// .asmdef → the default Assembly-CSharp). To make THAT assembly recompile we
     /// write a tiny trigger .cs into its own folder and bump a value inside it. A real
     /// script change is exactly what a manual .cs edit does: Unity recompiles just that
     /// one assembly INCREMENTALLY (the analyzer/generator stays warm), and a genuine
     /// recompile re-reads the assembly's .uitkx files fresh from disk.
+    ///
+    /// The ancestor-asmdef walk covers Assets/ AND writable package layouts (embedded
+    /// Packages/, local file: installs). It must: an Assets/-only walk classified every
+    /// package-resident .uitkx as Assembly-CSharp, dirtied the wrong assembly, and left
+    /// the package assembly's generated output stale on every edit (the field symptom:
+    /// edit a sample in an embedded package, Unity compiles, Play shows the old UI).
+    /// Immutable packages are excluded — read-only content cannot change, and the
+    /// package cache must never be written to.
     ///
     /// This replaced two earlier approaches, both wrong:
     ///   • A single trigger .cs in Assembly-CSharp (the shipped behavior) dirties only
@@ -131,12 +139,13 @@ namespace Ruitk.Editor
         {
             try
             {
-                string projectRoot = Directory.GetParent(Application.dataPath).FullName;
-                string absDir = Path.Combine(projectRoot, folderAssetPath.Replace('/', Path.DirectorySeparatorChar));
+                string absDir = ResolveAssetFolderAbsolute(folderAssetPath);
+                if (absDir == null)
+                    return; // immutable package — never write into the cache
                 if (!Directory.Exists(absDir))
                 {
                     if (!createIfMissing)
-                        return; // read-only package or folder gone — nothing to do
+                        return; // folder gone — nothing to do
                     Directory.CreateDirectory(absDir);
                 }
 
@@ -172,24 +181,23 @@ namespace Ruitk.Editor
         /// .asmdef (i.e. the root folder of the assembly that owns
         /// <paramref name="uitkxAssetPath"/>), or <c>null</c> when the file belongs to
         /// the default assembly (no .asmdef up to the Assets root → Assembly-CSharp).
-        /// Only Assets/-rooted paths are handled; a .uitkx inside a read-only UPM
-        /// package returns null and falls back to the default-assembly trigger.
+        /// Handles both <c>Assets/</c>-rooted paths and WRITABLE package layouts
+        /// (embedded <c>Packages/…</c> and local <c>file:</c> installs, resolved via
+        /// <see cref="UnityEditor.PackageManager.PackageInfo"/>) — an Assets/-only walk
+        /// silently classified every package-resident .uitkx as Assembly-CSharp, so the
+        /// trigger dirtied the wrong assembly and edits produced STALE generated output
+        /// until an unrelated .cs change. A .uitkx inside an IMMUTABLE package returns
+        /// null (its content cannot change, and the cache must never be written to).
         /// </summary>
         private static string FindOwningAsmdefFolder(string uitkxAssetPath)
         {
-            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
             string dir = Path.GetDirectoryName(uitkxAssetPath)?.Replace('\\', '/');
 
-            while (
-                !string.IsNullOrEmpty(dir)
-                && (
-                    dir.Equals("Assets", StringComparison.OrdinalIgnoreCase)
-                    || dir.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)
-                )
-            )
+            while (!string.IsNullOrEmpty(dir) && IsWithinAsmdefWalkRoot(dir))
             {
-                string absDir = Path.Combine(projectRoot, dir.Replace('/', Path.DirectorySeparatorChar));
-                if (Directory.Exists(absDir)
+                string absDir = ResolveAssetFolderAbsolute(dir);
+                if (absDir != null
+                    && Directory.Exists(absDir)
                     && Directory.GetFiles(absDir, "*.asmdef", SearchOption.TopDirectoryOnly).Length > 0)
                 {
                     return dir;
@@ -198,6 +206,50 @@ namespace Ruitk.Editor
                 dir = slash > 0 ? dir.Substring(0, slash) : null;
             }
             return null;
+        }
+
+        /// <summary>
+        /// True while the ancestor walk is still inside a folder that can own an
+        /// .asmdef: anywhere under (or at) <c>Assets</c>, or inside a package
+        /// (<c>Packages/&lt;id&gt;</c> and below — the package root itself may hold the
+        /// asmdef; the bare <c>Packages</c> folder cannot).
+        /// </summary>
+        private static bool IsWithinAsmdefWalkRoot(string dir)
+        {
+            return dir.Equals("Assets", StringComparison.OrdinalIgnoreCase)
+                || dir.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)
+                || (dir.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase)
+                    && dir.Length > "Packages/".Length);
+        }
+
+        /// <summary>
+        /// Project-relative asset folder → absolute filesystem folder.
+        /// <c>Assets/…</c> joins onto the project root. <c>Packages/…</c> resolves
+        /// through <see cref="UnityEditor.PackageManager.PackageInfo"/> so embedded and
+        /// local (<c>file:</c>) layouts map to their real location; immutable package
+        /// sources return <c>null</c> — their content is read-only, so no trigger may
+        /// (or needs to) be written there.
+        /// </summary>
+        private static string ResolveAssetFolderAbsolute(string folderAssetPath)
+        {
+            if (folderAssetPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                var package = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(folderAssetPath);
+                if (package == null
+                    || (package.source != UnityEditor.PackageManager.PackageSource.Embedded
+                        && package.source != UnityEditor.PackageManager.PackageSource.Local))
+                {
+                    return null;
+                }
+                string rel = folderAssetPath.Length > package.assetPath.Length
+                    ? folderAssetPath.Substring(package.assetPath.Length).TrimStart('/')
+                    : string.Empty;
+                return Path.GetFullPath(Path.Combine(
+                    package.resolvedPath, rel.Replace('/', Path.DirectorySeparatorChar)));
+            }
+
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            return Path.Combine(projectRoot, folderAssetPath.Replace('/', Path.DirectorySeparatorChar));
         }
     }
 }

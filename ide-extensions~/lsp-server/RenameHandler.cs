@@ -187,12 +187,12 @@ public sealed class RenameHandler : IRenameHandler, IPrepareRenameHandler
                 }
             }
 
-            // Hook declaration: `hook useMyHook() -> ...`
-            if (!parseResult.Directives.HookDeclarations.IsDefaultOrEmpty)
+            // Hook member declaration: `[export] <ret> useMyHook(...)`
+            if (!parseResult.Directives.MemberDeclarations.IsDefaultOrEmpty)
             {
-                foreach (var hook in parseResult.Directives.HookDeclarations)
+                foreach (var member in parseResult.Directives.MemberDeclarations)
                 {
-                    if (cWord == hook.Name)
+                    if (member.Kind == DeclKind.Hook && cWord == member.Name)
                     {
                         ServerLog.Log($"[Rename] PrepareRename (hook): '{cWord}'");
                         return new RangeOrPlaceholderRange(
@@ -323,22 +323,20 @@ public sealed class RenameHandler : IRenameHandler, IPrepareRenameHandler
                         }
 
                         // If the symbol is a method matching a peer hook
-                        // declaration, also rename the hook keyword line
+                        // declaration, also rename the hook declaration line
                         // and call sites across .uitkx files.
                         // Skip the current file — Roslyn already renamed call sites there.
+                        // Anchored on the ORIGIN file's own directory, not on a peer
+                        // virtual document: peer vdocs only exist for files that were
+                        // opened/ensured, and gating on them made the cross-file half
+                        // of the rename depend on which tabs happened to be open.
                         if (symbol is IMethodSymbol)
                         {
-                            var peerVDocs = _roslynHost.GetPeerVirtualDocuments(localPath);
-                            if (peerVDocs != null && peerVDocs.Count > 0)
-                            {
-                                // Pick any peer path to anchor the directory scan
-                                var firstPeerPath = peerVDocs.Values.First().PeerPath;
-                                ServerLog.Log(
-                                    $"[Rename] Hook method rename from consumer: '{symbol.Name}' → '{newName}', scanning peers from {Path.GetFileName(firstPeerPath)}");
-                                CollectHookRenameEdits(
-                                    firstPeerPath, symbol.Name, newName, changes,
-                                    skipFilePath: localPath);
-                            }
+                            ServerLog.Log(
+                                $"[Rename] Hook method rename: '{symbol.Name}' → '{newName}', scanning same-dir peers");
+                            CollectHookRenameEdits(
+                                localPath, symbol.Name, newName, changes,
+                                skipFilePath: localPath);
                         }
 
                         // If the symbol is a field/property (e.g. module style),
@@ -453,11 +451,11 @@ public sealed class RenameHandler : IRenameHandler, IPrepareRenameHandler
             }
 
             // ── Hook-name path ───────────────────────────────────────────
-            if (!parseResult.Directives.HookDeclarations.IsDefaultOrEmpty)
+            if (!parseResult.Directives.MemberDeclarations.IsDefaultOrEmpty)
             {
-                foreach (var hook in parseResult.Directives.HookDeclarations)
+                foreach (var member in parseResult.Directives.MemberDeclarations)
                 {
-                    if (word == hook.Name)
+                    if (member.Kind == DeclKind.Hook && word == member.Name)
                     {
                         ServerLog.Log($"[Rename] Hook rename: '{word}' → '{newName}'");
                         CollectHookRenameEdits(localPath, word, newName, changes);
@@ -1256,16 +1254,15 @@ public sealed class RenameHandler : IRenameHandler, IPrepareRenameHandler
         Dictionary<DocumentUri, IEnumerable<TextEdit>> changes
     )
     {
-        // Rename the hook declaration head (only in the declaring file), BOTH grammars
-        // (ES-modules campaign, M5): `hook oldName(` (legacy wrapper) and the plain form
-        // `[export] <Type> oldName(`. The plain form requires a REAL type token before the
-        // name (audit B2 — the previous whitespace-tolerant lookbehind let indented
-        // statement-shaped `oldName(…)` lines match), and declaration matches get the same
-        // comment/string guard the call pattern has, so occurrences inside block comments
-        // and multi-line verbatim strings stay untouched.
+        // Rename the plain declaration head `[export] <Type> oldName[<T>](`. It requires
+        // a REAL type token before the name (audit B2 — the previous whitespace-tolerant
+        // lookbehind let indented statement-shaped `oldName(…)` lines match), and
+        // declaration matches get the same comment/string guard the call pattern has, so
+        // occurrences inside block comments and multi-line verbatim strings stay untouched.
+        // The `)` alternative is the wrapped tuple-return continuation line the formatter
+        // emits for over-width heads (`) useX(…` at column 0).
         var hookDeclPattern = new Regex(
-            $@"^(?:export\s+)?(?:hook\s+(?<name>{Regex.Escape(oldName)})\b"
-            + $@"|{LspHelpers.DeclTypePattern}\s+(?<name>{Regex.Escape(oldName)})(?=\s*\())",
+            $@"^(?:(?:export\s+)?{LspHelpers.DeclTypePattern}\s+|\)\s*)(?<name>{Regex.Escape(oldName)})(?=\s*(?:<[\w,\s]+>\s*)?\()",
             RegexOptions.CultureInvariant | RegexOptions.Multiline
         );
         foreach (Match m in hookDeclPattern.Matches(fileText))
@@ -1281,20 +1278,15 @@ public sealed class RenameHandler : IRenameHandler, IPrepareRenameHandler
             });
         }
 
-        // Rename `oldName(` call sites — whole-word followed by `(`
-        // (avoids renaming substrings of other identifiers)
+        // Rename `oldName(` / `oldName<T>(` call sites — whole-word followed by an
+        // (optionally generic) argument list; a re-match on the declaration head is
+        // range-deduplicated by AddEdit.
         var callPattern = new Regex(
-            $@"\b{Regex.Escape(oldName)}(?=\s*\()",
+            $@"\b{Regex.Escape(oldName)}(?=\s*(?:<[\w,\s]+>\s*)?\()",
             RegexOptions.CultureInvariant
         );
         foreach (Match m in callPattern.Matches(fileText))
         {
-            // Skip if this is the hook declaration itself (already handled above)
-            int lineStart = fileText.LastIndexOf('\n', Math.Max(0, m.Index - 1)) + 1;
-            var linePrefix = fileText.Substring(lineStart, m.Index - lineStart).TrimStart();
-            if (linePrefix.StartsWith("hook ", StringComparison.Ordinal))
-                continue;
-
             // U-38: a plain regex scan renamed `oldName(` occurrences inside comments
             // and strings too (e.g. `// call useCounter() to see`) — token-boundary +
             // comment/string awareness matches the U-10 fix's semantics.

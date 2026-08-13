@@ -1,0 +1,40 @@
+export Style Container = new Style {
+  (StyleKeys.Display, "flex"),
+  (StyleKeys.FlexGrow, 1f),
+  (StyleKeys.FlexDirection, "column"),
+  (StyleKeys.JustifyContent, "center"),
+  (StyleKeys.AlignItems, "center"),
+  (StyleKeys.BackgroundColor, new Color(0.35f, 0.55f, 0.95f, 1f)),
+};
+
+export Style Title = new Style {
+  (StyleKeys.FontSize, 48f),
+  (StyleKeys.Color, Color.white),
+  (StyleKeys.MarginBottom, 8f),
+};
+
+export Style Subtitle = new Style {
+  (StyleKeys.FontSize, 18f),
+  (StyleKeys.Color, new Color(1f, 1f, 1f, 0.7f)),
+  (StyleKeys.MarginBottom, 40f),
+};
+
+export Style MenuBox = new Style {
+  (StyleKeys.Display, "flex"),
+  (StyleKeys.FlexDirection, "column"),
+  (StyleKeys.AlignItems, "center"),
+  (StyleKeys.Padding, 24f),
+  (StyleKeys.BackgroundColor, new Color(0f, 0f, 0f, 0.7f)),
+  (StyleKeys.BorderRadius, 8f),
+};
+
+export Style MenuButton = new Style {
+  (StyleKeys.Width, 200f),
+  (StyleKeys.Height, 40f),
+  (StyleKeys.FontSize, 18f),
+  (StyleKeys.MarginTop, 8f),
+  (StyleKeys.Color, Color.white),
+  (StyleKeys.BackgroundColor, new Color(0.2f, 0.2f, 0.2f, 1f)),
+  (StyleKeys.BorderRadius, 4f),
+  (StyleKeys.BorderWidth, 0f),
+};

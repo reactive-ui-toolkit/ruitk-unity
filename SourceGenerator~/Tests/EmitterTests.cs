@@ -12,7 +12,7 @@ public class EmitterTests
 {
     /// Wraps markup in a minimal function-style component for test convenience.
     private static string Wrap(string markup) =>
-        "component MyComp {\n  return (\n" + markup + "\n  );\n}";
+        "VirtualNode MyComp() {\n  return (\n" + markup + "\n  );\n}";
 
     // ── Element emission ──────────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ public class EmitterTests
     [Fact]
     public void MultiComponent_BothPartialClassesEmitted()
     {
-        var src = "component First {\n  return (<Box />);\n}\ncomponent Second {\n  return (<Label text=\"x\" />);\n}";
+        var src = "VirtualNode First() {\n  return (<Box />);\n}\nVirtualNode Second() {\n  return (<Label text=\"x\" />);\n}";
         var result = GeneratorTestHelper.Run(src);
 
         Assert.True(result.SourceWasProduced);
@@ -77,7 +77,7 @@ public class EmitterTests
     [Fact]
     public void MixedComponentAndHook_BothEmitted()
     {
-        var src = "component Screen {\n  var c = useLocal();\n  return (<Box />);\n}\nhook useLocal() {\n  return 0;\n}";
+        var src = "VirtualNode Screen() {\n  var c = useLocal();\n  return (<Box />);\n}\nvoid useLocal() {\n  return 0;\n}";
         var result = GeneratorTestHelper.Run(src);
 
         Assert.True(result.SourceWasProduced);
@@ -92,7 +92,7 @@ public class EmitterTests
         // Two `component Foo` in one file would emit duplicate partial classes/members
         // (CS0111/CS0101). UITKX0113 flags it and the duplicate is skipped so the
         // surviving output is still syntactically valid.
-        var src = "component Foo {\n  return (<Box />);\n}\ncomponent Foo {\n  return (<Label text=\"x\" />);\n}";
+        var src = "VirtualNode Foo() {\n  return (<Box />);\n}\nVirtualNode Foo() {\n  return (<Label text=\"x\" />);\n}";
         var result = GeneratorTestHelper.Run(src);
 
         Assert.Contains(result.Diagnostics, d => d.Id == "UITKX0113");
@@ -107,7 +107,7 @@ public class EmitterTests
     {
         // Card references its same-file sibling CardList. Both must be registered as
         // peers, else CardList resolves as unknown → false UITKX0008.
-        var src = "component CardList {\n  return (<Label text=\"x\" />);\n}\ncomponent Card {\n  return (<CardList />);\n}";
+        var src = "VirtualNode CardList() {\n  return (<Label text=\"x\" />);\n}\nVirtualNode Card() {\n  return (<CardList />);\n}";
         var result = GeneratorTestHelper.Run(src);
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "UITKX0008");
@@ -121,9 +121,9 @@ public class EmitterTests
         // would, without index-prefixed hints, collide CASE-INSENSITIVELY with the
         // inline-hooks section's "inlinehooks" hint (a duplicate hint throws during
         // generation). Index-prefixed labels ("c2_Inlinehooks") keep them disjoint.
-        var src = "component Screen {\n  var c = useLocal();\n  return (<Box />);\n}\n"
-            + "hook useLocal() {\n  return 0;\n}\n"
-            + "component Inlinehooks {\n  return (<Label text=\"x\" />);\n}";
+        var src = "VirtualNode Screen() {\n  var c = useLocal();\n  return (<Box />);\n}\n"
+            + "void useLocal() {\n  return 0;\n}\n"
+            + "VirtualNode Inlinehooks() {\n  return (<Label text=\"x\" />);\n}";
         var result = GeneratorTestHelper.Run(src);
 
         Assert.True(result.SourceWasProduced);
@@ -134,16 +134,15 @@ public class EmitterTests
     [Fact]
     public void HookAndModuleOnlyFile_EmitsSeparateValidUnits()
     {
-        // A file with a hook AND a module but NO component takes the short-circuit
-        // path, which used to concatenate the two units → CS1529. Each must now be
-        // its own valid compilation unit.
-        var src = "hook useThing() {\n  return 1;\n}\nmodule Helpers {\n  public const int Gap = 4;\n}";
+        // A member-only file (hook + value, no component) takes the short-circuit
+        // path and emits one valid __Exports unit.
+        var src = "void useThing() {\n}\nexport int Gap = 4;\n";
         var result = GeneratorTestHelper.Run(src);
 
         Assert.True(result.SourceWasProduced);
         var syntaxErrors = result.SyntaxErrors();
         Assert.True(syntaxErrors.IsEmpty,
-            "Hook+module file must emit valid units; got: "
+            "Member-only file must emit valid units; got: "
                 + string.Join("; ", syntaxErrors.Select(d => d.ToString())));
         Assert.Contains(result.AllSources, s => s.Text.Contains("useThing"));
         Assert.Contains(result.AllSources, s => s.Text.Contains("Gap = 4"));
@@ -157,9 +156,9 @@ public class EmitterTests
         // sections' `using` directives followed a namespace. Now each section is
         // its own compilation unit; all must parse clean.
         var src =
-            "component Screen {\n  var c = useLocal();\n  return (<Box />);\n}\n"
-            + "hook useLocal() {\n  return 0;\n}\n"
-            + "module Helpers {\n  public const int Gap = 4;\n}";
+            "VirtualNode Screen() {\n  var c = useLocal();\n  return (<Box />);\n}\n"
+            + "void useLocal() {\n}\n"
+            + "export int Gap = 4;\n";
         var result = GeneratorTestHelper.Run(src);
 
         Assert.True(result.SourceWasProduced);
@@ -167,8 +166,8 @@ public class EmitterTests
         Assert.True(syntaxErrors.IsEmpty,
             "Mixed-decl emit must be syntactically valid; got: "
                 + string.Join("; ", syntaxErrors.Select(d => d.ToString())));
-        // Three distinct units: component (primary) + inline hooks + inline modules.
-        Assert.True(result.AllSources.Length >= 3, "Expected component + hooks + modules units");
+        // Two distinct units: the component (primary) + the per-file __Exports.
+        Assert.True(result.AllSources.Length >= 2, "Expected component + __Exports units");
     }
 
     // ── Accessibility (§6): export → public, else internal ────────────────────
@@ -176,69 +175,20 @@ public class EmitterTests
     [Fact]
     public void ExportedComponent_IsPublic()
     {
-        var result = GeneratorTestHelper.Run("export component Foo {\n  return (<Box />);\n}");
+        var result = GeneratorTestHelper.Run("export VirtualNode Foo() {\n  return (<Box />);\n}");
         Assert.True(result.SourceContains("public partial class Foo"), "Expected public for exported component");
     }
 
     [Fact]
     public void NonExportedComponent_IsInternal()
     {
-        var result = GeneratorTestHelper.Run("component Foo {\n  return (<Box />);\n}");
+        var result = GeneratorTestHelper.Run("VirtualNode Foo() {\n  return (<Box />);\n}");
         Assert.True(result.SourceContains("internal partial class Foo"), "Expected internal for non-exported component");
     }
 
-    [Fact]
-    public void ExportedModule_IsPublic()
-    {
-        var result = GeneratorTestHelper.Run("export module Styles {\n  public const int Gap = 4;\n}");
-        Assert.True(result.SourceContains("public partial class Styles"), "Expected public for exported module");
-    }
-
-    [Fact]
-    public void NonExportedModule_IsInternal()
-    {
-        var result = GeneratorTestHelper.Run("module Styles {\n  public const int Gap = 4;\n}");
-        Assert.True(result.SourceContains("internal partial class Styles"), "Expected internal for non-exported module");
-    }
-
-    [Fact]
-    public void ModuleMergingComponent_EmitsNoAccessModifier()
-    {
-        // A module whose name matches a component in the same file MERGES into that
-        // component's partial. The component partial is the accessibility authority;
-        // the module part must emit NO modifier, else the two parts would disagree
-        // (CS0262). Component is exported here → `public partial class Foo`; the
-        // module part must be a bare `    partial class Foo` (4-space indent, no
-        // `public`/`internal` prefix — which the component's `    public partial …`
-        // can never match).
-        var src = "export component Foo {\n  return (<Box />);\n}\nexport module Foo {\n  public const int Gap = 4;\n}";
-        var result = GeneratorTestHelper.Run(src);
-
-        Assert.True(result.SourceWasProduced);
-        // Component partial (primary unit) carries the public modifier.
-        Assert.True(result.SourceContains("public partial class Foo"), "Component partial should carry the public modifier");
-        // Module part is a separate compilation unit (ExtraSources) that merges as a
-        // partial. It must emit NO access modifier (4-space indent, bare `partial`),
-        // else the two parts would conflict (CS0262). Search across all units.
-        var moduleUnit = result.AllSources.Single(s => s.Text.Contains("Gap = 4"));
-        Assert.Contains("    partial class Foo", moduleUnit.Text);
-        Assert.DoesNotContain("internal partial class Foo", moduleUnit.Text);
-        Assert.DoesNotContain("public partial class Foo", moduleUnit.Text);
-        // All emitted units are syntactically valid.
-        Assert.Empty(result.SyntaxErrors());
-    }
-
-    [Fact]
-    public void ExportMismatch_ComponentVsMergingModule_RaisesUitkx2311()
-    {
-        // component is exported, the same-named merging module is NOT → the parts
-        // disagree on exportedness, which would flip the merged type's accessibility
-        // depending on emit order. UITKX2311 flags the ambiguity at compile time.
-        var src = "export component Foo {\n  return (<Box />);\n}\nmodule Foo {\n  public const int Gap = 4;\n}";
-        var result = GeneratorTestHelper.Run(src);
-
-        Assert.Contains(result.Diagnostics, d => d.Id == "UITKX2311");
-    }
+    // (The module-accessibility and companion-merge tests died with the legacy module
+    // grammar in the 0.16.0 removal wave — __Exports accessibility is pinned by
+    // ExportsEmitterTests, and companion partial-class merging no longer exists.)
 
     [Fact]
     public void HookFamilyKey_ImportedHook_ProducerAndConsumerAgreeOnQualifiedKey()
@@ -248,16 +198,17 @@ public class EmitterTests
         // in its customHookFamilyKeys — the runtime matches them by ordinal string equality.
         var files = new[]
         {
-            ("Counter.hooks.uitkx", "export hook useCounter() {\n  return 0;\n}"),
+            ("Counter.hooks.uitkx", "export void useCounter() {\n  return 0;\n}"),
             ("Screen.uitkx",
                 "import { useCounter } from \"./Counter.hooks\"\n"
-                + "export component Screen {\n  var c = useCounter();\n  return (<Box />);\n}"),
+                + "export VirtualNode Screen() {\n  var c = useCounter();\n  return (<Box />);\n}"),
         };
         var result = GeneratorTestHelper.RunMultiple(files, primaryFileName: "Screen.uitkx");
 
         // No asmdef/project-root in the test temp dir → both files fall back to the default
-        // namespace; container = DeriveContainerClassName("Counter.hooks") = "CounterHooks".
-        const string expectedKey = "Ruitk.FunctionStyle.CounterHooks::useCounter";
+        // namespace; the container is the per-file __Exports (0.16.0 — the legacy
+        // {Stem}Hooks container is gone).
+        const string expectedKey = "Ruitk.FunctionStyle.__Exports::useCounter";
 
         var hookUnit = result.AllSources.Single(s => s.Text.Contains("RegisterHook("));
         Assert.Contains($"RegisterHook(\"{expectedKey}\"", hookUnit.Text);
@@ -275,48 +226,18 @@ public class EmitterTests
         // A component and the hook it calls in the SAME file (mixed-decl): the consumer key
         // must qualify against the file's own namespace + container, matching the producer.
         var src =
-            "component Screen {\n  var c = useLocal();\n  return (<Box />);\n}\n"
-            + "hook useLocal() {\n  return 0;\n}";
+            "VirtualNode Screen() {\n  var c = useLocal();\n  return (<Box />);\n}\n"
+            + "void useLocal() {\n  return 0;\n}";
         var result = GeneratorTestHelper.Run(src, fileName: "Panel.uitkx");
 
-        const string expectedKey = "Ruitk.FunctionStyle.PanelHooks::useLocal";
+        const string expectedKey = "Ruitk.FunctionStyle.__Exports::useLocal";
         Assert.Contains(result.AllSources, s => s.Text.Contains($"RegisterHook(\"{expectedKey}\""));
         Assert.Contains(result.AllSources, s => s.Text.Contains("class Screen") && s.Text.Contains(expectedKey));
         Assert.Empty(result.SyntaxErrors());
     }
 
-    [Fact]
-    public void CrossFileCompanionModule_DefersAccessibilityToComponent_NoCS0262Modifier()
-    {
-        // The common companion pattern: a component in one file + a same-named module in a
-        // SIBLING file (same effective namespace) become partials of ONE type. A non-exported
-        // component (internal) + an exported module (public) would be conflicting explicit
-        // modifiers → CS0262. The module must defer to the component (emit no modifier).
-        var files = new[]
-        {
-            ("SettingsPage.uitkx", "component SettingsPage {\n  return (<Box />);\n}"),
-            ("SettingsPageStyle.uitkx", "export module SettingsPage {\n  public const int Gap = 4;\n}"),
-        };
-        var result = GeneratorTestHelper.RunMultiple(files, primaryFileName: "SettingsPageStyle.uitkx");
-
-        var moduleUnit = result.AllSources.Single(s => s.Text.Contains("Gap = 4"));
-        // Module part emits NO access modifier (component is the authority) — not the
-        // `public` its own `export` would otherwise give, which would clash with the
-        // component's `internal`.
-        Assert.Contains("    partial class SettingsPage", moduleUnit.Text);
-        Assert.DoesNotContain("public partial class SettingsPage", moduleUnit.Text);
-        Assert.DoesNotContain("internal partial class SettingsPage", moduleUnit.Text);
-    }
-
-    [Fact]
-    public void ExportMatch_ComponentAndMergingModule_NoUitkx2311()
-    {
-        // Both exported → no mismatch. Pins 2311 to the disagreement case alone.
-        var src = "export component Foo {\n  return (<Box />);\n}\nexport module Foo {\n  public const int Gap = 4;\n}";
-        var result = GeneratorTestHelper.Run(src);
-
-        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "UITKX2311");
-    }
+    // (CrossFileCompanionModule / ExportMatch merging tests removed with companion
+    // partial-class merging — 0.16.0 legacy removal.)
 
     // ── Namespace / class structure ──────────────────────────────────────────
 
@@ -346,7 +267,7 @@ public class EmitterTests
     public void FunctionStyleComponent_GeneratesClassAndMarkup()
     {
         const string src = """
-            component CounterPanel {
+            VirtualNode CounterPanel() {
                 var (count, setCount) = useState(0);
                 return (
                     <Box>
@@ -440,7 +361,7 @@ public class EmitterTests
     {
         // Mimics a real component: function-level hooks PLUS a foreach with setup code
         var src = """
-            component TestComp {
+            VirtualNode TestComp() {
                 var (count, setCount) = useState(0);
                 var (log, setLog) = useState(new System.Collections.Generic.List<string> { "Ready." });
                 return (
@@ -662,7 +583,7 @@ public class EmitterTests
         // A comment at the root level alongside a single element should not
         // force Fragment wrapping (which would cause a dangling empty argument).
         const string src = """
-            component MyComp {
+            VirtualNode MyComp() {
                 return (
                     // root comment
                     <box />
@@ -683,7 +604,7 @@ public class EmitterTests
     {
         // Mirrors the real UitkxCounterFunc.uitkx pattern with interpolated strings and onClick lambdas
         const string src = """
-            component MyComp {
+            VirtualNode MyComp() {
                 var (count, setCount) = useState(0);
                 var component = (
                     <box>
@@ -713,7 +634,7 @@ public class EmitterTests
         const string src = """
             using MyGame.Models;
             using System.Collections.Generic;
-            component PlayerHUD {
+            VirtualNode PlayerHUD() {
                 return (<Box />);
             }
             """;
@@ -721,10 +642,12 @@ public class EmitterTests
         var result = GeneratorTestHelper.Run(src, "PlayerHUD.uitkx");
 
         Assert.True(result.SourceWasProduced);
-        Assert.True(result.SourceContains("using MyGame.Models;"), "Expected using MyGame.Models;");
+        // 0.16.0: user usings emit INSIDE the namespace block, global::-qualified
+        // (the file-top legacy position died with legacy mode).
+        Assert.True(result.SourceContains("using global::MyGame.Models;"), "Expected using global::MyGame.Models;");
         Assert.True(
-            result.SourceContains("using System.Collections.Generic;"),
-            "Expected using System.Collections.Generic;"
+            result.SourceContains("using global::System.Collections.Generic;"),
+            "Expected using global::System.Collections.Generic;"
         );
     }
 
@@ -732,7 +655,7 @@ public class EmitterTests
     public void HookAlias_NestedGenericTypeArg_IsExpanded()
     {
         const string src = """
-            component Foo {
+            VirtualNode Foo() {
                 var ctx = useContext<Dictionary<string, int>>("myKey");
                 return (<Box />);
             }
@@ -753,7 +676,7 @@ public class EmitterTests
     public void ErrorBoundary_GeneratesVErrorBoundaryCall()
     {
         const string src = """
-            component MyComp {
+            VirtualNode MyComp() {
                 return (
                     <ErrorBoundary>
                         <Label text="child" />
@@ -779,7 +702,7 @@ public class EmitterTests
     public void ErrorBoundary_WithFallbackProp_GeneratesCorrectProps()
     {
         const string src = """
-            component MyComp {
+            VirtualNode MyComp() {
                 var fallback = (<Label text="error!" />);
                 return (
                     <ErrorBoundary fallback={fallback} resetKey="v1">
@@ -810,7 +733,7 @@ public class EmitterTests
     public void Suspense_WithIsReadyAndFallback_GeneratesVSuspenseCall()
     {
         const string src = """
-            component MyComp {
+            VirtualNode MyComp() {
                 bool IsReady() => true;
                 var fallback = (<Label text="loading..." />);
                 return (
@@ -842,7 +765,7 @@ public class EmitterTests
     public void Portal_WithTargetAndChildren_GeneratesVPortalCall()
     {
         const string src = """
-            component MyComp {
+            VirtualNode MyComp() {
                 var target = useContext<UnityEngine.UIElements.VisualElement>("slot");
                 return (
                     <Portal target={target}>
@@ -869,14 +792,14 @@ public class EmitterTests
     {
         // ChildComp.uitkx — sub-component with a bool prop
         const string childSrc = """
-            component ChildComp(bool active = false) {
+            VirtualNode ChildComp(bool active = false) {
                 return (<Label text="child" />);
             }
             """;
 
         // ParentComp.uitkx — references ChildComp; its props type is peer-generated
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 var flag = true;
                 return (
                     <ChildComp active={flag} />
@@ -938,7 +861,7 @@ public class EmitterTests
             @namespace MyApp.UI
             @using MyApp
 
-            component MyPage {
+            VirtualNode MyPage() {
                 var items = new List<System.Collections.Generic.KeyValuePair<string,string>>();
                 return (<ValuesBarFunc items={items} />);
             }
@@ -971,7 +894,7 @@ public class EmitterTests
     {
         // ChildComp.uitkx — declares a single Hooks.MutableRef parameter.
         const string childSrc = """
-            component ChildComp(
+            VirtualNode ChildComp(
                 Hooks.MutableRef<object>? inputRef = null
             ) {
                 return (<Label text="child" />);
@@ -980,7 +903,7 @@ public class EmitterTests
 
         // ParentComp.uitkx — uses ref={myRef} shorthand on ChildComp.
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 return (
                     <ChildComp ref={myRef} />
                 );
@@ -1019,13 +942,13 @@ public class EmitterTests
     {
         // ChildComp.uitkx — no MutableRef parameter; ref={} cannot be routed.
         const string childSrc = """
-            component ChildComp(string? label = null) {
+            VirtualNode ChildComp(string? label = null) {
                 return (<Label text="child" />);
             }
             """;
 
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 return (
                     <ChildComp ref={myRef} />
                 );
@@ -1049,7 +972,7 @@ public class EmitterTests
     {
         // ChildComp.uitkx — two MutableRef parameters; ref={} is ambiguous.
         const string childSrc = """
-            component ChildComp(
+            VirtualNode ChildComp(
                 Hooks.MutableRef<object>? inputRef  = null,
                 Hooks.MutableRef<object>? secondRef = null
             ) {
@@ -1058,7 +981,7 @@ public class EmitterTests
             """;
 
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 return (
                     <ChildComp ref={myRef} />
                 );
@@ -1082,7 +1005,7 @@ public class EmitterTests
     {
         // ChildComp.uitkx — has a regular string prop + one MutableRef prop.
         const string childSrc = """
-            component ChildComp(
+            VirtualNode ChildComp(
                 string? label = null,
                 Hooks.MutableRef<object>? inputRef = null
             ) {
@@ -1092,7 +1015,7 @@ public class EmitterTests
 
         // ParentComp.uitkx — passes both a regular attribute and ref={}.
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 return (
                     <ChildComp label="hello" ref={myRef} />
                 );
@@ -1132,7 +1055,7 @@ public class EmitterTests
         const string childSrc = """
             @namespace MyApp.Components.Buttons
 
-            component JSOAppButton(bool disabled = false) {
+            VirtualNode JSOAppButton(bool disabled = false) {
                 return (<Label text="child" />);
             }
             """;
@@ -1141,7 +1064,7 @@ public class EmitterTests
             @namespace MyApp.Components.Sidebar
             using MyApp.Components.Buttons;
 
-            component Sidebar {
+            VirtualNode Sidebar() {
                 var isDisabled = true;
                 return (
                     <JSOAppButton disabled={isDisabled} />
@@ -1191,7 +1114,7 @@ public class EmitterTests
         const string childSrc = """
             @namespace MyApp.Components.Buttons
 
-            component JSOAppButton(
+            VirtualNode JSOAppButton(
                 Hooks.MutableRef<object>? inputRef = null
             ) {
                 return (<Label text="child" />);
@@ -1202,7 +1125,7 @@ public class EmitterTests
             @namespace MyApp.Components.Sidebar
             using MyApp.Components.Buttons;
 
-            component Sidebar {
+            VirtualNode Sidebar() {
                 return (
                     <JSOAppButton ref={myRef} />
                 );
@@ -1232,7 +1155,7 @@ public class EmitterTests
     public void Asset_RelativePath_Resolved()
     {
         var src = """
-            component Card {
+            VirtualNode Card() {
                 return (
                     <label text={Asset<Texture2D>("./avatar.png").name} />
                 );
@@ -1260,7 +1183,7 @@ public class EmitterTests
         // generated code while the LSP analyzer already resolved it uitkx-dir-relative —
         // the editor showed no error while the build emitted an unresolvable path.
         var src = """
-            component Card {
+            VirtualNode Card() {
                 return (
                     <label text={Asset<Texture2D>("avatar.png").name} />
                 );
@@ -1280,7 +1203,7 @@ public class EmitterTests
     public void Ast_RelativePath_Resolved()
     {
         var src = """
-            component Card {
+            VirtualNode Card() {
                 return (
                     <label text={Ast<Sprite>("../shared/icon.png").name} />
                 );
@@ -1300,7 +1223,7 @@ public class EmitterTests
     public void Asset_AbsolutePath_Unchanged()
     {
         var src = """
-            component Card {
+            VirtualNode Card() {
                 return (
                     <label text={Asset<Font>("Assets/Fonts/custom.ttf").name} />
                 );
@@ -1320,7 +1243,7 @@ public class EmitterTests
     public void Asset_AbsoluteNoExtension_Unchanged()
     {
         var src = """
-            component Card {
+            VirtualNode Card() {
                 return (
                     <label text={Asset<Texture2D>("Assets/UI/avatar").name} />
                 );
@@ -1340,7 +1263,7 @@ public class EmitterTests
     public void Asset_InCodeBlock_PathResolved()
     {
         var src = """
-            component Card {
+            VirtualNode Card() {
                 var tex = Asset<Texture2D>("./bg.png");
                 return (
                     <label text={tex?.name ?? ""} />
@@ -1361,7 +1284,7 @@ public class EmitterTests
     public void AssetHelpers_UsingAutoInjected()
     {
         var src = """
-            component Card {
+            VirtualNode Card() {
                 return (
                     <label text="hello" />
                 );
@@ -1381,7 +1304,7 @@ public class EmitterTests
     public void CssHelpers_UsingAutoInjected()
     {
         var src = """
-            component Card {
+            VirtualNode Card() {
                 return (
                     <label text="hello" />
                 );
@@ -1408,9 +1331,7 @@ public class EmitterTests
     {
         var src = """
             @namespace Test
-            module AppRoot {
-              public static readonly string Bg = Asset<Texture2D>("./bg.png")?.name;
-            }
+            export string Bg = Asset<Texture2D>("./bg.png")?.name;
             """;
 
         var result = GeneratorTestHelper.Run(src, "Assets/UI/AppRoot.style.uitkx");
@@ -1433,9 +1354,7 @@ public class EmitterTests
         // `module AppRoot { ... }` block in an .style.uitkx file.
         var src = """
             @namespace Test
-            module AppRoot {
-              public static readonly string Bg = Asset<Texture2D>("../Resources/bg.png")?.name;
-            }
+            export string Bg = Asset<Texture2D>("../Resources/bg.png")?.name;
             """;
 
         var result = GeneratorTestHelper.Run(src, "Assets/UI/AppRoot.style.uitkx");
@@ -1457,9 +1376,7 @@ public class EmitterTests
         // Absolute Assets/... paths must pass through untouched — no double-prefix.
         var src = """
             @namespace Test
-            module AppRoot {
-              public static readonly string Bg = Asset<Texture2D>("Assets/Fonts/custom.ttf")?.name;
-            }
+            export string Bg = Asset<Texture2D>("Assets/Fonts/custom.ttf")?.name;
             """;
 
         var result = GeneratorTestHelper.Run(src, "Assets/UI/AppRoot.style.uitkx");
@@ -1484,7 +1401,7 @@ public class EmitterTests
     {
         var src = """
             @namespace Test
-            hook useBg() -> string {
+            string useBg() {
               var tex = Asset<Texture2D>("./bg.png");
               return tex?.name ?? "";
             }
@@ -1540,7 +1457,7 @@ public class EmitterTests
             @namespace MyApp.UI
             @using MyApp.Routing
 
-            component MyPage {
+            VirtualNode MyPage() {
                 return (<RouterFunc path="/home" />);
             }
             """;
@@ -1575,7 +1492,7 @@ public class EmitterTests
         // bare = <Container>...@if...</Container> in @foreach setup code
         // must not leave raw JSX in the generated source (range collision fix).
         var src = """
-            component Comp {
+            VirtualNode Comp() {
               return (
                 <Box>
                   @foreach (var item in items) {
@@ -1720,7 +1637,7 @@ public class EmitterTests
     public void StyleHoist_TupleSyntaxAllLiterals_HoistedToStaticField()
     {
         const string src = """
-            component HoistTuple {
+            VirtualNode HoistTuple() {
                 return (
                     <Box style={new Style { (StyleKeys.Width, 100f), (StyleKeys.Height, 50f) }} />
                 );
@@ -1752,7 +1669,7 @@ public class EmitterTests
     public void StyleHoist_SetterSyntaxAllLiterals_HoistedToStaticField()
     {
         const string src = """
-            component HoistSetter {
+            VirtualNode HoistSetter() {
                 return (
                     <Box style={new Style { Width = 100f, Height = 50f }} />
                 );
@@ -1777,7 +1694,7 @@ public class EmitterTests
     public void StyleHoist_DynamicValue_StaysOnRentPath()
     {
         const string src = """
-            component DynamicStyle {
+            VirtualNode DynamicStyle() {
                 var w = 100f;
                 return (
                     <Box style={new Style { Width = w }} />
@@ -1801,7 +1718,7 @@ public class EmitterTests
     public void StyleHoist_NewColorWithLiteralArgs_Hoists()
     {
         const string src = """
-            component ColorLiteral {
+            VirtualNode ColorLiteral() {
                 return (
                     <Box style={new Style { (StyleKeys.BackgroundColor, new Color(0.15f, 0.15f, 0.15f, 0.9f)) }} />
                 );
@@ -1822,7 +1739,7 @@ public class EmitterTests
     public void StyleHoist_DottedEnumRef_Hoists()
     {
         const string src = """
-            component EnumRef {
+            VirtualNode EnumRef() {
                 return (
                     <Box style={new Style { (StyleKeys.FlexDirection, "column") }} />
                 );
@@ -1841,7 +1758,7 @@ public class EmitterTests
     public void StyleHoist_MultipleSiblings_GetUniqueIds()
     {
         const string src = """
-            component TwoStatics {
+            VirtualNode TwoStatics() {
                 return (
                     <Box>
                         <Label text="a" style={new Style { (StyleKeys.Width, 10f) }} />
@@ -1861,7 +1778,7 @@ public class EmitterTests
     public void StyleHoist_EmptyStyleBody_NotHoisted()
     {
         const string src = """
-            component EmptyStyle {
+            VirtualNode EmptyStyle() {
                 return (
                     <Box style={new Style { }} />
                 );
@@ -1880,7 +1797,7 @@ public class EmitterTests
     public void StyleHoist_MixedStaticAndDynamic_HoistsOnlyStatic()
     {
         const string src = """
-            component Mixed {
+            VirtualNode Mixed() {
                 var sz = 50f;
                 return (
                     <Box>
@@ -1902,7 +1819,7 @@ public class EmitterTests
     public void StyleHoist_TupleWithVariableValue_NotHoisted()
     {
         const string src = """
-            component TupleDynamic {
+            VirtualNode TupleDynamic() {
                 var w = 100f;
                 return (
                     <Box style={new Style { (StyleKeys.Width, w) }} />
@@ -1922,7 +1839,7 @@ public class EmitterTests
     public void StyleHoist_NonStyleAttributeUnaffected()
     {
         const string src = """
-            component PlainBox {
+            VirtualNode PlainBox() {
                 return (
                     <Box>
                         <Label text="hi" />
@@ -1945,7 +1862,7 @@ public class EmitterTests
         // first dotted segment to start uppercase (PascalCase = type/enum/static
         // class convention) — locals are camelCase and are correctly rejected.
         const string src = """
-            component AreaBox {
+            VirtualNode AreaBox() {
                 var areaSize = new UnityEngine.Vector2(100f, 50f);
                 return (
                     <Box style={new Style { Width = areaSize.x, Height = areaSize.y }} />
@@ -1971,7 +1888,7 @@ public class EmitterTests
         // Same regression in tuple form: (StyleKeys.Width, box.size) — `box.size`
         // is a local foreach-variable member access; must not hoist.
         const string src = """
-            component Boxes {
+            VirtualNode Boxes() {
                 var boxes = new[] { new { size = 5f } };
                 return (
                     <Box>
@@ -2087,7 +2004,7 @@ public class EmitterTests
     {
         // ChildComp declares `text` only — `style` is not a parameter.
         const string childSrc = """
-            component ChildComp(string? text = null) {
+            VirtualNode ChildComp(string? text = null) {
                 return (<Label text="child" />);
             }
             """;
@@ -2095,7 +2012,7 @@ public class EmitterTests
         // Parent passes `style={...}`, which is intrinsic-only and must NOT
         // be silently allowed on a user component.
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 return (
                     <ChildComp text="hi" style={SomeStyle} />
                 );
@@ -2129,7 +2046,7 @@ public class EmitterTests
     {
         // ChildComp has a MutableRef param so `ref` routes cleanly.
         const string childSrc = """
-            component ChildComp(
+            VirtualNode ChildComp(
                 string? text = null,
                 Hooks.MutableRef<object>? inputRef = null
             ) {
@@ -2138,7 +2055,7 @@ public class EmitterTests
             """;
 
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 return (
                     <ChildComp text="hi" key="k1" ref={myRef} />
                 );
@@ -2162,13 +2079,13 @@ public class EmitterTests
     public void UITKX0109_UserComponent_DeclaredAttribute_NoDiagnostic()
     {
         const string childSrc = """
-            component ChildComp(string? text = null) {
+            VirtualNode ChildComp(string? text = null) {
                 return (<Label text="child" />);
             }
             """;
 
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 return (
                     <ChildComp text="hi" />
                 );
@@ -2197,13 +2114,13 @@ public class EmitterTests
     {
         // Edge case: component declares zero parameters at all.
         const string childSrc = """
-            component ChildComp {
+            VirtualNode ChildComp() {
                 return (<Label text="child" />);
             }
             """;
 
         const string parentSrc = """
-            component ParentComp {
+            VirtualNode ParentComp() {
                 return (
                     <ChildComp text="hi" />
                 );
@@ -2345,7 +2262,7 @@ public class EmitterTests
     public void LogicalAnd_Jsx_InSetupCode_Desugars()
     {
         var src = """
-            component Foo {
+            VirtualNode Foo() {
                 var isOn = true;
                 var x = (isOn && <Label text="on" />);
                 return (
@@ -2368,7 +2285,7 @@ public class EmitterTests
         // Regression guard: the pre-existing `{expr}`-position desugar (the one
         // working case before U-06) must still work after the shared-helper refactor.
         var src = """
-            component Foo {
+            VirtualNode Foo() {
                 return (
                     <Box>{true && <Label text="on" />}</Box>
                 );
@@ -2387,7 +2304,7 @@ public class EmitterTests
     public void LogicalAnd_Jsx_AfterAssignment_LhsStopsAtEquals()
     {
         var src = """
-            component Foo {
+            VirtualNode Foo() {
                 bool isOn;
                 var x = (isOn = true && <Label text="on" />);
                 return (
@@ -2409,7 +2326,7 @@ public class EmitterTests
     {
         // `==` must NOT be mistaken for the `=` assignment boundary.
         var src = """
-            component Foo {
+            VirtualNode Foo() {
                 var mode = 1;
                 var x = (mode == 1 && <Label text="on" />);
                 return (
