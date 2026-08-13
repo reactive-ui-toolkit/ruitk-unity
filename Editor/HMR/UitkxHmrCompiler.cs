@@ -2601,8 +2601,23 @@ namespace Ruitk.EditorSupport.HMR
                 var asm = InProcessCompile(sources, componentName, ownerUitkxPath, out error);
                 if (asm != null || error == null)
                     return asm;
-                // If in-process failed with an error, fall through to external
-                Debug.LogWarning($"[HMR] In-process compile failed, trying external: {error}");
+                // Infrastructure failures (the exception path, e.g. the NuGet-cache
+                // Roslyn binding against a BCL Unity already loaded — MissingMethod
+                // on 6000.5's newer System.Reflection.Metadata) are permanent for
+                // the session: latch off in-process so every subsequent save goes
+                // straight to external csc without re-failing + re-warning.
+                if (error.Contains("In-process Roslyn error"))
+                {
+                    _roslynLoaded = false;
+                    Debug.LogWarning(
+                        "[HMR] In-process Roslyn is incompatible with this editor's loaded "
+                            + $"assemblies — using the external csc for the rest of the session. ({error})"
+                    );
+                }
+                else
+                {
+                    Debug.LogWarning($"[HMR] In-process compile failed, trying external: {error}");
+                }
                 error = null;
             }
 
@@ -2986,6 +3001,15 @@ namespace Ruitk.EditorSupport.HMR
                 rsp.WriteLine("-nullable:enable");
                 rsp.WriteLine("-deterministic");
                 rsp.WriteLine("-optimize+");
+                // Same preprocessor symbols the in-process path sets — WITHOUT
+                // them every `#if UNITY_EDITOR` region in the emitted source is
+                // preprocessed OUT, including the __UitkxRefresh companion whose
+                // [ModuleInitializer] publishes the new render body to its
+                // Family: the hot assembly then loads and swaps delegates but no
+                // fiber ever refreshes (field find: first session forced onto
+                // this path by the 6000.5 in-process Roslyn breakage).
+                foreach (string sym in ResolveEditorPreprocessorSymbols())
+                    rsp.WriteLine($"-define:{sym}");
                 foreach (var loc in GetFilteredRefLocations(ownerUitkxPath))
                     rsp.WriteLine($"-reference:\"{loc}\"");
                 // Add previously HMR-compiled assemblies for cross-component resolution (new components only)

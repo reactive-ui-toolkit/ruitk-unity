@@ -60,6 +60,20 @@ resolves `dotnet` via `$RUITK_DOTNET` → `.ruitk-local.json` → PATH. The lega
 survives in exactly one quarantined entry point (`ParseLegacyForMigration`) that only
 the codemod uses — everything else parses legacy files straight to the 2320 error.
 
+### Fixed — the external HMR compiler dropped every `#if UNITY_EDITOR` region
+
+The external `csc` fallback passed NO preprocessor defines, so the emitted
+`__UitkxRefresh` companion — whose `[ModuleInitializer]` publishes the new render body
+to its Fast Refresh Family — was preprocessed out of the hot assembly: the compile
+succeeded, delegates swapped, and zero fibers refreshed (nothing forced a re-render).
+Latent for as long as the in-process Roslyn path handled every compile; Unity 6000.5
+broke that path (its newer BCL wins the load race against the pinned NuGet deps —
+tracked as HMR-ROSLYN-65), making external the norm and surfacing the gap. The
+response file now carries the same editor define list the in-process path resolves
+from `CompilationPipeline`, and an in-process infrastructure failure latches the
+session to external csc with a single explanatory warning instead of failing and
+re-warning on every save.
+
 ### Fixed — HMR hot-swaps package-resident files
 
 The HMR file watcher was started on `Assets/` only, leaving HMR structurally blind to
