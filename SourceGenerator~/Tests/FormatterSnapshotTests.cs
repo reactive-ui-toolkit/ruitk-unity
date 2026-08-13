@@ -813,6 +813,31 @@ public sealed class FormatterSnapshotTests
     }
 
     [Fact]
+    public void Import_SingleQuotedSpecifier_CanonicalizesToDouble()
+    {
+        // Either quote style parses; the formatter re-emits the canonical
+        // double-quoted, semicolon-less form (single source: the model reprint).
+        var source = N(
+            """
+            import {container} from './Foo.style';
+            import '@UnityEngine.UIElements'
+
+            export VirtualNode Foo() {
+              return (
+                <Label text="x" />
+              );
+            }
+            """
+        );
+
+        var result = Format(source);
+
+        Assert.Contains("import { container } from \"./Foo.style\"", result);
+        Assert.Contains("import \"@UnityEngine.UIElements\"", result);
+        Assert.DoesNotContain("'", result.Substring(0, result.IndexOf("export")));
+    }
+
+    [Fact]
     public void Signature_FunctionParams_InSignatureLine()
     {
         var source = N(

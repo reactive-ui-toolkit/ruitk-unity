@@ -40,6 +40,14 @@ instead of skipping them; where-constrained generics are rejected with a message
 the constrained helper to ambient C#, like type definitions — the one shape the plain
 dialect deliberately does not express).
 
+### Added — single-quoted import specifiers
+
+`import {container} from './Foo.style';` parses identically to the double-quoted form
+— every import shape (named, star, default, combined, `import '@Ns'`) accepts either
+quote style, with the closing quote required to match the opener. The formatter
+canonicalizes to double quotes; grammar highlighting, specifier completion, and HMR's
+import fan-out recognize both.
+
 ### Added — underscore-marked parameters keep their public prop
 
 A leading underscore on a component parameter marks it deliberately unused (silencing

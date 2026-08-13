@@ -88,10 +88,12 @@ namespace Ruitk.EditorSupport.HMR
 
         // Matches a preamble file-import line (single line), covering the full ES import
         // surface (ES-modules campaign, G-05): named `import { A, B as C } from "spec"`,
-        // namespace `import * as X from "spec"`, and default `import X from "spec"`. The
-        // namespace-import form `import "@Ns"` has no `from` clause and never matches.
+        // namespace `import * as X from "spec"`, and default `import X from "spec"`, with
+        // either quote style (closing quote must match — backreference). The specifier is
+        // group 2. The namespace-import form `import "@Ns"` has no `from` clause and
+        // never matches.
         private static readonly Regex s_importLineRegex = new Regex(
-            @"^\s*import\s*(?:\{[^}]*\}|\*\s*as\s+[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)\s*from\s*""([^""]+)""",
+            @"^\s*import\s*(?:\{[^}]*\}|\*\s*as\s+[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)\s*from\s*([""'])([^""']+)\1",
             RegexOptions.Multiline | RegexOptions.CultureInvariant
         );
 
@@ -1028,7 +1030,7 @@ namespace Ruitk.EditorSupport.HMR
 
                 foreach (Match m in s_importLineRegex.Matches(content))
                 {
-                    string target = ResolveImportSpecifier(importerDir, uitkxPath, m.Groups[1].Value);
+                    string target = ResolveImportSpecifier(importerDir, uitkxPath, m.Groups[2].Value);
                     if (target == null)
                         continue;
                     if (!_importDependents.TryGetValue(target, out var set))

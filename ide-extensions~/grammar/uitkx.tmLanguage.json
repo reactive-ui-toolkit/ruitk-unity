@@ -78,7 +78,7 @@
     "namespace-import-declaration": {
       "comment": "Handles namespace imports: import \"@Namespace\" (namespace-import unification plan). Scoped IDENTICALLY to a file import — same `keyword.control.import` keyword and `string.quoted.double` string — so every import line reads as the same colour; the leading @ inside the string is the only visual/semantic marker.",
       "name": "meta.import.namespace.uitkx",
-      "match": "^(\\s*)(import)\\s+(\"@[^\"]*\")",
+      "match": "^(\\s*)(import)\\s+(\"@[^\"]*\"|'@[^']*')",
       "captures": {
         "2": { "name": "keyword.control.import.uitkx" },
         "3": { "name": "string.quoted.double.uitkx" }
@@ -87,7 +87,7 @@
     "import-declaration": {
       "comment": "Handles import lines: import { A, B, C as D } from \"./specifier\" (import/export grammar + ES-modules `as` renames)",
       "name": "meta.import.uitkx",
-      "match": "^(\\s*)(import)\\s*(\\{)([^}]*)(\\})\\s*(from)\\s*(\"[^\"]*\")",
+      "match": "^(\\s*)(import)\\s*(\\{)([^}]*)(\\})\\s*(from)\\s*(\"[^\"]*\"|'[^']*')",
       "captures": {
         "2": { "name": "keyword.control.import.uitkx" },
         "3": { "name": "punctuation.definition.block.begin.uitkx" },
@@ -103,7 +103,7 @@
     "star-import-declaration": {
       "comment": "Namespace import of a peer file (ES-modules campaign, G-05): import * as X from \"./specifier\"",
       "name": "meta.import.star.uitkx",
-      "match": "^(\\s*)(import)\\s*(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(from)\\s*(\"[^\"]*\")",
+      "match": "^(\\s*)(import)\\s*(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(from)\\s*(\"[^\"]*\"|'[^']*')",
       "captures": {
         "2": { "name": "keyword.control.import.uitkx" },
         "3": { "name": "keyword.operator.uitkx" },
@@ -116,7 +116,7 @@
     "default-import-declaration": {
       "comment": "Default import + ES combined forms (G-05): import X from, import X, { a as b } from, import X, * as NS from \"./specifier\"",
       "name": "meta.import.default.uitkx",
-      "match": "^(\\s*)(import)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:,\\s*(?:(\\{)([^}]*)(\\})|(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)))?\\s+(from)\\s*(\"[^\"]*\")",
+      "match": "^(\\s*)(import)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:,\\s*(?:(\\{)([^}]*)(\\})|(\\*)\\s*(as)\\s+([A-Za-z_][A-Za-z0-9_]*)))?\\s+(from)\\s*(\"[^\"]*\"|'[^']*')",
       "captures": {
         "2": { "name": "keyword.control.import.uitkx" },
         "3": { "name": "entity.name.type.uitkx" },

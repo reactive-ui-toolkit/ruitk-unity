@@ -1661,10 +1661,10 @@ public sealed class CompletionHandler : ICompletionHandler
         var empty = System.Array.Empty<string>();
         if (!Regex.IsMatch(lineText, @"^\s*import\b")) return empty;
 
-        var m = Regex.Match(lineText, "from\\s*\"");
+        var m = Regex.Match(lineText, "from\\s*([\"'])");
         if (!m.Success) return empty;
         int quoteStart = m.Index + m.Length;
-        int quoteEnd = lineText.IndexOf('"', quoteStart);
+        int quoteEnd = lineText.IndexOf(m.Groups[1].Value[0], quoteStart);
         int end = quoteEnd < 0 ? lineText.Length : quoteEnd;
         if (col0 < quoteStart || col0 > end) return empty;
 

@@ -43,6 +43,43 @@ namespace Ruitk.SourceGenerator.Tests
         }
 
         [Fact]
+        public void ImportLine_SingleQuotedSpecifier_ParsesLikeDouble()
+        {
+            // ES accepts either quote style; the closing quote must match the opener.
+            // This is the exact field line shape (single quotes + explicit .uitkx
+            // extension + trailing semicolon) that used to fail the whole file.
+            var (ds, diags) = Parse("import {container} from './HmrTests.style.uitkx';\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
+            Assert.Single(ds.Imports);
+            Assert.Equal(new[] { "container" }, ds.Imports[0].Names.ToArray());
+            Assert.Equal("./HmrTests.style.uitkx", ds.Imports[0].Specifier);
+            Assert.Single(ds.ComponentDeclarations);
+            Assert.DoesNotContain(diags, d => d.Code == "UITKX2105");
+        }
+
+        [Fact]
+        public void ImportLine_SingleQuoted_AllForms_Parse()
+        {
+            var (ds, _) = Parse(
+                "import * as Tokens from './Tokens'\n"
+                + "import Panel from './Panel'\n"
+                + "import '@UnityEngine.UIElements'\n"
+                + "VirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
+            Assert.Equal(2, ds.Imports.Length);
+            Assert.True(ds.Imports[0].IsStar);
+            Assert.Equal("Tokens", ds.Imports[0].StarAlias);
+            Assert.True(ds.Imports[1].IsDefault);
+            Assert.Contains(ds.Usings, u => u == "UnityEngine.UIElements");
+        }
+
+        [Fact]
+        public void ImportLine_MismatchedQuotes_DoesNotParseAsImport()
+        {
+            // `'…"` must not silently parse — the reader requires a matching closer.
+            var (ds, _) = Parse("import { A } from './X\"\nVirtualNode Foo() {\n  return ( <Spacer /> );\n}\n");
+            Assert.True(ds.Imports.IsDefaultOrEmpty);
+        }
+
+        [Fact]
         public void ImportLine_TrailingSemicolon_Tolerated()
         {
             // The JS-canonical form ends with `;`. The file-import reader must consume the

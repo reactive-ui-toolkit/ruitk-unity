@@ -177,7 +177,7 @@ public class HmrAuditWaveContractTests
         var controller = Src("UitkxHmrController.cs");
         Assert.Contains("_compiler?.EvictFileRegistration(uitkxPath);", controller);
         var watcher = Src("UitkxHmrFileWatcher.cs");
-        Assert.Contains("_watcher.Deleted += (s, e) =>", watcher);
+        Assert.Contains("watcher.Deleted += (s, e) =>", watcher);
         Assert.Contains("EnqueueDeletion(e.FullPath);", watcher);
         Assert.Contains("EnqueueDeletion(e.OldFullPath);", watcher);
         Assert.Contains("if (!File.Exists(path))", watcher);
@@ -218,7 +218,10 @@ public class HmrAuditWaveContractTests
         var src = Src("UitkxHmrController.cs");
         Assert.DoesNotContain("if (_ussDependents.Count == 0)", src);
         Assert.DoesNotContain("if (_importDependents.Count == 0)\n                BuildImportDependencyMap", src.Replace("\r\n", "\n"));
-        Assert.Contains("BuildUssDependencyMap(assetsPath);\n            BuildImportDependencyMap(assetsPath);", src.Replace("\r\n", "\n"));
+        // Since the package-watch wave the maps span the SAME roots the watcher
+        // covers (Assets + writable packages) — an Assets/-only graph gave
+        // package files empty fan-out edges.
+        Assert.Contains("BuildUssDependencyMap(watchRoots);\n            BuildImportDependencyMap(watchRoots);", src.Replace("\r\n", "\n"));
     }
 
     [Fact]
@@ -245,7 +248,7 @@ public class HmrAuditWaveContractTests
         // events log as [HMR][trace] when the EditorPref is on, pushed into the
         // watcher via a volatile field (FSW callbacks run on a threadpool thread).
         var watcher = Src("UitkxHmrFileWatcher.cs");
-        Assert.Contains("_watcher.Error +=", watcher);
+        Assert.Contains("watcher.Error +=", watcher);
         Assert.Contains("[HMR][trace] FSW", watcher);
         Assert.Contains("internal volatile bool TraceEnabled;", watcher);
         var controller = Src("UitkxHmrController.cs");

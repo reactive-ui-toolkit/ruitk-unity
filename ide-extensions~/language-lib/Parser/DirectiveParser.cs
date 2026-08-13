@@ -1113,16 +1113,19 @@ namespace Ruitk.Language.Parser
                 i = savedI; line = savedLine; return false;
             }
             SkipSpaces(source, ref i);
-            if (i >= source.Length || source[i] != '"')
+            // ES accepts either quote style for the specifier; the closing quote must
+            // match the opening one. The formatter re-emits the canonical double form.
+            if (i >= source.Length || (source[i] != '"' && source[i] != '\''))
             {
                 i = savedI; line = savedLine; return false;
             }
+            char specQuote = source[i];
             int specQuoteCol = ColAtPos(source, i);
             i++; // past opening quote
             int specStart = i;
-            while (i < source.Length && source[i] != '"' && source[i] != '\n')
+            while (i < source.Length && source[i] != specQuote && source[i] != '\n')
                 i++;
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || source[i] != specQuote)
             {
                 i = savedI; line = savedLine; return false; // unterminated specifier
             }
@@ -1188,16 +1191,17 @@ namespace Ruitk.Language.Parser
                 i = savedI; line = savedLine; return false;
             }
             SkipSpaces(source, ref i);
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || (source[i] != '"' && source[i] != '\''))
             {
                 i = savedI; line = savedLine; return false;
             }
+            char specQuote = source[i];
             int specQuoteCol = ColAtPos(source, i);
             i++; // past opening quote
             int specStart = i;
-            while (i < source.Length && source[i] != '"' && source[i] != '\n')
+            while (i < source.Length && source[i] != specQuote && source[i] != '\n')
                 i++;
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || source[i] != specQuote)
             {
                 i = savedI; line = savedLine; return false; // unterminated specifier
             }
@@ -1239,7 +1243,8 @@ namespace Ruitk.Language.Parser
 
             i += "import".Length;
             SkipSpaces(source, ref i);
-            if (i >= source.Length || source[i] == '{' || source[i] == '"' || source[i] == '*')
+            if (i >= source.Length || source[i] == '{' || source[i] == '"'
+                || source[i] == '\'' || source[i] == '*')
             {
                 i = savedI; line = savedLine; return false;
             }
@@ -1321,16 +1326,17 @@ namespace Ruitk.Language.Parser
                 i = savedI; line = savedLine; return false;
             }
             SkipSpaces(source, ref i);
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || (source[i] != '"' && source[i] != '\''))
             {
                 i = savedI; line = savedLine; return false;
             }
+            char specQuote = source[i];
             int specQuoteCol = ColAtPos(source, i);
             i++; // past opening quote
             int specStart = i;
-            while (i < source.Length && source[i] != '"' && source[i] != '\n')
+            while (i < source.Length && source[i] != specQuote && source[i] != '\n')
                 i++;
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || source[i] != specQuote)
             {
                 i = savedI; line = savedLine; return false; // unterminated specifier
             }
@@ -1380,11 +1386,13 @@ namespace Ruitk.Language.Parser
 
             i += "import".Length;
             SkipSpaces(source, ref i);
-            // A file import continues with `{`; a namespace import continues with a `"@…"` string.
-            if (i >= source.Length || source[i] != '"')
+            // A file import continues with `{`; a namespace import continues with a `"@…"` string
+            // (either quote style; the closing quote must match the opening one).
+            if (i >= source.Length || (source[i] != '"' && source[i] != '\''))
             {
                 i = savedI; line = savedLine; return false;
             }
+            char nsQuote = source[i];
             i++; // past opening quote
             if (i >= source.Length || source[i] != '@')
             {
@@ -1393,9 +1401,9 @@ namespace Ruitk.Language.Parser
             }
             i++; // past the '@' sigil
             int payloadStart = i;
-            while (i < source.Length && source[i] != '"' && source[i] != '\n')
+            while (i < source.Length && source[i] != nsQuote && source[i] != '\n')
                 i++;
-            if (i >= source.Length || source[i] != '"')
+            if (i >= source.Length || source[i] != nsQuote)
             {
                 i = savedI; line = savedLine; return false; // unterminated
             }
