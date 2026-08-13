@@ -18,10 +18,15 @@ public sealed class ParseFileTest
     [Fact]
     public void ParseTestFile_NoDiagnosticErrors()
     {
+        // Segment-per-argument so the traversal is separator-portable: a verbatim
+        // backslash string is ONE literal filename on the Linux CI runner, which
+        // made this test Windows-only (it failed loudly there, by design below).
         var filePath = Path.GetFullPath(
             Path.Combine(
                 Directory.GetCurrentDirectory(),
-                @"..\..\..\..\..\..\Samples\Components\UitkxTestFileDoNotTouch\UitkxTestFileDoNotTouch.uitkx"));
+                "..", "..", "..", "..", "..", "..",
+                "Samples", "Components", "UitkxTestFileDoNotTouch",
+                "UitkxTestFileDoNotTouch.uitkx"));
 
         // The fixture is tracked in this repo; a missing file means the path
         // regressed again (this test silently no-opped for months on a stale
