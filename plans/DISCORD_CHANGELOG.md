@@ -16,7 +16,7 @@ Companion sets migrate atomically, files whose generated namespace would move ge
 
 **Under the hood**, the dead machinery went with the grammar: the SG's module emitter, HMR's legacy container emitter, the LSP's legacy generators, and diagnostics `UITKX2107`/`2108`/`2109`/`0211` (retired, IDs reserved). Docs gain a 0.16 migration page plus Mounting & Roots.
 
-**Also shipped.** Underscore-marked params stay unused WITHOUT renaming their prop (`_onChanged` still exposes `onChanged`; declaring both is `UITKX0114`). Import specifiers accept single quotes. HMR runs on Unity 6000.5 and hot-swaps `.uitkx` inside embedded/local packages. `.uitkx` files wear the toolkit icon in VS Code.
+**Also shipped.** Underscore-marked params stay unused WITHOUT renaming their prop (`_onChanged` still exposes `onChanged`; `_x`+`x` = `UITKX0114`). Import specifiers accept single quotes. HMR runs on Unity 6000.5 and hot-swaps `.uitkx` inside embedded/local packages. `.uitkx` files wear the toolkit icon in VS Code.
 
 **Tests.** 1855/1855 SG, 172/172 LSP.
 
