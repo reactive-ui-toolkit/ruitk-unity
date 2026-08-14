@@ -1,5 +1,7 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
+using Newtonsoft.Json.Linq;
 using UnityEngine.UIElements;
 using Ruitk;
 using Ruitk.EditorSupport;
@@ -35,6 +37,7 @@ namespace Ruitk.Builder
             {
                 var client = await BuilderLspService.GetOrStartAsync();
                 graph = await BuilderGraphService.LoadTreeAsync(client, focusFile);
+                await CheckSchemaDrift(client);
             }
             catch (Exception ex)
             {
@@ -94,6 +97,40 @@ namespace Ruitk.Builder
                 return;
             _config.CaptureFrom(_graph, _camX, _camY, _zoom);
             _config.Save();
+        }
+
+        private static bool s_driftChecked;
+
+        /// <summary>VE-16: the palette/completion vocabulary (embedded schema)
+        /// and the live runtime registry must agree — a registered-but-unschema'd
+        /// element renders but false-flags in editors; the converse is a palette
+        /// entry that cannot render. Mismatches warn visibly, once per session.</summary>
+        private static async System.Threading.Tasks.Task CheckSchemaDrift(BuilderLspClient client)
+        {
+            if (s_driftChecked)
+                return;
+            s_driftChecked = true;
+
+            var schema = await client.RequestSchema();
+            string json = schema?.Value<string>("json") ?? schema?.Value<string>("Json");
+            if (string.IsNullOrEmpty(json))
+                return;
+            var schemaElements = new HashSet<string>(StringComparer.Ordinal);
+            if (JObject.Parse(json)["elements"] is JObject elements)
+                foreach (var prop in elements.Properties())
+                    schemaElements.Add(prop.Name);
+
+            var registry = Ruitk.Elements.ElementRegistryProvider.GetDefaultRegistry();
+            var missingFromSchema = new List<string>();
+            foreach (string name in registry.RegisteredNames)
+                if (!schemaElements.Contains(name))
+                    missingFromSchema.Add(name);
+
+            if (missingFromSchema.Count > 0)
+                UnityEngine.Debug.LogWarning(
+                    "[RUITK Builder] schema/runtime drift: registered elements missing from the "
+                    + "editor schema (palette and completion will not offer them): "
+                    + string.Join(", ", missingFromSchema));
         }
 
         private void ShowMessage(string text)

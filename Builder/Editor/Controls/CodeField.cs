@@ -79,6 +79,22 @@ namespace Ruitk.Builder
 
         public string TextLf => (_input.value ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
 
+        /// <summary>Inserts at the caret (or replaces the selection) and fires
+        /// the normal edited path — palette clicks author through the same
+        /// session/undo/recompile pipeline as typing.</summary>
+        public void InsertAtCaret(string snippet)
+        {
+            if (_input.isReadOnly || string.IsNullOrEmpty(snippet))
+                return;
+            string text = _input.value ?? "";
+            int start = Mathf.Clamp(Mathf.Min(_input.cursorIndex, _input.selectIndex), 0, text.Length);
+            int end = Mathf.Clamp(Mathf.Max(_input.cursorIndex, _input.selectIndex), 0, text.Length);
+            _input.value = text.Substring(0, start) + snippet + text.Substring(end);
+            _input.cursorIndex = start + snippet.Length;
+            _input.selectIndex = _input.cursorIndex;
+            _input.Focus();
+        }
+
         public void SetContent(string textLf, string filePath, HashSet<string> knownElements)
         {
             _filePath = filePath ?? "";

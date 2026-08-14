@@ -24,6 +24,7 @@ namespace Ruitk.Builder
         private Label _statusLabel;
 
         [System.NonSerialized] private BuilderCanvasHost _canvasHost;
+        [System.NonSerialized] private BuilderLibraryPane _libraryPane;
         [System.NonSerialized] private CodeField _codeField;
         [System.NonSerialized] private BuilderPreviewPane _previewPane;
         [System.NonSerialized] private BuilderPreviewCompiler _previewCompiler;
@@ -121,6 +122,18 @@ namespace Ruitk.Builder
             _canvasHost = new BuilderCanvasHost();
             _canvasHost.Mount(container, _focusFile, OpenFileFromCanvas);
             MountPreview();
+            MountLibrary();
+        }
+
+        private void MountLibrary()
+        {
+            if (_libraryPane != null)
+                return;
+            var container = rootVisualElement?.Q("builder-library");
+            if (container == null)
+                return;
+            _libraryPane = new BuilderLibraryPane();
+            _libraryPane.Attach(container, snippet => _codeField?.InsertAtCaret(snippet));
         }
 
         private void MountPreview()
