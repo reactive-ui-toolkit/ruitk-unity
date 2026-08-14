@@ -136,8 +136,12 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           set -e
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+          # Tree-to-tree diff against the PR base SHA: needs no merge base, so it
+          # works on the shallow checkout (three-dot against a depth-1 fetch dies
+          # with "no merge base" / exit 128).
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          CHANGED=$(git diff --name-only "$BASE_SHA" HEAD)
           A=$(echo "$CHANGED" | grep -c '^Analyzers/Ruitk.Language.dll$' || true)
           B=$(echo "$CHANGED" | grep -c '^Editor/Plugins/Ruitk.Language.Editor.dll$' || true)
           if [ "$A" != "$B" ]; then
