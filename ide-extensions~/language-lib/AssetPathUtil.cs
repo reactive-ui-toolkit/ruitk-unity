@@ -191,7 +191,7 @@ namespace Ruitk.Language
         private static void CacheRange(string? fromDir, string? foundAt, (string Root, string Name)? ctx)
         {
             string? d = fromDir;
-            while (!string.IsNullOrEmpty(d))
+            while (d != null && d.Length > 0)
             {
                 s_packageCtxByDir[d] = ctx;
                 if (string.Equals(d, foundAt, StringComparison.OrdinalIgnoreCase))

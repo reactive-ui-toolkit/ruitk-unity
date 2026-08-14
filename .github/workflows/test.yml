@@ -124,6 +124,27 @@ jobs:
             echo "::warning::Analyzers/Ruitk.Language.dll differs from a fresh Release build."
           fi
 
+      # HARD gate: the two committed language DLLs (the HMR-reflected analyzer
+      # copy and the Editor-referenced Ruitk.Language.Editor variant the RUITK
+      # Builder compiles against) are built from the same sources by one
+      # scripts/build-generator.ps1 run and must always land together — skew
+      # produces MissingMethodException at editor runtime. Byte-comparing a CI
+      # rebuild against the committed DLLs is machine-dependent (embedded pdb
+      # paths), so the gate enforces the PAIRING instead: a PR that touches one
+      # without the other fails.
+      - name: Check language DLL pair lands together (hard gate)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -e
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+          A=$(echo "$CHANGED" | grep -c '^Analyzers/Ruitk.Language.dll$' || true)
+          B=$(echo "$CHANGED" | grep -c '^Editor/Plugins/Ruitk.Language.Editor.dll$' || true)
+          if [ "$A" != "$B" ]; then
+            echo "::error::Analyzers/Ruitk.Language.dll and Editor/Plugins/Ruitk.Language.Editor.dll must change together (one scripts/build-generator.ps1 run rebuilds both). This PR changed one without the other."
+            exit 1
+          fi
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
