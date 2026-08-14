@@ -61,6 +61,10 @@ var server = await LanguageServer.From(options =>
         .WithHandler<RenameHandler>()
         .WithHandler<ReferencesHandler>()
         .WithHandler<WatchedFilesHandler>()
+        .WithHandler<RuitkSchemaHandler>()
+        .WithHandler<RuitkHooksHandler>()
+        .WithHandler<RuitkComponentPropsHandler>()
+        .WithHandler<RuitkWorkspaceGraphHandler>()
         .WithServices(services =>
         {
             services.AddSingleton<UitkxSchema>();
