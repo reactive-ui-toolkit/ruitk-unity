@@ -39,9 +39,9 @@ export VirtualNode CodeFieldSpike() {
         <TextField
           value={code}
           multiline={true}
-          onChanged={v => {
+          onChange={e => {
             keystrokes.Current = keystrokes.Current + 1;
-            setCode(v);
+            setCode(e.newValue);
           }}
           style={SpikeStyles.CodeInput}
         />

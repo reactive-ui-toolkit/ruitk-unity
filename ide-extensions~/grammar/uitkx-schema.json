@@ -379,6 +379,11 @@
           "description": "Displayed text content."
         },
         {
+          "name": "enableRichText",
+          "type": "bool",
+          "description": "Whether rich text tags in the label text are parsed (UI Toolkit default: true)."
+        },
+        {
           "name": "name",
           "type": "string",
           "description": "VisualElement.name for USS or code queries."

@@ -27,21 +27,21 @@ export VirtualNode CanvasSpike(int cardCount = 300) {
       style={SpikeStyles.Root}
       onPointerDown={e => {
         dragging.Current = true;
-        lastX.Current = e.position.x;
-        lastY.Current = e.position.y;
+        lastX.Current = e.Position.x;
+        lastY.Current = e.Position.y;
       }}
       onPointerUp={e => { dragging.Current = false; }}
       onPointerLeave={e => { dragging.Current = false; }}
       onPointerMove={e => {
         if (dragging.Current) {
-          setCamX(camX + (e.position.x - lastX.Current));
-          setCamY(camY + (e.position.y - lastY.Current));
-          lastX.Current = e.position.x;
-          lastY.Current = e.position.y;
+          setCamX(camX + (e.Position.x - lastX.Current));
+          setCamY(camY + (e.Position.y - lastY.Current));
+          lastX.Current = e.Position.x;
+          lastY.Current = e.Position.y;
         }
       }}
       onWheel={e => {
-        float factor = e.delta.y < 0f ? 1.1f : 0.9f;
+        float factor = e.Delta.y < 0f ? 1.1f : 0.9f;
         setZoom(Mathf.Clamp(zoom * factor, 0.15f, 3f));
       }}
     >

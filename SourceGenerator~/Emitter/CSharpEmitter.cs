@@ -189,6 +189,7 @@ namespace Ruitk.SourceGenerator.Emitter
             L("#nullable enable");
             L("#pragma warning disable CS0105  // duplicate using directives");
             L("#pragma warning disable CS0162  // unreachable code (IIFE fallback returns)");
+            L("#pragma warning disable CS0436  // ModuleInitializer polyfill duplicated across friend (IVT) assemblies; local copy always wins");
             L("#pragma warning disable CS8600  // null literal to non-nullable");
             L("#pragma warning disable CS8601  // null literal to nullable reference type");
             L("#pragma warning disable CS8602  // dereference of possibly null reference");
