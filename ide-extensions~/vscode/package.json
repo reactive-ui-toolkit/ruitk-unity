@@ -3,7 +3,7 @@
   "displayName": "UITKX (Unity - VS Code)",
   "description": "Syntax highlighting + language intelligence for .uitkx markup (ReactiveUIToolkit for Unity). Completions, hover, diagnostics and formatting from the bundled language server — fully offline, no running Unity editor required. Discord: https://discord.gg/Knedqu4Wyv",
   "icon": "images/logo.png",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "publisher": "ReactiveUITK",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {

@@ -1,3 +1,23 @@
+## [0.17.0] - 2026-08-15
+
+### RUITK UI Builder - a visual editor inside Unity
+
+**The builder lands.** Right-click any `.uitkx` -> **Open in RUITK UI Builder** and the whole component tree opens as one workspace: a pannable canvas with a kind-colored card per file and import edges drawn between them, a live preview mounted through the real reconciler, the file's code with semantic coloring and live diagnostics, and a searchable palette of every element, hook, directive and style key.
+
+**Everything edits in memory.** Typing, palette inserts and outline reorders hit the buffer only; the preview hot-recompiles after a short debounce through the builder's own compiler instance - disk untouched, no reload, state preserved. **Save** writes every dirty buffer in one batch: one script reload total, or zero when HMR Mode is running. **Abort** discards. Undo/redo is per-file and never touches Unity's global undo. Files from immutable packages open read-only.
+
+**Wired for navigation.** Ctrl+Click an element in the preview jumps to the component that rendered it; double-click a canvas card focuses its file; card layout and camera persist per tree in `UserSettings/`. Double-clicking assets still opens your external editor - the builder never steals that route.
+
+**UXML import.** `Assets -> Convert UXML to UITKX` converts one-way, mapping inline USS to the typed `Style` initializer and warning about anything it had to drop.
+
+**Under the hood:** `Label` gains `enableRichText`; the LSP server gains `ruitk/schema`, `ruitk/hooks`, `ruitk/componentProps` and `ruitk/workspaceGraph` plus an unsaved-buffer index overlay; the language lib gains a public AST printer and the UXML converter. Known limitation: `@uss`/`Asset<T>` refs added since the last Save resolve after saving.
+
+**Tests.** 1878/1878 SG, 180/180 LSP.
+
+VS Code **1.10.0 -> 1.11.0** | VS 2022 **1.10.0 -> 1.11.0**.
+
+---
+
 ## [0.16.0] - 2026-08-10
 
 ### The wrapper keywords are gone - plain declarations only

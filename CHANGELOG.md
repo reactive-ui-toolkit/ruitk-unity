@@ -6,6 +6,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.17.0] - 2026-08-15
+
+### Added — RUITK UI Builder (first release)
+
+An in-Unity visual editor for `.uitkx` component trees, under
+`Reactive UI Toolkit / UI Builder` and the `Assets` context menu
+(**Open in RUITK UI Builder** — double-click routing is untouched):
+
+- **Canvas** — one kind-colored card per file in the tree with import edges
+  (Painter2D), pan/zoom-to-cursor, drag layout; positions and camera persist
+  per tree under the consumer project's `UserSettings/`.
+- **Preview** — the focused component mounted through the real fiber
+  reconciler on a per-pane frame-budgeted scheduler; primitive props become
+  knobs; Ctrl+Click an element to jump to the component that rendered it.
+- **Code** — the buffer with semantic coloring and live parse/analyzer
+  diagnostics; edits hot-recompile the preview through the builder's own
+  compiler instance (workspace buffers, import-graph order) after a short
+  debounce. Disk is untouched until **Save**, which writes all dirty buffers
+  in one batch (one reload — zero when HMR Mode is active). **Abort**
+  discards; undo/redo is session-scoped.
+- **Library** — searchable palette of elements, ambient hooks, directives,
+  and style keys (LSP-fed), inserting at the code caret; structure outline
+  with sibling reorder; **New File** dialog with name validation.
+- **UXML import** — `Assets / Convert UXML to UITKX`: one-way conversion
+  with inline-USS → typed `Style` mapping; every dropped construct warns.
+- Files in immutable packages open read-only.
+
+Supporting library changes: `LabelProps.EnableRichText` (typed + dict +
+schema), `ElementRegistry.RegisteredNames`, an internal source-overlay seam
+in the HMR compiler, four `ruitk/*` LSP requests (schema, hooks,
+componentProps, workspaceGraph) with unsaved-buffer index overlay, a public
+AST printer in the language lib, and `com.unity.nuget.newtonsoft-json` as a
+package dependency. Docs: `/tooling/ui-builder`.
+
+Known preview limitation: `@uss` / `Asset<T>` references added since the
+last Save resolve only after saving (asset cache is disk-gated).
+
 ## [0.16.0] - 2026-08-10
 
 ### Removed — the legacy wrapper grammar (BREAKING)
