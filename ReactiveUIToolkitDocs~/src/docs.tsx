@@ -27,6 +27,7 @@ import { UitkxSignalsPage } from './pages/UITKX/Signals/UitkxSignalsPage'
 import { UitkxPortalPage } from './pages/UITKX/Portal/UitkxPortalPage'
 import { UitkxSuspensePage } from './pages/UITKX/Suspense/UitkxSuspensePage'
 import { HmrPage } from './pages/Tooling/HMR/HmrPage'
+import { UiBuilderPage } from './pages/Tooling/UiBuilder/UiBuilderPage'
 import { FAQPage } from './pages/FAQ/FAQPage'
 import { LicensingPage } from './pages/Licensing/LicensingPage'
 import { StylingPage } from './pages/UITKX/Styling/StylingPage'
@@ -268,6 +269,14 @@ export const sections: DocSection[] = [
         keywords: ['signals', 'shared state', 'reactive'],
         searchContent: 'signals lightweight named reactive values process-wide registry observable store single source of truth global registry keyed by string SignalFactory.Get Signal Subscribe useSignal Dispatch updates event handlers SignalsRuntime.EnsureInitialized selector overloads useSignal signal selector comparer project slice custom equality useMemo SignalCounterDemo counterSignal count Increment Reset Style StyleKeys.FlexDirection row thread safety lock-based synchronization',
         element: () => <UitkxSignalsPage />,
+      },
+      {
+        id: 'ui-builder-page',
+        canonicalId: 'ui-builder',
+        title: 'RUITK UI Builder',
+        path: '/tooling/ui-builder',
+        keywords: ['ui builder', 'visual editor', 'canvas', 'preview', 'uxml import'],
+        element: () => <UiBuilderPage />,
       },
       {
         id: 'hmr-page',
