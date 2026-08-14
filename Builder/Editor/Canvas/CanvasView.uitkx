@@ -1,0 +1,189 @@
+import * as CanvasStyles from "./canvasStyles.style"
+import "@UnityEngine.UIElements"
+import "@Ruitk.Builder"
+
+export VirtualNode CanvasView(
+  BuilderGraph graph,
+  float initialCamX = 0f,
+  float initialCamY = 0f,
+  float initialZoom = 1f,
+  Action<string> onOpenFile = null,
+  Action onLayoutChanged = null,
+  Action<int> onSelect = null,
+  Action<float, float, float> onCameraChanged = null
+) {
+  var (camX, setCamX) = useState(initialCamX);
+  var (camY, setCamY) = useState(initialCamY);
+  var (zoom, setZoom) = useState(initialZoom);
+  var (selected, setSelected) = useState(-1);
+  var (layoutVersion, setLayoutVersion) = useState(0);
+
+  var panning = useRef(false);
+  var dragCard = useRef(-1);
+  var lastX = useRef(0f);
+  var lastY = useRef(0f);
+
+  bool lodFull = zoom >= 0.45f;
+
+  return (
+    <VisualElement
+      style={CanvasStyles.Root}
+      onPointerDown={e => {
+        if (dragCard.Current < 0) {
+          panning.Current = true;
+          lastX.Current = e.Position.x;
+          lastY.Current = e.Position.y;
+        }
+      }}
+      onPointerUp={e => {
+        if (panning.Current && onCameraChanged != null) {
+          onCameraChanged(camX, camY, zoom);
+        }
+        panning.Current = false;
+        if (dragCard.Current >= 0) {
+          dragCard.Current = -1;
+          if (onLayoutChanged != null) {
+            onLayoutChanged();
+          }
+        }
+      }}
+      onPointerLeave={e => {
+        panning.Current = false;
+        if (dragCard.Current >= 0) {
+          dragCard.Current = -1;
+          if (onLayoutChanged != null) {
+            onLayoutChanged();
+          }
+        }
+      }}
+      onPointerMove={e => {
+        if (dragCard.Current >= 0) {
+          var node = graph.Nodes[dragCard.Current];
+          node.X = node.X + (e.Position.x - lastX.Current) / zoom;
+          node.Y = node.Y + (e.Position.y - lastY.Current) / zoom;
+          lastX.Current = e.Position.x;
+          lastY.Current = e.Position.y;
+          setLayoutVersion(layoutVersion + 1);
+        } else if (panning.Current) {
+          setCamX(camX + (e.Position.x - lastX.Current));
+          setCamY(camY + (e.Position.y - lastY.Current));
+          lastX.Current = e.Position.x;
+          lastY.Current = e.Position.y;
+        }
+      }}
+      onWheel={e => {
+        float factor = e.Delta.y < 0f ? 1.1f : 0.9f;
+        float next = Mathf.Clamp(zoom * factor, 0.15f, 3f);
+        if (next != zoom) {
+          float scale = next / zoom;
+          float nx = e.Position.x - (e.Position.x - camX) * scale;
+          float ny = e.Position.y - (e.Position.y - camY) * scale;
+          setCamX(nx);
+          setCamY(ny);
+          setZoom(next);
+          if (onCameraChanged != null) {
+            onCameraChanged(nx, ny, next);
+          }
+        }
+      }}
+    >
+      <VisualElement
+        style={new Style {
+          Position = PosAbsolute,
+          Top = Px(0),
+          Left = Px(0),
+          Translate = Xlate(Px(camX), Px(camY)),
+          Scale = new UnityEngine.UIElements.Scale(new Vector2(zoom, zoom)),
+        }}
+      >
+        <VisualElement
+          style={CanvasStyles.EdgeLayer}
+          pickingMode={PickIgnore}
+          onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawEdges(ctx, graph)}
+          redrawKey={layoutVersion}
+        />
+        @for (int i = 0; i < graph.Nodes.Count; i++) {
+          var node = graph.Nodes[i];
+          int index = i;
+          bool isSelected = selected == index;
+          return (
+            <VisualElement
+              key={node.FilePath}
+              style={new Style {
+                Position = PosAbsolute,
+                Width = Px(BuilderCanvasDrawing.CardWidth),
+                Translate = Xlate(Px(node.X), Px(node.Y)),
+                BackgroundColor = Hex("#232329"),
+                BorderRadius = Px(8),
+                BorderTopWidth = isSelected ? 2 : 1,
+                BorderRightWidth = isSelected ? 2 : 1,
+                BorderBottomWidth = isSelected ? 2 : 1,
+                BorderLeftWidth = isSelected ? 2 : 1,
+                BorderTopColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
+                BorderRightColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
+                BorderBottomColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
+                BorderLeftColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
+              }}
+              onPointerDown={e => {
+                if (e.ClickCount >= 2) {
+                  if (onOpenFile != null) {
+                    onOpenFile(node.FilePath);
+                  }
+                  e.StopPropagation();
+                  return;
+                }
+                dragCard.Current = index;
+                lastX.Current = e.Position.x;
+                lastY.Current = e.Position.y;
+                setSelected(index);
+                if (onSelect != null) {
+                  onSelect(index);
+                }
+                e.StopPropagation();
+              }}
+            >
+              <VisualElement style={CanvasStyles.CardHeader}>
+                <VisualElement
+                  style={new Style {
+                    Width = Px(8),
+                    Height = Px(8),
+                    BorderRadius = Px(4),
+                    MarginRight = Px(6),
+                    BackgroundColor = BuilderCanvasDrawing.KindColor(node.Kind),
+                  }}
+                />
+                <Label text={node.Title} style={CanvasStyles.CardTitle} />
+                <Label text={BuilderCanvasDrawing.KindLabel(node.Kind)} style={CanvasStyles.CardKindLabel} />
+                @if (node.IsReadOnly) {
+                  return (
+                    <Label text="read-only" style={CanvasStyles.CardLock} />
+                  );
+                }
+              </VisualElement>
+              @if (lodFull) {
+                return (
+                  <VisualElement style={CanvasStyles.CardBody}>
+                    @for (int x = 0; x < Mathf.Min(node.Exports.Count, 6); x++) {
+                      return (
+                        <Label
+                          key={node.Exports[x]}
+                          text={node.Exports[x]}
+                          style={CanvasStyles.CardExport}
+                        />
+                      );
+                    }
+                    @if (node.Exports.Count > 6) {
+                      return (
+                        <Label text={$"+ {node.Exports.Count - 6} more"} style={CanvasStyles.CardExportMore} />
+                      );
+                    }
+                  </VisualElement>
+                );
+              }
+            </VisualElement>
+          );
+        }
+      </VisualElement>
+    </VisualElement>
+  );
+}

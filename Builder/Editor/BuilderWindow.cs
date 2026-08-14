@@ -23,6 +23,8 @@ namespace Ruitk.Builder
 
         private Label _statusLabel;
 
+        [System.NonSerialized] private BuilderCanvasHost _canvasHost;
+
         public BuilderWorkspace Workspace => _workspace;
 
         public static BuilderWindow OpenEmpty()
@@ -39,6 +41,7 @@ namespace Ruitk.Builder
             var window = OpenEmpty();
             window._focusFile = uitkxFilePath;
             window._workspace.Open(uitkxFilePath);
+            window.MountCanvas();
             window.RefreshChrome();
             return window;
         }
@@ -53,6 +56,8 @@ namespace Ruitk.Builder
         private void OnDisable()
         {
             _workspace.Changed -= OnWorkspaceChanged;
+            _canvasHost?.Unmount();
+            _canvasHost = null;
         }
 
         private void CreateGUI()
@@ -92,6 +97,26 @@ namespace Ruitk.Builder
             // see them (Ctrl+S -> Save Project, Ctrl+Z -> global Undo).
             root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
 
+            MountCanvas();
+            RefreshChrome();
+        }
+
+        private void MountCanvas()
+        {
+            if (string.IsNullOrEmpty(_focusFile))
+                return;
+            var container = rootVisualElement?.Q("builder-canvas");
+            if (container == null)
+                return;
+            _canvasHost?.Unmount();
+            _canvasHost = new BuilderCanvasHost();
+            _canvasHost.Mount(container, _focusFile, OpenFileFromCanvas);
+        }
+
+        private void OpenFileFromCanvas(string filePath)
+        {
+            _workspace.Open(filePath);
+            _focusFile = filePath;
             RefreshChrome();
         }
 

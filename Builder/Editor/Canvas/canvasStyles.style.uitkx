@@ -1,0 +1,52 @@
+export Style Root = new Style {
+  FlexGrow = 1,
+  Overflow = OverflowHidden,
+  BackgroundColor = Hex("#17171b"),
+};
+
+export Style EdgeLayer = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Width = Px(1),
+  Height = Px(1),
+};
+
+export Style CardHeader = new Style {
+  FlexDirection = FlexRow,
+  AlignItems = AlignCenter,
+  Padding = Px(6),
+};
+
+export Style CardTitle = new Style {
+  Color = Hex("#e4e4ea"),
+  UnityFontStyle = FontBold,
+  FlexGrow = 1,
+};
+
+export Style CardKindLabel = new Style {
+  Color = Hex("#8b8b96"),
+  FontSize = Px(9),
+};
+
+export Style CardLock = new Style {
+  Color = Hex("#c9a25a"),
+  FontSize = Px(9),
+  MarginLeft = Px(4),
+};
+
+export Style CardBody = new Style {
+  PaddingLeft = Px(8),
+  PaddingRight = Px(8),
+  PaddingBottom = Px(6),
+};
+
+export Style CardExport = new Style {
+  Color = Hex("#9a9aa6"),
+  FontSize = Px(10),
+};
+
+export Style CardExportMore = new Style {
+  Color = Hex("#6a6a74"),
+  FontSize = Px(9),
+};
