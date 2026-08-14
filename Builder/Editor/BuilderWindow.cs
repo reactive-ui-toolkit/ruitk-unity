@@ -158,6 +158,7 @@ namespace Ruitk.Builder
                 container.Add(codeSection);
 
                 _previewPane = new BuilderPreviewPane();
+                _previewPane.ComponentPicked += OnPreviewComponentPicked;
                 _previewPane.Attach(previewSection);
                 _codeField = new CodeField();
                 _codeField.TextEdited += OnCodeEdited;
@@ -184,6 +185,13 @@ namespace Ruitk.Builder
             session.ApplyEdit(bufferLf);
             RefreshChrome();
             NotifyBufferChanged();
+        }
+
+        private void OnPreviewComponentPicked(string filePath)
+        {
+            string full = Path.GetFullPath(filePath);
+            if (!string.Equals(full, Path.GetFullPath(_focusFile), System.StringComparison.OrdinalIgnoreCase))
+                OpenFileFromCanvas(full);
         }
 
         private void OpenFileFromCanvas(string filePath)

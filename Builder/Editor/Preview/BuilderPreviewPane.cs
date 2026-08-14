@@ -40,6 +40,8 @@ namespace Ruitk.Builder
         private IProps _knobProps;
         private string _filePath;
 
+        public event Action<string> ComponentPicked;
+
         public BuilderPreviewPane()
         {
             if (!s_refreshProviderRegistered)
@@ -66,6 +68,7 @@ namespace Ruitk.Builder
                 name = "builder-preview-host",
                 style = { flexGrow = 1f, borderTopWidth = 1f, borderTopColor = new Color(0.2f, 0.2f, 0.23f) },
             };
+            _previewHost.RegisterCallback<PointerDownEvent>(OnPreviewPicked, TrickleDown.TrickleDown);
             container.Add(_previewHost);
 
             _knobsHost = new VisualElement
@@ -138,6 +141,54 @@ namespace Ruitk.Builder
             UnmountPreview();
             _scheduler.Dispose();
             _container = null;
+        }
+
+        /// <summary>VE-15 Family-exact click-through: Ctrl+Click maps the picked
+        /// element to its owning COMPONENT by walking the live fiber tree —
+        /// each fiber with a Family names a generated type whose
+        /// <c>[UitkxSource]</c> is the file; host elements inherit the nearest
+        /// enclosing family's file. Directive-generated subtrees carry their
+        /// component's file (the documented limitation).</summary>
+        private void OnPreviewPicked(PointerDownEvent evt)
+        {
+            if (!evt.ctrlKey || _renderer == null)
+                return;
+            var picked = evt.target as VisualElement;
+            if (picked == null)
+                return;
+
+            var ownerByElement = new Dictionary<object, string>();
+            var root = _renderer.Fiber?.Root?.Current;
+            if (root != null)
+                MapOwners(root, Canon(_filePath), ownerByElement);
+
+            for (var el = picked; el != null && el != _previewHost; el = el.parent)
+            {
+                if (ownerByElement.TryGetValue(el, out string file) && file != null)
+                {
+                    evt.StopPropagation();
+                    ComponentPicked?.Invoke(file);
+                    return;
+                }
+            }
+        }
+
+        private static void MapOwners(
+            FiberNode fiber, string currentFile, Dictionary<object, string> ownerByElement)
+        {
+            while (fiber != null)
+            {
+                string file = currentFile;
+                var declaring = fiber.Family?.Current?.Method?.DeclaringType;
+                var src = declaring?.GetCustomAttribute<UitkxSourceAttribute>();
+                if (src != null)
+                    file = Canon(src.SourcePath);
+                if (fiber.HostElement != null && !ownerByElement.ContainsKey(fiber.HostElement))
+                    ownerByElement[fiber.HostElement] = file;
+                if (fiber.Child != null)
+                    MapOwners(fiber.Child, file, ownerByElement);
+                fiber = fiber.Sibling;
+            }
         }
 
         private void Mount()
