@@ -1538,13 +1538,31 @@ namespace Ruitk.EditorSupport.HMR
             {
                 if (!File.Exists(uitkxPath))
                     return;
-                string content = File.ReadAllText(uitkxPath);
+                SyncAssetCacheForHmr(uitkxPath, File.ReadAllText(uitkxPath));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[HMR] Asset cache sync failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Source-text overload (VE-05): the RUITK Builder previews unsaved buffers,
+        /// so the referenced <c>@uss</c>/<c>Asset&lt;T&gt;()</c> entries must inject
+        /// from buffer content — the asset FILES are on disk, only the .uitkx text
+        /// is not. <paramref name="uitkxPath"/> is still the identity used for
+        /// asset-dir derivation.
+        /// </summary>
+        internal static void SyncAssetCacheForHmr(string uitkxPath, string sourceText)
+        {
+            try
+            {
                 string assetDir = HmrAssetPathUtil.GetAssetDir(uitkxPath);
 
-                foreach (Match m in s_ussDirectiveRe.Matches(content))
+                foreach (Match m in s_ussDirectiveRe.Matches(sourceText))
                     InjectIfResolved(assetDir, m.Groups[1].Value, "StyleSheet");
 
-                foreach (Match m in s_assetCallRe.Matches(content))
+                foreach (Match m in s_assetCallRe.Matches(sourceText))
                     InjectIfResolved(assetDir, m.Groups[2].Value, m.Groups[1].Value);
             }
             catch (Exception ex)

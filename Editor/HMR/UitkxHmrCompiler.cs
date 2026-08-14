@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -95,6 +95,30 @@ namespace Ruitk.EditorSupport.HMR
             // Defensive — both null shouldn't be reachable but keep the
             // contract: caller always gets a string or an exception.
             throw new IOException($"ReadTextWithRetry exhausted attempts for '{path}'.");
+        }
+
+        /// <summary>
+        /// Optional overlay for unsaved editor buffers (the RUITK Builder compiles
+        /// buffer content that never touched disk). Every <c>.uitkx</c> read on the
+        /// compile pipeline consults it FIRST: a non-null return is used verbatim,
+        /// null falls through to disk. Companion <c>.cs</c> reads are never
+        /// overlaid. Existence checks for <c>.uitkx</c> go through
+        /// <see cref="UitkxSourceExists"/> so overlay-only files (created in the
+        /// builder, not yet saved) resolve as import targets.
+        /// </summary>
+        internal Func<string, string> SourceOverlay { get; set; }
+
+        private string ReadUitkxText(string path)
+        {
+            string overlay = SourceOverlay?.Invoke(path);
+            return overlay ?? ReadTextWithRetry(path);
+        }
+
+        private bool UitkxSourceExists(string path)
+        {
+            if (SourceOverlay?.Invoke(path) != null)
+                return true;
+            return File.Exists(path);
         }
 
         // ── Loaded pipeline assembly ──────────────────────────────────────────
@@ -292,7 +316,7 @@ namespace Ruitk.EditorSupport.HMR
 
             try
             {
-                string source = ReadTextWithRetry(uitkxPath);
+                string source = ReadUitkxText(uitkxPath);
 
                 // ── 1. Parse directives ──────────────────────────────────────
                 var stepSw = Stopwatch.StartNew();
@@ -628,7 +652,7 @@ namespace Ruitk.EditorSupport.HMR
 
             try
             {
-                string source = ReadTextWithRetry(uitkxPath);
+                string source = ReadUitkxText(uitkxPath);
                 var stepSw = Stopwatch.StartNew();
 
                 var diagList = CreateDiagnosticList();
@@ -1314,7 +1338,7 @@ namespace Ruitk.EditorSupport.HMR
                             targetFile = _importResolverMap.Invoke(null, args) as string;
                         }
                         catch { }
-                        if (string.IsNullOrEmpty(targetFile) || !File.Exists(targetFile))
+                        if (string.IsNullOrEmpty(targetFile) || !UitkxSourceExists(targetFile))
                             continue;
                         if (seenCandidates.Add(Path.GetFullPath(targetFile)))
                             candidateFiles.Add(targetFile);
@@ -1334,7 +1358,7 @@ namespace Ruitk.EditorSupport.HMR
 
                 try
                 {
-                    string companionSource = ReadTextWithRetry(file);
+                    string companionSource = ReadUitkxText(file);
                     var diagList = CreateDiagnosticList();
                     var companionDir = InvokeWithDefaults(
                         _directiveParse,
@@ -1470,7 +1494,7 @@ namespace Ruitk.EditorSupport.HMR
                 return;
             try
             {
-                string source = ReadTextWithRetry(uitkxPath);
+                string source = ReadUitkxText(uitkxPath);
                 var diag = CreateDiagnosticList();
                 var directives = InvokeWithDefaults(_directiveParse, null, source, uitkxPath, diag, true);
                 if (directives == null)
@@ -3381,7 +3405,7 @@ namespace Ruitk.EditorSupport.HMR
                             targetFile = _importResolverMap.Invoke(null, args) as string;
                         }
                         catch { }
-                        if (string.IsNullOrEmpty(targetFile) || !File.Exists(targetFile))
+                        if (string.IsNullOrEmpty(targetFile) || !UitkxSourceExists(targetFile))
                             continue;
                         object targetDs = ParseDirectivesForFile(targetFile);
                         string targetNs = targetDs != null
@@ -3500,7 +3524,7 @@ namespace Ruitk.EditorSupport.HMR
         {
             try
             {
-                string src = ReadTextWithRetry(targetFile);
+                string src = ReadUitkxText(targetFile);
                 var diag = CreateDiagnosticList();
                 return InvokeWithDefaults(_directiveParse, null, src, targetFile, diag, true);
             }
