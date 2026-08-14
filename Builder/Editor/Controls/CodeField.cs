@@ -24,8 +24,14 @@ namespace Ruitk.Builder
         private string _filePath = "";
         private HashSet<string> _knownElements;
         private bool _suppressChange;
+        private VisualElement _completionPopup;
 
         public event Action<string> TextEdited;
+
+        /// <summary>Ctrl+Space asks this for completions at (line0, char0);
+        /// the window wires it to the shared LSP client.</summary>
+        public Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>>
+            CompletionProvider { get; set; }
 
         public CodeField()
         {
@@ -60,6 +66,7 @@ namespace Ruitk.Builder
             _input.style.bottom = 0f;
             _input.style.color = new Color(1f, 1f, 1f, 0f);
             _input.RegisterValueChangedCallback(OnInputChanged);
+            _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
             host.Add(_input);
 
             _diagnosticsLabel = new Label
@@ -114,9 +121,108 @@ namespace Ruitk.Builder
         {
             if (_suppressChange)
                 return;
+            CloseCompletionPopup();
             string lf = (evt.newValue ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
             Recolor(lf);
             TextEdited?.Invoke(lf);
+        }
+
+        private void OnKeyDown(KeyDownEvent evt)
+        {
+            if (evt.keyCode == KeyCode.Escape)
+            {
+                CloseCompletionPopup();
+                return;
+            }
+            if (!(evt.ctrlKey && evt.keyCode == KeyCode.Space))
+                return;
+            evt.StopPropagation();
+            ShowCompletions();
+        }
+
+        private (int Line0, int Char0) CaretPosition()
+        {
+            string text = TextLf;
+            int index = Mathf.Clamp(_input.cursorIndex, 0, text.Length);
+            int line = 0, lineStart = 0;
+            for (int i = 0; i < index; i++)
+            {
+                if (text[i] == '\n')
+                {
+                    line++;
+                    lineStart = i + 1;
+                }
+            }
+            return (line, index - lineStart);
+        }
+
+        private async void ShowCompletions()
+        {
+            if (CompletionProvider == null)
+                return;
+            var (line0, char0) = CaretPosition();
+            List<(string Label, string Insert)> items;
+            try
+            {
+                items = await CompletionProvider(line0, char0);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+            if (items == null || items.Count == 0 || panel == null)
+                return;
+
+            CloseCompletionPopup();
+            var popup = new ScrollView
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 22f, right = 8f,
+                    maxHeight = 200f, minWidth = 180f,
+                    backgroundColor = new Color(0.13f, 0.13f, 0.15f),
+                    borderTopWidth = 1f, borderBottomWidth = 1f,
+                    borderLeftWidth = 1f, borderRightWidth = 1f,
+                    borderTopColor = new Color(0.3f, 0.3f, 0.35f),
+                    borderBottomColor = new Color(0.3f, 0.3f, 0.35f),
+                    borderLeftColor = new Color(0.3f, 0.3f, 0.35f),
+                    borderRightColor = new Color(0.3f, 0.3f, 0.35f),
+                },
+            };
+            int shown = 0;
+            foreach (var item in items)
+            {
+                if (shown++ == 25)
+                    break;
+                var row = new Label(item.Label)
+                {
+                    style = { paddingLeft = 6f, paddingTop = 1f, paddingBottom = 1f },
+                };
+                var captured = item;
+                row.RegisterCallback<PointerDownEvent>(e =>
+                {
+                    e.StopPropagation();
+                    CloseCompletionPopup();
+                    InsertAtCaret(captured.Insert ?? captured.Label);
+                });
+                row.RegisterCallback<MouseEnterEvent>(_ =>
+                    row.style.backgroundColor = new Color(0.2f, 0.3f, 0.4f));
+                row.RegisterCallback<MouseLeaveEvent>(_ =>
+                    row.style.backgroundColor = StyleKeyword.Null);
+                popup.Add(row);
+            }
+            _completionPopup = popup;
+            Add(popup);
+        }
+
+        private void CloseCompletionPopup()
+        {
+            if (_completionPopup != null)
+            {
+                _completionPopup.RemoveFromHierarchy();
+                _completionPopup = null;
+            }
         }
 
         private void Recolor(string textLf)

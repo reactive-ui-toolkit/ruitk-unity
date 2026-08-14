@@ -196,12 +196,64 @@ namespace Ruitk.Builder
                 _previewPane.Attach(previewSection);
                 _codeField = new CodeField();
                 _codeField.TextEdited += OnCodeEdited;
+                _codeField.CompletionProvider = RequestCompletions;
                 codeSection.Add(_codeField);
             }
             var session = _workspace.TryGet(_focusFile);
             _previewPane.ShowFile(_focusFile, session?.BufferText, null);
             _codeField.SetContent(session?.BufferText ?? "", _focusFile, null);
             _codeField.SetEditable(session != null && !session.IsReadOnly);
+            SyncLspBuffer(_focusFile, session?.BufferText, open: true);
+        }
+
+        [System.NonSerialized]
+        private readonly System.Collections.Generic.HashSet<string> _lspOpened =
+            new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+
+        private async void SyncLspBuffer(string path, string textLf, bool open)
+        {
+            if (string.IsNullOrEmpty(path) || textLf == null)
+                return;
+            try
+            {
+                var client = await BuilderLspService.GetOrStartAsync();
+                if (open && _lspOpened.Add(Path.GetFullPath(path)))
+                    client.DidOpen(path, textLf);
+                else
+                    client.DidChangeDebounced(path, textLf);
+            }
+            catch (System.Exception)
+            {
+                // LSP-less sessions still edit and save; completions just stay empty.
+            }
+        }
+
+        private async System.Threading.Tasks.Task<System.Collections.Generic.List<(string, string)>>
+            RequestCompletions(int line0, int char0)
+        {
+            var results = new System.Collections.Generic.List<(string, string)>();
+            var session = _workspace.TryGet(_focusFile);
+            if (session == null)
+                return results;
+            var client = await BuilderLspService.GetOrStartAsync();
+            client.SendDidChangeNow(_focusFile, session.BufferText);
+            var response = await client.RequestCompletion(_focusFile, line0, char0);
+
+            var items = response as Newtonsoft.Json.Linq.JArray
+                ?? (response?["items"] ?? response?["Items"]) as Newtonsoft.Json.Linq.JArray;
+            if (items == null)
+                return results;
+            foreach (var item in items)
+            {
+                string label = item.Value<string>("label") ?? item.Value<string>("Label");
+                if (string.IsNullOrEmpty(label))
+                    continue;
+                string insert = item.Value<string>("insertText")
+                    ?? item.Value<string>("InsertText")
+                    ?? label;
+                results.Add((label, insert));
+            }
+            return results;
         }
 
         private void RefreshEditedBuffer(BuilderDocumentSession session)
@@ -218,6 +270,7 @@ namespace Ruitk.Builder
                 return;
             session.ApplyEdit(bufferLf);
             _outlinePane?.Rebuild();
+            SyncLspBuffer(_focusFile, bufferLf, open: false);
             RefreshChrome();
             NotifyBufferChanged();
         }
