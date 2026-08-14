@@ -66,7 +66,10 @@ Write-Host "-- dotnet build (Ruitk.Language.Editor variant) ------------------" 
 # Intermediates/outputs live OUTSIDE the project folder: a redirected obj/bin
 # INSIDE it would be globbed as source by the other build flavor (CS0579
 # duplicate-attribute storms in whichever build runs second).
-dotnet build $languageCsproj --configuration $configuration --verbosity minimal `
+# -t:Rebuild: the variant's isolated obj/ has proven unreliable at detecting
+# source changes incrementally (a stale DLL shipped once, caught by the CI
+# pairing gate design); the project builds in ~1 s, forced rebuild is cheap.
+dotnet build $languageCsproj --configuration $configuration --verbosity minimal -t:Rebuild `
     -p:RuitkEditorVariant=true `
     -p:BaseIntermediateOutputPath="$variantRoot/obj/" `
     -p:BaseOutputPath="$variantRoot/bin/"
