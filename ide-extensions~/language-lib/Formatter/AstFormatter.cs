@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -7,6 +8,22 @@ using Ruitk.Language.Parser;
 
 namespace Ruitk.Language.Formatter
 {
+    /// <summary>
+    /// Why a <see cref="AstFormatter.Format(string, string, out FormatOutcome)"/> pass
+    /// produced its result. Every value except <see cref="Formatted"/> means the input
+    /// was returned unchanged by a deliberate data-loss guard — a caller performing a
+    /// write-back (the RUITK Builder) must treat those as failures, never as "already
+    /// canonical".
+    /// </summary>
+    public enum FormatOutcome
+    {
+        Formatted,
+        ParseErrors,
+        InlineJsxControlFlow,
+        MultipleComponents,
+        MissingComponentName,
+    }
+
     /// <summary>
     /// AST-based formatter for <c>.uitkx</c> files.
     ///
@@ -162,22 +179,101 @@ namespace Ruitk.Language.Formatter
         /// </summary>
         public string Format(string source, string filePath = "")
         {
-            _sb.Clear();
-            _indent = 0;
+            return Format(source, filePath, out _);
+        }
 
+        /// <summary>
+        /// Same as <see cref="Format(string, string)"/> but surfaces WHY a pass
+        /// returned its input unchanged. Callers that treat "output == input" as
+        /// meaningful (the RUITK Builder treats it as a hard error on a dirty
+        /// transaction) must use this overload — the identity fallbacks below are
+        /// deliberate data-loss guards, not formatting successes.
+        /// </summary>
+        public string Format(string source, string filePath, out FormatOutcome outcome)
+        {
             // Normalise to LF-only so all AppendLine helpers stay consistent.
             source = source.Replace("\r\n", "\n").Replace("\r", "\n");
-            _source = source;
-            _filePath = filePath;
 
             var diags = new List<ParseDiagnostic>();
             var directives = DirectiveParser.Parse(source, filePath, diags);
-            _directives = directives;
             var nodes = UitkxParser.Parse(source, filePath, directives, diags);
 
+            bool hasErrors = false;
             foreach (var d in diags)
                 if (d.Severity == ParseSeverity.Error)
-                    return source;
+                {
+                    hasErrors = true;
+                    break;
+                }
+
+            return FormatCore(source, filePath, directives, nodes, hasErrors, out outcome);
+        }
+
+        /// <summary>
+        /// Printer entry point (VE-14): format an already-parsed file WITHOUT the
+        /// internal re-parse. CONTRACT: <paramref name="source"/> must be the exact
+        /// LF-normalized text <paramref name="parseResult"/> was parsed from — the
+        /// emitters slice setup-code ranges by offset into it, so any drift between
+        /// the two silently corrupts output. A source containing CR is therefore
+        /// rejected loudly instead of normalized (normalizing would shift every
+        /// parsed offset).
+        /// </summary>
+        public string Format(
+            ParseResult parseResult,
+            string source,
+            string filePath,
+            out FormatOutcome outcome
+        )
+        {
+            if (parseResult == null)
+                throw new ArgumentNullException(nameof(parseResult));
+            if (source == null)
+                throw new ArgumentNullException(nameof(source));
+            if (source.IndexOf('\r') >= 0)
+                throw new ArgumentException(
+                    "source must be LF-normalized and identical to the text the ParseResult "
+                        + "was parsed from - offsets in the parse result index into it.",
+                    nameof(source)
+                );
+
+            bool hasErrors = false;
+            foreach (var d in parseResult.Diagnostics)
+                if (d.Severity == ParseSeverity.Error)
+                {
+                    hasErrors = true;
+                    break;
+                }
+
+            return FormatCore(
+                source,
+                filePath,
+                parseResult.Directives,
+                parseResult.RootNodes,
+                hasErrors,
+                out outcome
+            );
+        }
+
+        private string FormatCore(
+            string source,
+            string filePath,
+            DirectiveSet directives,
+            ImmutableArray<AstNode> nodes,
+            bool hasParseErrors,
+            out FormatOutcome outcome
+        )
+        {
+            _sb.Clear();
+            _indent = 0;
+            _source = source;
+            _filePath = filePath;
+            _directives = directives;
+
+            if (hasParseErrors)
+            {
+                outcome = FormatOutcome.ParseErrors;
+                return source;
+            }
 
             // U-02: inline-attribute JSX (attr={<Tag>...</Tag>}) is serialized to a
             // single line by SerializeJsxInlineCore, which cannot represent a
@@ -186,7 +282,10 @@ namespace Ruitk.Language.Formatter
             // to, so the safe minimal guarantee is: detect this shape up front and
             // leave the whole file untouched rather than silently dropping content.
             if (ContainsInlineJsxControlFlow(nodes))
+            {
+                outcome = FormatOutcome.InlineJsxControlFlow;
                 return source;
+            }
 
             // -- Plain-declaration files (ES-modules campaign, U-10) --
             // Must be checked FIRST: these files carry MemberDeclarations/DefaultExportName/
@@ -203,7 +302,10 @@ namespace Ruitk.Language.Formatter
                 // re-parsing this formatter does not do — safe minimal guarantee: leave the
                 // whole file untouched (same precedent as ContainsInlineJsxControlFlow).
                 if (directives.ComponentDeclarations.Length > 1)
+                {
+                    outcome = FormatOutcome.MultipleComponents;
                     return source;
+                }
                 FormatPlainDeclarationFile(directives, nodes);
             }
             else if (directives.IsFunctionStyle)
@@ -212,7 +314,10 @@ namespace Ruitk.Language.Formatter
                 // (an empty or preamble-only file must NOT become a fabricated
                 // `component Component { … }` — found by the audit's empty-file probe).
                 if (string.IsNullOrEmpty(directives.ComponentName))
+                {
+                    outcome = FormatOutcome.MissingComponentName;
                     return source;
+                }
                 FormatFunctionStyleComponent(directives, nodes);
             }
             else
@@ -222,6 +327,7 @@ namespace Ruitk.Language.Formatter
 
             // Trim any trailing whitespace/newlines and add exactly one trailing \n.
             var result = _sb.ToString().TrimEnd('\r', '\n', ' ', '\t');
+            outcome = FormatOutcome.Formatted;
             return result + "\n";
         }
 
