@@ -24,6 +24,7 @@ namespace Ruitk.Builder
         private Label _statusLabel;
 
         [System.NonSerialized] private BuilderCanvasHost _canvasHost;
+        [System.NonSerialized] private CodeField _codeField;
         [System.NonSerialized] private BuilderPreviewPane _previewPane;
         [System.NonSerialized] private BuilderPreviewCompiler _previewCompiler;
         [System.NonSerialized] private double _recompileDue;
@@ -129,11 +130,47 @@ namespace Ruitk.Builder
                 return;
             if (_previewPane == null)
             {
+                container.Clear();
+                var previewSection = new VisualElement { style = { flexGrow = 1f } };
+                var codeSection = new VisualElement
+                {
+                    style =
+                    {
+                        flexGrow = 1f,
+                        borderTopWidth = 1f,
+                        borderTopColor = new Color(0.2f, 0.2f, 0.23f),
+                    },
+                };
+                container.Add(previewSection);
+                container.Add(codeSection);
+
                 _previewPane = new BuilderPreviewPane();
-                _previewPane.Attach(container);
+                _previewPane.Attach(previewSection);
+                _codeField = new CodeField();
+                _codeField.TextEdited += OnCodeEdited;
+                codeSection.Add(_codeField);
             }
             var session = _workspace.TryGet(_focusFile);
             _previewPane.ShowFile(_focusFile, session?.BufferText, null);
+            _codeField.SetContent(session?.BufferText ?? "", _focusFile, null);
+            _codeField.SetEditable(session != null && !session.IsReadOnly);
+        }
+
+        private void RefreshEditedBuffer(BuilderDocumentSession session)
+        {
+            _codeField?.SetContent(session.BufferText, session.FilePath, null);
+            RefreshChrome();
+            NotifyBufferChanged();
+        }
+
+        private void OnCodeEdited(string bufferLf)
+        {
+            var session = _workspace.TryGet(_focusFile);
+            if (session == null || session.IsReadOnly)
+                return;
+            session.ApplyEdit(bufferLf);
+            RefreshChrome();
+            NotifyBufferChanged();
         }
 
         private void OpenFileFromCanvas(string filePath)
@@ -197,7 +234,7 @@ namespace Ruitk.Builder
                     if (focused != null && focused.CanUndo)
                     {
                         focused.Undo();
-                        RefreshChrome();
+                        RefreshEditedBuffer(focused);
                     }
                     evt.StopPropagation();
                     break;
@@ -206,7 +243,7 @@ namespace Ruitk.Builder
                     if (f != null && f.CanRedo)
                     {
                         f.Redo();
-                        RefreshChrome();
+                        RefreshEditedBuffer(f);
                     }
                     evt.StopPropagation();
                     break;
