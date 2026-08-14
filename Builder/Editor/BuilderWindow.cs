@@ -25,6 +25,7 @@ namespace Ruitk.Builder
 
         [System.NonSerialized] private BuilderCanvasHost _canvasHost;
         [System.NonSerialized] private BuilderLibraryPane _libraryPane;
+        [System.NonSerialized] private BuilderOutlinePane _outlinePane;
         [System.NonSerialized] private CodeField _codeField;
         [System.NonSerialized] private BuilderPreviewPane _previewPane;
         [System.NonSerialized] private BuilderPreviewCompiler _previewCompiler;
@@ -89,6 +90,7 @@ namespace Ruitk.Builder
             };
             toolbar.Add(new Button(SaveAll) { text = "Save" });
             toolbar.Add(new Button(AbortAll) { text = "Abort" });
+            toolbar.Add(new Button(NewFile) { text = "New File" });
             _statusLabel = new Label { style = { unityTextAlign = TextAnchor.MiddleLeft, marginLeft = 10f } };
             toolbar.Add(_statusLabel);
             root.Add(toolbar);
@@ -127,13 +129,45 @@ namespace Ruitk.Builder
 
         private void MountLibrary()
         {
-            if (_libraryPane != null)
-                return;
             var container = rootVisualElement?.Q("builder-library");
             if (container == null)
                 return;
-            _libraryPane = new BuilderLibraryPane();
-            _libraryPane.Attach(container, snippet => _codeField?.InsertAtCaret(snippet));
+            if (_libraryPane == null)
+            {
+                container.Clear();
+                var paletteSection = new VisualElement { style = { flexGrow = 1f } };
+                var outlineSection = new VisualElement
+                {
+                    style =
+                    {
+                        flexGrow = 1f,
+                        borderTopWidth = 1f,
+                        borderTopColor = new Color(0.2f, 0.2f, 0.23f),
+                    },
+                };
+                container.Add(paletteSection);
+                container.Add(outlineSection);
+
+                _libraryPane = new BuilderLibraryPane();
+                _libraryPane.Attach(paletteSection, snippet => _codeField?.InsertAtCaret(snippet));
+                _outlinePane = new BuilderOutlinePane();
+                _outlinePane.Attach(
+                    outlineSection,
+                    () => _workspace.TryGet(_focusFile)?.BufferText,
+                    ApplyOutlineEdit);
+            }
+            _outlinePane.ShowFile(_focusFile);
+        }
+
+        private void ApplyOutlineEdit(string bufferLf)
+        {
+            var session = _workspace.TryGet(_focusFile);
+            if (session == null || session.IsReadOnly)
+                return;
+            session.ApplyEdit(bufferLf);
+            _codeField?.SetContent(bufferLf, _focusFile, null);
+            RefreshChrome();
+            NotifyBufferChanged();
         }
 
         private void MountPreview()
@@ -183,6 +217,7 @@ namespace Ruitk.Builder
             if (session == null || session.IsReadOnly)
                 return;
             session.ApplyEdit(bufferLf);
+            _outlinePane?.Rebuild();
             RefreshChrome();
             NotifyBufferChanged();
         }
@@ -273,9 +308,32 @@ namespace Ruitk.Builder
 
         private void SaveAll()
         {
+            bool hmrActive = Ruitk.EditorSupport.HMR.UitkxHmrController.IsActive;
             int written = _workspace.SaveAll();
+            BuilderSaveMetrics.RecordSaveBatch(written, hmrActive);
             if (written > 0)
                 ShowNotification(new GUIContent($"Saved {written} file(s)"));
+            RefreshChrome();
+        }
+
+        private void NewFile()
+        {
+            string dir = string.IsNullOrEmpty(_focusFile)
+                ? null
+                : Path.GetDirectoryName(_focusFile);
+            if (dir == null)
+            {
+                ShowNotification(new GUIContent("Open a tree first - new files are created beside it"));
+                return;
+            }
+            BuilderNewFileDialog.Show(dir, this);
+        }
+
+        public void OpenAdditionalFile(string filePath)
+        {
+            _focusFile = Path.GetFullPath(filePath);
+            _workspace.Open(_focusFile);
+            MountCanvas();
             RefreshChrome();
         }
 

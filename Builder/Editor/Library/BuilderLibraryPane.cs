@@ -95,7 +95,49 @@ namespace Ruitk.Builder
                 });
                 return;
             }
+
+            AddDirectiveEntries();
+            AddStyleKeyEntries();
             Rebuild();
+        }
+
+        private void AddDirectiveEntries()
+        {
+            var directives = new (string Name, string Snippet)[]
+            {
+                ("@if", "@if (condition) {\n  return (\n    <VisualElement />\n  );\n}\n"),
+                ("@if/else", "@if (condition) {\n  return (\n    <VisualElement />\n  );\n} else {\n  return (\n    <VisualElement />\n  );\n}\n"),
+                ("@for", "@for (int i = 0; i < count; i++) {\n  return (\n    <VisualElement key={$\"item-{i}\"} />\n  );\n}\n"),
+                ("@foreach", "@foreach (var item in items) {\n  return (\n    <VisualElement key={item.ToString()} />\n  );\n}\n"),
+                ("@switch", "@switch (value) {\n  @case (0) {\n    return (\n      <VisualElement />\n    );\n  }\n  @default {\n    return (\n      <VisualElement />\n    );\n  }\n}\n"),
+            };
+            foreach (var (name, snippet) in directives)
+            {
+                _entries.Add(new Entry
+                {
+                    Name = name,
+                    Description = "Directive block — the body wraps markup in return (...).",
+                    Snippet = snippet,
+                    Section = "Directives",
+                });
+            }
+        }
+
+        private void AddStyleKeyEntries()
+        {
+            foreach (var prop in typeof(Ruitk.Props.Typed.Style).GetProperties(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (!prop.CanWrite)
+                    continue;
+                _entries.Add(new Entry
+                {
+                    Name = prop.Name,
+                    Description = prop.PropertyType.Name,
+                    Snippet = prop.Name + " = ",
+                    Section = "Style keys",
+                });
+            }
         }
 
         private void Rebuild()
