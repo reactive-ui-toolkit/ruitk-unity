@@ -143,38 +143,89 @@ export VirtualNode CanvasView(
               }}
             >
               <VisualElement style={CanvasStyles.CardHeader}>
-                <VisualElement
+                <Label
+                  text={BuilderCanvasDrawing.KindLabel(node.Kind)}
                   style={new Style {
-                    Width = Px(8),
-                    Height = Px(8),
-                    BorderRadius = Px(4),
-                    MarginRight = Px(6),
+                    FontSize = Px(8),
+                    Color = Hex("#17171b"),
                     BackgroundColor = BuilderCanvasDrawing.KindColor(node.Kind),
+                    BorderRadius = Px(3),
+                    PaddingLeft = Px(4),
+                    PaddingRight = Px(4),
+                    MarginRight = Px(6),
                   }}
                 />
                 <Label text={node.Title} style={CanvasStyles.CardTitle} />
-                <Label text={BuilderCanvasDrawing.KindLabel(node.Kind)} style={CanvasStyles.CardKindLabel} />
                 @if (node.IsReadOnly) {
                   return (
                     <Label text="read-only" style={CanvasStyles.CardLock} />
                   );
                 }
               </VisualElement>
+              @if (node.Signature != null && node.Signature.Length > 0) {
+                return (
+                  <Label text={node.Signature} style={CanvasStyles.CardSignature} />
+                );
+              }
               @if (lodFull) {
                 return (
                   <VisualElement style={CanvasStyles.CardBody}>
-                    @for (int x = 0; x < Mathf.Min(node.Exports.Count, 6); x++) {
+                    @if (node.Imports.Count > 0) {
                       return (
-                        <Label
-                          key={node.Exports[x]}
-                          text={node.Exports[x]}
-                          style={CanvasStyles.CardExport}
-                        />
+                        <VisualElement>
+                          <Label text="IMPORTS" style={CanvasStyles.CardSectionHeader} />
+                          @for (int x = 0; x < node.Imports.Count; x++) {
+                            return (
+                              <Label
+                                key={$"imp-{x}"}
+                                text={node.Imports[x].Text}
+                                style={CanvasStyles.CardImportLine}
+                              />
+                            );
+                          }
+                        </VisualElement>
                       );
                     }
-                    @if (node.Exports.Count > 6) {
+                    @if (node.Body.Count > 0) {
                       return (
-                        <Label text={$"+ {node.Exports.Count - 6} more"} style={CanvasStyles.CardExportMore} />
+                        <VisualElement>
+                          <Label
+                            text={node.Kind == BuilderNodeKind.Component ? "BODY — HOOKS & STATE" : "EXPORTS"}
+                            style={CanvasStyles.CardSectionHeader}
+                          />
+                          @for (int x = 0; x < node.Body.Count; x++) {
+                            return (
+                              <Label
+                                key={$"body-{x}"}
+                                text={node.Body[x].Text}
+                                style={new Style {
+                                  Color = BuilderCanvasDrawing.LineColor(node.Body[x].Kind),
+                                  FontSize = Px(10),
+                                }}
+                              />
+                            );
+                          }
+                        </VisualElement>
+                      );
+                    }
+                    @if (node.Markup.Count > 0) {
+                      return (
+                        <VisualElement>
+                          <Label text="RETURN — MARKUP" style={CanvasStyles.CardSectionHeader} />
+                          @for (int x = 0; x < node.Markup.Count; x++) {
+                            return (
+                              <Label
+                                key={$"mk-{x}"}
+                                text={node.Markup[x].Text}
+                                style={new Style {
+                                  Color = BuilderCanvasDrawing.LineColor(node.Markup[x].Kind),
+                                  FontSize = Px(10),
+                                  MarginLeft = Px(node.Markup[x].Depth * 10f),
+                                }}
+                              />
+                            );
+                          }
+                        </VisualElement>
                       );
                     }
                   </VisualElement>

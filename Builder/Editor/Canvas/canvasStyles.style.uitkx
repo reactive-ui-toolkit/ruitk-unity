@@ -41,6 +41,26 @@ export Style CardBody = new Style {
   PaddingBottom = Px(6),
 };
 
+export Style CardSignature = new Style {
+  Color = Hex("#8b8b96"),
+  FontSize = Px(9),
+  PaddingLeft = Px(8),
+  MarginBottom = Px(2),
+};
+
+export Style CardSectionHeader = new Style {
+  Color = Hex("#5a5a64"),
+  FontSize = Px(8),
+  UnityFontStyle = FontBold,
+  MarginTop = Px(5),
+  MarginBottom = Px(1),
+};
+
+export Style CardImportLine = new Style {
+  Color = Hex("#7fb3d5"),
+  FontSize = Px(9),
+};
+
 export Style CardExport = new Style {
   Color = Hex("#9a9aa6"),
   FontSize = Px(10),

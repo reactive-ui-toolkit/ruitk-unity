@@ -25,7 +25,12 @@ namespace Ruitk.Builder
         private float _camY;
         private float _zoom = 1f;
 
-        public async void Mount(VisualElement container, string focusFile, Action<string> onOpenFile)
+        public async void Mount(
+            VisualElement container,
+            string focusFile,
+            Action<string> onOpenFile,
+            Func<string, string> readText = null,
+            Action<BuilderGraph> onGraphLoaded = null)
         {
             if (container == null || string.IsNullOrEmpty(focusFile))
                 return;
@@ -36,7 +41,7 @@ namespace Ruitk.Builder
             try
             {
                 var client = await BuilderLspService.GetOrStartAsync();
-                graph = await BuilderGraphService.LoadTreeAsync(client, focusFile);
+                graph = await BuilderGraphService.LoadTreeAsync(client, focusFile, readText);
                 await CheckSchemaDrift(client);
             }
             catch (Exception ex)
@@ -48,6 +53,7 @@ namespace Ruitk.Builder
                 return;
 
             _graph = graph;
+            onGraphLoaded?.Invoke(graph);
             _config = BuilderCanvasConfig.LoadForMember(focusFile)
                 ?? BuilderCanvasConfig.LoadForRoot(_graph.RootPath);
             _config.ApplyTo(_graph);

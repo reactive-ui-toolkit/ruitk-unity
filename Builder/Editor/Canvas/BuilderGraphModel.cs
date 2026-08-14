@@ -14,17 +14,42 @@ namespace Ruitk.Builder
         Unknown,
     }
 
+    /// <summary>Coloring class for one line inside a card section.</summary>
+    public enum BuilderCardLineKind
+    {
+        Plain,
+        Import,
+        Hook,
+        Element,
+        Component,
+        Directive,
+        Export,
+    }
+
+    /// <summary>One rendered line inside a card body section.</summary>
+    [Serializable]
+    public sealed class BuilderCardLine
+    {
+        public string Text;
+        public int Depth;
+        public BuilderCardLineKind Kind;
+    }
+
     /// <summary>One file card on the canvas.</summary>
     [Serializable]
     public sealed class BuilderCanvasNode
     {
         public string FilePath;
         public string Title;
+        public string Signature;
         public BuilderNodeKind Kind;
         public float X;
         public float Y;
         public bool IsReadOnly;
         public List<string> Exports = new List<string>();
+        public List<BuilderCardLine> Imports = new List<BuilderCardLine>();
+        public List<BuilderCardLine> Body = new List<BuilderCardLine>();
+        public List<BuilderCardLine> Markup = new List<BuilderCardLine>();
     }
 
     /// <summary>One import edge; indices into the node list (broken edges keep To = -1).</summary>

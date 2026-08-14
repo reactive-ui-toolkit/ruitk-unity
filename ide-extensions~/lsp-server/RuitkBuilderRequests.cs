@@ -149,14 +149,16 @@ public sealed class RuitkComponentPropsHandler
 
     public RuitkComponentPropsHandler(WorkspaceIndex index) => _index = index;
 
-    public Task<RuitkComponentPropsResult> Handle(
+    public async Task<RuitkComponentPropsResult> Handle(
         RuitkComponentPropsParams request,
         CancellationToken cancellationToken
     )
     {
+        await _index.WaitForInitialScanAsync(cancellationToken);
+
         var info = _index.TryGetElementInfo(request.Name);
         if (info == null)
-            return Task.FromResult(new RuitkComponentPropsResult { Found = false });
+            return new RuitkComponentPropsResult { Found = false };
 
         var result = new RuitkComponentPropsResult
         {
@@ -172,7 +174,7 @@ public sealed class RuitkComponentPropsHandler
                 Doc = p.XmlDoc,
                 Line = p.Line,
             });
-        return Task.FromResult(result);
+        return result;
     }
 }
 
@@ -183,11 +185,15 @@ public sealed class RuitkWorkspaceGraphHandler
 
     public RuitkWorkspaceGraphHandler(WorkspaceIndex index) => _index = index;
 
-    public Task<RuitkWorkspaceGraphResult> Handle(
+    public async Task<RuitkWorkspaceGraphResult> Handle(
         RuitkWorkspaceGraphParams request,
         CancellationToken cancellationToken
     )
     {
+        // An answer computed while the background scan is still running is an
+        // empty/partial graph — the exact single-card failure the builder hit.
+        await _index.WaitForInitialScanAsync(cancellationToken);
+
         var result = new RuitkWorkspaceGraphResult();
 
         var byFile = new Dictionary<string, RuitkGraphNode>(StringComparer.OrdinalIgnoreCase);
@@ -230,6 +236,6 @@ public sealed class RuitkWorkspaceGraphHandler
             }
         }
 
-        return Task.FromResult(result);
+        return result;
     }
 }

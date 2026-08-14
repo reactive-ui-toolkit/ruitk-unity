@@ -14,7 +14,7 @@ namespace Ruitk.Builder
     /// </summary>
     public static class BuilderCanvasDrawing
     {
-        public const float CardWidth = 220f;
+        public const float CardWidth = 260f;
 
         public const float EdgeAnchorY = 19f;
 
@@ -49,6 +49,27 @@ namespace Ruitk.Builder
                     return "utils";
                 default:
                     return "file";
+            }
+        }
+
+        public static Color LineColor(BuilderCardLineKind kind)
+        {
+            switch (kind)
+            {
+                case BuilderCardLineKind.Import:
+                    return new Color(0.50f, 0.70f, 0.84f);
+                case BuilderCardLineKind.Hook:
+                    return new Color(0.90f, 0.78f, 0.40f);
+                case BuilderCardLineKind.Element:
+                    return new Color(0.42f, 0.68f, 0.90f);
+                case BuilderCardLineKind.Component:
+                    return new Color(0.31f, 0.86f, 0.77f);
+                case BuilderCardLineKind.Directive:
+                    return new Color(0.77f, 0.53f, 0.75f);
+                case BuilderCardLineKind.Export:
+                    return new Color(0.62f, 0.78f, 0.55f);
+                default:
+                    return new Color(0.60f, 0.60f, 0.66f);
             }
         }
 

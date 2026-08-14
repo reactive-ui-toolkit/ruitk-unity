@@ -8,6 +8,7 @@ using Ruitk;
 using Ruitk.Core;
 using Ruitk.Core.Fiber;
 using Ruitk.Elements;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -77,6 +78,101 @@ namespace Ruitk.Builder
                 style = { flexShrink = 0f, maxHeight = 220f, paddingLeft = 4f },
             };
             container.Add(_knobsHost);
+
+            container.Add(new Label("STATE — LIVE HOOK VALUES")
+            {
+                style =
+                {
+                    color = new Color(0.42f, 0.42f, 0.48f),
+                    fontSize = 8f,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    marginTop = 4f, marginLeft = 6f,
+                },
+            });
+            _stateHost = new VisualElement
+            {
+                style = { flexShrink = 0f, maxHeight = 140f, paddingLeft = 8f, paddingBottom = 4f },
+            };
+            container.Add(_stateHost);
+            EditorApplication.update += TickStatePanel;
+        }
+
+        private VisualElement _stateHost;
+        private double _nextStateRefresh;
+
+        private void TickStatePanel()
+        {
+            if (EditorApplication.timeSinceStartup < _nextStateRefresh)
+                return;
+            _nextStateRefresh = EditorApplication.timeSinceStartup + 0.5;
+            RefreshStatePanel();
+        }
+
+        /// <summary>The POC's live-state panel: hook values read straight from
+        /// the mounted fiber tree's FunctionComponentState (useState cells shown
+        /// per component, refreshed twice a second).</summary>
+        private void RefreshStatePanel()
+        {
+            if (_stateHost == null || _stateHost.panel == null)
+                return;
+            _stateHost.Clear();
+            var root = _renderer?.Fiber?.Root?.Current;
+            if (root == null)
+                return;
+            int shown = 0;
+            CollectHookRows(root, ref shown);
+        }
+
+        private void CollectHookRows(FiberNode fiber, ref int shown)
+        {
+            while (fiber != null && shown < 12)
+            {
+                var states = fiber.ComponentState?.HookStates;
+                if (states != null && states.Count > 0)
+                {
+                    string owner = fiber.Family?.Id ?? "component";
+                    int dot = owner.LastIndexOf('.');
+                    if (dot >= 0)
+                        owner = owner.Substring(dot + 1);
+                    for (int i = 0; i < states.Count && shown < 12; i++)
+                    {
+                        string value = DescribeHookState(states[i]);
+                        if (value == null)
+                            continue;
+                        _stateHost.Add(new Label(owner + "[" + i + "] = " + value)
+                        {
+                            style = { color = new Color(0.90f, 0.78f, 0.40f), fontSize = 10f },
+                        });
+                        shown++;
+                    }
+                }
+                if (fiber.Child != null)
+                    CollectHookRows(fiber.Child, ref shown);
+                fiber = fiber.Sibling;
+            }
+        }
+
+        private static string DescribeHookState(object state)
+        {
+            if (state == null)
+                return null;
+            var type = state.GetType();
+            foreach (string propName in new[] { "Value", "Current", "State" })
+            {
+                var prop = type.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+                if (prop != null)
+                {
+                    object value = prop.GetValue(state);
+                    return value == null ? "null" : value.ToString();
+                }
+                var field = type.GetField(propName, BindingFlags.Public | BindingFlags.Instance);
+                if (field != null)
+                {
+                    object value = field.GetValue(state);
+                    return value == null ? "null" : value.ToString();
+                }
+            }
+            return null;
         }
 
         public void ShowFile(string uitkxPath, string bufferText, Assembly assemblyHint)
@@ -138,9 +234,11 @@ namespace Ruitk.Builder
 
         public void Dispose()
         {
+            EditorApplication.update -= TickStatePanel;
             UnmountPreview();
             _scheduler.Dispose();
             _container = null;
+            _stateHost = null;
         }
 
         /// <summary>VE-15 Family-exact click-through: Ctrl+Click maps the picked

@@ -243,11 +243,13 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
         if (!string.IsNullOrEmpty(root))
         {
             ServerLog.Log($"WorkspaceIndex.OnStarted: starting scan from '{root}'");
+            _scanScheduled = true;
             _ = Task.Run(
                 () =>
                 {
                     ScanDirectory(root);
                     ScanCompleted?.Invoke();
+                    _initialScanTcs.TrySetResult(true);
                 },
                 cancellationToken
             );
@@ -255,12 +257,37 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
         else
         {
             ServerLog.Log("WorkspaceIndex.OnStarted: no root — scan deferred until EnsureScanned() is called");
+            _initialScanTcs.TrySetResult(true);
         }
 
         return Task.CompletedTask;
     }
 
     private volatile bool _hasScanned;
+
+    private readonly TaskCompletionSource<bool> _initialScanTcs =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private volatile bool _scanScheduled;
+
+    /// <summary>
+    /// Completes when the initial workspace scan finishes (or immediately when
+    /// the client provided no root, so the index will never populate). Requests
+    /// whose answer is meaningless on a partial index — the builder's
+    /// workspace-graph and component-props — await this instead of racing the
+    /// background scan and returning an empty graph.
+    /// </summary>
+    public Task InitialScan => _initialScanTcs.Task;
+
+    /// <summary>No-op unless a scan is actually scheduled and unfinished —
+    /// a directly-constructed index (tests, overlay-only use) never waits.
+    /// Bounded so a wedged scan degrades to a partial answer, not a hang.</summary>
+    public Task WaitForInitialScanAsync(CancellationToken cancellationToken)
+    {
+        if (!_scanScheduled || _hasScanned)
+            return Task.CompletedTask;
+        return Task.WhenAny(_initialScanTcs.Task, Task.Delay(30000, cancellationToken));
+    }
 
     /// <summary>
     /// Returns <c>true</c> once the initial background workspace scan has
@@ -283,8 +310,10 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
             return;
 
         ServerLog.Log($"WorkspaceIndex.EnsureScanned: deferred scan from '{rootPath}'");
+        _scanScheduled = true;
         ScanDirectory(rootPath);
         ScanCompleted?.Invoke();
+        _initialScanTcs.TrySetResult(true);
     }
 
     // ── Public API ────────────────────────────────────────────────────────────

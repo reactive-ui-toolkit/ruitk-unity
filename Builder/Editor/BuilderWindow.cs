@@ -122,7 +122,9 @@ namespace Ruitk.Builder
                 return;
             _canvasHost?.Unmount();
             _canvasHost = new BuilderCanvasHost();
-            _canvasHost.Mount(container, _focusFile, OpenFileFromCanvas);
+            _canvasHost.Mount(
+                container, _focusFile, OpenFileFromCanvas, ReadBufferOrDisk,
+                graph => _libraryPane?.SetWorkspaceEntries(graph));
             MountPreview();
             MountLibrary();
         }
@@ -280,6 +282,14 @@ namespace Ruitk.Builder
             string full = Path.GetFullPath(filePath);
             if (!string.Equals(full, Path.GetFullPath(_focusFile), System.StringComparison.OrdinalIgnoreCase))
                 OpenFileFromCanvas(full);
+        }
+
+        private string ReadBufferOrDisk(string filePath)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session != null)
+                return session.BufferText;
+            return File.Exists(filePath) ? File.ReadAllText(filePath) : null;
         }
 
         private void OpenFileFromCanvas(string filePath)

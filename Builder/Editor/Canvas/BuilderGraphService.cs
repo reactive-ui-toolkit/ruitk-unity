@@ -2,8 +2,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using Ruitk.Language.Nodes;
 
 namespace Ruitk.Builder
 {
@@ -15,7 +17,8 @@ namespace Ruitk.Builder
     /// </summary>
     internal static class BuilderGraphService
     {
-        public static async Task<BuilderGraph> LoadTreeAsync(BuilderLspClient client, string focusFile)
+        public static async Task<BuilderGraph> LoadTreeAsync(
+            BuilderLspClient client, string focusFile, Func<string, string> readText = null)
         {
             JToken raw = await client.RequestWorkspaceGraph();
             var nodes = (raw?["nodes"] ?? raw?["Nodes"]) as JArray ?? new JArray();
@@ -112,7 +115,152 @@ namespace Ruitk.Builder
             }
 
             SeedDefaultPositions(graph, indexByFile.TryGetValue(root, out int rootIdx) ? rootIdx : 0);
+
+            foreach (var node in graph.Nodes)
+            {
+                try
+                {
+                    PopulateCardDetail(node, readText);
+                }
+                catch (Exception)
+                {
+                    // A file that cannot be read/parsed still gets its header card.
+                }
+            }
             return graph;
+        }
+
+        private static readonly Regex s_hookCall = new Regex(
+            @"(?:var\s*\(([^)]*)\)\s*=\s*|var\s+(\w+)\s*=\s*)?\b(use[A-Z][A-Za-z0-9]*)\s*(?:<[^>\n]*>)?\s*\(",
+            RegexOptions.Compiled);
+
+        /// <summary>Fills the POC-card sections: imports, hooks-and-state lines,
+        /// and the flattened return-markup tree, from the live buffer when one
+        /// is open (readText) or disk otherwise.</summary>
+        public static void PopulateCardDetail(BuilderCanvasNode node, Func<string, string> readText)
+        {
+            string text = readText?.Invoke(node.FilePath);
+            if (text == null && File.Exists(node.FilePath))
+                text = File.ReadAllText(node.FilePath);
+            if (text == null)
+                return;
+            text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+
+            node.Imports.Clear();
+            node.Body.Clear();
+            node.Markup.Clear();
+            node.Signature = node.Kind == BuilderNodeKind.Component ? node.Title + "()" : node.Title;
+
+            var parsed = BuilderLanguage.Parse(text, node.FilePath);
+
+            foreach (var import in parsed.Directives.Imports)
+            {
+                string spec = import.Specifier ?? "";
+                if (spec.StartsWith("@", StringComparison.Ordinal))
+                    continue;
+                string names = import.Names.IsDefaultOrEmpty || import.Names.Length == 0
+                    ? "*"
+                    : "{ " + string.Join(", ", import.Names) + " }";
+                node.Imports.Add(new BuilderCardLine
+                {
+                    Text = names + "  ←  " + spec,
+                    Kind = BuilderCardLineKind.Import,
+                });
+            }
+
+            int hookCount = 0;
+            foreach (Match m in s_hookCall.Matches(text))
+            {
+                if (hookCount == 8)
+                {
+                    node.Body.Add(new BuilderCardLine { Text = "…", Kind = BuilderCardLineKind.Plain });
+                    break;
+                }
+                string lhs = m.Groups[1].Success ? m.Groups[1].Value.Trim()
+                    : m.Groups[2].Success ? m.Groups[2].Value.Trim()
+                    : null;
+                string hook = m.Groups[3].Value;
+                node.Body.Add(new BuilderCardLine
+                {
+                    Text = lhs == null ? hook : hook + "  →  " + lhs,
+                    Kind = BuilderCardLineKind.Hook,
+                });
+                hookCount++;
+            }
+
+            var registered = Ruitk.Elements.ElementRegistryProvider.GetDefaultRegistry().RegisteredNames;
+            var registeredSet = new HashSet<string>(registered, StringComparer.Ordinal);
+            int budget = 14;
+            foreach (var root in parsed.RootNodes)
+                WalkMarkup(root, 0, node.Markup, registeredSet, ref budget);
+            if (budget <= 0)
+                node.Markup.Add(new BuilderCardLine { Text = "…", Kind = BuilderCardLineKind.Plain });
+
+            if (node.Markup.Count == 0 && node.Exports.Count > 0)
+            {
+                foreach (string export in node.Exports)
+                    node.Body.Add(new BuilderCardLine
+                    {
+                        Text = export,
+                        Kind = BuilderCardLineKind.Export,
+                    });
+            }
+        }
+
+        private static void WalkMarkup(
+            AstNode node, int depth, List<BuilderCardLine> lines,
+            HashSet<string> registered, ref int budget)
+        {
+            if (budget <= 0)
+                return;
+            switch (node)
+            {
+                case ElementNode element:
+                    budget--;
+                    lines.Add(new BuilderCardLine
+                    {
+                        Text = "<" + element.TagName + ">",
+                        Depth = depth,
+                        Kind = registered.Contains(element.TagName)
+                            ? BuilderCardLineKind.Element
+                            : BuilderCardLineKind.Component,
+                    });
+                    foreach (var child in element.Children)
+                        WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                    break;
+                case IfNode ifNode:
+                    budget--;
+                    lines.Add(new BuilderCardLine { Text = "@if", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    foreach (var branch in ifNode.Branches)
+                        foreach (var child in branch.Payload.Body)
+                            WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                    break;
+                case ForeachNode fe:
+                    budget--;
+                    lines.Add(new BuilderCardLine { Text = "@foreach", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    foreach (var child in fe.Payload.Body)
+                        WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                    break;
+                case ForNode f:
+                    budget--;
+                    lines.Add(new BuilderCardLine { Text = "@for", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    foreach (var child in f.Payload.Body)
+                        WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                    break;
+                case WhileNode w:
+                    budget--;
+                    lines.Add(new BuilderCardLine { Text = "@while", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    foreach (var child in w.Payload.Body)
+                        WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                    break;
+                case SwitchNode s:
+                    budget--;
+                    lines.Add(new BuilderCardLine { Text = "@switch", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    foreach (var c in s.Cases)
+                        foreach (var child in c.Payload.Body)
+                            WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                    break;
+            }
         }
 
         private static void Link(Dictionary<string, HashSet<string>> map, string key, string value)
