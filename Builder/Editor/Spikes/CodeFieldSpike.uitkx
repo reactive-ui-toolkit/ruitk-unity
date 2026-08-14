@@ -1,0 +1,51 @@
+import * as SpikeStyles from "./spikeStyles.style"
+import "@UnityEngine.UIElements"
+import "@System.Text.RegularExpressions"
+
+export VirtualNode CodeFieldSpike() {
+  var (code, setCode) = useState("export VirtualNode Sample(string title, int gold) {\n  var (count, setCount) = useState(0);\n  return (\n    <VisualElement style={Styles.root}>\n      <Label text={title} />\n      <Button text=\"buy\" onClick={_ => setCount(count + 1)} />\n    </VisualElement>\n  );\n}\n");
+  var keystrokes = useRef(0);
+  var highlightMs = useRef(0.0);
+
+  string Highlight(string src) {
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    string safe = src.Replace("<", "\u2039").Replace(">", "\u203A");
+    string colored = Regex.Replace(
+      safe,
+      "\\b(export|VirtualNode|var|return|new|int|string|float|bool|if|else|foreach|for|while|using|null|true|false)\\b",
+      "<color=#C792EA>$1</color>");
+    colored = Regex.Replace(colored, "\"[^\"\\n]*\"", m => "<color=#C3E88D>" + m.Value + "</color>");
+    colored = Regex.Replace(colored, "\\b(use[A-Z][A-Za-z0-9]*)\\b", "<color=#82AAFF>$1</color>");
+    sw.Stop();
+    highlightMs.Current = sw.Elapsed.TotalMilliseconds;
+    return colored;
+  }
+
+  string overlayText = Highlight(code);
+
+  return (
+    <VisualElement style={SpikeStyles.EditorRoot}>
+      <VisualElement style={SpikeStyles.Hud}>
+        <Label text={$"keystrokes {keystrokes.Current}  highlight {highlightMs.Current:F2} ms"} />
+        <Label text="type below - the caret question IS the spike: is it visible over transparent ink?" />
+      </VisualElement>
+      <VisualElement style={SpikeStyles.OverlayHost}>
+        <Label
+          text={overlayText}
+          enableRichText={true}
+          pickingMode={PickIgnore}
+          style={SpikeStyles.CodeOverlay}
+        />
+        <TextField
+          value={code}
+          multiline={true}
+          onChanged={v => {
+            keystrokes.Current = keystrokes.Current + 1;
+            setCode(v);
+          }}
+          style={SpikeStyles.CodeInput}
+        />
+      </VisualElement>
+    </VisualElement>
+  );
+}
