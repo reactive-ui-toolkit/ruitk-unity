@@ -97,27 +97,53 @@ namespace Ruitk.Editor
         }
 
         /// <summary>
-        /// Returns the absolute paths of every .uitkx file under the Assets/
-        /// folder, excluding files inside Unity-ignored "~" directories.
+        /// Returns the absolute paths of every .uitkx file under <c>Assets/</c> and every
+        /// writable (embedded/local) package root, excluding files inside Unity-ignored
+        /// "~" directories. GEN-3: package-resident .uitkx were previously absent from the
+        /// generated csprojs, so IDE (dotnet) compiles fell back to the generator's
+        /// slower asmdef-root disk scan. Injecting them everywhere is safe for the same
+        /// reason the Assets/ injection is: the generator filters AdditionalTexts by
+        /// asmdef ownership per compilation (<c>UitkxPipeline.IsOwnedByCompilation</c>),
+        /// so no csproj generates types for files it does not own.
         /// </summary>
         private static string[] FindUitkxFiles()
         {
+            var roots = new System.Collections.Generic.List<string>();
+
             string assetsRoot = Path.GetFullPath("Assets");
+            if (Directory.Exists(assetsRoot))
+                roots.Add(assetsRoot);
 
-            if (!Directory.Exists(assetsRoot))
-                return Array.Empty<string>();
-
-            string[] all = Directory.GetFiles(assetsRoot, "*.uitkx", SearchOption.AllDirectories);
-
-            // Filter out any paths whose directory segments contain a "~" suffix
-            // (e.g. SourceGenerator~, ReactiveUIToolkitDocs~).
-            // Those are Unity-ignored tooling folders — their files must never
-            // be passed to the compiler as AdditionalFiles.
-            var result = new System.Collections.Generic.List<string>(all.Length);
-            foreach (string p in all)
+            foreach (var pkg in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
             {
-                if (!IsInsideIgnoredFolder(p))
-                    result.Add(p);
+                if (pkg.source != UnityEditor.PackageManager.PackageSource.Embedded &&
+                    pkg.source != UnityEditor.PackageManager.PackageSource.Local)
+                    continue;
+                if (!string.IsNullOrEmpty(pkg.resolvedPath) && Directory.Exists(pkg.resolvedPath))
+                    roots.Add(pkg.resolvedPath);
+            }
+
+            var result = new System.Collections.Generic.List<string>();
+            foreach (string root in roots)
+            {
+                string[] all;
+                try
+                {
+                    all = Directory.GetFiles(root, "*.uitkx", SearchOption.AllDirectories);
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                // Filter out any paths whose directory segments carry a "~" suffix
+                // (e.g. SourceGenerator~, Samples~). Those are Unity-ignored tooling
+                // folders — their files must never reach the compiler as AdditionalFiles.
+                foreach (string p in all)
+                {
+                    if (!IsInsideIgnoredFolder(p))
+                        result.Add(p);
+                }
             }
 
             return result.ToArray();
