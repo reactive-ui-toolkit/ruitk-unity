@@ -151,7 +151,19 @@ namespace Ruitk.Builder
                 container.Add(outlineSection);
 
                 _libraryPane = new BuilderLibraryPane();
-                _libraryPane.Attach(paletteSection, snippet => _codeField?.InsertAtCaret(snippet));
+                _libraryPane.Attach(paletteSection, (snippet, section) =>
+                {
+                    bool markup = section == "Native elements"
+                        || section == "Custom components"
+                        || section == "Directives";
+                    bool body = section == "Hooks" || section == "Hook modules";
+                    if (markup)
+                        _codeField?.InsertSnippet(snippet, isMarkup: true);
+                    else if (body)
+                        _codeField?.InsertSnippet(snippet, isMarkup: false);
+                    else
+                        _codeField?.InsertAtCaret(snippet);
+                });
                 _outlinePane = new BuilderOutlinePane();
                 _outlinePane.Attach(
                     outlineSection,
@@ -333,7 +345,8 @@ namespace Ruitk.Builder
             }
             else if (result != null)
             {
-                _previewPane?.ShowError("Compile failed: " + result.Error);
+                _previewPane?.ShowError("Preview compile failed — fix the code pane diagnostics (last good preview kept)");
+                Debug.LogWarning("[RUITK Builder] preview compile: " + result.Error);
             }
         }
 

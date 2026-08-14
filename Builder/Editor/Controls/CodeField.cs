@@ -24,6 +24,7 @@ namespace Ruitk.Builder
         private string _filePath = "";
         private HashSet<string> _knownElements;
         private bool _suppressChange;
+        private bool _userCaretActive;
         private VisualElement _completionPopup;
 
         public event Action<string> TextEdited;
@@ -67,6 +68,7 @@ namespace Ruitk.Builder
             _input.style.color = new Color(1f, 1f, 1f, 0f);
             _input.RegisterValueChangedCallback(OnInputChanged);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+            _input.RegisterCallback<PointerDownEvent>(_ => _userCaretActive = true);
             host.Add(_input);
 
             _diagnosticsLabel = new Label
@@ -109,7 +111,67 @@ namespace Ruitk.Builder
             _suppressChange = true;
             _input.value = textLf ?? "";
             _suppressChange = false;
+            _userCaretActive = false;
             Recolor(textLf ?? "");
+        }
+
+        /// <summary>Location-aware palette insertion. With a live user caret the
+        /// snippet lands there; otherwise markup snippets go INSIDE the last
+        /// return block (before its closing) and body snippets go before the
+        /// last <c>return (</c> — a blind caret at index 0 used to prepend
+        /// markup above the imports and break the whole buffer.</summary>
+        public void InsertSnippet(string snippet, bool isMarkup)
+        {
+            if (string.IsNullOrEmpty(snippet))
+                return;
+            if (_userCaretActive)
+            {
+                InsertAtCaret(snippet);
+                return;
+            }
+
+            string text = TextLf;
+            if (isMarkup)
+            {
+                int close = text.LastIndexOf("\n  );", StringComparison.Ordinal);
+                if (close >= 0)
+                {
+                    ReplaceAll(text.Substring(0, close + 1)
+                        + Indent(snippet.TrimEnd('\n'), "    ") + "\n"
+                        + text.Substring(close + 1));
+                    return;
+                }
+            }
+            else
+            {
+                int ret = text.LastIndexOf("\n  return (", StringComparison.Ordinal);
+                if (ret >= 0)
+                {
+                    ReplaceAll(text.Substring(0, ret + 1)
+                        + Indent(snippet.TrimEnd('\n'), "  ") + "\n"
+                        + text.Substring(ret + 1));
+                    return;
+                }
+            }
+            InsertAtCaret(snippet);
+        }
+
+        private void ReplaceAll(string newText)
+        {
+            _input.value = newText;
+        }
+
+        private static string Indent(string snippet, string pad)
+        {
+            var lines = snippet.Split('\n');
+            var sb = new StringBuilder();
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0)
+                    sb.Append('\n');
+                sb.Append(pad).Append(lines[i]);
+            }
+            return sb.ToString();
         }
 
         public void SetEditable(bool editable)
@@ -249,7 +311,8 @@ namespace Ruitk.Builder
                             sb.Append("… +").Append(diags.Count - 4).Append(" more");
                             break;
                         }
-                        sb.Append(d.ToString()).Append('\n');
+                        sb.Append(d.Code).Append(" L").Append(d.SourceLine)
+                            .Append(": ").Append(d.Message).Append('\n');
                     }
                     _diagnosticsLabel.text = sb.ToString().TrimEnd('\n');
                 }

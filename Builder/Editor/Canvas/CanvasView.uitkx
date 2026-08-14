@@ -10,7 +10,8 @@ export VirtualNode CanvasView(
   Action<string> onOpenFile = null,
   Action onLayoutChanged = null,
   Action<int> onSelect = null,
-  Action<float, float, float> onCameraChanged = null
+  Action<float, float, float> onCameraChanged = null,
+  Action<int> onCardContext = null
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -125,6 +126,13 @@ export VirtualNode CanvasView(
                 BorderLeftColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
               }}
               onPointerDown={e => {
+                if (e.Button == 1) {
+                  if (onCardContext != null) {
+                    onCardContext(index);
+                  }
+                  e.StopPropagation();
+                  return;
+                }
                 if (e.ClickCount >= 2) {
                   if (onOpenFile != null) {
                     onOpenFile(node.FilePath);

@@ -82,9 +82,47 @@ namespace Ruitk.Builder
                             _zoom = z;
                             SaveLayout();
                         },
+                        OnCardContext = index => ShowCardMenu(index, onOpenFile),
                     }
                 )
             );
+        }
+
+        private void ShowCardMenu(int index, Action<string> onOpenFile)
+        {
+            if (_graph == null || index < 0 || index >= _graph.Nodes.Count)
+                return;
+            var node = _graph.Nodes[index];
+            var menu = new UnityEditor.GenericMenu();
+            menu.AddItem(new UnityEngine.GUIContent("Open"), false, () => onOpenFile?.Invoke(node.FilePath));
+            menu.AddItem(new UnityEngine.GUIContent("Show in Project"), false, () =>
+            {
+                string assetPath = ToAssetPath(node.FilePath);
+                var asset = assetPath == null
+                    ? null
+                    : UnityEditor.AssetDatabase.LoadMainAssetAtPath(assetPath);
+                if (asset != null)
+                    UnityEditor.EditorGUIUtility.PingObject(asset);
+            });
+            menu.AddItem(new UnityEngine.GUIContent("Copy Path"), false, () =>
+                UnityEditor.EditorGUIUtility.systemCopyBuffer = node.FilePath);
+            menu.ShowAsContext();
+        }
+
+        private static string ToAssetPath(string fullPath)
+        {
+            try
+            {
+                string projectRoot = System.IO.Path.GetDirectoryName(UnityEngine.Application.dataPath);
+                string full = System.IO.Path.GetFullPath(fullPath).Replace('\\', '/');
+                string root = System.IO.Path.GetFullPath(projectRoot ?? "").Replace('\\', '/');
+                if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                    return full.Substring(root.Length).TrimStart('/');
+            }
+            catch
+            {
+            }
+            return null;
         }
 
         public void Unmount()

@@ -114,8 +114,6 @@ namespace Ruitk.Builder
                 });
             }
 
-            SeedDefaultPositions(graph, indexByFile.TryGetValue(root, out int rootIdx) ? rootIdx : 0);
-
             foreach (var node in graph.Nodes)
             {
                 try
@@ -127,6 +125,8 @@ namespace Ruitk.Builder
                     // A file that cannot be read/parsed still gets its header card.
                 }
             }
+
+            SeedDefaultPositions(graph, indexByFile.TryGetValue(root, out int rootIdx) ? rootIdx : 0);
             return graph;
         }
 
@@ -350,7 +350,9 @@ namespace Ruitk.Builder
             _ => BuilderNodeKind.Unknown,
         };
 
-        /// <summary>Root at origin, importers fan right in BFS depth columns.</summary>
+        /// <summary>Root at origin, imports fan right in BFS depth columns.
+        /// Column Y advances by each card's ESTIMATED height (section line
+        /// counts), so tall detail cards never overlap their column neighbors.</summary>
         private static void SeedDefaultPositions(BuilderGraph graph, int rootIndex)
         {
             var depth = new int[graph.Nodes.Count];
@@ -372,19 +374,30 @@ namespace Ruitk.Builder
                 }
             }
 
-            var perColumn = new Dictionary<int, int>();
+            var columnY = new Dictionary<int, float>();
             for (int i = 0; i < graph.Nodes.Count; i++)
             {
                 int d = depth[i] < 0 ? 0 : depth[i];
-                perColumn.TryGetValue(d, out int row);
-                perColumn[d] = row + 1;
                 var node = graph.Nodes[i];
+                columnY.TryGetValue(d, out float y);
+                if (y == 0f)
+                    y = 80f;
                 if (node.X == 0f && node.Y == 0f)
                 {
-                    node.X = 80f + d * 420f;
-                    node.Y = 80f + row * 260f;
+                    node.X = 80f + d * (BuilderCanvasDrawing.CardWidth + 160f);
+                    node.Y = y;
                 }
+                columnY[d] = Math.Max(y, node.Y) + EstimateCardHeight(node) + 48f;
             }
+        }
+
+        private static float EstimateCardHeight(BuilderCanvasNode node)
+        {
+            int lines = node.Imports.Count + node.Body.Count + node.Markup.Count;
+            int sections = (node.Imports.Count > 0 ? 1 : 0)
+                + (node.Body.Count > 0 ? 1 : 0)
+                + (node.Markup.Count > 0 ? 1 : 0);
+            return 46f + sections * 16f + lines * 13f;
         }
 
         private static string Str(JToken token, string camel, string pascal) =>

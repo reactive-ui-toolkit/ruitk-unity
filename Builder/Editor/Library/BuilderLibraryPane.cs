@@ -35,11 +35,11 @@ namespace Ruitk.Builder
         private readonly List<Entry> _entries = new List<Entry>();
         private VisualElement _listHost;
         private string _filter = "";
-        private Action<string> _insert;
+        private Action<string, string> _insert;
 
-        public async void Attach(VisualElement container, Action<string> insertAtCaret)
+        public async void Attach(VisualElement container, Action<string, string> insertSnippet)
         {
-            _insert = insertAtCaret;
+            _insert = insertSnippet;
             container.Clear();
 
             var search = new TextField { style = { marginTop = 4f, marginLeft = 4f, marginRight = 4f } };
@@ -274,7 +274,7 @@ namespace Ruitk.Builder
                     },
                 };
                 var captured = entry;
-                row.RegisterCallback<PointerDownEvent>(_ => _insert?.Invoke(captured.Snippet));
+                row.RegisterCallback<PointerDownEvent>(_ => _insert?.Invoke(captured.Snippet, captured.Section));
                 row.RegisterCallback<MouseEnterEvent>(_ =>
                     row.style.backgroundColor = new Color(0.18f, 0.24f, 0.30f));
                 row.RegisterCallback<MouseLeaveEvent>(_ =>
