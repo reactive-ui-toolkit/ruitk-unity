@@ -24,6 +24,10 @@ namespace Ruitk.Builder
         private Label _statusLabel;
 
         [System.NonSerialized] private BuilderCanvasHost _canvasHost;
+        [System.NonSerialized] private BuilderPreviewPane _previewPane;
+        [System.NonSerialized] private BuilderPreviewCompiler _previewCompiler;
+        [System.NonSerialized] private double _recompileDue;
+        [System.NonSerialized] private bool _recompileScheduled;
 
         public BuilderWorkspace Workspace => _workspace;
 
@@ -58,6 +62,10 @@ namespace Ruitk.Builder
             _workspace.Changed -= OnWorkspaceChanged;
             _canvasHost?.Unmount();
             _canvasHost = null;
+            _previewPane?.Dispose();
+            _previewPane = null;
+            _previewCompiler?.Dispose();
+            _previewCompiler = null;
         }
 
         private void CreateGUI()
@@ -111,13 +119,66 @@ namespace Ruitk.Builder
             _canvasHost?.Unmount();
             _canvasHost = new BuilderCanvasHost();
             _canvasHost.Mount(container, _focusFile, OpenFileFromCanvas);
+            MountPreview();
+        }
+
+        private void MountPreview()
+        {
+            var container = rootVisualElement?.Q("builder-side");
+            if (container == null || string.IsNullOrEmpty(_focusFile))
+                return;
+            if (_previewPane == null)
+            {
+                _previewPane = new BuilderPreviewPane();
+                _previewPane.Attach(container);
+            }
+            var session = _workspace.TryGet(_focusFile);
+            _previewPane.ShowFile(_focusFile, session?.BufferText, null);
         }
 
         private void OpenFileFromCanvas(string filePath)
         {
             _workspace.Open(filePath);
             _focusFile = filePath;
+            MountPreview();
             RefreshChrome();
+        }
+
+        /// <summary>Debounced buffer-edit entry point (CodeField/authoring call
+        /// this): dirty buffers recompile in import order after 300 ms of quiet,
+        /// then the preview re-resolves its delegate from the swap assembly.</summary>
+        public void NotifyBufferChanged()
+        {
+            _recompileDue = EditorApplication.timeSinceStartup + 0.3;
+            if (_recompileScheduled)
+                return;
+            _recompileScheduled = true;
+            EditorApplication.update += RecompileWhenQuiet;
+        }
+
+        private void RecompileWhenQuiet()
+        {
+            if (EditorApplication.timeSinceStartup < _recompileDue)
+                return;
+            EditorApplication.update -= RecompileWhenQuiet;
+            _recompileScheduled = false;
+
+            _previewCompiler ??= new BuilderPreviewCompiler();
+            if (!_previewCompiler.EnsureReady(_workspace))
+            {
+                _previewPane?.ShowError("Preview compiler unavailable: " + _previewCompiler.InitError);
+                return;
+            }
+            var result = _previewCompiler.CompileDirty(_focusFile);
+            if (result != null && result.Success)
+            {
+                var session = _workspace.TryGet(_focusFile);
+                _previewPane?.OnRecompiled(result.LoadedAssembly, session?.BufferText);
+            }
+            else if (result != null)
+            {
+                _previewPane?.ShowError("Compile failed: " + result.Error);
+            }
         }
 
         private void OnKeyDown(KeyDownEvent evt)
