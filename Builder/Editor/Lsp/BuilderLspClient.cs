@@ -67,12 +67,59 @@ namespace Ruitk.Builder
             return client;
         }
 
+        // The session key holds a comma-separated PID LIST, not one slot: several
+        // clients can exist in one session (spike probes + the shared service),
+        // and a single-slot key leaked every PID but the last across reloads —
+        // observed as four orphaned dotnet processes in one owner session.
+
+        private static List<int> ReadPidList()
+        {
+            var pids = new List<int>();
+            foreach (string part in (SessionState.GetString(PidSessionKey, "") ?? "").Split(','))
+                if (int.TryParse(part, out int pid) && pid > 0)
+                    pids.Add(pid);
+            return pids;
+        }
+
+        private static void WritePidList(List<int> pids) =>
+            SessionState.SetString(PidSessionKey, string.Join(",", pids));
+
+        private static void RegisterPid(int pid)
+        {
+            var pids = ReadPidList();
+            if (!pids.Contains(pid))
+                pids.Add(pid);
+            WritePidList(pids);
+        }
+
+        private static void UnregisterPid(int pid)
+        {
+            var pids = ReadPidList();
+            pids.Remove(pid);
+            WritePidList(pids);
+        }
+
+        private static bool s_staleSweepDone;
+
         private static void KillStaleFromPriorDomain()
         {
-            int stalePid = SessionState.GetInt(PidSessionKey, 0);
-            if (stalePid <= 0)
+            // Once per DOMAIN (statics reset on reload): the listed PIDs are
+            // prior-domain leftovers on the first spawn, but live siblings on
+            // every later spawn in the same domain — never kill those.
+            if (s_staleSweepDone)
                 return;
-            SessionState.EraseInt(PidSessionKey);
+            s_staleSweepDone = true;
+
+            var stalePids = ReadPidList();
+            if (stalePids.Count == 0)
+                return;
+            SessionState.EraseString(PidSessionKey);
+            foreach (int stalePid in stalePids)
+                KillIfAliveServer(stalePid);
+        }
+
+        private static void KillIfAliveServer(int stalePid)
+        {
             try
             {
                 var stale = Process.GetProcessById(stalePid);
@@ -105,7 +152,7 @@ namespace Ruitk.Builder
 
             _process = Process.Start(psi)
                 ?? throw new InvalidOperationException("failed to start the language server process");
-            SessionState.SetInt(PidSessionKey, _process.Id);
+            RegisterPid(_process.Id);
 
             _stdin = new StreamWriter(_process.StandardInput.BaseStream, new UTF8Encoding(false))
             {
@@ -173,7 +220,11 @@ namespace Ruitk.Builder
             }
             finally
             {
-                SessionState.EraseInt(PidSessionKey);
+                if (_process != null)
+                {
+                    try { UnregisterPid(_process.Id); }
+                    catch { }
+                }
                 foreach (var tcs in _pending.Values)
                     tcs.TrySetCanceled();
                 _pending.Clear();
