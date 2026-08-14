@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
+using System.Text.RegularExpressions;
 
 namespace Ruitk.Language
 {
@@ -72,9 +75,12 @@ namespace Ruitk.Language
 
         /// <summary>
         /// Extracts the Unity project-relative directory (e.g. <c>"Assets/UI"</c>) containing
-        /// the file at <paramref name="filePath"/> (an absolute OS path). Returns the directory
-        /// name (not ending in <c>Assets/</c>-relative-with-trailing-slash) or <c>null</c> when
-        /// no <c>Assets/</c> segment is found (e.g. a test-environment temp path).
+        /// the file at <paramref name="filePath"/> (an absolute OS path). For a file inside a
+        /// UPM package (no <c>Assets/</c> segment), walks up to the nearest <c>package.json</c>
+        /// and returns the Unity asset-path form <c>"Packages/&lt;package-name&gt;/&lt;dir&gt;"</c> —
+        /// the package NAME from the manifest, never the physical folder name, because Unity
+        /// asset paths are name-keyed while embedded package folders are free-form. Returns
+        /// <c>null</c> when neither applies (e.g. a test-environment temp path).
         /// </summary>
         public static string? GetAssetDir(string filePath)
         {
@@ -90,12 +96,108 @@ namespace Ruitk.Language
                     int lastSlash = normalized.LastIndexOf('/');
                     return lastSlash > 0 ? normalized.Substring(0, lastSlash) : "Assets";
                 }
+
+                if (TryGetPackageContext(filePath, out string packageRootAbs, out string packageName))
+                {
+                    string rootNorm = packageRootAbs.Replace('\\', '/').TrimEnd('/');
+                    string rel = normalized.Length > rootNorm.Length
+                        ? normalized.Substring(rootNorm.Length).TrimStart('/')
+                        : string.Empty;
+                    int relSlash = rel.LastIndexOf('/');
+                    string relDir = relSlash >= 0 ? rel.Substring(0, relSlash) : string.Empty;
+                    return relDir.Length == 0
+                        ? "Packages/" + packageName
+                        : "Packages/" + packageName + "/" + relDir;
+                }
+
                 return null;
             }
 
             string assetPath = normalized.Substring(assetsIdx + 1);
             int dirSlash = assetPath.LastIndexOf('/');
             return dirSlash >= 0 ? assetPath.Substring(0, dirSlash) : "Assets";
+        }
+
+        private static readonly Regex s_packageNameRe = new Regex(
+            "\"name\"\\s*:\\s*\"([^\"]+)\"",
+            RegexOptions.Compiled);
+
+        private static readonly ConcurrentDictionary<string, (string Root, string Name)?> s_packageCtxByDir =
+            new ConcurrentDictionary<string, (string Root, string Name)?>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Walks up from <paramref name="filePath"/> to the nearest <c>package.json</c> and
+        /// returns the package's physical root directory plus its manifest <c>"name"</c>.
+        /// Directory-cached (a build/IDE session resolves the same folders thousands of times);
+        /// call <see cref="InvalidatePackageContextCache"/> after a manifest rename.
+        /// </summary>
+        public static bool TryGetPackageContext(string filePath, out string packageRootAbs, out string packageName)
+        {
+            packageRootAbs = string.Empty;
+            packageName = string.Empty;
+            if (string.IsNullOrEmpty(filePath))
+                return false;
+
+            string? dir;
+            try { dir = Path.GetDirectoryName(Path.GetFullPath(filePath)); }
+            catch { return false; }
+
+            string? probe = dir;
+            while (!string.IsNullOrEmpty(probe))
+            {
+                if (s_packageCtxByDir.TryGetValue(probe, out var cached))
+                {
+                    if (cached == null)
+                        return false;
+                    packageRootAbs = cached.Value.Root;
+                    packageName = cached.Value.Name;
+                    CacheRange(dir, probe, cached);
+                    return true;
+                }
+
+                string manifest = Path.Combine(probe, "package.json");
+                if (File.Exists(manifest))
+                {
+                    string name;
+                    try
+                    {
+                        var m = s_packageNameRe.Match(File.ReadAllText(manifest));
+                        name = m.Success ? m.Groups[1].Value : string.Empty;
+                    }
+                    catch
+                    {
+                        name = string.Empty;
+                    }
+
+                    (string, string)? ctx = name.Length > 0 ? (probe, name) : ((string, string)?)null;
+                    CacheRange(dir, probe, ctx);
+                    if (ctx == null)
+                        return false;
+                    packageRootAbs = probe;
+                    packageName = name;
+                    return true;
+                }
+
+                probe = Path.GetDirectoryName(probe);
+            }
+
+            CacheRange(dir, null, null);
+            return false;
+        }
+
+        /// <summary>Drops the package-manifest directory cache (manifest renamed/moved).</summary>
+        public static void InvalidatePackageContextCache() => s_packageCtxByDir.Clear();
+
+        private static void CacheRange(string? fromDir, string? foundAt, (string Root, string Name)? ctx)
+        {
+            string? d = fromDir;
+            while (!string.IsNullOrEmpty(d))
+            {
+                s_packageCtxByDir[d] = ctx;
+                if (string.Equals(d, foundAt, StringComparison.OrdinalIgnoreCase))
+                    return;
+                d = Path.GetDirectoryName(d);
+            }
         }
 
         /// <summary>

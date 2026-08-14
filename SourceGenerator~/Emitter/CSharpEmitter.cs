@@ -308,8 +308,6 @@ namespace Ruitk.SourceGenerator.Emitter
             // -- @uss stylesheet keys ------------------------------------------
             if (!_directives.UssFiles.IsDefaultOrEmpty)
             {
-                string projectRoot = GetProjectRoot(_filePath);
-
                 _sb.Append(
                     $"{I2}[global::Ruitk.UitkxHmrSwap] internal static string[] __uitkx_ussKeys = new string[] {{ "
                 );
@@ -326,12 +324,9 @@ namespace Ruitk.SourceGenerator.Emitter
                     _sb.Append($"\"{resolved}\"");
 
                     // Validate file existence at compile time (UITKX0022)
-                    if (projectRoot != null)
+                    string absolute = ResolveAssetAbsolutePath(resolved, _filePath);
+                    if (absolute != null)
                     {
-                        string absolute = Path.Combine(
-                            projectRoot,
-                            resolved.Replace('/', Path.DirectorySeparatorChar)
-                        );
                         if (!File.Exists(absolute))
                         {
                             var loc = Location.Create(_filePath, default, default);
@@ -3968,13 +3963,9 @@ namespace Ruitk.SourceGenerator.Emitter
                         Ruitk.Language.UitkxConfig.LoadRoot(System.IO.Path.GetDirectoryName(filePath)));
 
                     // Validate file existence at compile time
-                    string projectRoot = GetProjectRoot(filePath);
-                    if (projectRoot != null && diagnostics != null)
+                    string absolute = ResolveAssetAbsolutePath(resolved, filePath);
+                    if (absolute != null && diagnostics != null)
                     {
-                        string absolute = Path.Combine(
-                            projectRoot,
-                            resolved.Replace('/', Path.DirectorySeparatorChar)
-                        );
                         if (!File.Exists(absolute))
                         {
                             var loc = Location.Create(filePath, default, default);
@@ -4017,7 +4008,8 @@ namespace Ruitk.SourceGenerator.Emitter
         }
 
         /// <summary>
-        /// Extracts the Unity asset directory (e.g. <c>Assets/UI</c>) from the
+        /// Extracts the Unity asset directory (e.g. <c>Assets/UI</c> or
+        /// <c>Packages/com.x/UI</c> for package-resident files) from the
         /// absolute path of the <c>.uitkx</c> file being compiled.
         /// </summary>
         private static string GetUitkxAssetDir(string filePath)
@@ -4027,6 +4019,48 @@ namespace Ruitk.SourceGenerator.Emitter
                 return assetDir;
             // Fallback for non-Unity paths (test environments)
             return Path.GetDirectoryName(filePath)?.Replace('\\', '/') ?? "";
+        }
+
+        /// <summary>
+        /// Maps a resolved Unity asset path back to an absolute OS path for compile-time
+        /// existence checks. <c>Assets/</c> paths join the project root (derivable from an
+        /// embedded-package context via the <c>Packages/</c> parent folder); same-package
+        /// <c>Packages/&lt;name&gt;/</c> paths join the package's physical root. Returns
+        /// <c>null</c> when not verifiable from this context (cross-package references,
+        /// test environments) — callers skip validation rather than false-error.
+        /// </summary>
+        private static string? ResolveAssetAbsolutePath(string resolvedAssetPath, string contextFilePath)
+        {
+            if (resolvedAssetPath.StartsWith("Assets/", StringComparison.Ordinal))
+            {
+                string? root = GetProjectRoot(contextFilePath);
+                if (root == null
+                    && Ruitk.Language.AssetPathUtil.TryGetPackageContext(contextFilePath, out string pkgRootForAssets, out _))
+                {
+                    string? parent = Path.GetDirectoryName(pkgRootForAssets);
+                    if (parent != null
+                        && string.Equals(Path.GetFileName(parent), "Packages", StringComparison.OrdinalIgnoreCase))
+                        root = Path.GetDirectoryName(parent);
+                }
+                return root == null
+                    ? null
+                    : Path.Combine(root, resolvedAssetPath.Replace('/', Path.DirectorySeparatorChar));
+            }
+
+            if (resolvedAssetPath.StartsWith("Packages/", StringComparison.Ordinal))
+            {
+                if (Ruitk.Language.AssetPathUtil.TryGetPackageContext(contextFilePath, out string pkgRoot, out string pkgName))
+                {
+                    string prefix = "Packages/" + pkgName + "/";
+                    if (resolvedAssetPath.StartsWith(prefix, StringComparison.Ordinal))
+                        return Path.Combine(
+                            pkgRoot,
+                            resolvedAssetPath.Substring(prefix.Length).Replace('/', Path.DirectorySeparatorChar));
+                }
+                return null;
+            }
+
+            return null;
         }
 
         /// <summary>
