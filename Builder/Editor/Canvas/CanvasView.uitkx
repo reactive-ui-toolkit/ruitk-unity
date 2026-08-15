@@ -18,13 +18,14 @@ export VirtualNode CanvasView(
   var (zoom, setZoom) = useState(initialZoom);
   var (selected, setSelected) = useState(-1);
   var (layoutVersion, setLayoutVersion) = useState(0);
+  var (detailMode, setDetailMode) = useState(1);
 
   var panning = useRef(false);
   var dragCard = useRef(-1);
   var lastX = useRef(0f);
   var lastY = useRef(0f);
 
-  bool lodFull = zoom >= 0.45f;
+  bool lodFull = detailMode >= 1 && (detailMode == 2 || zoom >= 0.45f);
 
   return (
     <VisualElement
@@ -240,6 +241,40 @@ export VirtualNode CanvasView(
                 );
               }
             </VisualElement>
+          );
+        }
+      </VisualElement>
+      <VisualElement
+        style={new Style {
+          Position = PosAbsolute,
+          Top = Px(8),
+          Left = Px(8),
+          FlexDirection = FlexRow,
+        }}
+      >
+        @for (int m = 0; m < 3; m++) {
+          int modeIndex = m;
+          string modeLabel = m == 0 ? "L0 Architecture" : m == 1 ? "L1 Cards" : "L2 Detail";
+          return (
+            <Label
+              key={modeLabel}
+              text={modeLabel}
+              onPointerDown={e => {
+                setDetailMode(modeIndex);
+                e.StopPropagation();
+              }}
+              style={new Style {
+                FontSize = Px(10),
+                Color = detailMode == modeIndex ? Hex("#17171b") : Hex("#9a9aa6"),
+                BackgroundColor = detailMode == modeIndex ? Hex("#4fc3f7") : Hex("#232329"),
+                BorderRadius = Px(4),
+                PaddingLeft = Px(8),
+                PaddingRight = Px(8),
+                PaddingTop = Px(3),
+                PaddingBottom = Px(3),
+                MarginRight = Px(4),
+              }}
+            />
           );
         }
       </VisualElement>
