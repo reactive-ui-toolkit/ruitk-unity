@@ -21,12 +21,6 @@ namespace Ruitk.Builder
         [SerializeField] private BuilderWorkspace _workspace = new BuilderWorkspace();
         [SerializeField] private string _focusFile = string.Empty;
 
-        internal static readonly Color Panel = new Color(0.137f, 0.137f, 0.161f);
-        internal static readonly Color Panel2 = new Color(0.165f, 0.165f, 0.192f);
-        internal static readonly Color Line = new Color(0.227f, 0.227f, 0.267f);
-        internal static readonly Color Text = new Color(0.839f, 0.839f, 0.863f);
-        internal static readonly Color Dim = new Color(0.545f, 0.545f, 0.588f);
-        internal static readonly Color Accent = new Color(0.310f, 0.765f, 0.969f);
 
         private Label _statusLabel;
         private Label _previewName;
@@ -100,9 +94,9 @@ namespace Ruitk.Builder
                     paddingBottom = 0f,
                     paddingLeft = 12f,
                     paddingRight = 12f,
-                    backgroundColor = Panel,
+                    backgroundColor = BuilderPalette.Panel,
                     borderBottomWidth = 1f,
-                    borderBottomColor = Line,
+                    borderBottomColor = BuilderPalette.Line,
                 },
             };
             toolbar.Add(new Label("RUITK Visual Editor")
@@ -110,7 +104,7 @@ namespace Ruitk.Builder
                 style =
                 {
                     unityFontStyleAndWeight = FontStyle.Bold,
-                    color = Accent,
+                    color = BuilderPalette.Accent,
                     marginRight = 8f,
                 },
             });
@@ -121,7 +115,7 @@ namespace Ruitk.Builder
                 // the separator's own margin no longer supplies on this side.
                 style =
                 {
-                    unityTextAlign = TextAnchor.MiddleLeft, fontSize = 11f, color = Dim,
+                    unityTextAlign = TextAnchor.MiddleLeft, fontSize = 11f, color = BuilderPalette.Dim,
                     marginRight = 4f,
                 },
             };
@@ -168,7 +162,7 @@ namespace Ruitk.Builder
                 style =
                 {
                     flexGrow = 0f, flexShrink = 0f, width = 205f, minHeight = 0f,
-                    borderRightWidth = 1f, borderRightColor = Line,
+                    borderRightWidth = 1f, borderRightColor = BuilderPalette.Line,
                 },
             });
             var innerSplit = new TwoPaneSplitView(1, 440f, TwoPaneSplitViewOrientation.Horizontal)
@@ -200,8 +194,8 @@ namespace Ruitk.Builder
                 {
                     flexShrink = 0f,
                     fontSize = 11f,
-                    color = Dim,
-                    backgroundColor = Panel,
+                    color = BuilderPalette.Dim,
+                    backgroundColor = BuilderPalette.Panel,
                     paddingLeft = 12f,
                     paddingRight = 12f,
                     paddingTop = 5f,
@@ -215,7 +209,7 @@ namespace Ruitk.Builder
                     unityTextAlign = TextAnchor.MiddleLeft,
                     whiteSpace = WhiteSpace.Normal,
                     borderTopWidth = 1f,
-                    borderTopColor = Line,
+                    borderTopColor = BuilderPalette.Line,
                 },
             };
             root.Add(footer);
@@ -399,7 +393,7 @@ namespace Ruitk.Builder
             if (_previewPane == null)
             {
                 container.Clear();
-                container.style.backgroundColor = Panel;
+                container.style.backgroundColor = BuilderPalette.Panel;
                 // POC "#preview { overflow: auto; padding: 12px }" — a tall render
                 // or a long knobs list scrolls INSIDE the pane; a plain container
                 // clipped both against the bottom of the frame with no way out.
@@ -1049,11 +1043,7 @@ namespace Ruitk.Builder
             int to = Mathf.Clamp(toLine1 - 1, from, lines.Count - 1);
             var moved = lines.GetRange(from, to - from + 1);
 
-            string srcIndent = "";
-            int w = 0;
-            while (w < moved[0].Length && moved[0][w] == ' ')
-                w++;
-            srcIndent = moved[0].Substring(0, w);
+            string srcIndent = BuilderText.LeadingIndent(moved[0]);
             for (int i = 0; i < moved.Count; i++)
             {
                 if (moved[i].StartsWith(srcIndent, System.StringComparison.Ordinal))
@@ -1486,11 +1476,7 @@ namespace Ruitk.Builder
             string[] lines = session.BufferText.Split('\n');
             if (line1 - 1 < 0 || line1 - 1 >= lines.Length)
                 return "";
-            string line = lines[line1 - 1];
-            int i = 0;
-            while (i < line.Length && line[i] == ' ')
-                i++;
-            return line.Substring(0, i);
+            return BuilderText.LeadingIndent(lines[line1 - 1]);
         }
 
         private void EditLineInFile(
@@ -1654,11 +1640,11 @@ namespace Ruitk.Builder
                 inner.RemoveAt(openIdx);
             }
 
-            string headerIndent = IndentWidth(lines[header]);
+            string headerIndent = BuilderText.LeadingIndent(lines[header]);
             int minIndent = int.MaxValue;
             foreach (string l in inner)
                 if (l.Trim().Length > 0)
-                    minIndent = Mathf.Min(minIndent, IndentWidth(l).Length);
+                    minIndent = Mathf.Min(minIndent, BuilderText.LeadingIndent(l).Length);
             int shift = minIndent == int.MaxValue ? 0 : minIndent - headerIndent.Length;
             for (int i = 0; i < inner.Count; i++)
             {
@@ -1712,14 +1698,6 @@ namespace Ruitk.Builder
                     return i + 1;
             }
             return 0;
-        }
-
-        private static string IndentWidth(string line)
-        {
-            int i = 0;
-            while (i < line.Length && line[i] == ' ')
-                i++;
-            return line.Substring(0, i);
         }
 
         private bool StyleExportExists(string filePath, string name)
@@ -1937,12 +1915,12 @@ namespace Ruitk.Builder
                         bottom = 44f,
                         left = Length.Percent(50f),
                         translate = new Translate(Length.Percent(-50f), 0f),
-                        backgroundColor = Panel2,
-                        color = Text,
+                        backgroundColor = BuilderPalette.Panel2,
+                        color = BuilderPalette.Text,
                         borderTopWidth = 1f, borderBottomWidth = 1f,
                         borderLeftWidth = 1f, borderRightWidth = 1f,
-                        borderTopColor = Accent, borderBottomColor = Accent,
-                        borderLeftColor = Accent, borderRightColor = Accent,
+                        borderTopColor = BuilderPalette.Accent, borderBottomColor = BuilderPalette.Accent,
+                        borderLeftColor = BuilderPalette.Accent, borderRightColor = BuilderPalette.Accent,
                         borderTopLeftRadius = 6f, borderTopRightRadius = 6f,
                         borderBottomLeftRadius = 6f, borderBottomRightRadius = 6f,
                         paddingLeft = 16f, paddingRight = 16f,
@@ -2049,7 +2027,7 @@ namespace Ruitk.Builder
                 {
                     style =
                     {
-                        color = Text, fontSize = 12f, width = 18f, flexShrink = 0f,
+                        color = BuilderPalette.Text, fontSize = 12f, width = 18f, flexShrink = 0f,
                         unityTextAlign = TextAnchor.UpperRight, paddingRight = 4f,
                     },
                 });
@@ -2058,7 +2036,7 @@ namespace Ruitk.Builder
                     enableRichText = true,
                     style =
                     {
-                        color = Text, fontSize = 12f,
+                        color = BuilderPalette.Text, fontSize = 12f,
                         whiteSpace = WhiteSpace.Normal, flexShrink = 1f, flexGrow = 1f,
                     },
                 });
@@ -2109,7 +2087,7 @@ namespace Ruitk.Builder
                 scroller.style.bottom = 0f;
                 scroller.style.height = 8f;
             }
-            scroller.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+            scroller.style.backgroundColor = BuilderPalette.Transparent;
             scroller.style.borderTopWidth = 0f;
             scroller.style.borderBottomWidth = 0f;
             scroller.style.borderLeftWidth = 0f;
@@ -2129,7 +2107,7 @@ namespace Ruitk.Builder
             var tracker = slider.Q("unity-tracker");
             if (tracker != null)
             {
-                tracker.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                tracker.style.backgroundColor = BuilderPalette.Transparent;
                 tracker.style.borderTopWidth = 0f;
                 tracker.style.borderBottomWidth = 0f;
                 tracker.style.borderLeftWidth = 0f;
@@ -2142,7 +2120,7 @@ namespace Ruitk.Builder
             var dragger = slider.Q("unity-dragger");
             if (dragger == null)
                 return;
-            var thumb = new Color(0.227f, 0.227f, 0.267f);
+            var thumb = BuilderPalette.Line;
             dragger.style.backgroundColor = thumb;
             dragger.style.borderTopWidth = 0f;
             dragger.style.borderBottomWidth = 0f;
@@ -2176,22 +2154,22 @@ namespace Ruitk.Builder
         private static Button ToolbarButton(string text, System.Action onClick)
         {
             var button = new Button(onClick) { text = text };
-            button.userData = Line;
-            button.RegisterCallback<MouseEnterEvent>(_ => SetBorderColor(button, Accent));
+            button.userData = BuilderPalette.Line;
+            button.RegisterCallback<MouseEnterEvent>(_ => SetBorderColor(button, BuilderPalette.Accent));
             button.RegisterCallback<MouseLeaveEvent>(_ =>
-                SetBorderColor(button, button.userData is Color resting ? resting : Line));
+                SetBorderColor(button, button.userData is Color resting ? resting : BuilderPalette.Line));
             BuilderCursor.Set(button, MouseCursor.Link);
-            button.style.backgroundColor = Panel2;
-            button.style.color = Text;
+            button.style.backgroundColor = BuilderPalette.Panel2;
+            button.style.color = BuilderPalette.Text;
             button.style.fontSize = 12f;
             button.style.borderTopWidth = 1f;
             button.style.borderBottomWidth = 1f;
             button.style.borderLeftWidth = 1f;
             button.style.borderRightWidth = 1f;
-            button.style.borderTopColor = Line;
-            button.style.borderBottomColor = Line;
-            button.style.borderLeftColor = Line;
-            button.style.borderRightColor = Line;
+            button.style.borderTopColor = BuilderPalette.Line;
+            button.style.borderBottomColor = BuilderPalette.Line;
+            button.style.borderLeftColor = BuilderPalette.Line;
+            button.style.borderRightColor = BuilderPalette.Line;
             button.style.borderTopLeftRadius = 4f;
             button.style.borderTopRightRadius = 4f;
             button.style.borderBottomLeftRadius = 4f;
@@ -2222,7 +2200,7 @@ namespace Ruitk.Builder
             {
                 name = "ruitk-splitter-gutter",
                 pickingMode = PickingMode.Ignore,
-                style = { position = Position.Absolute, backgroundColor = Panel },
+                style = { position = Position.Absolute, backgroundColor = BuilderPalette.Panel },
             };
             if (vertical)
             {
@@ -2231,8 +2209,8 @@ namespace Ruitk.Builder
                 gutter.style.height = 6f;
                 gutter.style.borderTopWidth = 1f;
                 gutter.style.borderBottomWidth = 1f;
-                gutter.style.borderTopColor = Line;
-                gutter.style.borderBottomColor = Line;
+                gutter.style.borderTopColor = BuilderPalette.Line;
+                gutter.style.borderBottomColor = BuilderPalette.Line;
             }
             else
             {
@@ -2241,8 +2219,8 @@ namespace Ruitk.Builder
                 gutter.style.width = 6f;
                 gutter.style.borderLeftWidth = 1f;
                 gutter.style.borderRightWidth = 1f;
-                gutter.style.borderLeftColor = Line;
-                gutter.style.borderRightColor = Line;
+                gutter.style.borderLeftColor = BuilderPalette.Line;
+                gutter.style.borderRightColor = BuilderPalette.Line;
             }
             split.hierarchy.Add(gutter);
 
@@ -2331,16 +2309,16 @@ namespace Ruitk.Builder
                     }
                     BuilderCursor.Set(anchor, MouseCursor.ResizeHorizontal);
                 }
-                anchor.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                anchor.style.backgroundColor = BuilderPalette.Transparent;
                 if (dragline != null)
-                    dragline.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                    dragline.style.backgroundColor = BuilderPalette.Transparent;
                 if (anchor.userData is string tag && tag == "ruitk-gutter")
                     return;
                 anchor.userData = "ruitk-gutter";
                 // POC "#vsplit:hover { background: var(--accent) }" — the band, not
                 // the invisible anchor, is what the user sees light up.
-                anchor.RegisterCallback<MouseEnterEvent>(_ => gutter.style.backgroundColor = Accent);
-                anchor.RegisterCallback<MouseLeaveEvent>(_ => gutter.style.backgroundColor = Panel);
+                anchor.RegisterCallback<MouseEnterEvent>(_ => gutter.style.backgroundColor = BuilderPalette.Accent);
+                anchor.RegisterCallback<MouseLeaveEvent>(_ => gutter.style.backgroundColor = BuilderPalette.Panel);
             }
 
             split.schedule.Execute(Apply).Every(120).ForDuration(2000);
@@ -2354,7 +2332,7 @@ namespace Ruitk.Builder
         {
             style =
             {
-                width = 1f, height = 20f, backgroundColor = Line,
+                width = 1f, height = 20f, backgroundColor = BuilderPalette.Line,
                 marginLeft = 8f, marginRight = 8f, flexShrink = 0f,
             },
         };
@@ -2367,10 +2345,10 @@ namespace Ruitk.Builder
             {
                 bool active = i == lod;
                 var button = _modeButtons[i];
-                button.style.backgroundColor = active ? Accent : Panel2;
-                button.style.color = active ? new Color(0.063f, 0.133f, 0.173f) : Text;
-                button.userData = active ? Accent : Line;
-                SetBorderColor(button, active ? Accent : Line);
+                button.style.backgroundColor = active ? BuilderPalette.Accent : BuilderPalette.Panel2;
+                button.style.color = active ? new Color(0.063f, 0.133f, 0.173f) : BuilderPalette.Text;
+                button.userData = active ? BuilderPalette.Accent : BuilderPalette.Line;
+                SetBorderColor(button, active ? BuilderPalette.Accent : BuilderPalette.Line);
                 button.style.unityFontStyleAndWeight = active ? FontStyle.Bold : FontStyle.Normal;
             }
         }
@@ -2387,7 +2365,7 @@ namespace Ruitk.Builder
                     alignItems = Align.Center,
                     justifyContent = Justify.SpaceBetween,
                     flexShrink = 0f,
-                    backgroundColor = Panel2,
+                    backgroundColor = BuilderPalette.Panel2,
                     // POC ".pane-title { padding: 7px 12px }" measures a 30px band
                     // plus its 1px rule (poc-l1-cards.png column x=60: 41..70 fill,
                     // 71 border). Unity's font metrics add a pixel at the same
@@ -2396,19 +2374,19 @@ namespace Ruitk.Builder
                     paddingLeft = 12f, paddingRight = 12f,
                     paddingTop = 0f, paddingBottom = 0f,
                     borderBottomWidth = 1f,
-                    borderBottomColor = Line,
+                    borderBottomColor = BuilderPalette.Line,
                 },
             };
             // POC ".pane-title { letter-spacing: .08em }" — tracked out like every
             // other uppercase label in the window (.sec-label / .lib-sec).
-            row.Add(new Label(left) { style = { fontSize = 11f, color = Dim, letterSpacing = 1f } });
+            row.Add(new Label(left) { style = { fontSize = 11f, color = BuilderPalette.Dim, letterSpacing = 1f } });
             var right = new VisualElement
             {
                 style = { flexDirection = FlexDirection.Row, alignItems = Align.Center },
             };
             foreach (var button in buttons)
                 right.Add(button);
-            rightName = new Label { style = { fontSize = 11f, color = Accent, marginLeft = 8f } };
+            rightName = new Label { style = { fontSize = 11f, color = BuilderPalette.Accent, marginLeft = 8f } };
             right.Add(rightName);
             row.Add(right);
             return row;
@@ -2424,12 +2402,12 @@ namespace Ruitk.Builder
                 style =
                 {
                     fontSize = 10f,
-                    color = Text,
-                    backgroundColor = Panel2,
+                    color = BuilderPalette.Text,
+                    backgroundColor = BuilderPalette.Panel2,
                     borderTopWidth = 1f, borderBottomWidth = 1f,
                     borderLeftWidth = 1f, borderRightWidth = 1f,
-                    borderTopColor = Line, borderBottomColor = Line,
-                    borderLeftColor = Line, borderRightColor = Line,
+                    borderTopColor = BuilderPalette.Line, borderBottomColor = BuilderPalette.Line,
+                    borderLeftColor = BuilderPalette.Line, borderRightColor = BuilderPalette.Line,
                     borderTopLeftRadius = 3f, borderTopRightRadius = 3f,
                     borderBottomLeftRadius = 3f, borderBottomRightRadius = 3f,
                     paddingLeft = 7f, paddingRight = 7f,
@@ -2439,8 +2417,8 @@ namespace Ruitk.Builder
             };
             button.RegisterCallback<PointerDownEvent>(_ => onClick());
             // POC ".mini:hover { border-color: var(--accent) }".
-            button.RegisterCallback<MouseEnterEvent>(_ => SetBorderColor(button, Accent));
-            button.RegisterCallback<MouseLeaveEvent>(_ => SetBorderColor(button, Line));
+            button.RegisterCallback<MouseEnterEvent>(_ => SetBorderColor(button, BuilderPalette.Accent));
+            button.RegisterCallback<MouseLeaveEvent>(_ => SetBorderColor(button, BuilderPalette.Line));
             BuilderCursor.Set(button, MouseCursor.Link);
             return button;
         }

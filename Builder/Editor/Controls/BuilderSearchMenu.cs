@@ -185,7 +185,7 @@ namespace Ruitk.Builder
                     style =
                     {
                         fontSize = 10f,
-                        color = new Color(0.545f, 0.545f, 0.588f),
+                        color = BuilderPalette.Dim,
                         paddingLeft = 10f, paddingTop = 4f, paddingBottom = 2f,
                     },
                 });
@@ -288,7 +288,7 @@ namespace Ruitk.Builder
             {
                 AddRow(
                     new Item { Label = "Create", OnPick = null },
-                    new Color(0.839f, 0.839f, 0.863f),
+                    BuilderPalette.Text,
                     submitsName: true);
                 return;
             }
@@ -306,7 +306,7 @@ namespace Ruitk.Builder
                                 height = 1f,
                                 marginTop = 4f, marginBottom = 4f,
                                 marginLeft = 2f, marginRight = 2f,
-                                backgroundColor = new Color(0.227f, 0.227f, 0.267f),
+                                backgroundColor = BuilderPalette.Line,
                             },
                         });
                     continue;
@@ -319,7 +319,7 @@ namespace Ruitk.Builder
                             style =
                             {
                                 fontSize = 10f,
-                                color = new Color(0.545f, 0.545f, 0.588f),
+                                color = BuilderPalette.Dim,
                                 paddingLeft = 10f, paddingTop = 4f, paddingBottom = 2f,
                             },
                         });
@@ -328,7 +328,7 @@ namespace Ruitk.Builder
                 if (filter.Length > 0
                     && item.Label.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
-                AddRow(item, new Color(0.839f, 0.839f, 0.863f));
+                AddRow(item, BuilderPalette.Text);
                 shown++;
             }
             if (_freeform != null && filter.Trim().Length > 0)

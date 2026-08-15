@@ -169,18 +169,6 @@ namespace Ruitk.Builder
             RenderCanvas();
         }
 
-        /// <summary>Canvas row index of a source line, for BeginEdit keys.</summary>
-        public int RowIndexOfLine(string filePath, int sourceLine)
-        {
-            var node = FindNode(System.IO.Path.GetFullPath(filePath));
-            if (node == null)
-                return -1;
-            for (int i = 0; i < node.Markup.Count; i++)
-                if (node.Markup[i].SourceLine == sourceLine)
-                    return i;
-            return -1;
-        }
-
         /// <summary>Seeds the persisted layout slot for a file about to be
         /// created, so the new card appears where the user right-clicked.</summary>
         public void PlaceNewCard(string filePath, float x, float y)

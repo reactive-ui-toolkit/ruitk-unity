@@ -68,13 +68,13 @@ namespace Ruitk.Builder
             field.style.marginBottom = 6f;
             if (field is Toggle toggleField)
             {
-                toggleField.labelElement.style.color = new Color(0.545f, 0.545f, 0.588f);
+                toggleField.labelElement.style.color = BuilderPalette.Dim;
                 toggleField.labelElement.style.fontSize = 12f;
             }
             var label = field.Q<Label>(className: "unity-base-field__label");
             if (label != null)
             {
-                label.style.color = new Color(0.545f, 0.545f, 0.588f);
+                label.style.color = BuilderPalette.Dim;
                 label.style.minWidth = 70f;
                 label.style.width = 70f;
                 label.style.fontSize = 12f;
@@ -82,7 +82,7 @@ namespace Ruitk.Builder
             var input = field.Q(className: "unity-base-field__input");
             if (input != null)
             {
-                StyleInput(input, KnobGround);
+                StyleInput(input, BuilderPalette.Panel2);
                 input.style.fontSize = 12f;
                 // POC ".knobs input[type=text|number] { width: 110px }": the value box
                 // is a fixed plate, not a stretch — only input[type=range] is flex:1.
@@ -96,26 +96,20 @@ namespace Ruitk.Builder
             return field;
         }
 
-        /// <summary>POC "#lib-search { background: #17171b }" — the search ground.</summary>
-        internal static readonly Color SearchGround = new Color(0.090f, 0.090f, 0.106f);
-
-        /// <summary>POC ".knobs input { background: var(--panel2) }" = #2a2a31.</summary>
-        internal static readonly Color KnobGround = new Color(0.165f, 0.165f, 0.192f);
-
         /// <summary>POC "#lib-search / .ctx-search / .knobs input" box chrome. The two
         /// grounds differ (#17171b for the search boxes, var(--panel2) for the knob and
         /// state fields), so the caller names the one it wants.</summary>
-        internal static void StyleInput(VisualElement input) => StyleInput(input, SearchGround);
+        internal static void StyleInput(VisualElement input) => StyleInput(input, BuilderPalette.Ground);
 
         internal static void StyleInput(VisualElement input, Color ground)
         {
             input.style.backgroundColor = ground;
-            input.style.color = new Color(0.839f, 0.839f, 0.863f);
+            input.style.color = BuilderPalette.Text;
             input.style.borderTopWidth = 1f;
             input.style.borderBottomWidth = 1f;
             input.style.borderLeftWidth = 1f;
             input.style.borderRightWidth = 1f;
-            var line = new Color(0.227f, 0.227f, 0.267f);
+            var line = BuilderPalette.Line;
             input.style.borderTopColor = line;
             input.style.borderBottomColor = line;
             input.style.borderLeftColor = line;
@@ -134,8 +128,8 @@ namespace Ruitk.Builder
             var inner = input.Q(className: "unity-base-text-field__input");
             if (inner != null && inner != input)
             {
-                inner.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
-                inner.style.color = new Color(0.839f, 0.839f, 0.863f);
+                inner.style.backgroundColor = BuilderPalette.Transparent;
+                inner.style.color = BuilderPalette.Text;
                 inner.style.borderTopWidth = 0f;
                 inner.style.borderBottomWidth = 0f;
                 inner.style.borderLeftWidth = 0f;
@@ -150,7 +144,7 @@ namespace Ruitk.Builder
                 inner.style.marginRight = 0f;
             }
             // POC "#lib-search:focus / .ctx-search:focus { border-color: accent }".
-            var accent = new Color(0.310f, 0.765f, 0.969f);
+            var accent = BuilderPalette.Accent;
             input.RegisterCallback<FocusInEvent>(_ => BuilderWindow.SetBorderColor(input, accent));
             input.RegisterCallback<FocusOutEvent>(_ => BuilderWindow.SetBorderColor(input, line));
         }
@@ -177,7 +171,7 @@ namespace Ruitk.Builder
                 style =
                 {
                     marginTop = 8f, marginLeft = 8f, marginRight = 8f,
-                    color = new Color(0.545f, 0.545f, 0.588f),
+                    color = BuilderPalette.Dim,
                     unityFontStyleAndWeight = FontStyle.Italic,
                     whiteSpace = WhiteSpace.Normal,
                 },
@@ -209,8 +203,8 @@ namespace Ruitk.Builder
                     backgroundColor = new Color(0.063f, 0.063f, 0.078f),
                     borderTopWidth = 1f, borderBottomWidth = 1f,
                     borderLeftWidth = 1f, borderRightWidth = 1f,
-                    borderTopColor = Line, borderBottomColor = Line,
-                    borderLeftColor = Line, borderRightColor = Line,
+                    borderTopColor = BuilderPalette.Line, borderBottomColor = BuilderPalette.Line,
+                    borderLeftColor = BuilderPalette.Line, borderRightColor = BuilderPalette.Line,
                     borderTopLeftRadius = 8f, borderTopRightRadius = 8f,
                     borderBottomLeftRadius = 8f, borderBottomRightRadius = 8f,
                     paddingTop = 10f, paddingBottom = 10f,
@@ -252,7 +246,7 @@ namespace Ruitk.Builder
             {
                 style =
                 {
-                    color = new Color(0.545f, 0.545f, 0.588f),
+                    color = BuilderPalette.Dim,
                     fontSize = 10f,
                     letterSpacing = 1f,
                     marginLeft = 8f, marginBottom = 6f,
@@ -271,7 +265,7 @@ namespace Ruitk.Builder
             {
                 style =
                 {
-                    color = new Color(0.545f, 0.545f, 0.588f),
+                    color = BuilderPalette.Dim,
                     fontSize = 10f,
                     letterSpacing = 1f,
                     marginTop = 8f, marginLeft = 8f, marginBottom = 6f,
@@ -327,7 +321,6 @@ namespace Ruitk.Builder
 
         private float _stageMaxHeight = -1f;
 
-        private static readonly Color Line = new Color(0.227f, 0.227f, 0.267f);
 
         private VisualElement _knobsBlock;
         private VisualElement _notesHost;
@@ -498,7 +491,7 @@ namespace Ruitk.Builder
                 }
             }
 
-            var rowStyle = new Color(0.545f, 0.545f, 0.588f);
+            var rowStyle = BuilderPalette.Dim;
             switch (value)
             {
                 case int i:
@@ -567,7 +560,7 @@ namespace Ruitk.Builder
                             textOverflow = TextOverflow.Ellipsis,
                         },
                     };
-                    StyleInput(box, KnobGround);
+                    StyleInput(box, BuilderPalette.Panel2);
                     row.Add(box);
                     return row;
                 }
@@ -1065,7 +1058,7 @@ namespace Ruitk.Builder
         {
             style =
             {
-                color = new Color(0.545f, 0.545f, 0.588f),
+                color = BuilderPalette.Dim,
                 fontSize = 11f,
                 whiteSpace = WhiteSpace.Normal,
                 marginTop = 4f, marginLeft = 78f,

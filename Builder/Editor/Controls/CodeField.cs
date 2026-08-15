@@ -71,7 +71,7 @@ namespace Ruitk.Builder
         /// red until the next successful parse.</summary>
         public void SetError(bool error)
         {
-            var color = error ? new Color(0.94f, 0.38f, 0.38f) : new Color(0f, 0f, 0f, 0f);
+            var color = error ? new Color(0.94f, 0.38f, 0.38f) : BuilderPalette.Transparent;
             float width = error ? 1f : 0f;
             style.borderTopWidth = width;
             style.borderBottomWidth = width;
@@ -94,14 +94,6 @@ namespace Ruitk.Builder
         public Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>>
             CompletionProvider { get; set; }
 
-        /// <summary>POC "#srcpane { font: 12px Consolas, monospace }". The OS font
-        /// is resolved once; a machine without it falls back to the editor font.
-        /// It must be applied as a FontDefinition — UI Toolkit's text engine
-        /// ignores the legacy dynamic-Font `unityFont` slot.</summary>
-        private static readonly Color Ground = new Color(0.090f, 0.090f, 0.106f);
-
-        private static readonly Color Ink = new Color(0.839f, 0.839f, 0.863f);
-
         /// <summary>POC "#srcpane .srcline" inherits the body's 13px/1.45 metric at
         /// font-size 12, so the line pitch is 17.4px (measured on poc-l2-edit.png:
         /// line tops at 502, 519, 537, 554, 571, 589 at zoom 1).</summary>
@@ -117,8 +109,8 @@ namespace Ruitk.Builder
         {
             if (element == null)
                 return;
-            element.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
-            element.style.color = Ink;
+            element.style.backgroundColor = BuilderPalette.Transparent;
+            element.style.color = BuilderPalette.Text;
             element.style.borderTopWidth = 0f;
             element.style.borderBottomWidth = 0f;
             element.style.borderLeftWidth = 0f;
@@ -150,14 +142,14 @@ namespace Ruitk.Builder
         {
             style.flexGrow = 1f;
             // POC "#srcpane": #17171b ground, 12px monospace, 8px 0 padding.
-            style.backgroundColor = Ground;
+            style.backgroundColor = BuilderPalette.Ground;
 
             var host = new VisualElement
             {
                 style =
                 {
                     flexGrow = 1f, position = Position.Relative, overflow = Overflow.Hidden,
-                    backgroundColor = Ground,
+                    backgroundColor = BuilderPalette.Ground,
                 },
             };
             Add(host);
@@ -231,8 +223,8 @@ namespace Ruitk.Builder
             _input.style.paddingBottom = 8f;
             _input.style.paddingLeft = Gutter;
             _input.style.paddingRight = Gutter;
-            _input.style.backgroundColor = Ground;
-            _input.style.color = Ink;
+            _input.style.backgroundColor = BuilderPalette.Ground;
+            _input.style.color = BuilderPalette.Text;
             _input.style.display = DisplayStyle.None;
             FlattenInputTree();
             _input.RegisterCallback<AttachToPanelEvent>(_ => FlattenInputTree());
@@ -334,65 +326,6 @@ namespace Ruitk.Builder
             _suppressChange = false;
             _userCaretActive = false;
             Recolor(textLf ?? "");
-        }
-
-        /// <summary>Location-aware palette insertion. With a live user caret the
-        /// snippet lands there; otherwise markup snippets go INSIDE the last
-        /// return block (before its closing) and body snippets go before the
-        /// last <c>return (</c> — a blind caret at index 0 used to prepend
-        /// markup above the imports and break the whole buffer.</summary>
-        public void InsertSnippet(string snippet, bool isMarkup)
-        {
-            if (string.IsNullOrEmpty(snippet))
-                return;
-            if (_userCaretActive)
-            {
-                InsertAtCaret(snippet);
-                return;
-            }
-
-            string text = TextLf;
-            if (isMarkup)
-            {
-                int close = text.LastIndexOf("\n  );", StringComparison.Ordinal);
-                if (close >= 0)
-                {
-                    ReplaceAll(text.Substring(0, close + 1)
-                        + Indent(snippet.TrimEnd('\n'), "    ") + "\n"
-                        + text.Substring(close + 1));
-                    return;
-                }
-            }
-            else
-            {
-                int ret = text.LastIndexOf("\n  return (", StringComparison.Ordinal);
-                if (ret >= 0)
-                {
-                    ReplaceAll(text.Substring(0, ret + 1)
-                        + Indent(snippet.TrimEnd('\n'), "  ") + "\n"
-                        + text.Substring(ret + 1));
-                    return;
-                }
-            }
-            InsertAtCaret(snippet);
-        }
-
-        private void ReplaceAll(string newText)
-        {
-            _input.value = newText;
-        }
-
-        private static string Indent(string snippet, string pad)
-        {
-            var lines = snippet.Split('\n');
-            var sb = new StringBuilder();
-            for (int i = 0; i < lines.Length; i++)
-            {
-                if (i > 0)
-                    sb.Append('\n');
-                sb.Append(pad).Append(lines[i]);
-            }
-            return sb.ToString();
         }
 
         public void SetEditable(bool editable)
@@ -523,7 +456,6 @@ namespace Ruitk.Builder
 
         private static readonly Color TraceBand = new Color(1f, 0.718f, 0.302f, 0.15f);
 
-        private static readonly Color NoBand = new Color(0f, 0f, 0f, 0f);
 
         private int _longestLine;
 
@@ -558,7 +490,7 @@ namespace Ruitk.Builder
                     flexShrink = 0f,
                     paddingLeft = Gutter,
                     paddingRight = Gutter,
-                    color = Ink,
+                    color = BuilderPalette.Text,
                     fontSize = 12f,
                     whiteSpace = WhiteSpace.Pre,
                     unityTextAlign = TextAnchor.MiddleLeft,
@@ -629,7 +561,7 @@ namespace Ruitk.Builder
                 row.text = BuildLineRichText(line, list);
                 row.style.backgroundColor = _selectedLine1 == i + 1
                     ? SelBand
-                    : LineNamesAny(line, _traceNames) ? TraceBand : NoBand;
+                    : LineNamesAny(line, _traceNames) ? TraceBand : BuilderPalette.Transparent;
             }
             ApplyLinesWidth();
         }

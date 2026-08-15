@@ -26,16 +26,6 @@ namespace Ruitk.Builder
             public Color Tint = new Color(0.80f, 0.80f, 0.84f);
         }
 
-        private static readonly Color ElementTint = new Color(0.310f, 0.765f, 0.969f);
-        private static readonly Color ComponentTint = new Color(0.498f, 0.859f, 0.792f);
-        private static readonly Color HookTint = new Color(0.506f, 0.780f, 0.518f);
-        private static readonly Color StyleTint = new Color(0.808f, 0.576f, 0.847f);
-        private static readonly Color UtilTint = new Color(1.000f, 0.718f, 0.302f);
-
-        private static readonly Color Panel2 = new Color(0.165f, 0.165f, 0.192f);
-        private static readonly Color Line = new Color(0.227f, 0.227f, 0.267f);
-        private static readonly Color Dim = new Color(0.545f, 0.545f, 0.588f);
-        private static readonly Color Accent = new Color(0.310f, 0.765f, 0.969f);
 
         /// <summary>The POC's curated native-tag order — these lead the section,
         /// the rest of the live schema follows alphabetically. Ordering only: the
@@ -77,7 +67,7 @@ namespace Ruitk.Builder
         {
             container.Clear();
 
-            container.style.backgroundColor = new Color(0.137f, 0.137f, 0.161f);
+            container.style.backgroundColor = BuilderPalette.Panel;
 
             var titleRow = new VisualElement
             {
@@ -86,7 +76,7 @@ namespace Ruitk.Builder
                     flexDirection = FlexDirection.Row,
                     alignItems = Align.Center,
                     justifyContent = Justify.SpaceBetween,
-                    backgroundColor = Panel2,
+                    backgroundColor = BuilderPalette.Panel2,
                     flexShrink = 0f,
                     // POC ".pane-title { padding: 7px 12px }" measures a 30px band
                     // plus its 1px rule; pinned because Unity's font metrics run
@@ -94,13 +84,13 @@ namespace Ruitk.Builder
                     height = 31f,
                     paddingLeft = 12f, paddingRight = 12f,
                     paddingTop = 0f, paddingBottom = 0f,
-                    borderBottomWidth = 1f, borderBottomColor = Line,
+                    borderBottomWidth = 1f, borderBottomColor = BuilderPalette.Line,
                 },
             };
             titleRow.Add(new Label("LIBRARY")
             {
                 // POC ".pane-title { letter-spacing: .08em }".
-                style = { fontSize = 11f, color = Dim, letterSpacing = 1f },
+                style = { fontSize = 11f, color = BuilderPalette.Dim, letterSpacing = 1f },
             });
             if (onNewFile != null)
             {
@@ -110,12 +100,12 @@ namespace Ruitk.Builder
                     style =
                     {
                         fontSize = 10f,
-                        color = new Color(0.839f, 0.839f, 0.863f),
-                        backgroundColor = Panel2,
+                        color = BuilderPalette.Text,
+                        backgroundColor = BuilderPalette.Panel2,
                         borderTopWidth = 1f, borderBottomWidth = 1f,
                         borderLeftWidth = 1f, borderRightWidth = 1f,
-                        borderTopColor = Line, borderBottomColor = Line,
-                        borderLeftColor = Line, borderRightColor = Line,
+                        borderTopColor = BuilderPalette.Line, borderBottomColor = BuilderPalette.Line,
+                        borderLeftColor = BuilderPalette.Line, borderRightColor = BuilderPalette.Line,
                         borderTopLeftRadius = 3f, borderTopRightRadius = 3f,
                         borderBottomLeftRadius = 3f, borderBottomRightRadius = 3f,
                         paddingLeft = 7f, paddingRight = 7f,
@@ -132,17 +122,17 @@ namespace Ruitk.Builder
                 });
                 newBtn.RegisterCallback<MouseEnterEvent>(_ =>
                 {
-                    newBtn.style.borderTopColor = Accent;
-                    newBtn.style.borderBottomColor = Accent;
-                    newBtn.style.borderLeftColor = Accent;
-                    newBtn.style.borderRightColor = Accent;
+                    newBtn.style.borderTopColor = BuilderPalette.Accent;
+                    newBtn.style.borderBottomColor = BuilderPalette.Accent;
+                    newBtn.style.borderLeftColor = BuilderPalette.Accent;
+                    newBtn.style.borderRightColor = BuilderPalette.Accent;
                 });
                 newBtn.RegisterCallback<MouseLeaveEvent>(_ =>
                 {
-                    newBtn.style.borderTopColor = Line;
-                    newBtn.style.borderBottomColor = Line;
-                    newBtn.style.borderLeftColor = Line;
-                    newBtn.style.borderRightColor = Line;
+                    newBtn.style.borderTopColor = BuilderPalette.Line;
+                    newBtn.style.borderBottomColor = BuilderPalette.Line;
+                    newBtn.style.borderLeftColor = BuilderPalette.Line;
+                    newBtn.style.borderRightColor = BuilderPalette.Line;
                 });
                 titleRow.Add(newBtn);
             }
@@ -212,7 +202,7 @@ namespace Ruitk.Builder
                     Description = "hook template",
                     Snippet = hook + "()",
                     Section = "Hooks",
-                    Tint = HookTint,
+                    Tint = BuilderPalette.HookTint,
                 });
             SortSections();
             Rebuild();
@@ -243,7 +233,7 @@ namespace Ruitk.Builder
                             Description = body?.Value<string>("description") ?? "",
                             Snippet = "<" + prop.Name + " />",
                             Section = "Native elements",
-                            Tint = ElementTint,
+                            Tint = BuilderPalette.Accent,
                         });
                     }
                 }
@@ -266,7 +256,7 @@ namespace Ruitk.Builder
                             Description = h.Value<string>("doc") ?? h.Value<string>("Doc") ?? "",
                             Snippet = name + "()",
                             Section = "Hooks",
-                            Tint = HookTint,
+                            Tint = BuilderPalette.HookTint,
                         });
                     }
                 }
@@ -311,7 +301,7 @@ namespace Ruitk.Builder
                                 Description = node.FilePath,
                                 Snippet = "<" + export + " />",
                                 Section = "Custom components",
-                                Tint = ComponentTint,
+                                Tint = BuilderPalette.ComponentTint,
                             });
                         break;
                     case BuilderNodeKind.Style:
@@ -321,7 +311,7 @@ namespace Ruitk.Builder
                             Description = node.FilePath,
                             Snippet = node.Title + ".",
                             Section = "Style modules",
-                            Tint = StyleTint,
+                            Tint = BuilderPalette.StyleTint,
                         });
                         break;
                     case BuilderNodeKind.Hook:
@@ -333,7 +323,7 @@ namespace Ruitk.Builder
                                 Snippet = export + "()",
                                 Section = "Hooks",
                                 Payload = "hook:" + export,
-                                Tint = HookTint,
+                                Tint = BuilderPalette.HookTint,
                             });
                         break;
                     case BuilderNodeKind.Util:
@@ -343,7 +333,7 @@ namespace Ruitk.Builder
                             Description = node.FilePath,
                             Snippet = node.Title,
                             Section = "Util modules",
-                            Tint = UtilTint,
+                            Tint = BuilderPalette.UtilTint,
                         });
                         break;
                 }
@@ -423,7 +413,7 @@ namespace Ruitk.Builder
                 style =
                 {
                     marginTop = 10f, marginBottom = 5f,
-                    color = Dim,
+                    color = BuilderPalette.Dim,
                     fontSize = 10f,
                     letterSpacing = 1f,
                 },
@@ -484,11 +474,11 @@ namespace Ruitk.Builder
                     {
                         fontSize = 12f,
                         color = entry.Tint,
-                        backgroundColor = Panel2,
+                        backgroundColor = BuilderPalette.Panel2,
                         borderTopWidth = 1f, borderBottomWidth = 1f,
                         borderLeftWidth = 1f, borderRightWidth = 1f,
-                        borderTopColor = Line, borderBottomColor = Line,
-                        borderLeftColor = Line, borderRightColor = Line,
+                        borderTopColor = BuilderPalette.Line, borderBottomColor = BuilderPalette.Line,
+                        borderLeftColor = BuilderPalette.Line, borderRightColor = BuilderPalette.Line,
                         borderTopLeftRadius = 5f, borderTopRightRadius = 5f,
                         borderBottomLeftRadius = 5f, borderBottomRightRadius = 5f,
                         paddingLeft = 9f, paddingRight = 9f,
@@ -518,17 +508,17 @@ namespace Ruitk.Builder
                 BuilderCursor.Set(row, UnityEditor.MouseCursor.Pan);
                 row.RegisterCallback<MouseEnterEvent>(_ =>
                 {
-                    row.style.borderTopColor = Accent;
-                    row.style.borderBottomColor = Accent;
-                    row.style.borderLeftColor = Accent;
-                    row.style.borderRightColor = Accent;
+                    row.style.borderTopColor = BuilderPalette.Accent;
+                    row.style.borderBottomColor = BuilderPalette.Accent;
+                    row.style.borderLeftColor = BuilderPalette.Accent;
+                    row.style.borderRightColor = BuilderPalette.Accent;
                 });
                 row.RegisterCallback<MouseLeaveEvent>(_ =>
                 {
-                    row.style.borderTopColor = Line;
-                    row.style.borderBottomColor = Line;
-                    row.style.borderLeftColor = Line;
-                    row.style.borderRightColor = Line;
+                    row.style.borderTopColor = BuilderPalette.Line;
+                    row.style.borderBottomColor = BuilderPalette.Line;
+                    row.style.borderLeftColor = BuilderPalette.Line;
+                    row.style.borderRightColor = BuilderPalette.Line;
                 });
                 _listHost.Add(row);
             }
@@ -546,7 +536,7 @@ namespace Ruitk.Builder
                 style =
                 {
                     fontSize = 10.5f,
-                    color = Dim,
+                    color = BuilderPalette.Dim,
                     marginTop = 10f,
                     marginBottom = 8f,
                     whiteSpace = WhiteSpace.Normal,

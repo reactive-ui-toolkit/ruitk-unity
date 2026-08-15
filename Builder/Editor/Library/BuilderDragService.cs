@@ -11,15 +11,10 @@ namespace Ruitk.Builder
     internal static class BuilderDragService
     {
         public static string Payload;
-        public static double ArmedAt;
 
         public static bool Active => !string.IsNullOrEmpty(Payload);
 
-        public static void Arm(string payload)
-        {
-            Payload = payload;
-            ArmedAt = UnityEditor.EditorApplication.timeSinceStartup;
-        }
+        public static void Arm(string payload) => Payload = payload;
 
         public static string Take()
         {
@@ -29,11 +24,6 @@ namespace Ruitk.Builder
         }
 
         public static void Cancel() => Payload = null;
-
-        /// <summary>True while the press still counts as a plain click
-        /// (release within 250 ms on the same item).</summary>
-        public static bool IsQuickClick =>
-            UnityEditor.EditorApplication.timeSinceStartup - ArmedAt < 0.25;
     }
 }
 #endif

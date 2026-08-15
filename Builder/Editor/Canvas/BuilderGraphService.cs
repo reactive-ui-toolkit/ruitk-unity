@@ -403,9 +403,7 @@ namespace Ruitk.Builder
             {
                 if (line.Length == 0)
                     continue;
-                int w = 0;
-                while (w < line.Length && line[w] == ' ')
-                    w++;
+                int w = BuilderText.LeadingSpaceCount(line);
                 if (w < common)
                     common = w;
             }

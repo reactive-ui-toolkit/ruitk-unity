@@ -123,22 +123,18 @@ namespace Ruitk.Builder
         public static float CardWidthFor(int lod) =>
             lod == 0 ? 300f : lod == 1 ? 340f : 430f;
 
-        private static readonly Color UsageEdge = new Color(0.361f, 0.545f, 0.690f);
-        private static readonly Color HookEdge = new Color(0.427f, 0.659f, 0.435f);
-        private static readonly Color StyleEdge = new Color(0.647f, 0.467f, 0.702f);
-
         public static Color KindColor(BuilderNodeKind kind)
         {
             switch (kind)
             {
                 case BuilderNodeKind.Component:
-                    return new Color(0.310f, 0.765f, 0.969f);
+                    return BuilderPalette.Accent;
                 case BuilderNodeKind.Hook:
-                    return new Color(0.506f, 0.780f, 0.518f);
+                    return BuilderPalette.HookTint;
                 case BuilderNodeKind.Style:
-                    return new Color(0.808f, 0.576f, 0.847f);
+                    return BuilderPalette.StyleTint;
                 case BuilderNodeKind.Util:
-                    return new Color(1.000f, 0.718f, 0.302f);
+                    return BuilderPalette.UtilTint;
                 default:
                     return new Color(0.55f, 0.55f, 0.60f);
             }
@@ -268,9 +264,9 @@ namespace Ruitk.Builder
         /// 7 style).</summary>
         public static Color DotColor(int dotKind) => dotKind switch
         {
-            6 => new Color(0.427f, 0.659f, 0.435f),
-            7 => new Color(0.647f, 0.467f, 0.702f),
-            _ => new Color(0.361f, 0.545f, 0.690f),
+            6 => BuilderPalette.HookEdge,
+            7 => BuilderPalette.StyleEdge,
+            _ => BuilderPalette.UsageEdge,
         };
 
         /// <summary>POC ".anchor-dot { box-shadow: 0 0 0 2px rgba(...,.25) }" —
@@ -354,17 +350,17 @@ namespace Ruitk.Builder
             switch (kind)
             {
                 case BuilderCardLineKind.Import:
-                    return new Color(0.545f, 0.545f, 0.588f);
+                    return BuilderPalette.Dim;
                 case BuilderCardLineKind.Hook:
-                    return new Color(0.506f, 0.780f, 0.518f);
+                    return BuilderPalette.HookTint;
                 case BuilderCardLineKind.Element:
-                    return new Color(0.310f, 0.765f, 0.969f);
+                    return BuilderPalette.Accent;
                 case BuilderCardLineKind.Component:
-                    return new Color(0.498f, 0.859f, 0.792f);
+                    return BuilderPalette.ComponentTint;
                 case BuilderCardLineKind.Directive:
-                    return new Color(0.808f, 0.576f, 0.847f);
+                    return BuilderPalette.StyleTint;
                 case BuilderCardLineKind.Export:
-                    return new Color(0.808f, 0.576f, 0.847f);
+                    return BuilderPalette.StyleTint;
                 default:
                     return new Color(0.812f, 0.812f, 0.855f);
             }
@@ -420,7 +416,7 @@ namespace Ruitk.Builder
         {
             if (selected)
                 return new Color(1f, 0.835f, 0.310f, lod == 0 ? 0.2f : 1f);
-            var line = new Color(0.227f, 0.227f, 0.267f);
+            var line = BuilderPalette.Line;
             if (lod == 0)
                 line.a = 0.12f;
             return line;
@@ -524,7 +520,7 @@ namespace Ruitk.Builder
             if (rect.width <= 0f)
                 return;
             var p = ctx.painter2D;
-            p.fillColor = new Color(0.227f, 0.227f, 0.267f);
+            p.fillColor = BuilderPalette.Line;
             p.BeginPath();
             for (float x = 0f; x < rect.width; x += 6f)
             {
@@ -652,9 +648,9 @@ namespace Ruitk.Builder
                 if (edge.ToIndex < 0 || edge.ToIndex >= graph.Nodes.Count)
                     continue;
                 var to = graph.Nodes[edge.ToIndex];
-                Color color = edge.TargetKind == BuilderNodeKind.Hook ? HookEdge
-                    : edge.TargetKind == BuilderNodeKind.Style ? StyleEdge
-                    : UsageEdge;
+                Color color = edge.TargetKind == BuilderNodeKind.Hook ? BuilderPalette.HookEdge
+                    : edge.TargetKind == BuilderNodeKind.Style ? BuilderPalette.StyleEdge
+                    : BuilderPalette.UsageEdge;
                 bool dashed = edge.TargetKind == BuilderNodeKind.Style
                     || edge.TargetKind == BuilderNodeKind.Hook;
                 StrokeEdge(p, a, TargetOf(edge.ToIndex, to), color, dashed);
@@ -680,7 +676,7 @@ namespace Ruitk.Builder
                         : AnchorOf(
                             "a-row-" + i + "-" + r,
                             new Vector2(from.X + width - 16f, from.Y + MarkupRowY(from, r)));
-                    StrokeEdge(p, a, TargetOf(target, to), UsageEdge, false);
+                    StrokeEdge(p, a, TargetOf(target, to), BuilderPalette.UsageEdge, false);
                 }
             }
             MaybeRetry(layer, estimated);

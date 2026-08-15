@@ -30,12 +30,6 @@ namespace Ruitk.Builder
 
         [SerializeField] private List<BuilderDocumentSession> _serializedSessions = new List<BuilderDocumentSession>();
 
-        /// <summary>Content hashes of buffers this workspace itself compiled — lets the
-        /// preview compiler skip re-reacting to its own just-saved bytes.</summary>
-        [NonSerialized]
-        private readonly Dictionary<string, int> _compiledContentHash =
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
         public event Action Changed;
 
         public IReadOnlyCollection<BuilderDocumentSession> Sessions => _sessions.Values;
@@ -112,13 +106,6 @@ namespace Ruitk.Builder
             Changed?.Invoke();
         }
 
-        public void RecordCompiledContent(string filePath, string bufferLf) =>
-            _compiledContentHash[filePath] = bufferLf.GetHashCode();
-
-        public bool WasCompiledContent(string filePath, string textLf) =>
-            _compiledContentHash.TryGetValue(filePath, out var h)
-            && h == textLf.GetHashCode();
-
         /// <summary>
         /// Writes every dirty buffer. HMR inactive: bracket the batch in a reload
         /// suppressor via <c>using</c> (a leaked lock freezes the domain — the
@@ -154,7 +141,6 @@ namespace Ruitk.Builder
                         Directory.CreateDirectory(dir);
                     string text = s.UsedCrlf ? s.BufferText.Replace("\n", "\r\n") : s.BufferText;
                     File.WriteAllText(s.FilePath, text);
-                    RecordCompiledContent(s.FilePath, s.BufferText);
                     s.MarkClean(s.BufferText);
                 }
             }

@@ -78,15 +78,6 @@ namespace Ruitk.Builder
             return focusResult;
         }
 
-        public HmrCompileResult CompileOne(string uitkxPath)
-        {
-            if (_compiler == null)
-                return null;
-            var result = _compiler.Compile(uitkxPath);
-            CompileFinished?.Invoke(uitkxPath, result.Success, result.Error);
-            return result;
-        }
-
         public void Dispose()
         {
             _compiler?.Dispose();
