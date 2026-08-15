@@ -328,6 +328,17 @@ namespace Ruitk.Builder
             Recolor(textLf ?? "");
         }
 
+        /// <summary>UB-07: refresh the element set without touching the buffer
+        /// or the caret — the graph loads after the first SetContent, and custom
+        /// tags stay unclassified until the set arrives.</summary>
+        public void SetKnownElements(HashSet<string> knownElements)
+        {
+            if (ReferenceEquals(_knownElements, knownElements))
+                return;
+            _knownElements = knownElements;
+            Recolor(_input.value ?? "");
+        }
+
         public void SetEditable(bool editable)
         {
             _input.isReadOnly = !editable;

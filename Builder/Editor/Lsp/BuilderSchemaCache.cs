@@ -6,8 +6,11 @@ namespace Ruitk.Builder
 {
     /// <summary>
     /// The typed-attribute vocabulary for context menus (POC 6.4 A.1):
-    /// per-element attributes from the LSP's embedded schema plus the POC's
-    /// common attribute set, cached when the library pane loads the schema.
+    /// per-element attributes from the LSP's embedded schema, plus the schema's
+    /// own intrinsic + structural attribute sets as the common tail. The
+    /// hand-written common list survives only as the offline fallback, and
+    /// <see cref="HasSchema"/> lets menus say so instead of degrading silently
+    /// (UB-09).
     /// </summary>
     internal static class BuilderSchemaCache
     {
@@ -15,34 +18,55 @@ namespace Ruitk.Builder
         {
             public readonly string Name;
             public readonly string Type;
+            public readonly string Description;
 
-            public AttrInfo(string name, string type)
+            public AttrInfo(string name, string type, string description = "")
             {
                 Name = name;
                 Type = type;
+                Description = description ?? "";
             }
         }
 
         private static readonly Dictionary<string, List<AttrInfo>> s_byElement =
             new Dictionary<string, List<AttrInfo>>(StringComparer.Ordinal);
 
-        private static readonly AttrInfo[] s_common =
+        private static List<AttrInfo> s_commonFromSchema;
+
+        /// <summary>Offline-only fallback (schema unavailable): the real subset
+        /// of intrinsic + structural names. The previous list carried three
+        /// attributes that do not exist (usageHints, onMouseEnter, onMouseLeave).</summary>
+        private static readonly AttrInfo[] s_offlineFallback =
         {
             new AttrInfo("style", "Style"),
             new AttrInfo("name", "string"),
+            new AttrInfo("className", "string"),
             new AttrInfo("tooltip", "string"),
             new AttrInfo("focusable", "bool"),
             new AttrInfo("pickingMode", "PickingMode"),
             new AttrInfo("viewDataKey", "string"),
-            new AttrInfo("usageHints", "UsageHints"),
             new AttrInfo("onClick", "Action"),
-            new AttrInfo("onMouseEnter", "Action"),
-            new AttrInfo("onMouseLeave", "Action"),
-            new AttrInfo("onGeometryChanged", "Action"),
+            new AttrInfo("onPointerEnter", "PointerEventHandler"),
+            new AttrInfo("onPointerLeave", "PointerEventHandler"),
+            new AttrInfo("onGeometryChanged", "GeometryChangedEventHandler"),
+            new AttrInfo("key", "string"),
+            new AttrInfo("ref", "object"),
         };
+
+        public static bool HasSchema => s_byElement.Count > 0;
+
+        public static IEnumerable<string> ElementNames => s_byElement.Keys;
+
+        public static bool HasElement(string element) => s_byElement.ContainsKey(element);
 
         public static void Register(string element, List<AttrInfo> attrs) =>
             s_byElement[element] = attrs;
+
+        /// <summary>The schema's intrinsicElementAttributes + structuralAttributes,
+        /// appended after every element's own list (and after a custom
+        /// component's props, where the menu labels them as needing a prop).</summary>
+        public static void RegisterCommon(List<AttrInfo> attrs) =>
+            s_commonFromSchema = attrs;
 
         public static IEnumerable<AttrInfo> AttributesFor(string element)
         {
@@ -51,24 +75,58 @@ namespace Ruitk.Builder
                 foreach (var attr in attrs)
                     if (seen.Add(attr.Name))
                         yield return attr;
-            foreach (var attr in s_common)
+            if (s_commonFromSchema != null)
+            {
+                foreach (var attr in s_commonFromSchema)
+                    if (seen.Add(attr.Name))
+                        yield return attr;
+                yield break;
+            }
+            foreach (var attr in s_offlineFallback)
                 if (seen.Add(attr.Name))
                     yield return attr;
         }
 
-        /// <summary>POC defaultAttrValue: handlers get {handler}, styles get
-        /// {styleName}, strings get "text", everything else {value}.</summary>
+        /// <summary>Type-driven default so an inserted attribute COMPILES
+        /// (UB-14): the old name heuristic wrote <c>focusable={value}</c>. The
+        /// inline editor still opens on the value immediately after the insert,
+        /// so these are starting points, not guesses at intent.</summary>
         public static string DefaultValueFor(string name, string type)
         {
-            if ((name.Length > 2 && name.StartsWith("on", StringComparison.Ordinal)
-                    && char.IsUpper(name[2]))
-                || type.Contains("Action"))
-                return "{handler}";
-            if (name == "style" || type == "Style")
-                return "{styleName}";
-            if (type == "string" || name == "text" || name == "label")
+            type = type ?? "";
+            switch (type)
+            {
+                case "string":
+                    return "\"text\"";
+                case "bool":
+                    return "{true}";
+                case "int":
+                case "uint":
+                case "long":
+                case "ulong":
+                    return "{0}";
+                case "float":
+                case "double":
+                    return "{0f}";
+                case "Style":
+                    return "{new Style { }}";
+                case "Action":
+                    return "{() => { }}";
+            }
+            if (type.StartsWith("Action<", StringComparison.Ordinal))
+                return "{_ => { }}";
+            if (type.StartsWith("Func", StringComparison.Ordinal))
+                return "{() => default}";
+            if (type.EndsWith("Handler", StringComparison.Ordinal))
+                return "{e => { }}";
+            if (BuilderStyleSurface.TryEnumToken(type, out string token))
+                return "{" + token + "}";
+            if (type.Length == 0 && (name == "text" || name == "label"))
                 return "\"text\"";
-            return "{value}";
+            if (type.Length == 0 && name.Length > 2
+                && name.StartsWith("on", StringComparison.Ordinal) && char.IsUpper(name[2]))
+                return "{e => { }}";
+            return "{default}";
         }
     }
 }

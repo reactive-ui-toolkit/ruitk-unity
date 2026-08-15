@@ -26,7 +26,12 @@ namespace Ruitk.Builder
         private Label _previewName;
         private Label _sourceName;
 
-        [System.NonSerialized] private Button[] _modeButtons;
+        // UB-40: one mapping table for the layer select — labels, zoom presets
+        // and the active index can never drift apart.
+        private static readonly string[] s_layerLabels =
+            { "Layer 1 — Architecture", "Layer 2 — Cards", "Layer 3 — Edit" };
+        private static readonly float[] s_layerZooms = { 0.30f, 0.75f, 1.25f };
+        [System.NonSerialized] private DropdownField _layerSelect;
         [System.NonSerialized] private BuilderCanvasHost _canvasHost;
         [System.NonSerialized] private BuilderLibraryPane _libraryPane;
         [System.NonSerialized] private CodeField _codeField;
@@ -128,16 +133,19 @@ namespace Ruitk.Builder
             };
             toolbar.Add(_statusLabel);
             toolbar.Add(Separator());
-            _modeButtons = new Button[3];
-            string[] modeLabels = { "L0 Architecture", "L1 Cards", "L2 Edit" };
-            float[] modeZooms = { 0.30f, 0.75f, 1.25f };
-            for (int i = 0; i < 3; i++)
+            _layerSelect = new DropdownField(
+                new System.Collections.Generic.List<string>(s_layerLabels), 1);
+            _layerSelect.RegisterValueChangedCallback(evt =>
             {
-                float zoom = modeZooms[i];
-                var button = ToolbarButton(modeLabels[i], () => _canvasHost?.SetViewPreset(zoom));
-                _modeButtons[i] = button;
-                toolbar.Add(button);
-            }
+                int index = System.Array.IndexOf(s_layerLabels, evt.newValue);
+                if (index >= 0)
+                    _canvasHost?.SetViewPreset(s_layerZooms[index]);
+            });
+            _layerSelect.style.minWidth = 190f;
+            _layerSelect.style.marginLeft = 2f;
+            _layerSelect.style.marginRight = 2f;
+            _layerSelect.style.alignSelf = Align.Center;
+            toolbar.Add(_layerSelect);
             toolbar.Add(Separator());
             toolbar.Add(ToolbarButton("Import .uxml…", ImportUxml));
             toolbar.Add(ToolbarButton("? How to drive it", ToggleHelp));
@@ -375,7 +383,32 @@ namespace Ruitk.Builder
                 {
                     _libraryPane?.SetWorkspaceEntries(graph);
                     _previewPane?.RefreshModuleNotes();
+                    _codeField?.SetKnownElements(KnownElementsOrNull());
                 });
+        }
+
+        /// <summary>UB-07: the element set for custom-tag colouring and the
+        /// tier-2 unknown-element check — schema natives plus every export in
+        /// the live graph, mirroring the LSP's BuildProjectElements. Null until
+        /// BOTH sources are live, which suppresses UITKX0105/0109 instead of
+        /// storming false errors during startup (same discipline as the LSP's
+        /// initial-scan gate).</summary>
+        private System.Collections.Generic.HashSet<string> KnownElementsOrNull()
+        {
+            var nodes = _canvasHost?.Nodes;
+            if (!BuilderSchemaCache.HasSchema || nodes == null || nodes.Count == 0)
+                return null;
+            var set = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+            foreach (string element in BuilderSchemaCache.ElementNames)
+                set.Add(element);
+            foreach (var node in nodes)
+            {
+                foreach (string export in node.Exports)
+                    set.Add(export);
+                if (!string.IsNullOrEmpty(node.Title))
+                    set.Add(node.Title);
+            }
+            return set;
         }
 
         private void MountLibrary()
@@ -461,7 +494,7 @@ namespace Ruitk.Builder
             if (_sourceName != null)
                 _sourceName.text = Path.GetFileName(_focusFile).ToUpperInvariant();
             _previewPane.ShowFile(_focusFile, session?.BufferText, null);
-            _codeField.SetContent(session?.BufferText ?? "", _focusFile, null);
+            _codeField.SetContent(session?.BufferText ?? "", _focusFile, KnownElementsOrNull());
             _codeField.SetEditable(session != null && !session.IsReadOnly);
             // POC selectNode(): opening another file leaves source-edit mode.
             _codeField.SetEditing(_sourceSnapshot != null);
@@ -531,7 +564,7 @@ namespace Ruitk.Builder
             if (session != null && !session.IsReadOnly)
             {
                 session.ApplyEdit(restore);
-                _codeField?.SetContent(restore, _focusFile, null);
+                _codeField?.SetContent(restore, _focusFile, KnownElementsOrNull());
                 RefreshChrome();
                 ScheduleCanvasRefresh(_focusFile);
                 NotifyBufferChanged();
@@ -603,7 +636,7 @@ namespace Ruitk.Builder
 
         private void RefreshEditedBuffer(BuilderDocumentSession session)
         {
-            _codeField?.SetContent(session.BufferText, session.FilePath, null);
+            _codeField?.SetContent(session.BufferText, session.FilePath, KnownElementsOrNull());
             RefreshChrome();
             NotifyBufferChanged();
         }
@@ -743,7 +776,22 @@ namespace Ruitk.Builder
                 BuilderSearchMenu.SectionHeader("native elements"),
             };
             void AddChild(string childTag) => InsertChildTag(filePath, row, childTag);
+            // UB-10: the full schema element set, curated order first — the
+            // 7-tag NativeTagOrder is a display curation, not a source list.
+            var natives = new System.Collections.Generic.List<string>();
             foreach (string element in BuilderLibraryPane.NativeTagOrder)
+                if (!BuilderSchemaCache.HasSchema || BuilderSchemaCache.HasElement(element))
+                    natives.Add(element);
+            if (BuilderSchemaCache.HasSchema)
+            {
+                var rest = new System.Collections.Generic.List<string>();
+                foreach (string element in BuilderSchemaCache.ElementNames)
+                    if (!natives.Contains(element))
+                        rest.Add(element);
+                rest.Sort(System.StringComparer.Ordinal);
+                natives.AddRange(rest);
+            }
+            foreach (string element in natives)
             {
                 string captured = element;
                 items.Add(new BuilderSearchMenu.Item
@@ -1174,8 +1222,10 @@ namespace Ruitk.Builder
 
         /// <summary>POC 6.4 A.1: searchable typed-attribute menu with the
         /// untyped freeform fallback; the picked attribute lands on the row's
-        /// open tag with its POC default value.</summary>
-        private void ShowAttributeMenu(
+        /// open tag with a type-driven default. Custom components resolve their
+        /// props through ruitk/componentProps (UB-13) with the signature parse
+        /// as the LSP-down fallback.</summary>
+        private async void ShowAttributeMenu(
             string filePath, int sourceLine, string tag, BuilderCardLine row, int rowIdx)
         {
             var present = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
@@ -1222,7 +1272,8 @@ namespace Ruitk.Builder
             var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
             if (custom)
             {
-                foreach (var (name, type) in PropsOf(component))
+                var props = await FetchComponentPropsAsync(component.Title) ?? PropsOf(component);
+                foreach (var (name, type) in props)
                 {
                     if (present.Contains(name))
                         continue;
@@ -1238,6 +1289,9 @@ namespace Ruitk.Builder
                 items.Add(BuilderSearchMenu.SectionHeader(
                     "not declared on " + tag + " — needs a matching prop"));
             }
+            if (!BuilderSchemaCache.HasSchema)
+                items.Add(BuilderSearchMenu.SectionHeader(
+                    "schema offline — common attributes only"));
             foreach (var attr in BuilderSchemaCache.AttributesFor(tag))
             {
                 string name = attr.Name;
@@ -1260,8 +1314,49 @@ namespace Ruitk.Builder
                 });
         }
 
-        /// <summary>POC typed-props attribute source: the target component's own
-        /// signature parameters (plus the always-available list "key").</summary>
+        /// <summary>UB-13: the REAL prop surface from the LSP's WorkspaceIndex
+        /// (ruitk/componentProps). Null on timeout/failure so the caller can fall
+        /// back to the signature parse.</summary>
+        private async System.Threading.Tasks.Task<System.Collections.Generic.List<(string Name, string Type)>>
+            FetchComponentPropsAsync(string componentName)
+        {
+            try
+            {
+                var client = await BuilderLspService.GetOrStartAsync();
+                var session = _workspace.TryGet(_focusFile);
+                if (session != null)
+                    client.SendDidChangeNow(_focusFile, session.BufferText);
+                var request = client.RequestComponentProps(componentName);
+                var done = await System.Threading.Tasks.Task.WhenAny(
+                    request, System.Threading.Tasks.Task.Delay(1500));
+                if (done != request)
+                    return null;
+                var response = await request;
+                var propArr = (response?["props"] ?? response?["Props"])
+                    as Newtonsoft.Json.Linq.JArray;
+                if (propArr == null || propArr.Count == 0)
+                    return null;
+                var props = new System.Collections.Generic.List<(string, string)>();
+                foreach (var p in propArr)
+                {
+                    string name = p.Value<string>("name") ?? p.Value<string>("Name");
+                    if (string.IsNullOrEmpty(name))
+                        continue;
+                    props.Add((name, p.Value<string>("type") ?? p.Value<string>("Type") ?? ""));
+                }
+                if (props.Count == 0)
+                    return null;
+                props.Add(("key", "list key"));
+                return props;
+            }
+            catch (System.Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Signature-parse fallback for LSP-less sessions (plus the
+        /// always-available list "key").</summary>
         private static System.Collections.Generic.List<(string Name, string Type)> PropsOf(
             BuilderCanvasNode component)
         {
@@ -1290,50 +1385,24 @@ namespace Ruitk.Builder
             return props;
         }
 
-        private static readonly (string Key, string Type)[] s_styleKeys =
-        {
-            ("FlexGrow", "number"), ("FlexShrink", "number"), ("FlexDirection", "flex-direction"),
-            ("JustifyContent", "justify"), ("AlignItems", "align"), ("AlignSelf", "align"),
-            ("Width", "length"), ("Height", "length"), ("MinWidth", "length"), ("MaxWidth", "length"),
-            ("MinHeight", "length"), ("MaxHeight", "length"), ("Padding", "length"), ("Margin", "length"),
-            ("Gap", "length"),
-            ("BorderRadius", "length"), ("BorderWidth", "length"), ("BackgroundColor", "color"),
-            ("Color", "color"), ("BorderColor", "color"), ("FontSize", "length"),
-            ("UnityFontStyle", "font-style"), ("UnityTextAlign", "text-align"), ("Opacity", "number"),
-            ("Display", "display"), ("Position", "position"),
-        };
-
-        private static string[] ValueTemplatesFor(string type) => type switch
-        {
-            "number" => new[] { "1", "0", "0.5f" },
-            "length" => new[] { "Px(8)", "Px(16)", "Pct(100)", "Pct(50)" },
-            "color" => new[] { "Hex(\"#1b1b1f\")", "Hex(\"#4fc3f7\")", "Rgba(0, 0, 0, 128)" },
-            "flex-direction" => new[] { "FlexRow", "FlexColumn" },
-            "justify" => new[] { "JustifyCenter", "JustifyFlexStart", "JustifyFlexEnd", "JustifySpaceBetween" },
-            "align" => new[] { "AlignCenter", "AlignFlexStart", "AlignFlexEnd", "AlignStretch" },
-            "font-style" => new[] { "FontBold", "FontItalic", "FontBoldAndItalic" },
-            "text-align" => new[] { "TextMiddleCenter", "TextMiddleLeft", "TextUpperLeft" },
-            "display" => new[] { "DisplayFlex", "DisplayNone" },
-            "position" => new[] { "PosRelative", "PosAbsolute" },
-            _ => new[] { "0", "Px(8)", "Pct(100)", "Hex(\"#ffffff\")" },
-        };
-
         /// <summary>POC 6.5: "+ entry" → searchable key menu → value/helper menu
-        /// → the entry lands before the export's closing brace.</summary>
+        /// → the entry lands before the export's closing brace. Keys and
+        /// templates come from the reflected Style surface (UB-08), never a
+        /// hand-written table.</summary>
         private void OnStyleAddEntry(string filePath, string styleName, int closeLine)
         {
             var used = UsedStyleKeys(filePath, styleName);
             var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
-            foreach (var (key, type) in s_styleKeys)
+            foreach (var info in BuilderStyleSurface.Keys)
             {
-                if (used.Contains(key))
+                if (used.Contains(info.Name))
                     continue;
-                string capturedKey = key;
-                string capturedType = type;
+                var captured = info;
                 items.Add(new BuilderSearchMenu.Item
                 {
-                    Label = capturedKey + "  :  " + capturedType,
-                    OnPick = () => ShowStyleValueMenu(filePath, styleName, closeLine, capturedKey, capturedType),
+                    Label = captured.Name + "  :  " + captured.TypeLabel,
+                    OnPick = () => ShowStyleValueMenu(
+                        filePath, styleName, closeLine, captured.Name, captured.Templates),
                 });
             }
             BuilderSearchMenu.Show(
@@ -1341,7 +1410,8 @@ namespace Ruitk.Builder
                 free => new BuilderSearchMenu.Item
                 {
                     Label = "use key \"" + free + "\"",
-                    OnPick = () => ShowStyleValueMenu(filePath, styleName, closeLine, free, ""),
+                    OnPick = () => ShowStyleValueMenu(
+                        filePath, styleName, closeLine, free, BuilderStyleSurface.GenericTemplates),
                 });
         }
 
@@ -1377,10 +1447,10 @@ namespace Ruitk.Builder
         }
 
         private void ShowStyleValueMenu(
-            string filePath, string styleName, int closeLine, string key, string type)
+            string filePath, string styleName, int closeLine, string key, string[] templates)
         {
             var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
-            foreach (string template in ValueTemplatesFor(type))
+            foreach (string template in templates)
             {
                 string captured = template;
                 items.Add(new BuilderSearchMenu.Item
@@ -1727,7 +1797,7 @@ namespace Ruitk.Builder
             session.ApplyEdit(newBufferLf);
             if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(_focusFile),
                     System.StringComparison.OrdinalIgnoreCase))
-                _codeField?.SetContent(newBufferLf, _focusFile, null);
+                _codeField?.SetContent(newBufferLf, _focusFile, KnownElementsOrNull());
             SyncLspBuffer(filePath, newBufferLf, open: false);
             RefreshChrome();
             NotifyBufferChanged();
@@ -2362,18 +2432,8 @@ namespace Ruitk.Builder
 
         private void SetActiveMode(int lod)
         {
-            if (_modeButtons == null)
-                return;
-            for (int i = 0; i < _modeButtons.Length; i++)
-            {
-                bool active = i == lod;
-                var button = _modeButtons[i];
-                button.style.backgroundColor = active ? BuilderPalette.Accent : BuilderPalette.Panel2;
-                button.style.color = active ? new Color(0.063f, 0.133f, 0.173f) : BuilderPalette.Text;
-                button.userData = active ? BuilderPalette.Accent : BuilderPalette.Line;
-                SetBorderColor(button, active ? BuilderPalette.Accent : BuilderPalette.Line);
-                button.style.unityFontStyleAndWeight = active ? FontStyle.Bold : FontStyle.Normal;
-            }
+            _layerSelect?.SetValueWithoutNotify(
+                s_layerLabels[Mathf.Clamp(lod, 0, s_layerLabels.Length - 1)]);
         }
 
         /// <summary>POC ".pane-title": uppercase 11px dim label on panel2 with a

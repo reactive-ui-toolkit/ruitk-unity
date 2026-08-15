@@ -225,7 +225,8 @@ namespace Ruitk.Builder
 
                 var schema = await client.RequestSchema();
                 string json = schema?.Value<string>("json") ?? schema?.Value<string>("Json");
-                if (!string.IsNullOrEmpty(json) && JObject.Parse(json)["elements"] is JObject elements)
+                JObject schemaRoot = string.IsNullOrEmpty(json) ? null : JObject.Parse(json);
+                if (schemaRoot?["elements"] is JObject elements)
                 {
                     foreach (var prop in elements.Properties())
                     {
@@ -236,7 +237,8 @@ namespace Ruitk.Builder
                             foreach (var a in schemaAttrs)
                                 infos.Add(new BuilderSchemaCache.AttrInfo(
                                     a.Value<string>("name") ?? "",
-                                    a.Value<string>("type") ?? ""));
+                                    a.Value<string>("type") ?? "",
+                                    a.Value<string>("description") ?? ""));
                             BuilderSchemaCache.Register(prop.Name, infos);
                         }
                         _entries.Add(new Entry
@@ -249,6 +251,21 @@ namespace Ruitk.Builder
                         });
                     }
                 }
+                // UB-09: the schema's shared attribute sets replace the
+                // hand-written common list the moment the schema is live.
+                var common = new List<BuilderSchemaCache.AttrInfo>();
+                foreach (string section in new[]
+                    { "intrinsicElementAttributes", "structuralAttributes" })
+                {
+                    if (schemaRoot?[section] is JArray sharedAttrs)
+                        foreach (var a in sharedAttrs)
+                            common.Add(new BuilderSchemaCache.AttrInfo(
+                                a.Value<string>("name") ?? "",
+                                a.Value<string>("type") ?? "",
+                                a.Value<string>("description") ?? ""));
+                }
+                if (common.Count > 0)
+                    BuilderSchemaCache.RegisterCommon(common);
 
                 var hooks = await client.RequestHooks();
                 if ((hooks?["hooks"] ?? hooks?["Hooks"]) is JArray hookArr)
