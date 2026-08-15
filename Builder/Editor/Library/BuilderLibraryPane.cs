@@ -547,10 +547,17 @@ namespace Ruitk.Builder
                 var captured = entry;
                 // POC ".lib-item" is draggable="true" ONLY — there is no click
                 // handler on the library body, so a misjudged click never mutates
-                // the buffer at a position the user did not choose.
-                row.RegisterCallback<PointerDownEvent>(_ =>
-                    BuilderDragService.Arm(PayloadFor(captured)));
-                row.RegisterCallback<PointerUpEvent>(_ => BuilderDragService.Cancel());
+                // the buffer at a position the user did not choose. The service
+                // captures the pointer on arm (UB-32); a press-release under the
+                // travel threshold stays a harmless click.
+                row.RegisterCallback<PointerDownEvent>(evt =>
+                    BuilderDragService.Begin(
+                        PayloadFor(captured), captured.Name, row, evt.pointerId,
+                        new Vector2(evt.position.x, evt.position.y)));
+                row.RegisterCallback<PointerMoveEvent>(evt =>
+                    BuilderDragService.PointerMove(new Vector2(evt.position.x, evt.position.y)));
+                row.RegisterCallback<PointerUpEvent>(evt =>
+                    BuilderDragService.PointerUp(new Vector2(evt.position.x, evt.position.y)));
                 // POC ".lib-item { cursor: grab }".
                 BuilderCursor.Set(row, UnityEditor.MouseCursor.Pan);
                 row.RegisterCallback<MouseEnterEvent>(_ =>

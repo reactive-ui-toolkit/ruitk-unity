@@ -811,7 +811,59 @@ namespace Ruitk.Builder
                     }
                 }
             }
+            // UB-30/31: the drop band hint paints from the drag machine's live
+            // hit-tested target — no render state, no stale closure, and it
+            // works identically for library and canvas drags.
+            if (BuilderDragService.Dragging && BuilderDragService.Target.Valid)
+                PaintDropHint(p, world);
             MaybeRetry(layer, estimated);
+        }
+
+        private static void PaintDropHint(Painter2D p, VisualElement world)
+        {
+            var target = BuilderDragService.Target;
+            var el = target.RowElementName != null
+                ? world?.Q(target.RowElementName)
+                : world?.Q("card-" + target.CardIndex);
+            if (el == null || world == null)
+                return;
+            var bound = el.worldBound;
+            if (bound.width <= 0f || bound.height <= 0f)
+                return;
+            Vector2 min = world.WorldToLocal(new Vector2(bound.xMin, bound.yMin));
+            Vector2 max = world.WorldToLocal(new Vector2(bound.xMax, bound.yMax));
+            var accent = BuilderPalette.Accent;
+            p.lineWidth = 2f;
+            if (target.RowIdx < 0 || target.Band == 1)
+            {
+                var fill = accent;
+                fill.a = 30f / 255f;
+                p.fillColor = fill;
+                p.BeginPath();
+                p.MoveTo(min);
+                p.LineTo(new Vector2(max.x, min.y));
+                p.LineTo(max);
+                p.LineTo(new Vector2(min.x, max.y));
+                p.ClosePath();
+                p.Fill();
+                p.strokeColor = accent;
+                p.BeginPath();
+                p.MoveTo(min);
+                p.LineTo(new Vector2(max.x, min.y));
+                p.LineTo(max);
+                p.LineTo(new Vector2(min.x, max.y));
+                p.ClosePath();
+                p.Stroke();
+            }
+            else
+            {
+                float y = target.Band == 0 ? min.y : max.y;
+                p.strokeColor = accent;
+                p.BeginPath();
+                p.MoveTo(new Vector2(min.x, y));
+                p.LineTo(new Vector2(max.x, y));
+                p.Stroke();
+            }
         }
 
         /// <summary>The 8px anchor dot with its 25% halo ring, painted in the

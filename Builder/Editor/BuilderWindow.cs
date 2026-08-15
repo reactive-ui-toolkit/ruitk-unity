@@ -83,6 +83,9 @@ namespace Ruitk.Builder
         {
             var root = rootVisualElement;
             root.style.flexGrow = 1f;
+            // UB-30: the drag ghost chip lives on the window root so it can
+            // travel from the library across every pane.
+            BuilderDragService.GhostRoot = root;
             // "-unity-font-definition" is an inherited property, so the POC's
             // proportional face is pinned ONCE here and cascades to the toolbar,
             // the library, the preview strip, the legend and the footer hint.

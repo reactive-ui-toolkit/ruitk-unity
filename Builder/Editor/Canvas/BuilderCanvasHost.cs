@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
+using UnityEngine;
 using UnityEngine.UIElements;
 using Ruitk;
 using Ruitk.EditorSupport;
@@ -91,8 +92,80 @@ namespace Ruitk.Builder
             // POC selectNode(): the file the window opened on wears the gold ring
             // from the first frame — including a file that was just created.
             _selectPath = System.IO.Path.GetFullPath(focusFile);
+            // UB-30/31/32: the drag machine resolves targets by hit-test over
+            // this host's live graph, drops through the same OnRowDrop sink the
+            // rows used, repaints hints on the edge overlay, and cancels loudly.
+            BuilderDragService.HitTester = HitTest;
+            BuilderDragService.DropHandler =
+                (path, rowIdx, band, payload) => OnRowDrop?.Invoke(path, rowIdx, band, payload);
+            BuilderDragService.RepaintHints =
+                () => _container?.Q("ruitk-edge-layer")?.MarkDirtyRepaint();
+            BuilderDragService.OnBlockedDrop = message => OnToast?.Invoke(message);
             ZoomChanged?.Invoke(_zoom);
             RenderCanvas();
+        }
+
+        /// <summary>Panel point → drop target: pick, walk up to the first
+        /// "row-{card}-{row}" (else "card-{index}") name, band from the row's
+        /// worldBound thirds with the root/clause coercions applied.</summary>
+        private BuilderDropTarget HitTest(Vector2 panelPos)
+        {
+            var panel = _container?.panel;
+            if (panel == null || _graph == null)
+                return default;
+            VisualElement rowEl = null;
+            VisualElement cardEl = null;
+            for (var walk = panel.Pick(panelPos); walk != null; walk = walk.parent)
+            {
+                string name = walk.name ?? "";
+                if (rowEl == null && name.StartsWith("row-", StringComparison.Ordinal))
+                    rowEl = walk;
+                if (name.StartsWith("card-", StringComparison.Ordinal))
+                {
+                    cardEl = walk;
+                    break;
+                }
+            }
+            if (cardEl == null)
+                return default;
+            if (!int.TryParse(cardEl.name.Substring(5), out int cardIndex)
+                || cardIndex < 0 || cardIndex >= _graph.Nodes.Count)
+                return default;
+            var node = _graph.Nodes[cardIndex];
+            if (rowEl != null)
+            {
+                var parts = rowEl.name.Split('-');
+                if (parts.Length == 3 && int.TryParse(parts[2], out int rowIdx)
+                    && rowIdx >= 0 && rowIdx < node.Markup.Count)
+                {
+                    var row = node.Markup[rowIdx];
+                    var bound = rowEl.worldBound;
+                    float rel = bound.height <= 0f
+                        ? 0.5f
+                        : (panelPos.y - bound.yMin) / bound.height;
+                    int band = rel < 0.3f ? 0 : rel > 0.7f ? 2 : 1;
+                    if (rowIdx == BuilderCanvasDrawing.FirstElementRow(node)
+                        || (row.Kind == BuilderCardLineKind.Directive && row.ClauseIndex > 0))
+                        band = 1;
+                    return new BuilderDropTarget
+                    {
+                        Valid = true,
+                        Path = node.FilePath,
+                        RowIdx = rowIdx,
+                        Band = band,
+                        RowElementName = rowEl.name,
+                        CardIndex = cardIndex,
+                    };
+                }
+            }
+            return new BuilderDropTarget
+            {
+                Valid = true,
+                Path = node.FilePath,
+                RowIdx = -1,
+                Band = 1,
+                CardIndex = cardIndex,
+            };
         }
 
         /// <summary>POC toolbar L0/L1/L2: jump the camera to a zoom preset. The
@@ -226,8 +299,6 @@ namespace Ruitk.Builder
                         OnRowClick = (path, line) => OnRowClick?.Invoke(path, line),
                         OnRowContext = (path, line, rowIdx) => OnRowContext?.Invoke(path, line, rowIdx),
                         OnCanvasContext = (wx, wy) => ShowCreateMenu(wx, wy),
-                        OnRowDrop = (path, rowIdx, band, payload) =>
-                            OnRowDrop?.Invoke(path, rowIdx, band, payload),
                         OnStyleAddEntry = (path, styleName, closeLine) =>
                             OnStyleAddEntry?.Invoke(path, styleName, closeLine),
                         OnAddHook = path => OnAddHook?.Invoke(path),

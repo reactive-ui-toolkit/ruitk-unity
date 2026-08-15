@@ -15,7 +15,6 @@ export VirtualNode CanvasView(
   Action<string, int> onRowClick = null,
   Action<string, int, int> onRowContext = null,
   Action<float, float> onCanvasContext = null,
-  Action<string, int, int, string> onRowDrop = null,
   Action<string, string, int> onStyleAddEntry = null,
   Action<string> onAddHook = null,
   Action<string> onRowNavigate = null,
@@ -43,16 +42,13 @@ export VirtualNode CanvasView(
   var (selRowNode, setSelRowNode) = useState(-1);
   var (selRowIdx, setSelRowIdx) = useState(-1);
   var (traceStates, setTraceStates) = useState((string)null);
-  var (dragRowKey, setDragRowKey) = useState(-1);
   var (hoverRowKey, setHoverRowKey) = useState(-1);
-  var (dragBand, setDragBand) = useState(1);
   var (editKey, setEditKey) = useState("");
   var (editText, setEditText) = useState("");
   var (editOrig, setEditOrig) = useState("");
   var (traceOwner, setTraceOwner) = useState(-1);
   var (layoutVersion, setLayoutVersion) = useState(0);
   var (hoverChipKey, setHoverChipKey) = useState("");
-  var (dragCardKey, setDragCardKey) = useState(-1);
 
   // POC inlineEdit's `done` latch: Escape finishes the editor with commit=false,
   // so the blur that follows the field being torn out can never write.
@@ -121,13 +117,6 @@ export VirtualNode CanvasView(
         }
       }}
       onPointerUp={e => {
-        BuilderDragService.Cancel();
-        if (dragRowKey >= 0) {
-          setDragRowKey(-1);
-        }
-        if (dragCardKey >= 0) {
-          setDragCardKey(-1);
-        }
         if (panning.Current && onCameraChanged != null) {
           onCameraChanged(camX, camY, zoom);
         }
@@ -149,14 +138,6 @@ export VirtualNode CanvasView(
         }
       }}
       onPointerMove={e => {
-        if (BuilderCanvasDrawing.DragActive) {
-          if (dragRowKey >= 0) {
-            setDragRowKey(-1);
-          }
-          if (dragCardKey >= 0) {
-            setDragCardKey(-1);
-          }
-        }
         if (dragCard.Current >= 0) {
           var node = graph.Nodes[dragCard.Current];
           node.X = node.X + (e.Position.x - lastX.Current) / zoom;
@@ -246,25 +227,6 @@ export VirtualNode CanvasView(
                 BorderRightColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
                 BorderBottomColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
                 BorderLeftColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
-              }}
-              onPointerMove={e => {
-                if (BuilderCanvasDrawing.DragActive) {
-                  if (dragCardKey != index) {
-                    setDragCardKey(index);
-                  }
-                  if (dragRowKey >= 0) {
-                    setDragRowKey(-1);
-                  }
-                  e.StopPropagation();
-                }
-              }}
-              onPointerUp={e => {
-                if (BuilderCanvasDrawing.DragActive && onRowDrop != null) {
-                  onRowDrop(node.FilePath, -1, 1, BuilderDragService.Take());
-                  setDragRowKey(-1);
-                  setDragCardKey(-1);
-                  e.StopPropagation();
-                }
               }}
               onPointerDown={e => {
                 if (e.Button == 1) {
@@ -950,12 +912,12 @@ export VirtualNode CanvasView(
                             bool rowHl = traceOwner == index
                               && BuilderCanvasDrawing.RowMatchesTrace(
                                 row.AttrsText + " " + row.DirectiveText, traceStates);
-                            bool dropHere = dragRowKey == rowKey;
-                            bool ringSel = rowSel && !dropHere;
-                            bool ringHl = rowHl && !rowSel && !dropHere;
+                            bool ringSel = rowSel;
+                            bool ringHl = rowHl && !rowSel;
                             return (
                               <VisualElement
                                 key={$"mk-{x}"}
+                                name={$"row-{index}-{rowIdx}"}
                                 style={new Style {
                                   FlexDirection = FlexRow,
                                   AlignItems = lod == 2 ? AlignStart : AlignCenter,
@@ -968,23 +930,21 @@ export VirtualNode CanvasView(
                                   // Height is pinned here.
                                   MinHeight = Px(0),
                                   BorderRadius = Px(5),
-                                  BackgroundColor = dropHere && dragBand == 1
-                                    ? Rgba(79, 195, 247, 30)
-                                    : rowSel
-                                      ? Rgba(255, 213, 79, 38)
-                                      : rowHl
-                                        ? Rgba(255, 183, 77, 46)
-                                        : hoverRowKey == rowKey
-                                          ? Rgba(79, 195, 247, 20)
-                                          : Rgba(0, 0, 0, 0),
-                                  BorderTopWidth = dropHere && (dragBand == 0 || dragBand == 1) ? 2 : (ringSel || ringHl ? 1 : 0),
-                                  BorderRightWidth = dropHere && dragBand == 1 ? 2 : (ringSel || ringHl ? 1 : 0),
-                                  BorderLeftWidth = dropHere && dragBand == 1 ? 2 : (ringSel || ringHl ? 1 : 0),
-                                  BorderBottomWidth = dropHere && (dragBand == 2 || dragBand == 1) ? 2 : (ringSel || ringHl ? 1 : 0),
-                                  BorderTopColor = dropHere ? Hex("#4fc3f7") : (ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128)),
-                                  BorderRightColor = dropHere ? Hex("#4fc3f7") : (ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128)),
-                                  BorderLeftColor = dropHere ? Hex("#4fc3f7") : (ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128)),
-                                  BorderBottomColor = dropHere ? Hex("#4fc3f7") : (ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128)),
+                                  BackgroundColor = rowSel
+                                    ? Rgba(255, 213, 79, 38)
+                                    : rowHl
+                                      ? Rgba(255, 183, 77, 46)
+                                      : hoverRowKey == rowKey
+                                        ? Rgba(79, 195, 247, 20)
+                                        : Rgba(0, 0, 0, 0),
+                                  BorderTopWidth = ringSel || ringHl ? 1 : 0,
+                                  BorderRightWidth = ringSel || ringHl ? 1 : 0,
+                                  BorderLeftWidth = ringSel || ringHl ? 1 : 0,
+                                  BorderBottomWidth = ringSel || ringHl ? 1 : 0,
+                                  BorderTopColor = ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128),
+                                  BorderRightColor = ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128),
+                                  BorderLeftColor = ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128),
+                                  BorderBottomColor = ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128),
                                 }}
                                 onPointerEnter={e => {
                                   if (hoverRowKey != rowKey) {
@@ -997,18 +957,11 @@ export VirtualNode CanvasView(
                                   }
                                 }}
                                 onPointerMove={e => {
-                                  if (BuilderCanvasDrawing.DragActive) {
-                                    setDragRowKey(rowKey);
-                                    setDragBand(rowIdx == firstElementIdx || (headRow && row.ClauseIndex > 0)
-                                      ? 1
-                                      : BuilderCanvasDrawing.DropBand(e));
-                                    e.StopPropagation();
-                                  }
+                                  BuilderDragService.PointerMove(e);
                                 }}
                                 onPointerUp={e => {
-                                  if (BuilderCanvasDrawing.DragActive && onRowDrop != null) {
-                                    onRowDrop(node.FilePath, rowIdx, dragBand, BuilderDragService.Take());
-                                    setDragRowKey(-1);
+                                  if (BuilderCanvasDrawing.DragActive) {
+                                    BuilderDragService.PointerUp(e);
                                     e.StopPropagation();
                                   }
                                 }}
@@ -1032,9 +985,12 @@ export VirtualNode CanvasView(
                                   // root) drags itself; a construct head drags
                                   // the whole block; a continuation clause
                                   // (@else/@case) is structurally bound and
-                                  // never arms.
+                                  // never arms. The service captures the pointer;
+                                  // a release under the travel threshold stays a
+                                  // plain click (the select below already ran).
                                   if (headRow ? row.ClauseIndex == 0 : rowIdx != firstElementIdx) {
-                                    BuilderDragService.Arm($"move:{node.FilePath}:{rowIdx}");
+                                    BuilderDragService.Begin($"move:{node.FilePath}:{rowIdx}",
+                                      headRow ? row.BadgeText + " block" : row.Text, e);
                                   }
                                   setSelected(index);
                                   setSelRowNode(index);
@@ -1273,11 +1229,6 @@ export VirtualNode CanvasView(
             @if (isSelected) {
               return (
                 <VisualElement style={CanvasStyles.SelectionRing} pickingMode={PickIgnore} />
-              );
-            }
-            @if (dragCardKey == index) {
-              return (
-                <VisualElement style={CanvasStyles.CardDropHint} pickingMode={PickIgnore} />
               );
             }
             </VisualElement>
