@@ -404,6 +404,19 @@ namespace Ruitk.Builder
                     shown++;
                 }
             }
+            if (_stateTruncatedAt != null)
+            {
+                _stateHost.Add(new Label(
+                    "state below " + _stateTruncatedAt + "() is not shown — a custom hook's slot count is unknowable")
+                {
+                    style =
+                    {
+                        fontSize = 10f, color = BuilderPalette.Dim,
+                        whiteSpace = WhiteSpace.Normal, marginTop = 2f,
+                    },
+                });
+                shown++;
+            }
             if (_stateHeader != null)
                 _stateHeader.style.display = shown > 0 ? DisplayStyle.Flex : DisplayStyle.None;
         }
@@ -446,47 +459,35 @@ namespace Ruitk.Builder
                 + @"\b(?<hook>use[A-Z]\w*)\s*(?:<[^>\n]*>)?\s*\(",
                 System.Text.RegularExpressions.RegexOptions.Compiled);
 
-        /// <summary>Hooks that take one HookStates slot but carry no useState name
-        /// (their row is skipped, their SLOT is not — the list is positional).
-        /// useEffect/useLayoutEffect run off a separate effect index and take no
-        /// slot at all.</summary>
-        private static readonly HashSet<string> s_slotHooks = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "useState", "useReducer", "useMemo", "useCallback", "useRef",
-            "useStableFunc", "useSafeArea",
-        };
-
-        private static readonly HashSet<string> s_noSlotHooks = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "useEffect", "useLayoutEffect",
-        };
-
         /// <summary>One entry per HookStates slot in declaration order — the
         /// useState name, or null for a slot-consuming hook that has no state row.
-        /// Indexing the fiber's HookStates by useState ORDINAL was wrong the moment
-        /// a useMemo/useRef sat between two useStates, and the walk stops at the
-        /// first custom hook because its own slot count is unknowable from here.</summary>
+        /// UB-12: slot arity comes from HookRegistry's FIBER-path table, so all
+        /// 21 builtin hooks are walkable (the hand list covered 9 and wrongly
+        /// counted the metadata-gated hooks as slot-takers under fiber). The
+        /// walk still stops at the first CUSTOM hook — its slot count is
+        /// unknowable from here — but now it says so instead of truncating
+        /// silently.</summary>
+        private string _stateTruncatedAt;
+
         private void CollectStateNames(string bufferText)
         {
             _slotNames.Clear();
+            _stateTruncatedAt = null;
             if (string.IsNullOrEmpty(bufferText))
                 return;
+            var arity = Ruitk.Core.HookRegistry.GetStateSlotArity();
             foreach (System.Text.RegularExpressions.Match m in s_hookCall.Matches(bufferText))
             {
                 string hook = m.Groups["hook"].Value;
-                if (s_noSlotHooks.Contains(hook))
-                    continue;
-                if (hook == "useState")
+                if (!arity.TryGetValue(hook, out int slots))
                 {
-                    _slotNames.Add(m.Groups["n"].Success ? m.Groups["n"].Value : null);
-                    continue;
+                    _stateTruncatedAt = hook;
+                    return;
                 }
-                if (s_slotHooks.Contains(hook))
-                {
-                    _slotNames.Add(null);
+                if (slots == 0)
                     continue;
-                }
-                return;
+                bool named = string.Equals(hook, "useState", StringComparison.OrdinalIgnoreCase);
+                _slotNames.Add(named && m.Groups["n"].Success ? m.Groups["n"].Value : null);
             }
         }
 
@@ -640,7 +641,18 @@ namespace Ruitk.Builder
             if (type == null || render == null)
             {
                 _showingNoPreview = true;
-                SetStatus(NoPreviewText(uitkxPath));
+                // UB-15: a file that DECLARES a component and still lands here
+                // means its generated type was not found — a compile problem,
+                // not "this module has no visual". The module copy was actively
+                // misleading for that case.
+                bool declaresComponent = !IsModuleFile(uitkxPath)
+                    && bufferText != null
+                    && bufferText.Contains("export VirtualNode ");
+                SetStatus(!declaresComponent
+                    ? NoPreviewText(uitkxPath)
+                    : "Component type not found — does the project compile?\n"
+                        + "A freshly created file needs one successful Unity compile "
+                        + "before its first preview; edits after that hot-swap.");
                 UnmountPreview();
                 if (_knobsHost != null)
                     _knobsHost.Clear();
@@ -838,7 +850,19 @@ namespace Ruitk.Builder
                     ElementRegistryProvider.GetDefaultRegistry(), null, _scheduler, true);
                 _renderer = new VNodeHostRenderer(_hostContext, _previewHost);
             }
-            _renderer.Render(V.Func(_renderDelegate, _knobProps));
+            try
+            {
+                _renderer.Render(V.Func(_renderDelegate, _knobProps));
+            }
+            catch (Exception ex)
+            {
+                // UB-15: a throwing first render (most often a component
+                // dereferencing a required prop the default-props pass left
+                // null) surfaces IN the pane instead of escaping into
+                // EditorApplication.update with a blank preview.
+                SetStatus("Render failed: " + ex.Message
+                    + "\nMost often a required prop — seed it in PROPS above.");
+            }
         }
 
         private void UnmountPreview()

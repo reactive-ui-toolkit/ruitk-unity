@@ -1424,10 +1424,14 @@ namespace Ruitk.Builder
                         Toast("Style modules have no hooks.");
                         return;
                     }
-                    string decl = name == "useState" ? "var (value, setValue) = useState(0);"
-                        : name == "useEffect" ? "useEffect(() => { }, null);"
-                        : name == "useMemo" ? "var memo = useMemo(() => 0, null);"
-                        : name == "useRef" ? "var elRef = useRef<VisualElement?>(null);"
+                    // UB-11: declarations come from HookRegistry's single
+                    // call-site table — 21 real snippets, not 4 hand-written
+                    // ones with a wrong-for-most-hooks fallback. Module hooks
+                    // (an export dragged off a .hooks card) keep the generic
+                    // call form.
+                    string decl = Ruitk.Core.HookRegistry.GetInsertionSnippets()
+                        .TryGetValue(name, out string snippet)
+                        ? snippet
                         : "var value = " + name + "();";
                     InsertBeforeLastReturn(full, "  " + decl, "hook " + name);
                     break;
@@ -2410,17 +2414,34 @@ namespace Ruitk.Builder
                 _previewPane?.ShowError("Preview compiler unavailable: " + _previewCompiler.InitError);
                 return;
             }
-            var result = _previewCompiler.CompileDirty(_focusFile);
-            if (result != null && result.Success)
+            var summary = _previewCompiler.CompileDirty(_focusFile);
+            if (summary == null)
+                return;
+            if (summary.FocusResult != null && summary.FocusResult.Success)
             {
                 var session = _workspace.TryGet(_focusFile);
-                _previewPane?.OnRecompiled(result.LoadedAssembly, session?.BufferText);
+                _previewPane?.OnRecompiled(summary.FocusResult.LoadedAssembly, session?.BufferText);
             }
-            else if (result != null)
+            // UB-15: every failed round names its FIRST real error in the pane —
+            // including when the focus file itself was clean or skipped, the
+            // case the old code reported as nothing at all.
+            if (summary.Failures.Count > 0)
             {
-                _previewPane?.ShowError("Preview compile failed — fix the code pane diagnostics (last good preview kept)");
-                Debug.LogWarning("[RUITK Builder] preview compile: " + result.Error);
+                var (path, error) = summary.Failures[0];
+                string skipNote = summary.Skipped.Count > 0
+                    ? " (" + summary.Skipped.Count + " dependent file(s) skipped)"
+                    : "";
+                _previewPane?.ShowError(
+                    "Preview compile failed in " + Path.GetFileName(path) + skipNote
+                    + " — last good preview kept:\n" + Truncate(error, 220));
+                Debug.LogWarning("[RUITK Builder] preview compile: " + path + ": " + error);
             }
+        }
+
+        private static string Truncate(string text, int max)
+        {
+            text = text ?? "";
+            return text.Length <= max ? text : text.Substring(0, max) + "…";
         }
 
         /// <summary>POC "Import .uxml…": the one-way UI Builder import, run for

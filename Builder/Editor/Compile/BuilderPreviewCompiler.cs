@@ -6,6 +6,18 @@ using Ruitk.EditorSupport.HMR;
 
 namespace Ruitk.Builder
 {
+    /// <summary>Per-run outcome of <see cref="BuilderPreviewCompiler.CompileDirty"/>:
+    /// the focus file's result plus every failure and every skipped dependent —
+    /// nothing about a compile round is silent (UB-15).</summary>
+    internal sealed class BuilderCompileSummary
+    {
+        public HmrCompileResult FocusResult;
+        public readonly List<(string Path, string Error)> Failures =
+            new List<(string, string)>();
+        public readonly List<(string Path, string BlockedBy)> Skipped =
+            new List<(string, string)>();
+    }
+
     /// <summary>
     /// The builder's OWN hot-swap compiler instance (plan §2.2: the controller's
     /// instance compiles disk content; this one compiles workspace buffers via
@@ -48,10 +60,13 @@ namespace Ruitk.Builder
 
         /// <summary>
         /// Compiles every dirty session, dependencies before dependents.
-        /// Returns the last compile result for <paramref name="focusFile"/>
-        /// (null when it was clean or failed before reaching it).
+        /// UB-15: a failure no longer aborts the whole loop — only the FAILED
+        /// file's downstream dependents are skipped (compiling them would just
+        /// cascade against a stale peer assembly); independent siblings still
+        /// compile, and every outcome is reported in the summary instead of
+        /// dying as a null return.
         /// </summary>
-        public HmrCompileResult CompileDirty(string focusFile)
+        public BuilderCompileSummary CompileDirty(string focusFile)
         {
             if (_compiler == null || _workspace == null)
                 return null;
@@ -65,17 +80,42 @@ namespace Ruitk.Builder
             if (dirty.Count == 0)
                 return null;
 
-            HmrCompileResult focusResult = null;
-            foreach (string path in OrderByImports(dirty))
+            var summary = new BuilderCompileSummary();
+            string focusFull = Path.GetFullPath(focusFile ?? "");
+            var failedRoots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string path in OrderByImports(dirty, out var dependencies))
             {
+                string blockedBy = null;
+                if (dependencies.TryGetValue(path, out var deps))
+                {
+                    foreach (string dep in deps)
+                    {
+                        if (failedRoots.TryGetValue(dep, out string root))
+                        {
+                            blockedBy = root;
+                            break;
+                        }
+                    }
+                }
+                if (blockedBy != null)
+                {
+                    failedRoots[path] = blockedBy;
+                    summary.Skipped.Add((path, blockedBy));
+                    CompileFinished?.Invoke(path, false,
+                        "skipped — depends on failed " + Path.GetFileName(blockedBy));
+                    continue;
+                }
                 var result = _compiler.Compile(path);
                 CompileFinished?.Invoke(path, result.Success, result.Error);
-                if (string.Equals(Path.GetFullPath(focusFile ?? ""), path, StringComparison.OrdinalIgnoreCase))
-                    focusResult = result;
+                if (string.Equals(focusFull, path, StringComparison.OrdinalIgnoreCase))
+                    summary.FocusResult = result;
                 if (!result.Success)
-                    break;
+                {
+                    failedRoots[path] = path;
+                    summary.Failures.Add((path, result.Error));
+                }
             }
-            return focusResult;
+            return summary;
         }
 
         public void Dispose()
@@ -93,28 +133,39 @@ namespace Ruitk.Builder
 
         /// <summary>Topological order over the dirty set: imported peers first.
         /// Only relative specifiers resolve (the cross-tree <c>~/</c> form points
-        /// outside the open tree); cycles fall back to insertion order.</summary>
-        private List<string> OrderByImports(Dictionary<string, BuilderDocumentSession> dirty)
+        /// outside the open tree); cycles fall back to insertion order. The
+        /// dirty-set dependency edges are retained for the caller's
+        /// skip-downstream-of-failure pass.</summary>
+        private List<string> OrderByImports(
+            Dictionary<string, BuilderDocumentSession> dirty,
+            out Dictionary<string, List<string>> dependencies)
         {
             var order = new List<string>(dirty.Count);
             var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var deps = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
             void Visit(string path)
             {
                 if (state.TryGetValue(path, out int s) && s != 0)
                     return;
                 state[path] = 1;
+                var mine = new List<string>();
                 foreach (string dep in ResolveImports(path, dirty[path]))
                 {
-                    if (dirty.ContainsKey(dep) && (!state.TryGetValue(dep, out int ds) || ds == 0))
+                    if (!dirty.ContainsKey(dep))
+                        continue;
+                    mine.Add(dep);
+                    if (!state.TryGetValue(dep, out int ds) || ds == 0)
                         Visit(dep);
                 }
+                deps[path] = mine;
                 state[path] = 2;
                 order.Add(path);
             }
 
             foreach (string path in dirty.Keys)
                 Visit(path);
+            dependencies = deps;
             return order;
         }
 
