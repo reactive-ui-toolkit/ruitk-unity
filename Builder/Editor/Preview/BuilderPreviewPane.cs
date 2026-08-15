@@ -96,6 +96,10 @@ namespace Ruitk.Builder
             input.style.paddingBottom = 2f;
             input.style.paddingLeft = 6f;
             input.style.paddingRight = 6f;
+            // POC "#lib-search:focus / .ctx-search:focus { border-color: accent }".
+            var accent = new Color(0.310f, 0.765f, 0.969f);
+            input.RegisterCallback<FocusInEvent>(_ => BuilderWindow.SetBorderColor(input, accent));
+            input.RegisterCallback<FocusOutEvent>(_ => BuilderWindow.SetBorderColor(input, line));
         }
 
         public BuilderPreviewPane()
@@ -115,6 +119,8 @@ namespace Ruitk.Builder
 
             _statusLabel = new Label
             {
+                // POC ".nopreview" bolds the nouns that name the thing.
+                enableRichText = true,
                 style =
                 {
                     marginTop = 8f, marginLeft = 8f, marginRight = 8f,
@@ -125,13 +131,47 @@ namespace Ruitk.Builder
             };
             container.Add(_statusLabel);
 
+            // POC ".gp-root": every render sits inside a framed stage —
+            // background #101014, 1px var(--line), 8px radius, 10px padding.
+            // "#preview" itself carries no rule of its own.
             _previewHost = new VisualElement
             {
                 name = "builder-preview-host",
-                style = { flexGrow = 1f, borderTopWidth = 1f, borderTopColor = new Color(0.2f, 0.2f, 0.23f) },
+                style =
+                {
+                    flexGrow = 1f,
+                    flexDirection = FlexDirection.Column,
+                    backgroundColor = new Color(0.063f, 0.063f, 0.078f),
+                    borderTopWidth = 1f, borderBottomWidth = 1f,
+                    borderLeftWidth = 1f, borderRightWidth = 1f,
+                    borderTopColor = Line, borderBottomColor = Line,
+                    borderLeftColor = Line, borderRightColor = Line,
+                    borderTopLeftRadius = 8f, borderTopRightRadius = 8f,
+                    borderBottomLeftRadius = 8f, borderBottomRightRadius = 8f,
+                    paddingTop = 10f, paddingBottom = 10f,
+                    paddingLeft = 10f, paddingRight = 10f,
+                },
             };
             _previewHost.RegisterCallback<PointerDownEvent>(OnPreviewPicked, TrickleDown.TrickleDown);
             container.Add(_previewHost);
+
+            // POC ".knobs": ONE block with the dashed top rule, emitted whenever
+            // there is a preview — props header + knobs, then the state header +
+            // state rows, then the two dim notes LAST.
+            _knobsBlock = new VisualElement
+            {
+                name = "builder-preview-knobs-block",
+                style =
+                {
+                    flexShrink = 0f,
+                    marginTop = 10f,
+                    paddingTop = 8f,
+                    borderTopWidth = 1f,
+                    borderTopColor = Line,
+                    display = DisplayStyle.None,
+                },
+            };
+            container.Add(_knobsBlock);
 
             // POC: the section headers are emitted only `if (rows.length)` /
             // `if (stateRows.length)` — a style/hook/util module shows neither.
@@ -142,20 +182,17 @@ namespace Ruitk.Builder
                     color = new Color(0.545f, 0.545f, 0.588f),
                     fontSize = 10f,
                     letterSpacing = 1f,
-                    marginTop = 8f, marginLeft = 8f, marginBottom = 6f,
-                    borderTopWidth = 1f,
-                    borderTopColor = new Color(0.227f, 0.227f, 0.267f),
-                    paddingTop = 8f,
+                    marginLeft = 8f, marginBottom = 6f,
                     display = DisplayStyle.None,
                 },
             };
-            container.Add(_knobsHeader);
+            _knobsBlock.Add(_knobsHeader);
             _knobsHost = new VisualElement
             {
                 name = "builder-preview-knobs",
                 style = { flexShrink = 0f, maxHeight = 220f, paddingLeft = 4f },
             };
-            container.Add(_knobsHost);
+            _knobsBlock.Add(_knobsHost);
 
             _stateHeader = new Label("STATE — LIVE HOOK VALUES")
             {
@@ -168,15 +205,21 @@ namespace Ruitk.Builder
                     display = DisplayStyle.None,
                 },
             };
-            container.Add(_stateHeader);
+            _knobsBlock.Add(_stateHeader);
             _stateHost = new VisualElement
             {
                 style = { flexShrink = 0f, maxHeight = 140f, paddingLeft = 8f, paddingBottom = 4f },
             };
-            container.Add(_stateHost);
+            _knobsBlock.Add(_stateHost);
+            _notesHost = new VisualElement { style = { flexShrink = 0f } };
+            _knobsBlock.Add(_notesHost);
             EditorApplication.update += TickStatePanel;
         }
 
+        private static readonly Color Line = new Color(0.227f, 0.227f, 0.267f);
+
+        private VisualElement _knobsBlock;
+        private VisualElement _notesHost;
         private Label _knobsHeader;
         private Label _stateHeader;
         private VisualElement _stateHost;
@@ -375,10 +418,22 @@ namespace Ruitk.Builder
                 UnmountPreview();
                 if (_knobsHost != null)
                     _knobsHost.Clear();
+                if (_notesHost != null)
+                    _notesHost.Clear();
                 if (_knobsHeader != null)
                     _knobsHeader.style.display = DisplayStyle.None;
+                // POC ".nopreview" replaces the whole stage — no gp-root frame and
+                // no knobs block for a module that renders nothing.
+                if (_knobsBlock != null)
+                    _knobsBlock.style.display = DisplayStyle.None;
+                if (_previewHost != null)
+                    _previewHost.style.display = DisplayStyle.None;
                 return;
             }
+            if (_previewHost != null)
+                _previewHost.style.display = DisplayStyle.Flex;
+            if (_knobsBlock != null)
+                _knobsBlock.style.display = DisplayStyle.Flex;
 
             // POC pvGeneric's per-component store: a recompile hands back a NEW
             // type object from the swap assembly, so identity is the source file
@@ -566,14 +621,14 @@ namespace Ruitk.Builder
         {
             string name = Path.GetFileName(uitkxPath) ?? "";
             if (name.EndsWith(".hooks.uitkx", StringComparison.OrdinalIgnoreCase))
-                return "Hook module — no visual. It exposes its hooks to the components that "
-                    + "import it (green edge). Double-click its code island to edit the body.";
+                return "Hook module — no visual. It <b>exposes its hooks</b> to the components "
+                    + "that import it (green edge). Double-click its code island to edit the body.";
             if (name.EndsWith(".style.uitkx", StringComparison.OrdinalIgnoreCase))
                 return "Style module — no visual of its own. Zoom to L2 and click an entry to "
-                    + "edit it. Tip: select the component that imports it first, then edit an "
-                    + "entry's BackgroundColor hex — the live preview repaints.";
-            return "Util module — no visual. Its exported functions land on the file's __Exports "
-                + "class; drag the module onto a component to import them by name.";
+                    + "edit it. Tip: select <b>the component that imports it</b> first, then edit "
+                    + "<b>an entry</b>'s BackgroundColor hex — the live preview repaints.";
+            return "Util module — no visual. Its exported functions land on the file's "
+                + "<b>__Exports</b> class; drag the module onto a component to import them by name.";
         }
 
         private void SetStatus(string text)
@@ -755,13 +810,15 @@ namespace Ruitk.Builder
 
             if (_knobsHeader != null && _knobsHost.childCount > 0)
                 _knobsHeader.style.display = DisplayStyle.Flex;
-            if (_knobsHost.childCount == 0)
-                return;
             // POC pvGeneric: the seeded-from line names the card the defaults came
-            // from, then the generic rendering note.
+            // from, then the generic rendering note — both AFTER the state rows,
+            // as the LAST rows of the knobs block.
+            if (_notesHost == null)
+                return;
+            _notesHost.Clear();
             if (!string.IsNullOrEmpty(_seededFrom))
-                _knobsHost.Add(Note("knob defaults taken from its usage in " + _seededFrom));
-            _knobsHost.Add(Note("rendered from the real component — every edit re-renders"));
+                _notesHost.Add(Note("knob defaults taken from its usage in " + _seededFrom));
+            _notesHost.Add(Note("rendered from the real component — every edit re-renders"));
         }
 
         private static Label Note(string text) => new Label(text)

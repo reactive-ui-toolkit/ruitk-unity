@@ -81,7 +81,8 @@ namespace Ruitk.Builder
             };
             titleRow.Add(new Label("LIBRARY")
             {
-                style = { fontSize = 11f, color = Dim },
+                // POC ".pane-title { letter-spacing: .08em }".
+                style = { fontSize = 11f, color = Dim, letterSpacing = 1f },
             });
             if (onNewFile != null)
             {
@@ -103,6 +104,7 @@ namespace Ruitk.Builder
                         paddingTop = 1f, paddingBottom = 1f,
                     },
                 };
+                BuilderCursor.Set(newBtn, UnityEditor.MouseCursor.Link);
                 newBtn.RegisterCallback<PointerDownEvent>(evt =>
                 {
                     BuilderSearchMenu.RememberPointer(
@@ -408,6 +410,8 @@ namespace Ruitk.Builder
                 row.RegisterCallback<PointerDownEvent>(_ =>
                     BuilderDragService.Arm(PayloadFor(captured)));
                 row.RegisterCallback<PointerUpEvent>(_ => BuilderDragService.Cancel());
+                // POC ".lib-item { cursor: grab }".
+                BuilderCursor.Set(row, UnityEditor.MouseCursor.Pan);
                 row.RegisterCallback<MouseEnterEvent>(_ =>
                 {
                     row.style.borderTopColor = Accent;

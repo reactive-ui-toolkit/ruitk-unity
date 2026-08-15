@@ -88,6 +88,9 @@ namespace Ruitk.Builder
 
             _onOpenFile = onOpenFile;
             _container.Clear();
+            // POC selectNode(): the file the window opened on wears the gold ring
+            // from the first frame — including a file that was just created.
+            _selectPath = System.IO.Path.GetFullPath(focusFile);
             ZoomChanged?.Invoke(_zoom);
             RenderCanvas();
         }
@@ -288,9 +291,17 @@ namespace Ruitk.Builder
         /// create menu the empty-canvas right-click does.</summary>
         public void ShowCreateMenuAtPointer()
         {
-            // 0,0 leaves the new card to the default BFS placement — the
-            // library button has no world position of its own.
-            ShowCreateMenu(0f, 0f);
+            // POC btnLibNew: wx = (wr.width / 2 - view.x) / view.s — the new card
+            // lands in the MIDDLE of the current view, not at a BFS layout slot.
+            float width = _container?.resolvedStyle.width ?? 0f;
+            float height = _container?.resolvedStyle.height ?? 0f;
+            float zoom = _zoom <= 0f ? 1f : _zoom;
+            if (width <= 0f || height <= 0f)
+            {
+                ShowCreateMenu(0f, 0f);
+                return;
+            }
+            ShowCreateMenu((width * 0.5f - _camX) / zoom, (height * 0.5f - _camY) / zoom);
         }
 
         private void ShowCreateMenu(float worldX, float worldY)

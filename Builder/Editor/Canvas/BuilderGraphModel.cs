@@ -47,6 +47,10 @@ namespace Ruitk.Builder
         /// <summary>1-based inclusive end line (element rows; 0 = single line).</summary>
         public int EndLine;
 
+        /// <summary>The element row's tag closes itself ("&lt;Label … /&gt;"), so it
+        /// has no closing tag and cannot take a child without being re-opened.</summary>
+        public bool SelfClosing;
+
         /// <summary>0 none, 1 @if, 2 @foreach, 3 @else, 4 other control flow.
         /// Export-detail lines reuse the field as a marker: 9 "+ entry",
         /// 10 "+ style", 11 "+ export", 12 util body island, 13 style export

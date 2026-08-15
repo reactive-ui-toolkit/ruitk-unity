@@ -222,14 +222,12 @@ namespace Ruitk.Builder
             }
 
             string[] allLines = text.Split('\n');
-            int hookCount = 0;
+            // POC cardHtml walks the WHOLE model — every hook chip, every JSX row
+            // and every island line is on the card, because the card IS the
+            // editing surface. An elided tail would be unselectable, undroppable
+            // and un-right-clickable at every LOD.
             foreach (Match m in s_hookCall.Matches(text))
             {
-                if (hookCount == 8)
-                {
-                    node.Body.Add(new BuilderCardLine { Text = "…", Kind = BuilderCardLineKind.Plain });
-                    break;
-                }
                 string lhs = m.Groups[1].Success ? m.Groups[1].Value.Trim()
                     : m.Groups[2].Success ? m.Groups[2].Value.Trim()
                     : null;
@@ -247,16 +245,12 @@ namespace Ruitk.Builder
                         ? allLines[line1 - 1].Trim()
                         : "",
                 });
-                hookCount++;
             }
 
             var registered = Ruitk.Elements.ElementRegistryProvider.GetDefaultRegistry().RegisteredNames;
             var registeredSet = new HashSet<string>(registered, StringComparer.Ordinal);
-            int budget = 14;
             foreach (var root in parsed.RootNodes)
-                WalkMarkup(root, 0, node.Markup, registeredSet, ref budget);
-            if (budget <= 0)
-                node.Markup.Add(new BuilderCardLine { Text = "…", Kind = BuilderCardLineKind.Plain });
+                WalkMarkup(root, 0, node.Markup, registeredSet, allLines);
             FillDirectiveText(node, allLines);
 
             node.ExportDetail.Clear();
@@ -298,8 +292,10 @@ namespace Ruitk.Builder
             return node.Title + "()";
         }
 
-        /// <summary>POC code island: the setup statements between the header and
-        /// the return that are not hook declarations (capped at 5).</summary>
+        /// <summary>POC code island: every setup statement between the header and
+        /// the return that is not a hook declaration. Uncapped — the displayed
+        /// text and the [IslandStartLine, IslandEndLine] write-back range are the
+        /// same block, so a cap here would delete the lines it hid.</summary>
         private static void ExtractIslandLines(string text, BuilderCanvasNode node)
         {
             node.IslandStartLine = 0;
@@ -326,8 +322,7 @@ namespace Ruitk.Builder
                 if (node.IslandStartLine == 0)
                     node.IslandStartLine = i + 1;
                 node.IslandEndLine = i + 1;
-                if (node.IslandLines.Count < 6)
-                    node.IslandLines.Add(line);
+                node.IslandLines.Add(line);
             }
         }
 
@@ -470,14 +465,22 @@ namespace Ruitk.Builder
 
         private static void WalkMarkup(
             AstNode node, int depth, List<BuilderCardLine> lines,
-            HashSet<string> registered, ref int budget)
+            HashSet<string> registered, string[] allLines)
         {
-            if (budget <= 0)
-                return;
             switch (node)
             {
                 case ElementNode element:
-                    budget--;
+                {
+                    int endLine = Math.Max(element.SourceLine,
+                        Math.Max(element.CloseTagLine, element.EndLine));
+                    bool selfClosing = false;
+                    if (endLine <= element.SourceLine)
+                    {
+                        // The AST records no closing tag for a self-closing element,
+                        // so its span (which may wrap across lines) comes from the
+                        // buffer — every insert / delete / move consumes EndLine.
+                        endLine = TagSpanEnd(allLines, element.SourceLine, out selfClosing);
+                    }
                     lines.Add(new BuilderCardLine
                     {
                         Text = "<" + element.TagName + ">",
@@ -488,12 +491,13 @@ namespace Ruitk.Builder
                         AttrsText = AttrsDisplay(element),
                         AttrPairs = AttrPairsOf(element),
                         SourceLine = element.SourceLine,
-                        EndLine = Math.Max(element.SourceLine,
-                            Math.Max(element.CloseTagLine, element.EndLine)),
+                        EndLine = endLine,
+                        SelfClosing = selfClosing,
                     });
                     foreach (var child in element.Children)
-                        WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                        WalkMarkup(child, depth + 1, lines, registered, allLines);
                     break;
+                }
                 case IfNode ifNode:
                 {
                     for (int bi = 0; bi < ifNode.Branches.Length; bi++)
@@ -501,7 +505,7 @@ namespace Ruitk.Builder
                         var branch = ifNode.Branches[bi];
                         int start = lines.Count;
                         foreach (var child in branch.Payload.Body)
-                            WalkMarkup(child, depth, lines, registered, ref budget);
+                            WalkMarkup(child, depth, lines, registered, allLines);
                         bool isElse = bi > 0;
                         Attach(lines, start, isElse ? 3 : 1,
                             isElse ? (branch.Condition == null ? "@else" : "@else if") : "@if",
@@ -513,7 +517,7 @@ namespace Ruitk.Builder
                 {
                     int start = lines.Count;
                     foreach (var child in fe.Payload.Body)
-                        WalkMarkup(child, depth, lines, registered, ref budget);
+                        WalkMarkup(child, depth, lines, registered, allLines);
                     Attach(lines, start, 2, "@foreach", fe.SourceLine);
                     break;
                 }
@@ -521,7 +525,7 @@ namespace Ruitk.Builder
                 {
                     int start = lines.Count;
                     foreach (var child in f.Payload.Body)
-                        WalkMarkup(child, depth, lines, registered, ref budget);
+                        WalkMarkup(child, depth, lines, registered, allLines);
                     Attach(lines, start, 4, "@for", f.SourceLine);
                     break;
                 }
@@ -529,7 +533,7 @@ namespace Ruitk.Builder
                 {
                     int start = lines.Count;
                     foreach (var child in w.Payload.Body)
-                        WalkMarkup(child, depth, lines, registered, ref budget);
+                        WalkMarkup(child, depth, lines, registered, allLines);
                     Attach(lines, start, 4, "@while", w.SourceLine);
                     break;
                 }
@@ -539,13 +543,52 @@ namespace Ruitk.Builder
                     {
                         int start = lines.Count;
                         foreach (var child in c.Payload.Body)
-                            WalkMarkup(child, depth, lines, registered, ref budget);
+                            WalkMarkup(child, depth, lines, registered, allLines);
                         Attach(lines, start, 4,
                             c.ValueExpression == null ? "@default" : "@case", c.SourceLine);
                     }
                     break;
                 }
             }
+        }
+
+        /// <summary>1-based line on which the open tag starting at
+        /// <paramref name="startLine1"/> closes — the first '&gt;' outside a string
+        /// or a braced expression — and whether that close was "/&gt;".</summary>
+        private static int TagSpanEnd(string[] lines, int startLine1, out bool selfClosing)
+        {
+            selfClosing = false;
+            int start = startLine1 - 1;
+            if (lines == null || start < 0 || start >= lines.Length)
+                return startLine1;
+            int braces = 0;
+            bool inString = false;
+            for (int i = start; i < lines.Length && i < start + 24; i++)
+            {
+                string line = lines[i];
+                for (int c = 0; c < line.Length; c++)
+                {
+                    char ch = line[c];
+                    if (inString)
+                    {
+                        if (ch == '"')
+                            inString = false;
+                        continue;
+                    }
+                    if (ch == '"')
+                        inString = true;
+                    else if (ch == '{')
+                        braces++;
+                    else if (ch == '}')
+                        braces--;
+                    else if (ch == '>' && braces <= 0)
+                    {
+                        selfClosing = c > 0 && line[c - 1] == '/';
+                        return i + 1;
+                    }
+                }
+            }
+            return startLine1;
         }
 
         /// <summary>POC jsxRowHtml: a directive is a PROPERTY of the element node,

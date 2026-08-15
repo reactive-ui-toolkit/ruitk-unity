@@ -127,10 +127,14 @@ namespace Ruitk.Builder
                 toolbar.Add(button);
             }
             toolbar.Add(Separator());
-            toolbar.Add(ToolbarButton("Save", SaveAll));
-            toolbar.Add(ToolbarButton("Abort", AbortAll));
             toolbar.Add(ToolbarButton("Import .uxml…", ImportUxml));
             toolbar.Add(ToolbarButton("? How to drive it", ToggleHelp));
+            // The POC has no Save/Abort (its writes are mock). Ours are real, so
+            // they keep their own separator at the end of the button run rather
+            // than splitting the POC's silhouette.
+            toolbar.Add(Separator());
+            toolbar.Add(ToolbarButton("Save", SaveAll));
+            toolbar.Add(ToolbarButton("Abort", AbortAll));
             toolbar.Add(BuildLegend());
             root.Add(toolbar);
             SetActiveMode(1);
@@ -142,10 +146,15 @@ namespace Ruitk.Builder
             };
             outerSplit.Add(new VisualElement { name = "builder-library", style = { minWidth = 160f } });
             var innerSplit = new TwoPaneSplitView(1, 440f, TwoPaneSplitViewOrientation.Horizontal);
-            innerSplit.Add(new VisualElement { name = "builder-canvas", style = { minWidth = 300f } });
+            var canvasPane = new VisualElement { name = "builder-canvas", style = { minWidth = 300f } };
+            // POC "#canvasWrap { cursor: grab }".
+            BuilderCursor.Set(canvasPane, MouseCursor.Pan);
+            innerSplit.Add(canvasPane);
             innerSplit.Add(new VisualElement { name = "builder-side", style = { minWidth = 280f } });
             outerSplit.Add(innerSplit);
             root.Add(outerSplit);
+            StyleSplitter(outerSplit, vertical: false);
+            StyleSplitter(innerSplit, vertical: false);
 
             var footer = new Label(
                 "Wheel: zoom  •  Drag Library items onto rows (top=before, bottom=after, "
@@ -207,7 +216,7 @@ namespace Ruitk.Builder
                 var node = _canvasHost?.FindNode(full);
                 int chipIndex = node?.Body.Count ?? 0;
                 int cardIndex = _canvasHost?.NodeIndexOf(full) ?? -1;
-                InsertBeforeLastReturn(full, "  var (value, setValue) = useState(0);");
+                InsertBeforeLastReturn(full, "  var (value, setValue) = useState(0);", "new hook");
                 if (cardIndex >= 0)
                     _canvasHost?.BeginEdit(
                         $"hook:{cardIndex}:{chipIndex}", "var (value, setValue) = useState(0);");
@@ -247,60 +256,43 @@ namespace Ruitk.Builder
                     if (l.Trim().Length > 0)
                         replacement.Add("  " + l.Trim());
                 lines.InsertRange(from, replacement);
-                ApplyProgrammaticEdit(Path.GetFullPath(path), string.Join("\n", lines));
+                ApplyProgrammaticEdit(Path.GetFullPath(path), string.Join("\n", lines), "body");
             };
+            // POC openNameMenu: a name entry is a title + placeholder-only input +
+            // an inline error LINE + a persistent "Create" row — an invalid name
+            // writes into the error line and the menu STAYS OPEN.
             _canvasHost.OnAddStyleExport = path =>
-                BuilderSearchMenu.Show(
+                BuilderSearchMenu.ShowNamePrompt(
                     "new style export", "styleName",
-                    new System.Collections.Generic.List<BuilderSearchMenu.Item>(),
-                    free =>
-                    {
-                        if (!System.Text.RegularExpressions.Regex.IsMatch(free, "^[a-z][A-Za-z0-9]*$"))
-                            return new BuilderSearchMenu.Item { Label = "camelCase identifier required" };
-                        if (StyleExportExists(path, free))
-                            return new BuilderSearchMenu.Item { Label = free + " already exists" };
-                        return new BuilderSearchMenu.Item
-                        {
-                            Label = "Create " + free,
-                            OnPick = () => AppendToFile(path,
-                                "\nexport Style " + free + " = new Style {\n  FlexGrow = 1,\n};"),
-                        };
-                    });
+                    name => !System.Text.RegularExpressions.Regex.IsMatch(name, "^[a-z][A-Za-z0-9]*$")
+                        ? "camelCase identifier required"
+                        : StyleExportExists(path, name) ? name + " already exists" : null,
+                    name => AppendToFile(path,
+                        "\nexport Style " + name + " = new Style {\n  FlexGrow = 1,\n};",
+                        "style " + name));
             _canvasHost.OnAddUtilExport = path =>
                 BuilderSearchMenu.ShowSimple("add export", new System.Collections.Generic.List<BuilderSearchMenu.Item>
                 {
                     new BuilderSearchMenu.Item
                     {
                         Label = "New function…",
-                        OnPick = () => BuilderSearchMenu.Show("new exported function", "FunctionName",
-                        new System.Collections.Generic.List<BuilderSearchMenu.Item>(),
-                        free =>
-                        {
-                            if (!System.Text.RegularExpressions.Regex.IsMatch(free, "^[A-Z][A-Za-z0-9]*$"))
-                                return new BuilderSearchMenu.Item { Label = "PascalCase function name required" };
-                            return new BuilderSearchMenu.Item
-                            {
-                                Label = "Create " + free,
-                                OnPick = () => AppendToFile(path,
-                                    "\nexport int " + free + "(int value) {\n  return value;\n}"),
-                            };
-                        }),
+                        OnPick = () => BuilderSearchMenu.ShowNamePrompt(
+                            "new exported function", "FunctionName",
+                            name => System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Z][A-Za-z0-9]*$")
+                                ? null : "PascalCase function name required",
+                            name => AppendToFile(path,
+                                "\nexport int " + name + "(int value) {\n  return value;\n}",
+                                "util " + name)),
                     },
                     new BuilderSearchMenu.Item
                     {
                         Label = "New value…",
-                        OnPick = () => BuilderSearchMenu.Show("new exported value", "ValueName",
-                        new System.Collections.Generic.List<BuilderSearchMenu.Item>(),
-                        free =>
-                        {
-                            if (!System.Text.RegularExpressions.Regex.IsMatch(free, "^[A-Z][A-Za-z0-9]*$"))
-                                return new BuilderSearchMenu.Item { Label = "PascalCase value name required" };
-                            return new BuilderSearchMenu.Item
-                            {
-                                Label = "Create " + free,
-                                OnPick = () => AppendToFile(path, "\nexport int " + free + " = 0;"),
-                            };
-                        }),
+                        OnPick = () => BuilderSearchMenu.ShowNamePrompt(
+                            "new exported value", "ValueName",
+                            name => System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Z][A-Za-z0-9]*$")
+                                ? null : "PascalCase value name required",
+                            name => AppendToFile(
+                                path, "\nexport int " + name + " = 0;", "value " + name)),
                     },
                 });
             _canvasHost.OnDeleteFile = path =>
@@ -372,6 +364,7 @@ namespace Ruitk.Builder
                 sideSplit.Add(previewPane);
                 sideSplit.Add(sourcePane);
                 container.Add(sideSplit);
+                StyleSplitter(sideSplit, vertical: true);
 
                 _previewPane = new BuilderPreviewPane();
                 _previewPane.UsageProvider = UsageFor;
@@ -668,17 +661,7 @@ namespace Ruitk.Builder
             {
                 BuilderSearchMenu.SectionHeader("native elements"),
             };
-            void AddChild(string childTag)
-            {
-                string seeded = childTag == "Label" ? "<Label text=\"New label\" />"
-                    : childTag == "Button" ? "<Button text=\"Click\" />"
-                    : "<" + childTag + " />";
-                // POC addChildAt(index = j.children.length): the new tag appends as
-                // the LAST child, i.e. just before the target's closing tag.
-                int after = row.EndLine > row.SourceLine ? row.EndLine - 1 : row.SourceLine;
-                InsertLinesInFile(
-                    filePath, after, IndentOf(filePath, row.SourceLine) + "  " + seeded);
-            }
+            void AddChild(string childTag) => InsertChildTag(filePath, row, childTag);
             foreach (string element in BuilderLibraryPane.NativeTagOrder)
             {
                 string captured = element;
@@ -707,6 +690,70 @@ namespace Ruitk.Builder
                 }
             }
             BuilderSearchMenu.Show("add child to <" + tag + ">", "search elements…", items);
+        }
+
+        private static string SeededTag(string tag) =>
+            tag == "Label" ? "<Label text=\"New label\" />"
+            : tag == "Button" ? "<Button text=\"Click\" />"
+            : "<" + tag + " />";
+
+        /// <summary>POC addChildAt(index = j.children.length): the new tag lands as
+        /// the target's LAST child — just before its closing tag — and, when the
+        /// tag resolves to a component in the graph, the import is pushed in the
+        /// SAME commit ("&lt;Tag&gt; child (import auto-added where needed)").
+        /// A self-closing target is re-opened first, because the POC re-serialises
+        /// the AST and a childless node simply gains a body.</summary>
+        private void InsertChildTag(string filePath, BuilderCardLine row, string tag)
+        {
+            string full = Path.GetFullPath(filePath);
+            var session = _workspace.TryGet(full) ?? OpenSession(full);
+            if (session == null || session.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            string indent = IndentOf(full, row.SourceLine);
+            string seeded = SeededTag(tag);
+            int end = row.EndLine > 0 ? row.EndLine : row.SourceLine;
+            if (row.SelfClosing)
+            {
+                int idx = Mathf.Clamp(end - 1, 0, lines.Count - 1);
+                int slash = lines[idx].LastIndexOf("/>", System.StringComparison.Ordinal);
+                if (slash < 0)
+                    return;
+                lines[idx] = lines[idx].Remove(slash, 2).TrimEnd() + ">";
+                lines.Insert(idx + 1, indent + "  " + seeded);
+                lines.Insert(idx + 2, indent + "</" + row.Text.Trim('<', '>') + ">");
+            }
+            else
+            {
+                int at = Mathf.Clamp(end > row.SourceLine ? end - 1 : row.SourceLine, 0, lines.Count);
+                lines.Insert(at, indent + "  " + seeded);
+            }
+            AddUsageImport(lines, full, tag);
+            ApplyProgrammaticEdit(
+                full, string.Join("\n", lines),
+                "<" + tag + "> child (import auto-added where needed)");
+        }
+
+        /// <summary>POC addChildAt: a custom tag that resolves to a graph node
+        /// pushes its import onto the importer in the same commit, so the new tag
+        /// compiles and draws its usage edge immediately.</summary>
+        private void AddUsageImport(
+            System.Collections.Generic.List<string> lines, string importerPath, string tag)
+        {
+            var importer = _canvasHost?.FindNode(importerPath);
+            var target = _canvasHost?.FindNodeByTitle(tag);
+            if (importer == null || target == null || target.Kind != BuilderNodeKind.Component)
+                return;
+            if (string.Equals(target.FilePath, importerPath, System.StringComparison.OrdinalIgnoreCase))
+                return;
+            if (AlreadyImports(importer, target.FilePath))
+                return;
+            string import = BuildImportLine(importerPath, target, false, tag);
+            if (import != null)
+                lines.Insert(0, import);
         }
 
         /// <summary>POC 6.6 drop resolution: element/component payloads insert a
@@ -755,23 +802,28 @@ namespace Ruitk.Builder
                         Toast("Drop elements onto a component's markup.");
                         return;
                     }
-                    string seeded = name == "Label" ? "<Label text=\"New label\" />"
-                        : name == "Button" ? "<Button text=\"Click\" />"
-                        : "<" + name + " />";
+                    // POC: a drop with no row under the cursor, and every "inside"
+                    // band, appends to the target's children — never inserts
+                    // straight after the open tag.
                     if (!hasRow)
                     {
-                        var last = node.Markup[0];
-                        InsertLinesInFile(
-                            full,
-                            last.EndLine > last.SourceLine ? last.EndLine - 1 : last.SourceLine,
-                            IndentOf(full, last.SourceLine) + "  " + seeded);
+                        InsertChildTag(full, node.Markup[0], name);
+                        break;
                     }
-                    else if (band == 0)
-                        InsertLinesInFile(full, row.SourceLine - 1, indent + seeded);
-                    else if (band == 2)
-                        InsertLinesInFile(full, row.EndLine > 0 ? row.EndLine : row.SourceLine, indent + seeded);
-                    else
-                        InsertLinesInFile(full, row.SourceLine, indent + "  " + seeded);
+                    if (band == 1)
+                    {
+                        InsertChildTag(full, row, name);
+                        break;
+                    }
+                    var siblingLines =
+                        new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+                    int at = band == 0 ? BeforeAnchor(row) : AfterAnchor(full, row);
+                    siblingLines.Insert(
+                        Mathf.Clamp(at, 0, siblingLines.Count), indent + SeededTag(name));
+                    AddUsageImport(siblingLines, full, name);
+                    ApplyProgrammaticEdit(
+                        full, string.Join("\n", siblingLines),
+                        "<" + name + "> child (import auto-added where needed)");
                     break;
                 }
                 case "hook":
@@ -786,7 +838,7 @@ namespace Ruitk.Builder
                         : name == "useMemo" ? "var memo = useMemo(() => 0, null);"
                         : name == "useRef" ? "var elRef = useRef<VisualElement?>(null);"
                         : "var value = " + name + "();";
-                    InsertBeforeLastReturn(full, "  " + decl);
+                    InsertBeforeLastReturn(full, "  " + decl, "hook " + name);
                     break;
                 }
                 case "stylemod":
@@ -811,7 +863,9 @@ namespace Ruitk.Builder
                     }
                     string import = BuildImportLine(full, module, kind == "stylemod", name);
                     if (import != null)
-                        InsertLinesInFile(full, 0, import);
+                        InsertLinesInFile(
+                            full, 0, import,
+                            (kind == "stylemod" ? "style import " : "util import ") + name);
                     break;
                 }
                 case "snippet":
@@ -849,35 +903,61 @@ namespace Ruitk.Builder
                     if (srcNode == null || srcRowIdx < 0 || srcRowIdx >= srcNode.Markup.Count
                         || srcRowIdx == rowIdx)
                         break;
-                    var moving = srcNode.Markup[srcRowIdx];
-                    int movingEnd = moving.EndLine > 0 ? moving.EndLine : moving.SourceLine;
-                    if (row.SourceLine >= moving.SourceLine && row.SourceLine <= movingEnd)
+                    var srcRow = srcNode.Markup[srcRowIdx];
+                    // POC: the directive is a PROPERTY of the node, so a move
+                    // carries the whole "@if (…) { return ( … ); }" wrapper and a
+                    // sibling drop lands OUTSIDE it — never inside the block.
+                    int srcFrom = srcRow.DirectiveLine > 0 ? srcRow.DirectiveLine : srcRow.SourceLine;
+                    int srcTo = srcRow.DirectiveLine > 0
+                        ? MatchingCloseLine(full, srcRow.DirectiveLine)
+                        : (srcRow.EndLine > 0 ? srcRow.EndLine : srcRow.SourceLine);
+                    if (srcTo <= 0)
+                        srcTo = srcRow.EndLine > 0 ? srcRow.EndLine : srcRow.SourceLine;
+                    if (row.SourceLine >= srcFrom && row.SourceLine <= srcTo)
                     {
                         Toast("Can't move an element into its own subtree.");
                         break;
                     }
-                    var srcRow = srcNode.Markup[srcRowIdx];
+                    bool intoSelfClosing = band == 1 && row.SelfClosing;
                     int destination = appendToRoot
                         ? (row.EndLine > row.SourceLine ? row.EndLine - 1 : row.SourceLine)
-                        : band == 0 ? row.SourceLine - 1
-                            : band == 2 ? (row.EndLine > 0 ? row.EndLine : row.SourceLine)
-                            : row.SourceLine;
+                        : band == 0 ? BeforeAnchor(row)
+                            : band == 2 || intoSelfClosing ? AfterAnchor(full, row)
+                            : (row.EndLine > row.SourceLine ? row.EndLine - 1 : row.SourceLine);
                     MoveLineRange(
-                        full,
-                        srcRow.SourceLine,
-                        srcRow.EndLine > 0 ? srcRow.EndLine : srcRow.SourceLine,
-                        destination,
-                        appendToRoot ? indent : indent + (band == 1 ? "  " : ""));
+                        full, srcFrom, srcTo, destination,
+                        appendToRoot ? indent : indent + (band == 1 && !intoSelfClosing ? "  " : ""),
+                        "moved " + srcRow.Text);
                     break;
                 }
             }
+        }
+
+        /// <summary>1-based "insert after" anchor for a BEFORE drop on a row —
+        /// above the row's directive header when it carries one.</summary>
+        private static int BeforeAnchor(BuilderCardLine row) =>
+            (row.DirectiveLine > 0 ? row.DirectiveLine : row.SourceLine) - 1;
+
+        /// <summary>1-based "insert after" anchor for an AFTER drop on a row —
+        /// below the row's directive block when it carries one, and below the
+        /// LAST line of a wrapped self-closing tag otherwise.</summary>
+        private int AfterAnchor(string filePath, BuilderCardLine row)
+        {
+            if (row.DirectiveLine > 0)
+            {
+                int close = MatchingCloseLine(filePath, row.DirectiveLine);
+                if (close > 0)
+                    return close;
+            }
+            return row.EndLine > 0 ? row.EndLine : row.SourceLine;
         }
 
         /// <summary>Relocates a 1-based inclusive line range to sit after
         /// <paramref name="afterLine1"/> (0 = top), guarding against moving a
         /// range into itself and re-indenting to the destination depth.</summary>
         private void MoveLineRange(
-            string filePath, int fromLine1, int toLine1, int afterLine1, string destIndent)
+            string filePath, int fromLine1, int toLine1, int afterLine1, string destIndent,
+            string what = null)
         {
             if (afterLine1 >= fromLine1 - 1 && afterLine1 <= toLine1)
                 return;
@@ -904,7 +984,7 @@ namespace Ruitk.Builder
             int insertAt = afterLine1 > to ? afterLine1 - (to - from + 1) : afterLine1;
             insertAt = Mathf.Clamp(insertAt, 0, lines.Count);
             lines.InsertRange(insertAt, moved);
-            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), what);
         }
 
 
@@ -912,6 +992,30 @@ namespace Ruitk.Builder
         /// the row's open-tag line; an empty value removes the attribute.</summary>
         private void OnAttrValueEdited(string filePath, int sourceLine, int attrIdx, string newValue)
         {
+            // POC commitNode labels: "<Tag> attrName", or "removed attrName" when
+            // the emptied value takes the attribute with it.
+            string tagName = "";
+            string attrName = "";
+            var owner = _canvasHost?.FindNode(Path.GetFullPath(filePath));
+            if (owner != null)
+            {
+                foreach (var candidate in owner.Markup)
+                {
+                    if (candidate.SourceLine != sourceLine)
+                        continue;
+                    tagName = candidate.Text;
+                    if (attrIdx >= 0 && attrIdx < candidate.AttrPairs.Count)
+                    {
+                        string pair = candidate.AttrPairs[attrIdx];
+                        int eq = pair.IndexOf('=');
+                        attrName = eq < 0 ? pair : pair.Substring(0, eq);
+                    }
+                    break;
+                }
+            }
+            string what = string.IsNullOrWhiteSpace(newValue)
+                ? "removed " + attrName
+                : tagName + " " + attrName;
             EditOpenTagInFile(Path.GetFullPath(filePath), sourceLine, tag =>
             {
                 var matches = System.Text.RegularExpressions.Regex.Matches(
@@ -929,7 +1033,7 @@ namespace Ruitk.Builder
                 string wrapped = expr ? "{" + newValue + "}" : "\"" + newValue + "\"";
                 return tag.Substring(0, m.Groups[2].Index) + wrapped
                     + tag.Substring(m.Groups[2].Index + m.Groups[2].Length);
-            }, "attribute value");
+            }, what);
         }
 
         /// <summary>POC 6.3 directive commit: rewrite the directive header line
@@ -951,17 +1055,17 @@ namespace Ruitk.Builder
                 while (w < line.Length && line[w] == ' ')
                     w++;
                 return line.Substring(0, w) + newText.Trim().TrimEnd('{', ' ') + " {";
-            });
+            }, "directive");
         }
 
-        private void AppendToFile(string filePath, string block)
+        private void AppendToFile(string filePath, string block, string what = null)
         {
             string full = Path.GetFullPath(filePath);
             OpenSession(full);
             var session = _workspace.TryGet(full);
             if (session == null || session.IsReadOnly)
                 return;
-            ApplyProgrammaticEdit(full, session.BufferText.TrimEnd('\n') + block + "\n");
+            ApplyProgrammaticEdit(full, session.BufferText.TrimEnd('\n') + block + "\n", what);
         }
 
         /// <summary>POC "Remove attribute…" submenu: lists the row's current
@@ -1205,7 +1309,7 @@ namespace Ruitk.Builder
                 items.Add(new BuilderSearchMenu.Item
                 {
                     Label = captured,
-                    OnPick = () => InsertStyleEntry(filePath, closeLine, key, captured),
+                    OnPick = () => InsertStyleEntry(filePath, styleName, closeLine, key, captured),
                 });
             }
             BuilderSearchMenu.Show(
@@ -1213,14 +1317,16 @@ namespace Ruitk.Builder
                 free => new BuilderSearchMenu.Item
                 {
                     Label = "use \"" + free + "\"",
-                    OnPick = () => InsertStyleEntry(filePath, closeLine, key, free),
+                    OnPick = () => InsertStyleEntry(filePath, styleName, closeLine, key, free),
                 });
         }
 
-        private void InsertStyleEntry(string filePath, int closeLine, string key, string value)
+        private void InsertStyleEntry(
+            string filePath, string styleName, int closeLine, string key, string value)
         {
             OpenSession(filePath);
-            InsertLinesInFile(filePath, closeLine - 1, "  " + key + " = " + value + ",");
+            InsertLinesInFile(
+                filePath, closeLine - 1, "  " + key + " = " + value + ",", styleName + "." + key);
         }
 
         private BuilderDocumentSession OpenSession(string filePath)
@@ -1229,7 +1335,7 @@ namespace Ruitk.Builder
             return _workspace.TryGet(filePath);
         }
 
-        private void InsertBeforeLastReturn(string filePath, string line)
+        private void InsertBeforeLastReturn(string filePath, string line, string what = null)
         {
             var session = _workspace.TryGet(filePath);
             if (session == null)
@@ -1247,7 +1353,7 @@ namespace Ruitk.Builder
             if (at < 0)
                 return;
             lines.Insert(at, line);
-            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), what);
         }
 
         /// <summary>POC "&lt;name&gt; is already imported." guard.</summary>
@@ -1376,7 +1482,8 @@ namespace Ruitk.Builder
             return start;
         }
 
-        private void InsertLinesInFile(string filePath, int afterLine1, string newLine)
+        private void InsertLinesInFile(
+            string filePath, int afterLine1, string newLine, string what = null)
         {
             var session = _workspace.TryGet(filePath);
             if (session == null || session.IsReadOnly)
@@ -1384,10 +1491,11 @@ namespace Ruitk.Builder
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
             int at = Mathf.Clamp(afterLine1, 0, lines.Count);
             lines.Insert(at, newLine);
-            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), what);
         }
 
-        private void DeleteLinesInFile(string filePath, int fromLine1, int toLine1)
+        private void DeleteLinesInFile(
+            string filePath, int fromLine1, int toLine1, string what = null)
         {
             var session = _workspace.TryGet(filePath);
             if (session == null || session.IsReadOnly)
@@ -1396,7 +1504,7 @@ namespace Ruitk.Builder
             int from = Mathf.Clamp(fromLine1 - 1, 0, lines.Count - 1);
             int to = Mathf.Clamp(toLine1 - 1, from, lines.Count - 1);
             lines.RemoveRange(from, to - from + 1);
-            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), what);
         }
 
         private void WrapRowInDirective(
@@ -1415,7 +1523,9 @@ namespace Ruitk.Builder
             lines.Insert(to + 1 + 1, indent + "}");
             lines.Insert(from, indent + "  return (");
             lines.Insert(from, indent + header + " {");
-            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+            ApplyProgrammaticEdit(
+                filePath, string.Join("\n", lines),
+                header.StartsWith("@foreach", System.StringComparison.Ordinal) ? "@foreach" : "@if");
             if (cardIndex >= 0)
                 _canvasHost?.BeginEdit($"badge:{cardIndex}:{rowIdx}", header);
         }
@@ -1478,7 +1588,7 @@ namespace Ruitk.Builder
 
             lines.RemoveRange(header, close - header + 1);
             lines.InsertRange(header, inner);
-            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), "directive removed");
         }
 
         /// <summary>POC delete: the NODE goes, and with it the directive that was
@@ -1486,17 +1596,18 @@ namespace Ruitk.Builder
         /// block, never leaving an orphan "@if (…) { return ( ); }".</summary>
         private void DeleteElementRow(string filePath, BuilderCardLine row)
         {
+            string what = "delete " + row.Text;
             if (row.DirectiveLine > 0)
             {
                 int close = MatchingCloseLine(filePath, row.DirectiveLine);
                 if (close > 0)
                 {
-                    DeleteLinesInFile(filePath, row.DirectiveLine, close);
+                    DeleteLinesInFile(filePath, row.DirectiveLine, close, what);
                     return;
                 }
             }
             DeleteLinesInFile(
-                filePath, row.SourceLine, row.EndLine > 0 ? row.EndLine : row.SourceLine);
+                filePath, row.SourceLine, row.EndLine > 0 ? row.EndLine : row.SourceLine, what);
         }
 
         /// <summary>1-based line of the '}' that closes the block opened on
@@ -1801,41 +1912,73 @@ namespace Ruitk.Builder
                     unityFontStyleAndWeight = FontStyle.Bold,
                 },
             });
+            // POC <ol>: hanging numbers (18px indent) and the gesture nouns in
+            // <b>. Fixture names are generalised — a user's tree has no
+            // ShopScreen / shopStyles.
             string[] steps =
             {
-                "1. Wheel zooms (to cursor), drag background pans, drag a title bar moves a card.",
-                "2. Zoom all the way out — L0 is the live architecture diagram.",
-                "3. Click a component card — live preview + its source appear on the right.",
-                "4. Hover a hook chip — every usage lights up in JSX and source.",
-                "5. Zoom close (L2) — attributes, code islands and directive badges appear.",
-                "6. Select a card, drag a props knob — watch the @if branch flip live.",
-                "7. Click a JSX row → its source line highlights. Click an element in the preview → same.",
-                "8. Edit on the canvas (at L2): click an attribute value, a directive badge, or a style entry to edit inline ({} and quotes stay outside the field); double-click a code island to edit body code. Enter commits (Ctrl+Enter in a code island), Esc cancels → the source regenerates.",
-                "9. Drag from the Library (left, searchable) onto a JSX row — top edge inserts before, bottom edge after, middle nests inside. Drag existing rows to reorder. Hooks drop onto BODY, style modules onto a card (adds the import).",
-                "10. Right-click a row — searchable typed attributes (native schema / component props, untyped fallback), remove attribute, directives, delete. Emptying an attribute's value also removes it. Right-click a card — delete it. Right-click empty canvas or + new — create component / style / hook / util module.",
-                "11. Style authoring — on a style card, + entry gives searchable keys then value helpers (Px/Pct/Hex/Rgba/FlexRow…); + style adds another export.",
-                "12. Source pane is bidirectional — click edit (or double-click the source), change the text, apply (Ctrl+Enter): it re-parses into the model, the card updates, and the source reformats canonically. Ctrl+Space completes; Save writes every dirty buffer in one batch.",
-                "13. Select ShopScreen, then edit shopStyles → root's BackgroundColor hex (try #2a1a3a) — the live preview repaints. Drag the splitters to resize panes.",
+                "<b>Wheel</b> zooms (to cursor), <b>drag background</b> pans, <b>drag a title bar</b> moves a card.",
+                "Zoom all the way out — <b>L0</b> is the live architecture diagram.",
+                "Click a component card — live preview + its source appear on the right.",
+                "<b>Hover a hook chip</b> — every usage lights up in JSX and source.",
+                "Zoom close (<b>L2</b>) — attributes, code islands and directive badges appear.",
+                "Select a card, drag a props knob — watch the <b>@if</b> branch flip live.",
+                "Click a JSX row → its source line highlights. Click an element in the preview → same.",
+                "<b>Edit on the canvas</b> (at L2): click an attribute value, a directive badge, or a style entry to edit inline ({} and quotes stay outside the field); double-click a code island or hook chip to edit body code. Enter commits (Ctrl+Enter in a code island), Esc cancels → the source regenerates.",
+                "<b>Drag from the Library</b> (left, searchable) onto a JSX row — top edge inserts <i>before</i>, bottom edge <i>after</i>, middle nests <i>inside</i>. Drag existing rows to reorder. Hooks drop onto BODY, style modules onto a card (adds the import).",
+                "<b>Right-click a row</b> — searchable typed attributes (native schema / component props, untyped fallback), <b>remove attribute</b>, directives, delete. Emptying an attribute's value also removes it. <b>Right-click a card title</b> — delete. <b>Right-click empty canvas</b> or <b>+ new</b> — create component / style / hook / util module.",
+                "<b>Style authoring</b> — on a style card, <b>+ entry</b> gives searchable keys then value helpers (Px/Pct/Hex/Rgba/FlexRow…); <b>+ style</b> adds another export.",
+                "<b>Source pane is bidirectional</b> — click <b>edit</b> (or double-click the source), change the text, <b>apply</b> (Ctrl+Enter): it re-parses into the model, the card updates, and the source reformats canonically. Ctrl+Space completes; Save writes every dirty buffer in one batch.",
+                "Select a component, then edit its <b>style module → an entry</b>'s BackgroundColor hex (try #2a1a3a) — the live preview repaints. Drag the splitters to resize panes.",
             };
-            foreach (string step in steps)
-                help.Add(new Label(step)
+            for (int i = 0; i < steps.Length; i++)
+            {
+                var stepRow = new VisualElement
+                {
+                    style = { flexDirection = FlexDirection.Row, marginBottom = 5f },
+                };
+                stepRow.Add(new Label((i + 1) + ".")
                 {
                     style =
                     {
-                        color = Text, fontSize = 12f,
-                        whiteSpace = WhiteSpace.Normal, marginBottom = 5f,
-                        paddingLeft = 18f,
+                        color = Text, fontSize = 12f, width = 18f, flexShrink = 0f,
+                        unityTextAlign = TextAnchor.UpperRight, paddingRight = 4f,
                     },
                 });
+                stepRow.Add(new Label(steps[i])
+                {
+                    enableRichText = true,
+                    style =
+                    {
+                        color = Text, fontSize = 12f,
+                        whiteSpace = WhiteSpace.Normal, flexShrink = 1f, flexGrow = 1f,
+                    },
+                });
+                help.Add(stepRow);
+            }
             canvas.Add(help);
             _helpOverlay = help;
         }
 
+        internal static void SetBorderColor(VisualElement element, Color color)
+        {
+            element.style.borderTopColor = color;
+            element.style.borderBottomColor = color;
+            element.style.borderLeftColor = color;
+            element.style.borderRightColor = color;
+        }
+
         /// <summary>POC "#toolbar button": panel2 fill, line border, 4px radius,
-        /// 12px label — the active mode flips to the accent fill.</summary>
+        /// 12px label — the active mode flips to the accent fill, and
+        /// "#toolbar button:hover { border-color: var(--accent) }".</summary>
         private static Button ToolbarButton(string text, System.Action onClick)
         {
             var button = new Button(onClick) { text = text };
+            button.userData = Line;
+            button.RegisterCallback<MouseEnterEvent>(_ => SetBorderColor(button, Accent));
+            button.RegisterCallback<MouseLeaveEvent>(_ =>
+                SetBorderColor(button, button.userData is Color resting ? resting : Line));
+            BuilderCursor.Set(button, MouseCursor.Link);
             button.style.backgroundColor = Panel2;
             button.style.color = Text;
             button.style.fontSize = 12f;
@@ -1861,6 +2004,40 @@ namespace Ruitk.Builder
             return button;
         }
 
+        /// <summary>POC "#vsplit / #hsplit": a 6px gutter filled var(--panel) with
+        /// a 1px var(--line) edge on each long side, turning var(--accent) on
+        /// hover — not Unity's stock hairline drag handle.</summary>
+        private static void StyleSplitter(TwoPaneSplitView split, bool vertical)
+        {
+            split.schedule.Execute(() =>
+            {
+                var anchor = split.Q(null, "unity-two-pane-split-view__dragline-anchor");
+                if (anchor == null)
+                    return;
+                anchor.style.backgroundColor = Panel;
+                if (vertical)
+                {
+                    anchor.style.height = 6f;
+                    anchor.style.borderTopWidth = 1f;
+                    anchor.style.borderBottomWidth = 1f;
+                    anchor.style.borderTopColor = Line;
+                    anchor.style.borderBottomColor = Line;
+                    BuilderCursor.Set(anchor, MouseCursor.ResizeVertical);
+                }
+                else
+                {
+                    anchor.style.width = 6f;
+                    anchor.style.borderLeftWidth = 1f;
+                    anchor.style.borderRightWidth = 1f;
+                    anchor.style.borderLeftColor = Line;
+                    anchor.style.borderRightColor = Line;
+                    BuilderCursor.Set(anchor, MouseCursor.ResizeHorizontal);
+                }
+                anchor.RegisterCallback<MouseEnterEvent>(_ => anchor.style.backgroundColor = Accent);
+                anchor.RegisterCallback<MouseLeaveEvent>(_ => anchor.style.backgroundColor = Panel);
+            }).ExecuteLater(0);
+        }
+
         private static VisualElement Separator() => new VisualElement
         {
             style =
@@ -1880,10 +2057,8 @@ namespace Ruitk.Builder
                 var button = _modeButtons[i];
                 button.style.backgroundColor = active ? Accent : Panel2;
                 button.style.color = active ? new Color(0.063f, 0.133f, 0.173f) : Text;
-                button.style.borderTopColor = active ? Accent : Line;
-                button.style.borderBottomColor = active ? Accent : Line;
-                button.style.borderLeftColor = active ? Accent : Line;
-                button.style.borderRightColor = active ? Accent : Line;
+                button.userData = active ? Accent : Line;
+                SetBorderColor(button, active ? Accent : Line);
                 button.style.unityFontStyleAndWeight = active ? FontStyle.Bold : FontStyle.Normal;
             }
         }
@@ -1907,7 +2082,9 @@ namespace Ruitk.Builder
                     borderBottomColor = Line,
                 },
             };
-            row.Add(new Label(left) { style = { fontSize = 11f, color = Dim } });
+            // POC ".pane-title { letter-spacing: .08em }" — tracked out like every
+            // other uppercase label in the window (.sec-label / .lib-sec).
+            row.Add(new Label(left) { style = { fontSize = 11f, color = Dim, letterSpacing = 1f } });
             var right = new VisualElement
             {
                 style = { flexDirection = FlexDirection.Row, alignItems = Align.Center },
@@ -1944,6 +2121,10 @@ namespace Ruitk.Builder
                 },
             };
             button.RegisterCallback<PointerDownEvent>(_ => onClick());
+            // POC ".mini:hover { border-color: var(--accent) }".
+            button.RegisterCallback<MouseEnterEvent>(_ => SetBorderColor(button, Accent));
+            button.RegisterCallback<MouseLeaveEvent>(_ => SetBorderColor(button, Line));
+            BuilderCursor.Set(button, MouseCursor.Link);
             return button;
         }
 
@@ -2087,13 +2268,13 @@ namespace Ruitk.Builder
             bool pascal = kind == "Component";
             bool hook = kind == "Hooks";
             if (hook && !System.Text.RegularExpressions.Regex.IsMatch(name, "^use[A-Z][A-Za-z0-9]*$"))
-                return "useSomething required";
+                return "hook names start with 'use' (useSomething)";
             if (!hook && pascal
                 && !System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Z][A-Za-z0-9]*$"))
-                return "PascalCaseName required";
+                return "PascalCase identifier required";
             if (!hook && !pascal
                 && !System.Text.RegularExpressions.Regex.IsMatch(name, "^[a-z][A-Za-z0-9]*$"))
-                return "camelCaseName required";
+                return "camelCase identifier required";
             foreach (var node in _canvasHost?.Nodes
                 ?? new System.Collections.Generic.List<BuilderCanvasNode>())
             {

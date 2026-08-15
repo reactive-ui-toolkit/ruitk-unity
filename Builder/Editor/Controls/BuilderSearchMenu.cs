@@ -379,6 +379,7 @@ namespace Ruitk.Builder
                 Close();
                 item.OnPick?.Invoke();
             });
+            BuilderCursor.Set(row, MouseCursor.Link);
             row.RegisterCallback<MouseEnterEvent>(_ =>
                 row.style.backgroundColor = new Color(0.31f, 0.76f, 0.97f, 0.14f));
             row.RegisterCallback<MouseLeaveEvent>(_ =>

@@ -96,7 +96,7 @@ export Style CardSectionHeader = new Style {
 
 export Style CardImportLine = new Style {
   Color = Hex("#8b8b96"),
-  FontSize = Px(11),
+  FontSize = Px(11.5f),
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
   FlexGrow = 1,
   FlexShrink = 1,
@@ -173,6 +173,25 @@ export Style CodeIslandLine = new Style {
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 
+// POC ".code-island:hover { border-color: var(--accent) }" — the island is an
+// editable surface, so hovering it says so.
+export Style CodeIslandHover = new Style {
+  BackgroundColor = Hex("#17171b"),
+  BorderRadius = Px(6),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#4fc3f7"),
+  BorderRightColor = Hex("#4fc3f7"),
+  BorderBottomColor = Hex("#4fc3f7"),
+  BorderLeftColor = Hex("#4fc3f7"),
+  PaddingLeft = Px(9),
+  PaddingRight = Px(9),
+  PaddingTop = Px(6),
+  PaddingBottom = Px(6),
+};
+
 // POC ".code-island.hl" — a code island whose text names a traced hook state.
 export Style CodeIslandTrace = new Style {
   BackgroundColor = Hex("#221d12"),
@@ -229,6 +248,19 @@ export Style CardDropHint = new Style {
   BorderRightColor = Hex("#4fc3f7"),
   BorderBottomColor = Hex("#4fc3f7"),
   BorderLeftColor = Hex("#4fc3f7"),
+};
+
+// POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }" — cards float above the
+// dotted ground. UITK has no box-shadow, so an offset dark rounded rect painted
+// behind the card carries the same depth cue.
+export Style CardShadow = new Style {
+  Position = PosAbsolute,
+  Top = Px(6),
+  Left = Px(3),
+  Right = Px(3),
+  Bottom = Px(-6),
+  BorderRadius = Px(10),
+  BackgroundColor = Rgba(0, 0, 0, 89),
 };
 
 export Style CardExport = new Style {
