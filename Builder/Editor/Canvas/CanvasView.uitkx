@@ -15,7 +15,8 @@ export VirtualNode CanvasView(
   Action<string, int> onRowClick = null,
   Action<string, int, int> onRowContext = null,
   Action onCanvasContext = null,
-  Action<string, int, int, string> onRowDrop = null
+  Action<string, int, int, string> onRowDrop = null,
+  Action<string, string, int> onStyleAddEntry = null
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -298,6 +299,51 @@ export VirtualNode CanvasView(
                               );
                             }
                           </VisualElement>
+                        </VisualElement>
+                      );
+                    }
+                    @if (node.ExportDetail.Count > 0) {
+                      return (
+                        <VisualElement>
+                          <Label text="EXPORTS" style={CanvasStyles.CardSectionHeader} />
+                          @for (int x = 0; x < node.ExportDetail.Count; x++) {
+                            var detail = node.ExportDetail[x];
+                            bool isAdd = detail.BadgeKind == 9;
+                            bool detailVisible = detail.Kind == BuilderCardLineKind.Export
+                              || detail.Text == "}"
+                              || lod == 2;
+                            return (
+                              <VisualElement key={$"ed-{x}"}>
+                                @if (detailVisible) {
+                                  return (
+                                    <Label
+                                      text={detail.Text}
+                                      style={new Style {
+                                        Color = isAdd
+                                          ? Hex("#8b8b96")
+                                          : detail.Kind == BuilderCardLineKind.Export
+                                            ? Hex("#ce93d8")
+                                            : Hex("#cfcfda"),
+                                        FontSize = Px(11),
+                                        UnityFontStyle = detail.Kind == BuilderCardLineKind.Export ? FontBold : FontNormal,
+                                        MarginLeft = Px(detail.Depth * 18f),
+                                      }}
+                                      onPointerDown={e => {
+                                        if (isAdd) {
+                                          if (onStyleAddEntry != null) {
+                                            onStyleAddEntry(node.FilePath, detail.AttrsText, detail.SourceLine);
+                                          }
+                                        } else if (onRowClick != null) {
+                                          onRowClick(node.FilePath, detail.SourceLine);
+                                        }
+                                        e.StopPropagation();
+                                      }}
+                                    />
+                                  );
+                                }
+                              </VisualElement>
+                            );
+                          }
                         </VisualElement>
                       );
                     }

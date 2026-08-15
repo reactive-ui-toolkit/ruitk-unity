@@ -29,6 +29,7 @@ namespace Ruitk.Builder
         public Action<string, int, int> OnRowContext;
         public Action<string> OnCreateRequested;
         public Action<string, int, int, string> OnRowDrop;
+        public Action<string, string, int> OnStyleAddEntry;
 
         public async void Mount(
             VisualElement container,
@@ -93,6 +94,8 @@ namespace Ruitk.Builder
                         OnCanvasContext = ShowCreateMenu,
                         OnRowDrop = (path, rowIdx, band, payload) =>
                             OnRowDrop?.Invoke(path, rowIdx, band, payload),
+                        OnStyleAddEntry = (path, styleName, closeLine) =>
+                            OnStyleAddEntry?.Invoke(path, styleName, closeLine),
                     }
                 )
             );

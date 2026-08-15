@@ -62,6 +62,11 @@ namespace Ruitk.Builder
         public List<BuilderCardLine> Imports = new List<BuilderCardLine>();
         public List<BuilderCardLine> Body = new List<BuilderCardLine>();
         public List<BuilderCardLine> Markup = new List<BuilderCardLine>();
+
+        /// <summary>Style/util export detail: header lines (Kind Export), entry
+        /// lines (Plain, Depth 1, L2-only), and "+ entry" affordances
+        /// (BadgeKind 9, AttrsText = the style export name).</summary>
+        public List<BuilderCardLine> ExportDetail = new List<BuilderCardLine>();
     }
 
     /// <summary>One import edge; indices into the node list (broken edges keep To = -1).</summary>

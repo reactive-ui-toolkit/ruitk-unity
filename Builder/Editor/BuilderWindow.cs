@@ -148,6 +148,7 @@ namespace Ruitk.Builder
             _canvasHost.OnRowClick = OnCanvasRowClicked;
             _canvasHost.OnRowContext = OnCanvasRowContext;
             _canvasHost.OnRowDrop = OnCanvasRowDrop;
+            _canvasHost.OnStyleAddEntry = OnStyleAddEntry;
             _canvasHost.OnCreateRequested = kind =>
             {
                 string dir = string.IsNullOrEmpty(_focusFile) ? null : Path.GetDirectoryName(_focusFile);
@@ -344,23 +345,8 @@ namespace Ruitk.Builder
             string tag = row.Text.Trim('<', '>');
 
             var menu = new UnityEditor.GenericMenu();
-            foreach (var attr in BuilderSchemaCache.AttributesFor(tag))
-            {
-                string captured = attr.Name;
-                string display = attr.Name + "  :  " + attr.Type;
-                menu.AddItem(new GUIContent("Add attribute (typed)/" + display), false, () =>
-                    EditLineInFile(full, sourceLine, line =>
-                    {
-                        int close = line.LastIndexOf("/>", System.StringComparison.Ordinal);
-                        if (close < 0)
-                            close = line.LastIndexOf('>');
-                        if (close < 0)
-                            return line;
-                        string value = BuilderSchemaCache.DefaultValueFor(captured, attr.Type);
-                        return line.Substring(0, close).TrimEnd() + " " + captured + "=" + value
-                            + (line.Substring(close).StartsWith("/") ? " " : "") + line.Substring(close);
-                    }));
-            }
+            menu.AddItem(new GUIContent("Add attribute (typed)…"), false, () =>
+                ShowAttributeMenu(full, sourceLine, tag));
             menu.AddItem(new GUIContent("Add child element…"), false, () =>
                 InsertLinesInFile(full, sourceLine, IndentOf(full, sourceLine) + "  <VisualElement />"));
             menu.AddSeparator("");
@@ -442,6 +428,127 @@ namespace Ruitk.Builder
                     _codeField?.InsertAtCaret(name);
                     break;
             }
+        }
+
+        /// <summary>POC 6.4 A.1: searchable typed-attribute menu with the
+        /// untyped freeform fallback; the picked attribute lands on the row's
+        /// open tag with its POC default value.</summary>
+        private void ShowAttributeMenu(string filePath, int sourceLine, string tag)
+        {
+            void AddAttr(string name, string type)
+            {
+                EditLineInFile(filePath, sourceLine, line =>
+                {
+                    int close = line.LastIndexOf("/>", System.StringComparison.Ordinal);
+                    if (close < 0)
+                        close = line.LastIndexOf('>');
+                    if (close < 0)
+                        return line;
+                    string value = BuilderSchemaCache.DefaultValueFor(name, type);
+                    return line.Substring(0, close).TrimEnd() + " " + name + "=" + value
+                        + (line.Substring(close).StartsWith("/") ? " " : "") + line.Substring(close);
+                });
+            }
+
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+            foreach (var attr in BuilderSchemaCache.AttributesFor(tag))
+            {
+                string name = attr.Name;
+                string type = attr.Type;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = name,
+                    Detail = type,
+                    OnPick = () => AddAttr(name, type),
+                });
+            }
+            BuilderSearchMenu.Show(
+                "attributes — " + tag, "search attributes…", items,
+                free => new BuilderSearchMenu.Item
+                {
+                    Label = "add \"" + free + "\" (untyped)",
+                    OnPick = () => AddAttr(free, ""),
+                });
+        }
+
+        private static readonly (string Key, string Type)[] s_styleKeys =
+        {
+            ("FlexGrow", "number"), ("FlexShrink", "number"), ("FlexDirection", "flex-direction"),
+            ("JustifyContent", "justify"), ("AlignItems", "align"), ("AlignSelf", "align"),
+            ("Width", "length"), ("Height", "length"), ("MinWidth", "length"), ("MaxWidth", "length"),
+            ("MinHeight", "length"), ("MaxHeight", "length"), ("Padding", "length"), ("Margin", "length"),
+            ("BorderRadius", "length"), ("BorderWidth", "length"), ("BackgroundColor", "color"),
+            ("Color", "color"), ("BorderColor", "color"), ("FontSize", "length"),
+            ("UnityFontStyle", "font-style"), ("UnityTextAlign", "text-align"), ("Opacity", "number"),
+            ("Display", "display"), ("Position", "position"),
+        };
+
+        private static string[] ValueTemplatesFor(string type) => type switch
+        {
+            "number" => new[] { "1", "0", "0.5f" },
+            "length" => new[] { "Px(8)", "Px(16)", "Pct(100)", "Pct(50)" },
+            "color" => new[] { "Hex(\"#1b1b1f\")", "Hex(\"#4fc3f7\")", "Rgba(0, 0, 0, 128)" },
+            "flex-direction" => new[] { "FlexRow", "FlexColumn" },
+            "justify" => new[] { "JustifyCenter", "JustifyFlexStart", "JustifyFlexEnd", "JustifySpaceBetween" },
+            "align" => new[] { "AlignCenter", "AlignFlexStart", "AlignFlexEnd", "AlignStretch" },
+            "font-style" => new[] { "FontBold", "FontItalic", "FontBoldAndItalic" },
+            "text-align" => new[] { "TextMiddleCenter", "TextMiddleLeft", "TextUpperLeft" },
+            "display" => new[] { "DisplayFlex", "DisplayNone" },
+            "position" => new[] { "PosRelative", "PosAbsolute" },
+            _ => new[] { "0", "Px(8)", "Pct(100)", "Hex(\"#ffffff\")" },
+        };
+
+        /// <summary>POC 6.5: "+ entry" → searchable key menu → value/helper menu
+        /// → the entry lands before the export's closing brace.</summary>
+        private void OnStyleAddEntry(string filePath, string styleName, int closeLine)
+        {
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+            foreach (var (key, type) in s_styleKeys)
+            {
+                string capturedKey = key;
+                string capturedType = type;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = capturedKey,
+                    Detail = capturedType,
+                    OnPick = () => ShowStyleValueMenu(filePath, styleName, closeLine, capturedKey, capturedType),
+                });
+            }
+            BuilderSearchMenu.Show(
+                styleName + " — style keys", "search keys…", items,
+                free => new BuilderSearchMenu.Item
+                {
+                    Label = "use key \"" + free + "\"",
+                    OnPick = () => ShowStyleValueMenu(filePath, styleName, closeLine, free, ""),
+                });
+        }
+
+        private void ShowStyleValueMenu(
+            string filePath, string styleName, int closeLine, string key, string type)
+        {
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+            foreach (string template in ValueTemplatesFor(type))
+            {
+                string captured = template;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = captured,
+                    OnPick = () => InsertStyleEntry(filePath, closeLine, key, captured),
+                });
+            }
+            BuilderSearchMenu.Show(
+                key + " — values & helpers", "value or helper…", items,
+                free => new BuilderSearchMenu.Item
+                {
+                    Label = "use \"" + free + "\"",
+                    OnPick = () => InsertStyleEntry(filePath, closeLine, key, free),
+                });
+        }
+
+        private void InsertStyleEntry(string filePath, int closeLine, string key, string value)
+        {
+            OpenSession(filePath);
+            InsertLinesInFile(filePath, closeLine - 1, "  " + key + " = " + value + ",");
         }
 
         private BuilderDocumentSession OpenSession(string filePath)

@@ -223,7 +223,10 @@ namespace Ruitk.Builder
             if (budget <= 0)
                 node.Markup.Add(new BuilderCardLine { Text = "…", Kind = BuilderCardLineKind.Plain });
 
-            if (node.Markup.Count == 0 && node.Exports.Count > 0)
+            node.ExportDetail.Clear();
+            if (node.Kind == BuilderNodeKind.Style)
+                ParseStyleDetail(text, node);
+            else if (node.Markup.Count == 0 && node.Exports.Count > 0)
             {
                 foreach (string export in node.Exports)
                     node.Body.Add(new BuilderCardLine
@@ -231,6 +234,61 @@ namespace Ruitk.Builder
                         Text = export,
                         Kind = BuilderCardLineKind.Export,
                     });
+            }
+        }
+
+        private static readonly Regex s_styleExport = new Regex(
+            @"^export\s+Style\s+(\w+)\s*=\s*new\s+Style\s*\{", RegexOptions.Compiled);
+
+        /// <summary>POC style card: per export a "name = new Style {" header,
+        /// its entries (L2), a "+ entry" affordance, and the closing brace.</summary>
+        private static void ParseStyleDetail(string text, BuilderCanvasNode node)
+        {
+            string[] lines = text.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var match = s_styleExport.Match(lines[i].Trim());
+                if (!match.Success)
+                    continue;
+                string styleName = match.Groups[1].Value;
+                node.ExportDetail.Add(new BuilderCardLine
+                {
+                    Text = styleName + " = new Style {",
+                    Kind = BuilderCardLineKind.Export,
+                    SourceLine = i + 1,
+                });
+                int j = i + 1;
+                for (; j < lines.Length; j++)
+                {
+                    string entry = lines[j].Trim();
+                    if (entry.StartsWith("}", StringComparison.Ordinal))
+                        break;
+                    if (entry.Length == 0)
+                        continue;
+                    node.ExportDetail.Add(new BuilderCardLine
+                    {
+                        Text = entry,
+                        Kind = BuilderCardLineKind.Plain,
+                        Depth = 1,
+                        SourceLine = j + 1,
+                    });
+                }
+                node.ExportDetail.Add(new BuilderCardLine
+                {
+                    Text = "+ entry",
+                    Kind = BuilderCardLineKind.Plain,
+                    Depth = 1,
+                    BadgeKind = 9,
+                    AttrsText = styleName,
+                    SourceLine = j + 1,
+                });
+                node.ExportDetail.Add(new BuilderCardLine
+                {
+                    Text = "}",
+                    Kind = BuilderCardLineKind.Plain,
+                    SourceLine = j + 1,
+                });
+                i = j;
             }
         }
 
