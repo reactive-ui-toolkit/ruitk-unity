@@ -13,7 +13,8 @@ export VirtualNode CanvasView(
   Action<float, float, float> onCameraChanged = null,
   Action<int> onCardContext = null,
   Action<string, int> onRowClick = null,
-  Action<string, int, int> onRowContext = null
+  Action<string, int, int> onRowContext = null,
+  Action onCanvasContext = null
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -38,6 +39,12 @@ export VirtualNode CanvasView(
     <VisualElement
       style={CanvasStyles.Root}
       onPointerDown={e => {
+        if (e.Button == 1) {
+          if (onCanvasContext != null) {
+            onCanvasContext();
+          }
+          return;
+        }
         if (dragCard.Current < 0) {
           panning.Current = true;
           lastX.Current = e.Position.x;

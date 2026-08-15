@@ -93,17 +93,40 @@ namespace Ruitk.Builder
             toolbar.Add(new Button(NewFile) { text = "New File" });
             _statusLabel = new Label { style = { unityTextAlign = TextAnchor.MiddleLeft, marginLeft = 10f } };
             toolbar.Add(_statusLabel);
+            toolbar.Add(BuildLegend());
             root.Add(toolbar);
 
-            var body = new VisualElement
+            var outerSplit = new TwoPaneSplitView(0, 205f, TwoPaneSplitViewOrientation.Horizontal)
             {
                 name = "builder-body",
-                style = { flexGrow = 1f, flexDirection = FlexDirection.Row },
+                style = { flexGrow = 1f },
             };
-            body.Add(new VisualElement { name = "builder-library", style = { width = 220f, flexShrink = 0f } });
-            body.Add(new VisualElement { name = "builder-canvas", style = { flexGrow = 1f } });
-            body.Add(new VisualElement { name = "builder-side", style = { width = 420f, flexShrink = 0f } });
-            root.Add(body);
+            outerSplit.Add(new VisualElement { name = "builder-library", style = { minWidth = 160f } });
+            var innerSplit = new TwoPaneSplitView(1, 440f, TwoPaneSplitViewOrientation.Horizontal);
+            innerSplit.Add(new VisualElement { name = "builder-canvas", style = { minWidth = 300f } });
+            innerSplit.Add(new VisualElement { name = "builder-side", style = { minWidth = 280f } });
+            outerSplit.Add(innerSplit);
+            root.Add(outerSplit);
+
+            var footer = new Label(
+                "Wheel: zoom • L0/L1/L2 set the zoom level • Click rows to jump to source; "
+                + "Ctrl+Click the preview to jump to a component • Right-click rows / cards / canvas "
+                + "for typed attributes, directives, delete, create • Palette click inserts; "
+                + "Ctrl+Space completes • Drag the splitters to resize")
+            {
+                style =
+                {
+                    flexShrink = 0f,
+                    fontSize = 11f,
+                    color = new Color(0.55f, 0.55f, 0.59f),
+                    paddingLeft = 12f,
+                    paddingTop = 4f,
+                    paddingBottom = 4f,
+                    borderTopWidth = 1f,
+                    borderTopColor = new Color(0.23f, 0.23f, 0.27f),
+                },
+            };
+            root.Add(footer);
 
             // TrickleDown: the keys must be consumed before Unity's global routes
             // see them (Ctrl+S -> Save Project, Ctrl+Z -> global Undo).
@@ -124,6 +147,12 @@ namespace Ruitk.Builder
             _canvasHost = new BuilderCanvasHost();
             _canvasHost.OnRowClick = OnCanvasRowClicked;
             _canvasHost.OnRowContext = OnCanvasRowContext;
+            _canvasHost.OnCreateRequested = kind =>
+            {
+                string dir = string.IsNullOrEmpty(_focusFile) ? null : Path.GetDirectoryName(_focusFile);
+                if (dir != null)
+                    BuilderNewFileDialog.Show(dir, this, kind);
+            };
             _canvasHost.Mount(
                 container, _focusFile, OpenFileFromCanvas, ReadBufferOrDisk,
                 graph => _libraryPane?.SetWorkspaceEntries(graph));
@@ -490,6 +519,41 @@ namespace Ruitk.Builder
                 _previewPane?.ShowError("Preview compile failed — fix the code pane diagnostics (last good preview kept)");
                 Debug.LogWarning("[RUITK Builder] preview compile: " + result.Error);
             }
+        }
+
+        private static VisualElement BuildLegend()
+        {
+            var legend = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    marginLeft = StyleKeyword.Auto,
+                    marginRight = 8f,
+                },
+            };
+            void AddDot(string label, Color color)
+            {
+                legend.Add(new VisualElement
+                {
+                    style =
+                    {
+                        width = 9f, height = 9f, borderTopLeftRadius = 5f, borderTopRightRadius = 5f,
+                        borderBottomLeftRadius = 5f, borderBottomRightRadius = 5f,
+                        backgroundColor = color, marginRight = 4f, marginLeft = 12f,
+                    },
+                });
+                legend.Add(new Label(label)
+                {
+                    style = { fontSize = 11f, color = new Color(0.55f, 0.55f, 0.59f) },
+                });
+            }
+            AddDot("component", new Color(0.31f, 0.76f, 0.97f));
+            AddDot("hook module", new Color(0.51f, 0.78f, 0.52f));
+            AddDot("style module", new Color(0.81f, 0.58f, 0.85f));
+            AddDot("usage edge", new Color(0.36f, 0.55f, 0.69f));
+            return legend;
         }
 
         private void OnKeyDown(KeyDownEvent evt)

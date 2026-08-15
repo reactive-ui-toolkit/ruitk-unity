@@ -24,11 +24,14 @@ namespace Ruitk.Builder
         private DropdownField _kindField;
         private Label _error;
 
-        public static void Show(string directory, BuilderWindow owner)
+        private string _presetKind;
+
+        public static void Show(string directory, BuilderWindow owner, string presetKind = null)
         {
             var window = CreateInstance<BuilderNewFileDialog>();
             window._directory = directory;
             window._owner = owner;
+            window._presetKind = presetKind;
             window.titleContent = new GUIContent("New UITKX File");
             window.minSize = new Vector2(340f, 128f);
             window.maxSize = new Vector2(340f, 128f);
@@ -45,6 +48,8 @@ namespace Ruitk.Builder
                 "Kind",
                 new System.Collections.Generic.List<string> { "Component", "Hooks", "Style", "Utils" },
                 0);
+            if (!string.IsNullOrEmpty(_presetKind))
+                _kindField.value = _presetKind;
             rootVisualElement.Add(_kindField);
 
             _nameField = new TextField("Name");

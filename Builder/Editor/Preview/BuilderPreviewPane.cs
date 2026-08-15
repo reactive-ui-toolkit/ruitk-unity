@@ -115,6 +115,10 @@ namespace Ruitk.Builder
         {
             if (_stateHost == null || _stateHost.panel == null)
                 return;
+            var focused = _stateHost.panel.focusController?.focusedElement as VisualElement;
+            for (var el = focused; el != null; el = el.parent)
+                if (el == _stateHost)
+                    return;
             _stateHost.Clear();
             var root = _renderer?.Fiber?.Root?.Current;
             if (root == null)
@@ -136,13 +140,10 @@ namespace Ruitk.Builder
                         owner = owner.Substring(dot + 1);
                     for (int i = 0; i < states.Count && shown < 12; i++)
                     {
-                        string value = DescribeHookState(states[i]);
-                        if (value == null)
+                        var field = BuildStateField(owner + "[" + i + "]", states[i]);
+                        if (field == null)
                             continue;
-                        _stateHost.Add(new Label(owner + "[" + i + "] = " + value)
-                        {
-                            style = { color = new Color(0.90f, 0.78f, 0.40f), fontSize = 10f },
-                        });
+                        _stateHost.Add(field);
                         shown++;
                     }
                 }
@@ -152,27 +153,86 @@ namespace Ruitk.Builder
             }
         }
 
-        private static string DescribeHookState(object state)
+        /// <summary>POC §7: state fields are EDITABLE — an int/float/string/bool
+        /// hook cell renders as a live input writing straight back into the
+        /// fiber's state store, then re-renders the preview.</summary>
+        private VisualElement BuildStateField(string label, object state)
         {
-            if (state == null)
+            var (holder, member, value) = ResolveStateCell(state);
+            if (holder == null)
                 return null;
-            var type = state.GetType();
-            foreach (string propName in new[] { "Value", "Current", "State" })
+
+            void Write(object next)
             {
-                var prop = type.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-                if (prop != null)
+                try
                 {
-                    object value = prop.GetValue(state);
-                    return value == null ? "null" : value.ToString();
+                    if (member is PropertyInfo prop)
+                        prop.SetValue(holder, next);
+                    else if (member is FieldInfo field)
+                        field.SetValue(holder, next);
+                    Mount();
                 }
-                var field = type.GetField(propName, BindingFlags.Public | BindingFlags.Instance);
-                if (field != null)
+                catch (Exception)
                 {
-                    object value = field.GetValue(state);
-                    return value == null ? "null" : value.ToString();
                 }
             }
-            return null;
+
+            var rowStyle = new Color(0.90f, 0.78f, 0.40f);
+            switch (value)
+            {
+                case int i:
+                {
+                    var field = new IntegerField(label) { value = i };
+                    field.labelElement.style.color = rowStyle;
+                    field.RegisterValueChangedCallback(e => Write(e.newValue));
+                    return field;
+                }
+                case float f:
+                {
+                    var field = new FloatField(label) { value = f };
+                    field.labelElement.style.color = rowStyle;
+                    field.RegisterValueChangedCallback(e => Write(e.newValue));
+                    return field;
+                }
+                case bool b:
+                {
+                    var field = new Toggle(label) { value = b };
+                    field.labelElement.style.color = rowStyle;
+                    field.RegisterValueChangedCallback(e => Write(e.newValue));
+                    return field;
+                }
+                case string s:
+                {
+                    var field = new TextField(label) { value = s };
+                    field.labelElement.style.color = rowStyle;
+                    field.RegisterValueChangedCallback(e => Write(e.newValue));
+                    return field;
+                }
+                case null:
+                    return null;
+                default:
+                    return new Label(label + " = " + value)
+                    {
+                        style = { color = rowStyle, fontSize = 10f },
+                    };
+            }
+        }
+
+        private static (object Holder, MemberInfo Member, object Value) ResolveStateCell(object state)
+        {
+            if (state == null)
+                return (null, null, null);
+            var type = state.GetType();
+            foreach (string name in new[] { "Value", "Current", "State" })
+            {
+                var prop = type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                if (prop != null && prop.CanRead && prop.CanWrite)
+                    return (state, prop, prop.GetValue(state));
+                var field = type.GetField(name, BindingFlags.Public | BindingFlags.Instance);
+                if (field != null)
+                    return (state, field, field.GetValue(state));
+            }
+            return (null, null, null);
         }
 
         public void ShowFile(string uitkxPath, string bufferText, Assembly assemblyHint)

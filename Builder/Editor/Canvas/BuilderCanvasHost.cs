@@ -27,6 +27,7 @@ namespace Ruitk.Builder
 
         public Action<string, int> OnRowClick;
         public Action<string, int, int> OnRowContext;
+        public Action<string> OnCreateRequested;
 
         public async void Mount(
             VisualElement container,
@@ -88,6 +89,7 @@ namespace Ruitk.Builder
                         OnCardContext = index => ShowCardMenu(index, onOpenFile),
                         OnRowClick = (path, line) => OnRowClick?.Invoke(path, line),
                         OnRowContext = (path, line, rowIdx) => OnRowContext?.Invoke(path, line, rowIdx),
+                        OnCanvasContext = ShowCreateMenu,
                     }
                 )
             );
@@ -99,6 +101,20 @@ namespace Ruitk.Builder
                 return null;
             int i = _graph.IndexOf(filePath);
             return i < 0 ? null : _graph.Nodes[i];
+        }
+
+        private void ShowCreateMenu()
+        {
+            var menu = new UnityEditor.GenericMenu();
+            menu.AddItem(new UnityEngine.GUIContent("New component  (.uitkx)"), false,
+                () => OnCreateRequested?.Invoke("Component"));
+            menu.AddItem(new UnityEngine.GUIContent("New style module  (.style.uitkx)"), false,
+                () => OnCreateRequested?.Invoke("Style"));
+            menu.AddItem(new UnityEngine.GUIContent("New hook module  (.hooks.uitkx)"), false,
+                () => OnCreateRequested?.Invoke("Hooks"));
+            menu.AddItem(new UnityEngine.GUIContent("New util module  (.uitkx)"), false,
+                () => OnCreateRequested?.Invoke("Utils"));
+            menu.ShowAsContext();
         }
 
         private void ShowCardMenu(int index, Action<string> onOpenFile)
