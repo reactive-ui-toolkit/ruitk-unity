@@ -51,23 +51,36 @@ namespace Ruitk.Builder
         /// has no closing tag and cannot take a child without being re-opened.</summary>
         public bool SelfClosing;
 
-        /// <summary>0 none, 1 @if, 2 @foreach, 3 @else, 4 other control flow.
-        /// Export-detail lines reuse the field as a marker: 9 "+ entry",
-        /// 10 "+ style", 11 "+ export", 12 util body island, 13 style export
-        /// header.</summary>
+        /// <summary>0 none, 1 @if, 2 @foreach, 3 @else/@else if, 4 @for/@while,
+        /// 14 @switch, 15 @case/@default. Export-detail lines reuse the field as
+        /// a marker: 9 "+ entry", 10 "+ style", 11 "+ export", 12 util body
+        /// island, 13 style export header.</summary>
         public int BadgeKind;
 
-        /// <summary>Badge label shown before the tag ("@if" / "@foreach" /
-        /// "@else"). The POC renders the directive ON the element row.</summary>
+        /// <summary>Badge label on a directive HEAD row ("@if" / "@foreach" /
+        /// "@else"). §8.1: a directive clause is a row of its own — the badge
+        /// no longer rides the clause's first element row.</summary>
         public string BadgeText = "";
 
         /// <summary>Full directive header text ("@foreach (var item in items)") —
         /// what the inline badge editor seeds from.</summary>
         public string DirectiveText = "";
 
-        /// <summary>1-based source line of the directive header owning this row
-        /// (0 = the row carries no directive).</summary>
+        /// <summary>1-based source line of the directive clause header (head
+        /// rows only; 0 elsewhere).</summary>
         public int DirectiveLine;
+
+        /// <summary>Directive head rows only: 1-based close line. On the
+        /// construct head (ClauseIndex 0) this is the WHOLE construct's final
+        /// close — the move/delete range; on a continuation clause it is that
+        /// clause's own boundary — the delete-clause range.</summary>
+        public int CloseLine;
+
+        /// <summary>Directive head rows only: 0 = construct head (@if / loop /
+        /// @switch — draggable, carries the whole block); &gt;0 = structurally
+        /// bound continuation (@else if / @else / @case / @default — never
+        /// draggable on its own).</summary>
+        public int ClauseIndex;
 
         /// <summary>Verbatim (trimmed) source text of the line this entry came
         /// from — what a hook chip's inline editor seeds from.</summary>

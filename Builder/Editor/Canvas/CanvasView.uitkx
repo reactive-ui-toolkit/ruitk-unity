@@ -941,6 +941,10 @@ export VirtualNode CanvasView(
                             var row = node.Markup[x];
                             int rowIdx = x;
                             int rowKey = index * 1000 + rowIdx;
+                            // §8.1: the ROOT guard keys on the first ELEMENT row —
+                            // a directive head wrapping the root occupies index 0.
+                            int firstElementIdx = BuilderCanvasDrawing.FirstElementRow(node);
+                            bool headRow = row.Kind == BuilderCardLineKind.Directive;
                             bool rowSel = selRowNode == index && selRowIdx == rowIdx;
                             // POC jsxRowHtml exprBlob = attribute values PLUS the
                             // directive text, so hovering `cart` lights the
@@ -997,7 +1001,9 @@ export VirtualNode CanvasView(
                                 onPointerMove={e => {
                                   if (BuilderCanvasDrawing.DragActive) {
                                     setDragRowKey(rowKey);
-                                    setDragBand(rowIdx == 0 ? 1 : BuilderCanvasDrawing.DropBand(e));
+                                    setDragBand(rowIdx == firstElementIdx || (headRow && row.ClauseIndex > 0)
+                                      ? 1
+                                      : BuilderCanvasDrawing.DropBand(e));
                                     e.StopPropagation();
                                   }
                                 }}
@@ -1024,7 +1030,12 @@ export VirtualNode CanvasView(
                                     e.StopPropagation();
                                     return;
                                   }
-                                  if (rowIdx > 0) {
+                                  // §8.1 move rules: an element row (never the
+                                  // root) drags itself; a construct head drags
+                                  // the whole block; a continuation clause
+                                  // (@else/@case) is structurally bound and
+                                  // never arms.
+                                  if (headRow ? row.ClauseIndex == 0 : rowIdx != firstElementIdx) {
                                     BuilderDragService.Arm($"move:{node.FilePath}:{rowIdx}");
                                   }
                                   setSelected(index);

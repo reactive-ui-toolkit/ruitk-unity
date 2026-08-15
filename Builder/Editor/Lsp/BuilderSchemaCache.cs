@@ -68,6 +68,16 @@ namespace Ruitk.Builder
         public static void RegisterCommon(List<AttrInfo> attrs) =>
             s_commonFromSchema = attrs;
 
+        private static List<string> s_controlFlow;
+
+        /// <summary>Schema controlFlow directive NAMES (the descriptions are
+        /// stale — UB-04 — and must never be displayed). Null until the schema
+        /// loads.</summary>
+        public static IReadOnlyList<string> ControlFlow => s_controlFlow;
+
+        public static void RegisterControlFlow(List<string> names) =>
+            s_controlFlow = names;
+
         public static IEnumerable<AttrInfo> AttributesFor(string element)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);

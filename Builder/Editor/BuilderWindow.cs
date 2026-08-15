@@ -700,8 +700,18 @@ namespace Ruitk.Builder
             if (node == null || rowIdx < 0 || rowIdx >= node.Markup.Count)
                 return;
             var row = node.Markup[rowIdx];
-            string tag = row.Text.Trim('<', '>');
+            int cardIndex = _canvasHost?.NodeIndexOf(full) ?? -1;
 
+            if (row.Kind == BuilderCardLineKind.Directive)
+            {
+                var headItems = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+                AddDirectiveHeadItems(headItems, full, node, row, cardIndex, rowIdx);
+                BuilderSearchMenu.ShowSimple(
+                    (row.BadgeText + " " + row.Text).TrimEnd(), headItems);
+                return;
+            }
+
+            string tag = row.Text.Trim('<', '>');
             var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>
             {
                 new BuilderSearchMenu.Item
@@ -722,39 +732,8 @@ namespace Ruitk.Builder
                     OnPick = () => ShowRemoveAttributeMenu(full, sourceLine, row.AttrsText),
                 });
             items.Add(BuilderSearchMenu.Separator);
-            int cardIndex = _canvasHost?.NodeIndexOf(full) ?? -1;
-            if (row.BadgeKind == 0)
-            {
-                items.Add(new BuilderSearchMenu.Item
-                {
-                    Label = "Wrap in @if",
-                    OnPick = () => WrapRowInDirective(full, row, "@if (condition)", cardIndex, rowIdx),
-                });
-                items.Add(new BuilderSearchMenu.Item
-                {
-                    Label = "Wrap in @foreach",
-                    OnPick = () => WrapRowInDirective(
-                        full, row, "@foreach (var item in items)", cardIndex, rowIdx),
-                });
-            }
-            else
-            {
-                items.Add(new BuilderSearchMenu.Item
-                {
-                    Label = "Edit " + row.BadgeText.TrimStart('@') + " condition",
-                    OnPick = () =>
-                    {
-                        if (cardIndex >= 0)
-                            _canvasHost?.BeginEdit($"badge:{cardIndex}:{rowIdx}", row.DirectiveText);
-                    },
-                });
-                items.Add(new BuilderSearchMenu.Item
-                {
-                    Label = "Remove directive",
-                    OnPick = () => RemoveDirectiveBlock(full, row.DirectiveLine),
-                });
-            }
-            if (rowIdx > 0)
+            AddWrapItems(items, full, node, row, cardIndex, rowIdx);
+            if (rowIdx != BuilderCanvasDrawing.FirstElementRow(node))
             {
                 items.Add(BuilderSearchMenu.Separator);
                 items.Add(new BuilderSearchMenu.Item
@@ -764,6 +743,447 @@ namespace Ruitk.Builder
                 });
             }
             BuilderSearchMenu.ShowSimple("<" + tag + ">", items);
+        }
+
+        /// <summary>§8.1 UI semantics per schema controlFlow name: true = offered
+        /// as a wrap on element rows; false = a clause name that rides its
+        /// construct head's menu. A schema name missing here trips the drift
+        /// warning — the builder must never silently trail the language again.</summary>
+        private static readonly System.Collections.Generic.Dictionary<string, bool> s_directiveSupport =
+            new System.Collections.Generic.Dictionary<string, bool>(System.StringComparer.Ordinal)
+            {
+                ["if"] = true, ["foreach"] = true, ["for"] = true,
+                ["while"] = true, ["switch"] = true,
+                ["else"] = false, ["case"] = false, ["default"] = false,
+            };
+        private static bool s_directiveDriftChecked;
+
+        private static void WarnOnDirectiveDrift()
+        {
+            if (s_directiveDriftChecked || BuilderSchemaCache.ControlFlow == null)
+                return;
+            s_directiveDriftChecked = true;
+            foreach (string name in BuilderSchemaCache.ControlFlow)
+                if (!s_directiveSupport.ContainsKey(name))
+                    UnityEngine.Debug.LogWarning(
+                        "[RUITK Builder] schema controlFlow directive '" + name
+                        + "' has no builder support — wrap/clause menus will not offer it.");
+        }
+
+        /// <summary>Wrap offers on an element row. Loops are array-valued
+        /// (Func&lt;VirtualNode[]&gt;) and illegal where a single node is required
+        /// (UITKX0025), so the return ROOT row only offers the node-valued
+        /// constructs.</summary>
+        private void AddWrapItems(
+            System.Collections.Generic.List<BuilderSearchMenu.Item> items,
+            string full, BuilderCanvasNode node, BuilderCardLine row, int cardIndex, int rowIdx)
+        {
+            WarnOnDirectiveDrift();
+            bool isRoot = rowIdx == BuilderCanvasDrawing.FirstElementRow(node);
+            items.Add(new BuilderSearchMenu.Item
+            {
+                Label = "Wrap in @if",
+                OnPick = () => WrapRowInDirective(full, row, "@if (condition)", cardIndex, rowIdx),
+            });
+            items.Add(new BuilderSearchMenu.Item
+            {
+                Label = "Wrap in @switch",
+                OnPick = () => WrapRowInSwitch(full, row, cardIndex),
+            });
+            if (isRoot)
+            {
+                items.Add(BuilderSearchMenu.SectionHeader(
+                    "loops yield arrays — illegal on the root (UITKX0025)"));
+                return;
+            }
+            items.Add(new BuilderSearchMenu.Item
+            {
+                Label = "Wrap in @foreach…",
+                OnPick = () => ShowForeachWrapMenu(full, node, row, cardIndex, rowIdx),
+            });
+            items.Add(new BuilderSearchMenu.Item
+            {
+                Label = "Wrap in @for",
+                OnPick = () => WrapRowInDirective(
+                    full, row, "@for (int i = 0; i < count; i++)", cardIndex, rowIdx),
+            });
+            items.Add(new BuilderSearchMenu.Item
+            {
+                Label = "Wrap in @while",
+                OnPick = () => WrapRowInDirective(full, row, "@while (condition)", cardIndex, rowIdx),
+            });
+        }
+
+        /// <summary>Context menu of a directive head row: header edit, clause
+        /// adds on the construct head, unwrap only where unwrap is well-defined
+        /// (single clause), block delete, and clause delete on continuations.</summary>
+        private void AddDirectiveHeadItems(
+            System.Collections.Generic.List<BuilderSearchMenu.Item> items,
+            string full, BuilderCanvasNode node, BuilderCardLine row, int cardIndex, int rowIdx)
+        {
+            bool hasHeader = row.BadgeText != "@else" && row.BadgeText != "@default";
+            if (hasHeader)
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Edit " + row.BadgeText.TrimStart('@') + " header",
+                    OnPick = () =>
+                    {
+                        if (cardIndex >= 0)
+                            _canvasHost?.BeginEdit($"badge:{cardIndex}:{rowIdx}", row.DirectiveText);
+                    },
+                });
+
+            if (row.ClauseIndex > 0)
+            {
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Delete clause",
+                    OnPick = () => DeleteClause(full, row),
+                });
+                return;
+            }
+
+            if (row.BadgeText == "@if")
+            {
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Add @else if",
+                    OnPick = () => AddIfClause(full, row, cardIndex, withCondition: true),
+                });
+                if (!ConstructHasClause(node, rowIdx, "@else"))
+                    items.Add(new BuilderSearchMenu.Item
+                    {
+                        Label = "Add @else",
+                        OnPick = () => AddIfClause(full, row, cardIndex, withCondition: false),
+                    });
+            }
+            if (row.BadgeText == "@switch")
+            {
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Add @case…",
+                    OnPick = () => AddSwitchClause(full, row, cardIndex, isDefault: false),
+                });
+                if (!ConstructHasClause(node, rowIdx, "@default"))
+                    items.Add(new BuilderSearchMenu.Item
+                    {
+                        Label = "Add @default",
+                        OnPick = () => AddSwitchClause(full, row, cardIndex, isDefault: true),
+                    });
+            }
+            items.Add(BuilderSearchMenu.Separator);
+            if (row.BadgeKind != 14 && IsSingleClauseConstruct(node, rowIdx))
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Remove directive (unwrap)",
+                    OnPick = () => RemoveDirectiveBlock(full, row.DirectiveLine),
+                });
+            items.Add(new BuilderSearchMenu.Item
+            {
+                Label = "Delete block",
+                OnPick = () => DeleteLinesInFile(
+                    full, row.DirectiveLine, System.Math.Max(row.DirectiveLine, row.CloseLine),
+                    "delete " + row.BadgeText + " block"),
+            });
+        }
+
+        /// <summary>True when a continuation clause with the given keyword
+        /// follows the construct head at <paramref name="headIdx"/>. Clause rows
+        /// of an @if sit at the head's depth; @switch cases sit one deeper.
+        /// Nested constructs live deeper still and are skipped.</summary>
+        private static bool ConstructHasClause(BuilderCanvasNode node, int headIdx, string keyword)
+        {
+            var head = node.Markup[headIdx];
+            int clauseDepth = head.BadgeKind == 14 ? head.Depth + 1 : head.Depth;
+            for (int i = headIdx + 1; i < node.Markup.Count; i++)
+            {
+                var r = node.Markup[i];
+                if (r.Depth > clauseDepth)
+                    continue;
+                if (r.Depth == clauseDepth
+                    && r.Kind == BuilderCardLineKind.Directive && r.ClauseIndex > 0)
+                {
+                    if (r.BadgeText == keyword)
+                        return true;
+                    continue;
+                }
+                break;
+            }
+            return false;
+        }
+
+        private static bool IsSingleClauseConstruct(BuilderCanvasNode node, int headIdx)
+        {
+            var head = node.Markup[headIdx];
+            int clauseDepth = head.BadgeKind == 14 ? head.Depth + 1 : head.Depth;
+            for (int i = headIdx + 1; i < node.Markup.Count; i++)
+            {
+                var r = node.Markup[i];
+                if (r.Depth > clauseDepth)
+                    continue;
+                if (r.Depth == clauseDepth
+                    && r.Kind == BuilderCardLineKind.Directive && r.ClauseIndex > 0)
+                    return false;
+                break;
+            }
+            return true;
+        }
+
+        /// <summary>Adds an @else / @else if clause at the construct's final
+        /// close: "}" becomes "} @else … {" with a fresh "}" after it. The new
+        /// clause is empty and renders as its own head row.</summary>
+        private void AddIfClause(string filePath, BuilderCardLine head, int cardIndex, bool withCondition)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly || head.CloseLine <= 0)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int closeIdx = head.CloseLine - 1;
+            if (closeIdx < 0 || closeIdx >= lines.Count)
+                return;
+            string indent = BuilderText.LeadingIndent(lines[closeIdx]);
+            string header = withCondition ? "@else if (condition)" : "@else";
+            lines[closeIdx] = indent + "} " + header + " {";
+            lines.Insert(closeIdx + 1, indent + "}");
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), header);
+            if (withCondition)
+                BeginEditOnDirectiveLine(filePath, cardIndex, head.CloseLine);
+        }
+
+        /// <summary>Adds a @case/@default arm just above the switch's closing
+        /// brace, indented one level in.</summary>
+        private void AddSwitchClause(string filePath, BuilderCardLine head, int cardIndex, bool isDefault)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly || head.CloseLine <= 0)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int closeIdx = head.CloseLine - 1;
+            if (closeIdx < 0 || closeIdx >= lines.Count)
+                return;
+            string indent = BuilderText.LeadingIndent(lines[closeIdx]) + "  ";
+            lines.Insert(closeIdx, indent + (isDefault ? "@default:" : "@case value:"));
+            ApplyProgrammaticEdit(
+                filePath, string.Join("\n", lines), isDefault ? "@default" : "@case");
+            if (!isDefault)
+                BeginEditOnDirectiveLine(filePath, cardIndex, head.CloseLine);
+        }
+
+        /// <summary>Deletes a continuation clause. Colon arms (@case/@default)
+        /// are a plain line range. Brace clauses keep the balance: a middle
+        /// clause's close line carries the NEXT head (its leading '}' takes over
+        /// closing the previous clause); the last clause is replaced by a lone
+        /// '}' that closes the previous one.</summary>
+        private void DeleteClause(string filePath, BuilderCardLine row)
+        {
+            if (row.BadgeKind == 15)
+            {
+                DeleteLinesInFile(
+                    filePath, row.DirectiveLine,
+                    System.Math.Max(row.DirectiveLine, row.CloseLine),
+                    "delete " + row.BadgeText + " clause");
+                return;
+            }
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int head = row.DirectiveLine - 1;
+            int close = row.CloseLine - 1;
+            if (head < 0 || close < head || close >= lines.Count)
+                return;
+            if (lines[close].Contains("@"))
+            {
+                lines.RemoveRange(head, close - head);
+            }
+            else
+            {
+                string indent = BuilderText.LeadingIndent(lines[head]);
+                lines.RemoveRange(head, close - head + 1);
+                lines.Insert(head, indent + "}");
+            }
+            ApplyProgrammaticEdit(
+                filePath, string.Join("\n", lines), "delete " + row.BadgeText + " clause");
+        }
+
+        /// <summary>Opens the badge editor on whichever refreshed row now owns
+        /// the given directive-header line — clause adds and wraps cannot know
+        /// their row index ahead of the graph rebuild.</summary>
+        private void BeginEditOnDirectiveLine(string filePath, int cardIndex, int line1)
+        {
+            if (cardIndex < 0)
+                return;
+            var node = _canvasHost?.FindNode(Path.GetFullPath(filePath));
+            if (node == null)
+                return;
+            for (int i = 0; i < node.Markup.Count; i++)
+            {
+                var r = node.Markup[i];
+                if (r.Kind == BuilderCardLineKind.Directive && r.DirectiveLine == line1)
+                {
+                    _canvasHost?.BeginEdit($"badge:{cardIndex}:{i}", r.DirectiveText);
+                    return;
+                }
+            }
+        }
+
+        /// <summary>UB-03: a loop wrap binds a REAL collection — in-scope
+        /// enumerable props (typed, via ruitk/componentProps) and hook-state
+        /// locals, with the warn-orange freeform as the escape hatch. The loop
+        /// variable is singularised from the pick and collision-checked.</summary>
+        private async void ShowForeachWrapMenu(
+            string filePath, BuilderCanvasNode node, BuilderCardLine row, int cardIndex, int rowIdx)
+        {
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+            var seen = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+            var taken = LocalNamesOf(node);
+
+            void AddCollection(string expr, string origin)
+            {
+                if (string.IsNullOrEmpty(expr) || !seen.Add(expr))
+                    return;
+                string captured = expr;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = expr + "  —  " + origin,
+                    OnPick = () => WrapRowInDirective(
+                        filePath, row,
+                        "@foreach (var " + LoopVarFor(captured, taken) + " in " + captured + ")",
+                        cardIndex, rowIdx),
+                });
+            }
+
+            if (node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook)
+            {
+                var props = await FetchComponentPropsAsync(node.Title) ?? PropsOf(node);
+                foreach (var (name, type) in props)
+                    if (LooksEnumerable(type))
+                        AddCollection(name, type);
+            }
+            foreach (var body in node.Body)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(
+                    body.SourceText ?? "", @"^\s*var\s+(?:\(([^)]+)\)|(\w+))\s*=");
+                if (!m.Success)
+                    continue;
+                string lhs = m.Groups[2].Success
+                    ? m.Groups[2].Value
+                    : m.Groups[1].Value.Split(',')[0].Trim();
+                AddCollection(lhs, "hook state");
+            }
+            BuilderSearchMenu.Show(
+                "@foreach — collection", "in-scope enumerable…", items,
+                free => new BuilderSearchMenu.Item
+                {
+                    Label = "loop over \"" + free + "\"",
+                    OnPick = () => WrapRowInDirective(
+                        filePath, row,
+                        "@foreach (var " + LoopVarFor(free, taken) + " in " + free + ")",
+                        cardIndex, rowIdx),
+                });
+        }
+
+        private static bool LooksEnumerable(string type)
+        {
+            if (string.IsNullOrEmpty(type))
+                return false;
+            return type.Contains("List") || type.Contains("[]") || type.Contains("IEnumerable")
+                || type.Contains("Collection") || type.Contains("Dictionary") || type.Contains("Set");
+        }
+
+        private static System.Collections.Generic.HashSet<string> LocalNamesOf(BuilderCanvasNode node)
+        {
+            var names = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+            foreach (var body in node.Body)
+                foreach (System.Text.RegularExpressions.Match m in
+                    System.Text.RegularExpressions.Regex.Matches(body.SourceText ?? "", @"\b\w+\b"))
+                    names.Add(m.Value);
+            return names;
+        }
+
+        private static string LoopVarFor(
+            string collection, System.Collections.Generic.HashSet<string> taken)
+        {
+            string tail = collection;
+            int dot = tail.LastIndexOf('.');
+            if (dot >= 0 && dot + 1 < tail.Length)
+                tail = tail.Substring(dot + 1);
+            var sb = new System.Text.StringBuilder();
+            foreach (char c in tail)
+                if (char.IsLetterOrDigit(c) || c == '_')
+                    sb.Append(c);
+            tail = sb.ToString();
+            string candidate = tail.Length > 1 && tail.EndsWith("s", System.StringComparison.Ordinal)
+                ? tail.Substring(0, tail.Length - 1)
+                : "item";
+            if (candidate.Length > 0 && char.IsUpper(candidate[0]))
+                candidate = char.ToLowerInvariant(candidate[0]) + candidate.Substring(1);
+            if (candidate.Length == 0 || taken.Contains(candidate))
+                candidate = candidate.Length == 0 ? "item" : candidate + "Item";
+            return candidate;
+        }
+
+        /// <summary>Wrap in @switch seeds the colon form the parser accepts —
+        /// the row lands inside a @default arm's return so the construct
+        /// compiles immediately; the header editor opens on "value".</summary>
+        private void WrapRowInSwitch(string filePath, BuilderCardLine row, int cardIndex)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int from = Mathf.Clamp(row.SourceLine - 1, 0, lines.Count - 1);
+            int to = Mathf.Clamp(
+                (row.EndLine > 0 ? row.EndLine : row.SourceLine) - 1, from, lines.Count - 1);
+            string indent = IndentOf(filePath, row.SourceLine);
+            for (int i = from; i <= to; i++)
+                lines[i] = "      " + lines[i];
+            lines.Insert(to + 1, indent + "      );");
+            lines.Insert(to + 2, indent + "}");
+            lines.Insert(from, indent + "    return (");
+            lines.Insert(from, indent + "  @default:");
+            lines.Insert(from, indent + "@switch (value) {");
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), "@switch");
+            BeginEditOnDirectiveLine(filePath, cardIndex, row.SourceLine);
+        }
+
+        /// <summary>An element dropped INSIDE a directive clause must land in
+        /// the clause's return markup, never at C# statement level. An empty
+        /// clause gets its return scaffold in the same commit.</summary>
+        private void InsertIntoClause(string filePath, BuilderCardLine head, string tag)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int headIdx = head.DirectiveLine - 1;
+            int closeIdx = System.Math.Max(head.DirectiveLine, head.CloseLine) - 1;
+            if (headIdx < 0 || headIdx >= lines.Count)
+                return;
+            closeIdx = Mathf.Clamp(closeIdx, headIdx, lines.Count - 1);
+            string indent = BuilderText.LeadingIndent(lines[headIdx]);
+            int returnIdx = -1;
+            for (int i = headIdx; i <= closeIdx; i++)
+            {
+                if (lines[i].Trim().StartsWith("return (", System.StringComparison.Ordinal))
+                {
+                    returnIdx = i;
+                    break;
+                }
+            }
+            if (returnIdx >= 0)
+            {
+                lines.Insert(returnIdx + 1, indent + "    " + SeededTag(tag));
+            }
+            else
+            {
+                lines.Insert(headIdx + 1, indent + "  return (");
+                lines.Insert(headIdx + 2, indent + "    " + SeededTag(tag));
+                lines.Insert(headIdx + 3, indent + "  );");
+            }
+            AddUsageImport(lines, filePath, tag);
+            ApplyProgrammaticEdit(
+                filePath, string.Join("\n", lines), "<" + tag + "> into " + head.BadgeText);
         }
 
         /// <summary>POC "Add child element…": a searchable menu of native
@@ -911,8 +1331,11 @@ namespace Ruitk.Builder
             string name = colon < 0 ? "" : payload.Substring(colon + 1);
             string indent = hasRow ? IndentOf(full, row.SourceLine) : "  ";
             // POC: the root markup row can never take a sibling — a drop on it
-            // always nests inside.
-            if (rowIdx == 0)
+            // always nests inside. §8.1: the root is the first ELEMENT row (a
+            // directive head can occupy index 0), and a continuation clause
+            // (@else/@case) only ever accepts "inside".
+            if (rowIdx == BuilderCanvasDrawing.FirstElementRow(node)
+                || (hasRow && row.Kind == BuilderCardLineKind.Directive && row.ClauseIndex > 0))
                 band = 1;
 
             switch (kind)
@@ -936,12 +1359,21 @@ namespace Ruitk.Builder
                     // straight after the open tag.
                     if (!hasRow)
                     {
-                        InsertChildTag(full, node.Markup[0], name);
+                        int rootIdx = BuilderCanvasDrawing.FirstElementRow(node);
+                        if (rootIdx < 0)
+                        {
+                            Toast("Drop elements onto a component's markup.");
+                            return;
+                        }
+                        InsertChildTag(full, node.Markup[rootIdx], name);
                         break;
                     }
                     if (band == 1)
                     {
-                        InsertChildTag(full, row, name);
+                        if (row.Kind == BuilderCardLineKind.Directive)
+                            InsertIntoClause(full, row, name);
+                        else
+                            InsertChildTag(full, row, name);
                         break;
                     }
                     var siblingLines =
@@ -1006,11 +1438,12 @@ namespace Ruitk.Builder
                     // card: index = children.length — the row relocates to the END
                     // of the ROOT element's children.
                     bool appendToRoot = false;
-                    if (!hasRow && node.Markup.Count > 0)
+                    int rootRowIdx = BuilderCanvasDrawing.FirstElementRow(node);
+                    if (!hasRow && rootRowIdx >= 0)
                     {
-                        var rootRow = node.Markup[0];
+                        var rootRow = node.Markup[rootRowIdx];
                         row = rootRow;
-                        rowIdx = 0;
+                        rowIdx = rootRowIdx;
                         hasRow = true;
                         appendToRoot = true;
                         indent = IndentOf(full, rootRow.SourceLine) + "  ";
@@ -1033,12 +1466,12 @@ namespace Ruitk.Builder
                         || srcRowIdx == rowIdx)
                         break;
                     var srcRow = srcNode.Markup[srcRowIdx];
-                    // POC: the directive is a PROPERTY of the node, so a move
-                    // carries the whole "@if (…) { return ( … ); }" wrapper and a
-                    // sibling drop lands OUTSIDE it — never inside the block.
+                    // §8.1: a construct head's move carries the WHOLE block —
+                    // every clause through the final close. Element rows carry
+                    // their own tag span; continuation clauses never arm.
                     int srcFrom = srcRow.DirectiveLine > 0 ? srcRow.DirectiveLine : srcRow.SourceLine;
-                    int srcTo = srcRow.DirectiveLine > 0
-                        ? MatchingCloseLine(full, srcRow.DirectiveLine)
+                    int srcTo = srcRow.Kind == BuilderCardLineKind.Directive
+                        ? srcRow.CloseLine
                         : (srcRow.EndLine > 0 ? srcRow.EndLine : srcRow.SourceLine);
                     if (srcTo <= 0)
                         srcTo = srcRow.EndLine > 0 ? srcRow.EndLine : srcRow.SourceLine;
@@ -1068,16 +1501,12 @@ namespace Ruitk.Builder
             (row.DirectiveLine > 0 ? row.DirectiveLine : row.SourceLine) - 1;
 
         /// <summary>1-based "insert after" anchor for an AFTER drop on a row —
-        /// below the row's directive block when it carries one, and below the
-        /// LAST line of a wrapped self-closing tag otherwise.</summary>
+        /// below the whole construct for a directive head, and below the LAST
+        /// line of a wrapped self-closing tag otherwise.</summary>
         private int AfterAnchor(string filePath, BuilderCardLine row)
         {
-            if (row.DirectiveLine > 0)
-            {
-                int close = MatchingCloseLine(filePath, row.DirectiveLine);
-                if (close > 0)
-                    return close;
-            }
+            if (row.Kind == BuilderCardLineKind.Directive && row.CloseLine > 0)
+                return row.CloseLine;
             return row.EndLine > 0 ? row.EndLine : row.SourceLine;
         }
 
@@ -1161,9 +1590,11 @@ namespace Ruitk.Builder
             }, what);
         }
 
-        /// <summary>POC 6.3 directive commit: rewrite the directive header line
-        /// (text + " {"), preserving indent; empty text jumps to the source
-        /// line instead of guessing a block unwrap.</summary>
+        /// <summary>POC 6.3 directive commit: rewrite the directive header,
+        /// preserving indent; empty text removes the directive. Three header
+        /// forms round-trip: plain "@if (…) {", the shared "} @else if (…) {"
+        /// close-and-open, and the colon arm "@case x:" whose line may carry
+        /// the case body after the label — only the label is replaced.</summary>
         private void OnDirectiveEdited(string filePath, int sourceLine, string newText)
         {
             string full = Path.GetFullPath(filePath);
@@ -1179,7 +1610,18 @@ namespace Ruitk.Builder
                 int w = 0;
                 while (w < line.Length && line[w] == ' ')
                     w++;
-                return line.Substring(0, w) + newText.Trim().TrimEnd('{', ' ') + " {";
+                string body = line.Substring(w);
+                string cleaned = newText.Trim();
+                if (body.StartsWith("@case", System.StringComparison.Ordinal)
+                    || body.StartsWith("@default", System.StringComparison.Ordinal))
+                {
+                    int colon = BuilderGraphService.SingleColonIndex(body);
+                    string rest = colon >= 0 ? body.Substring(colon) : ":";
+                    return line.Substring(0, w) + cleaned.TrimEnd(':', ' ') + rest;
+                }
+                bool sharedClose = body.StartsWith("}", System.StringComparison.Ordinal);
+                return line.Substring(0, w) + (sharedClose ? "} " : "")
+                    + cleaned.TrimStart('}', ' ').TrimEnd('{', ' ') + " {";
             }, "directive");
         }
 
@@ -1666,9 +2108,10 @@ namespace Ruitk.Builder
             lines.Insert(to + 1 + 1, indent + "}");
             lines.Insert(from, indent + "  return (");
             lines.Insert(from, indent + header + " {");
+            int space = header.IndexOf(' ');
             ApplyProgrammaticEdit(
                 filePath, string.Join("\n", lines),
-                header.StartsWith("@foreach", System.StringComparison.Ordinal) ? "@foreach" : "@if");
+                space > 0 ? header.Substring(0, space) : header);
             if (cardIndex >= 0)
                 _canvasHost?.BeginEdit($"badge:{cardIndex}:{rowIdx}", header);
         }

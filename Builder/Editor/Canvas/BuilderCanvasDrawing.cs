@@ -306,6 +306,20 @@ namespace Ruitk.Builder
                 UnityEditor.EditorWindow.focusedWindow);
         }
 
+        /// <summary>Index of the first element row in a card's markup — the
+        /// RETURN root. With §8.1 head rows a directive wrapping the root
+        /// occupies index 0, so every "root row" guard keys on this instead of
+        /// a literal 0. -1 when the card has no element rows.</summary>
+        public static int FirstElementRow(BuilderCanvasNode node)
+        {
+            if (node?.Markup == null)
+                return -1;
+            for (int i = 0; i < node.Markup.Count; i++)
+                if (node.Markup[i].Kind != BuilderCardLineKind.Directive)
+                    return i;
+            return -1;
+        }
+
         /// <summary>Anchor-dot color per import kind marker (5 usage / 6 hook /
         /// 7 style).</summary>
         public static Color DotColor(int dotKind) => dotKind switch
@@ -329,6 +343,8 @@ namespace Ruitk.Builder
             1 => new Color(1.00f, 0.72f, 0.30f),
             2 => new Color(0.51f, 0.78f, 0.52f),
             3 => new Color(0.94f, 0.38f, 0.57f),
+            14 => new Color(0.31f, 0.76f, 0.97f),
+            15 => new Color(0.55f, 0.73f, 0.97f),
             _ => new Color(0.77f, 0.53f, 0.75f),
         };
 

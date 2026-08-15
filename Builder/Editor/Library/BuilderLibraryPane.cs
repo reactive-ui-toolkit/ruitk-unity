@@ -266,6 +266,18 @@ namespace Ruitk.Builder
                 }
                 if (common.Count > 0)
                     BuilderSchemaCache.RegisterCommon(common);
+                if (schemaRoot?["controlFlow"] is JArray controlFlow)
+                {
+                    var names = new List<string>();
+                    foreach (var d in controlFlow)
+                    {
+                        string name = d.Value<string>("name") ?? "";
+                        if (name.Length > 0)
+                            names.Add(name);
+                    }
+                    if (names.Count > 0)
+                        BuilderSchemaCache.RegisterControlFlow(names);
+                }
 
                 var hooks = await client.RequestHooks();
                 if ((hooks?["hooks"] ?? hooks?["Hooks"]) is JArray hookArr)

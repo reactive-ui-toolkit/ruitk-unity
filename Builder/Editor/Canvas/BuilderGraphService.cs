@@ -866,56 +866,117 @@ namespace Ruitk.Builder
                 }
                 case IfNode ifNode:
                 {
-                    for (int bi = 0; bi < ifNode.Branches.Length; bi++)
+                    var branches = ifNode.Branches;
+                    if (branches.Length == 0)
+                        break;
+                    int constructClose = ClauseCloseLine(
+                        allLines, branches[branches.Length - 1].SourceLine);
+                    for (int bi = 0; bi < branches.Length; bi++)
                     {
-                        var branch = ifNode.Branches[bi];
-                        int start = lines.Count;
-                        foreach (var child in branch.Payload.Body)
-                            WalkMarkup(child, depth, lines, registered, allLines);
+                        var branch = branches[bi];
                         bool isElse = bi > 0;
-                        Attach(lines, start, isElse ? 3 : 1,
-                            isElse ? (branch.Condition == null ? "@else" : "@else if") : "@if",
-                            bi == 0 ? ifNode.SourceLine : branch.SourceLine);
+                        int headLine = bi == 0 ? ifNode.SourceLine : branch.SourceLine;
+                        int clauseClose = bi + 1 < branches.Length
+                            ? branches[bi + 1].SourceLine
+                            : constructClose;
+                        lines.Add(HeadRow(
+                            !isElse ? "@if" : branch.Condition == null ? "@else" : "@else if",
+                            branch.Condition == null ? "" : "(" + branch.Condition + ")",
+                            isElse ? 3 : 1, depth, headLine,
+                            bi == 0 ? constructClose : clauseClose, bi));
+                        foreach (var child in branch.Payload.Body)
+                            WalkMarkup(child, depth + 1, lines, registered, allLines);
                     }
                     break;
                 }
                 case ForeachNode fe:
                 {
-                    int start = lines.Count;
+                    string header = string.IsNullOrEmpty(fe.ForeachExpression)
+                        ? fe.IteratorDeclaration + " in " + fe.CollectionExpression
+                        : fe.ForeachExpression;
+                    lines.Add(HeadRow("@foreach", "(" + header + ")", 2, depth,
+                        fe.SourceLine, ClauseCloseLine(allLines, fe.SourceLine), 0));
                     foreach (var child in fe.Payload.Body)
-                        WalkMarkup(child, depth, lines, registered, allLines);
-                    Attach(lines, start, 2, "@foreach", fe.SourceLine);
+                        WalkMarkup(child, depth + 1, lines, registered, allLines);
                     break;
                 }
                 case ForNode f:
                 {
-                    int start = lines.Count;
+                    lines.Add(HeadRow("@for", "(" + f.ForExpression + ")", 4, depth,
+                        f.SourceLine, ClauseCloseLine(allLines, f.SourceLine), 0));
                     foreach (var child in f.Payload.Body)
-                        WalkMarkup(child, depth, lines, registered, allLines);
-                    Attach(lines, start, 4, "@for", f.SourceLine);
+                        WalkMarkup(child, depth + 1, lines, registered, allLines);
                     break;
                 }
                 case WhileNode w:
                 {
-                    int start = lines.Count;
+                    lines.Add(HeadRow("@while", "(" + w.Condition + ")", 4, depth,
+                        w.SourceLine, ClauseCloseLine(allLines, w.SourceLine), 0));
                     foreach (var child in w.Payload.Body)
-                        WalkMarkup(child, depth, lines, registered, allLines);
-                    Attach(lines, start, 4, "@while", w.SourceLine);
+                        WalkMarkup(child, depth + 1, lines, registered, allLines);
                     break;
                 }
                 case SwitchNode s:
                 {
-                    foreach (var c in s.Cases)
+                    int constructClose = ClauseCloseLine(allLines, s.SourceLine);
+                    lines.Add(HeadRow("@switch", "(" + s.SwitchExpression + ")", 14, depth,
+                        s.SourceLine, constructClose, 0));
+                    for (int ci = 0; ci < s.Cases.Length; ci++)
                     {
-                        int start = lines.Count;
+                        var c = s.Cases[ci];
+                        int clauseClose = ci + 1 < s.Cases.Length
+                            ? s.Cases[ci + 1].SourceLine - 1
+                            : constructClose > 0 ? constructClose - 1 : c.SourceLine;
+                        lines.Add(HeadRow(
+                            c.ValueExpression == null ? "@default" : "@case",
+                            c.ValueExpression == null ? "" : c.ValueExpression + ":",
+                            15, depth + 1, c.SourceLine, clauseClose, ci + 1));
                         foreach (var child in c.Payload.Body)
-                            WalkMarkup(child, depth, lines, registered, allLines);
-                        Attach(lines, start, 4,
-                            c.ValueExpression == null ? "@default" : "@case", c.SourceLine);
+                            WalkMarkup(child, depth + 2, lines, registered, allLines);
                     }
                     break;
                 }
             }
+        }
+
+        private static BuilderCardLine HeadRow(
+            string keyword, string headerRest, int badgeKind, int depth,
+            int headLine, int closeLine, int clauseIndex) => new BuilderCardLine
+        {
+            Text = headerRest,
+            Depth = depth,
+            Kind = BuilderCardLineKind.Directive,
+            BadgeKind = badgeKind,
+            BadgeText = keyword,
+            DirectiveLine = headLine,
+            SourceLine = headLine,
+            EndLine = closeLine,
+            CloseLine = closeLine,
+            ClauseIndex = clauseIndex,
+        };
+
+        /// <summary>1-based line of the '}' closing the block whose head is
+        /// <paramref name="headLine1"/>. Counting starts at the first '{' so the
+        /// shared "} @else {" head form skips its leading closer. Brace-blind to
+        /// string literals, matching the editor's other brace walks.</summary>
+        private static int ClauseCloseLine(string[] lines, int headLine1)
+        {
+            int depth = 0;
+            bool opened = false;
+            for (int i = headLine1 - 1; i >= 0 && i < lines.Length; i++)
+            {
+                foreach (char c in lines[i])
+                {
+                    if (c == '{')
+                    {
+                        depth++;
+                        opened = true;
+                    }
+                    else if (c == '}' && opened && --depth <= 0)
+                        return i + 1;
+                }
+            }
+            return 0;
         }
 
         /// <summary>1-based line on which the open tag starting at
@@ -957,24 +1018,12 @@ namespace Ruitk.Builder
             return startLine1;
         }
 
-        /// <summary>POC jsxRowHtml: a directive is a PROPERTY of the element node,
-        /// so the badge rides the FIRST element row the branch produced — never a
-        /// row of its own, and never an extra indent level.</summary>
-        private static void Attach(
-            List<BuilderCardLine> lines, int start, int badgeKind, string badgeText, int directiveLine)
-        {
-            if (start >= lines.Count)
-                return;
-            var row = lines[start];
-            if (row.BadgeKind != 0)
-                return;
-            row.BadgeKind = badgeKind;
-            row.BadgeText = badgeText;
-            row.DirectiveLine = directiveLine;
-        }
-
         /// <summary>Fills DirectiveText from the buffer so the badge's inline
-        /// editor seeds the real header ("@foreach (var item in items)").</summary>
+        /// editor seeds the real header ("@foreach (var item in items)"). Brace
+        /// heads strip the trailing '{' and any leading '}' (the shared
+        /// "} @else {" form); colon heads (@case/@default) seed only the label
+        /// up to the single ':' — the rest of the line can carry the case body
+        /// and must never round-trip through the header editor.</summary>
         private static void FillDirectiveText(BuilderCanvasNode node, string[] lines)
         {
             foreach (var row in node.Markup)
@@ -982,10 +1031,37 @@ namespace Ruitk.Builder
                 if (row.DirectiveLine <= 0 || row.DirectiveLine > lines.Length)
                     continue;
                 string raw = lines[row.DirectiveLine - 1].Trim();
+                if (row.BadgeKind == 15)
+                {
+                    int colon = SingleColonIndex(raw);
+                    row.DirectiveText = colon >= 0 ? raw.Substring(0, colon) : raw;
+                    continue;
+                }
+                if (raw.StartsWith("}", StringComparison.Ordinal))
+                    raw = raw.Substring(1).TrimStart();
                 if (raw.EndsWith("{", StringComparison.Ordinal))
                     raw = raw.Substring(0, raw.Length - 1).TrimEnd();
                 row.DirectiveText = raw;
             }
+        }
+
+        /// <summary>Index of the first single ':' — a '::' pair (global::
+        /// qualifier in a case label) is skipped whole, matching the parser's
+        /// case-label termination rule.</summary>
+        internal static int SingleColonIndex(string text)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] != ':')
+                    continue;
+                if (i + 1 < text.Length && text[i + 1] == ':')
+                {
+                    i++;
+                    continue;
+                }
+                return i;
+            }
+            return -1;
         }
 
         private static List<string> AttrPairsOf(ElementNode element)
