@@ -47,8 +47,27 @@ namespace Ruitk.Builder
         /// <summary>1-based inclusive end line (element rows; 0 = single line).</summary>
         public int EndLine;
 
-        /// <summary>0 none, 1 @if, 2 @foreach, 3 @else, 4 other control flow.</summary>
+        /// <summary>0 none, 1 @if, 2 @foreach, 3 @else, 4 other control flow.
+        /// Export-detail lines reuse the field as a marker: 9 "+ entry",
+        /// 10 "+ style", 11 "+ export", 12 util body island, 13 style export
+        /// header.</summary>
         public int BadgeKind;
+
+        /// <summary>Badge label shown before the tag ("@if" / "@foreach" /
+        /// "@else"). The POC renders the directive ON the element row.</summary>
+        public string BadgeText = "";
+
+        /// <summary>Full directive header text ("@foreach (var item in items)") —
+        /// what the inline badge editor seeds from.</summary>
+        public string DirectiveText = "";
+
+        /// <summary>1-based source line of the directive header owning this row
+        /// (0 = the row carries no directive).</summary>
+        public int DirectiveLine;
+
+        /// <summary>Verbatim (trimmed) source text of the line this entry came
+        /// from — what a hook chip's inline editor seeds from.</summary>
+        public string SourceText = "";
     }
 
     /// <summary>One file card on the canvas.</summary>

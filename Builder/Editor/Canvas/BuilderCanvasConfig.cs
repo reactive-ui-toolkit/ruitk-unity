@@ -121,6 +121,13 @@ namespace Ruitk.Builder
             }
         }
 
+        /// <summary>POC createNode(x, y): a card created from the canvas lands at
+        /// the world coordinates of the right-click, not the default layout slot.</summary>
+        public void SetPosition(string filePath, float x, float y)
+        {
+            Positions[RelKey(filePath)] = new[] { x, y };
+        }
+
         public void CaptureFrom(BuilderGraph graph, float cameraX, float cameraY, float zoom)
         {
             CameraX = cameraX;

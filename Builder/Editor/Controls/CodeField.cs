@@ -34,13 +34,41 @@ namespace Ruitk.Builder
         public Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>>
             CompletionProvider { get; set; }
 
+        /// <summary>POC "#srcpane { font: 12px Consolas, monospace }". The OS font
+        /// is resolved once; a machine without it falls back to the editor font.</summary>
+        private static Font MonoFont()
+        {
+            if (s_mono != null)
+                return s_mono;
+            try
+            {
+                s_mono = Font.CreateDynamicFontFromOSFont(
+                    new[] { "Consolas", "Menlo", "DejaVu Sans Mono", "Courier New" }, 12);
+            }
+            catch (Exception)
+            {
+                s_mono = null;
+            }
+            return s_mono;
+        }
+
+        private static Font s_mono;
+
         public CodeField()
         {
             style.flexGrow = 1f;
+            // POC "#srcpane": #17171b ground, 12px monospace, 8px 0 padding.
+            style.backgroundColor = new Color(0.090f, 0.090f, 0.106f);
+            var mono = MonoFont();
 
             var host = new VisualElement
             {
-                style = { flexGrow = 1f, position = Position.Relative, overflow = Overflow.Hidden },
+                style =
+                {
+                    flexGrow = 1f, position = Position.Relative, overflow = Overflow.Hidden,
+                    backgroundColor = new Color(0.090f, 0.090f, 0.106f),
+                    paddingTop = 8f, paddingBottom = 8f,
+                },
             };
             Add(host);
 
@@ -51,20 +79,26 @@ namespace Ruitk.Builder
                 style =
                 {
                     position = Position.Absolute,
-                    top = 0f, left = 0f, right = 0f, bottom = 0f,
+                    top = 8f, left = 14f, right = 0f, bottom = 0f,
                     color = new Color(0.84f, 0.84f, 0.86f),
                     whiteSpace = WhiteSpace.Pre,
                     unityTextAlign = TextAnchor.UpperLeft,
+                    fontSize = 12f,
                 },
             };
+            if (mono != null)
+                _overlay.style.unityFont = mono;
             host.Add(_overlay);
 
             _input = new TextField { multiline = true };
             _input.style.position = Position.Absolute;
-            _input.style.top = 0f;
-            _input.style.left = 0f;
+            _input.style.top = 8f;
+            _input.style.left = 14f;
             _input.style.right = 0f;
             _input.style.bottom = 0f;
+            _input.style.fontSize = 12f;
+            if (mono != null)
+                _input.style.unityFont = mono;
             _input.style.color = new Color(1f, 1f, 1f, 0f);
             _input.RegisterValueChangedCallback(OnInputChanged);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
@@ -109,7 +143,13 @@ namespace Ruitk.Builder
             _input.selectIndex = end;
             _input.Focus();
             _userCaretActive = true;
+            // POC ".srcline.sel": the focused line gets a gold band, not Unity's
+            // selection blue.
+            _selectedLine1 = line1;
+            Recolor(TextLf);
         }
+
+        private int _selectedLine1;
 
         /// <summary>Inserts at the caret (or replaces the selection) and fires
         /// the normal edited path — palette clicks author through the same
@@ -316,7 +356,7 @@ namespace Ruitk.Builder
             {
                 var parsed = BuilderLanguage.Parse(textLf, _filePath);
                 var tokens = BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
-                _overlay.text = BuildRichText(textLf, tokens);
+                _overlay.text = BuildRichText(textLf, tokens, _selectedLine1);
 
                 var diags = BuilderLanguage.Diagnose(parsed, _filePath, _knownElements);
                 if (diags.Count == 0)
@@ -350,32 +390,34 @@ namespace Ruitk.Builder
         private static string Escape(string s) =>
             s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
+        /// <summary>The POC source palette (index.html .k/.t/.s/.e/.cm/.cu):
+        /// keywords #c792ea, tags #4fc3f7, custom tags #7fdbca, strings #c3e88d,
+        /// {expr} #ffb74d, comments #616e7a.</summary>
         private static string ColorFor(string tokenType)
         {
             switch (tokenType)
             {
                 case SemanticTokenTypes.Element:
                     return "#4FC3F7";
+                case SemanticTokenTypes.Type:
+                    return "#7FDBCA";
                 case SemanticTokenTypes.Attribute:
                 case SemanticTokenTypes.Property:
-                    return "#9CDCFE";
+                    return "#4FC3F7";
                 case SemanticTokenTypes.Directive:
                 case SemanticTokenTypes.DirectiveName:
-                    return "#C586C0";
                 case SemanticTokenTypes.Keyword:
-                    return "#569CD6";
+                    return "#C792EA";
                 case SemanticTokenTypes.String:
-                    return "#CE9178";
+                    return "#C3E88D";
                 case SemanticTokenTypes.Number:
-                    return "#B5CEA8";
+                case SemanticTokenTypes.Expression:
+                    return "#FFB74D";
                 case SemanticTokenTypes.Comment:
-                    return "#6A9955";
-                case SemanticTokenTypes.Type:
-                    return "#4EC9B0";
+                    return "#616E7A";
                 case SemanticTokenTypes.Function:
-                    return "#DCDCAA";
                 case SemanticTokenTypes.Variable:
-                    return "#D4D4D4";
+                    return "#CFCFDA";
                 default:
                     return null;
             }
@@ -384,7 +426,8 @@ namespace Ruitk.Builder
         /// <summary>Tokens are 0-based line/column over the LF buffer; segments
         /// between tokens escape verbatim, token text escapes inside its color
         /// tag, so rich-text markup never shifts what the user is editing.</summary>
-        private static string BuildRichText(string textLf, SemanticTokenData[] tokens)
+        private static string BuildRichText(
+            string textLf, SemanticTokenData[] tokens, int selectedLine1)
         {
             string[] lines = textLf.Split('\n');
             var byLine = new Dictionary<int, List<SemanticTokenData>>();
@@ -401,9 +444,14 @@ namespace Ruitk.Builder
                 string line = lines[i];
                 if (i > 0)
                     sb.Append('\n');
+                bool selected = selectedLine1 == i + 1;
+                if (selected)
+                    sb.Append("<mark=#FFD54F2E>");
                 if (!byLine.TryGetValue(i, out var list))
                 {
                     sb.Append(Escape(line));
+                    if (selected)
+                        sb.Append("</mark>");
                     continue;
                 }
                 list.Sort((a, b) => a.Column.CompareTo(b.Column));
@@ -425,6 +473,8 @@ namespace Ruitk.Builder
                 }
                 if (cursor < line.Length)
                     sb.Append(Escape(line.Substring(cursor)));
+                if (selected)
+                    sb.Append("</mark>");
             }
             return sb.ToString();
         }

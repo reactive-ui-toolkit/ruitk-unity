@@ -28,6 +28,20 @@ namespace Ruitk.Builder
             public string Header;
         }
 
+        private static Vector2 s_pointer;
+        private static bool s_pointerValid;
+        private static EditorWindow s_pointerWindow;
+
+        /// <summary>The canvas records the panel-space point of the gesture that
+        /// is about to open a menu, so the popup lands under the cursor instead
+        /// of at the host window's centre.</summary>
+        public static void RememberPointer(Vector2 panelPosition, EditorWindow window)
+        {
+            s_pointer = panelPosition;
+            s_pointerWindow = window;
+            s_pointerValid = window != null;
+        }
+
         public static Item Separator => new Item { IsSeparator = true };
 
         public static Item SectionHeader(string text) => new Item { Header = text };
@@ -84,16 +98,21 @@ namespace Ruitk.Builder
             window._items = items;
             window._freeform = freeform;
             window._searchable = searchable;
-            // Event.current is null outside OnGUI (GenericMenu callbacks, UITK
-            // pointer events) — fall back to the focused window's center so the
-            // popup never lands at the screen origin.
+            // POC placeMenu(): every menu (and every submenu chained from one)
+            // opens AT the click. Event.current is null outside OnGUI — UITK
+            // pointer callbacks hand us the panel-space point instead, which the
+            // hosting window's screen rect turns into a screen point.
             Vector2 anchor;
-            if (Event.current != null)
+            if (s_pointerValid && s_pointerWindow != null)
+                anchor = s_pointerWindow.position.position + s_pointer;
+            else if (Event.current != null)
                 anchor = GUIUtility.GUIToScreenPoint(Event.current.mousePosition);
             else if (focusedWindow != null)
                 anchor = focusedWindow.position.center - new Vector2(130f, 160f);
             else
                 anchor = new Vector2(400f, 300f);
+            anchor.x = Mathf.Max(4f, anchor.x);
+            anchor.y = Mathf.Max(4f, anchor.y);
             window.position = new Rect(anchor.x, anchor.y + 8f, width, height);
             window.ShowPopup();
             window.Focus();

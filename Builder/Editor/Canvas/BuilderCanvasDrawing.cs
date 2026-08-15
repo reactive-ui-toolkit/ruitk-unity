@@ -95,22 +95,67 @@ namespace Ruitk.Builder
         }
 
         /// <summary>POC 6.6 band math: rel &lt; 0.3 → before (0), rel &gt; 0.7 →
-        /// after (2), else inside (1) — computed from the pointer's local Y in
-        /// the hovered row.</summary>
+        /// after (2), else inside (1) — measured against the ROW element the
+        /// handler is registered on (currentTarget), never the inner label the
+        /// event happens to bubble from.</summary>
         public static int DropBand(Ruitk.Core.ReactivePointerEvent evt)
         {
-            var target = evt?.NativeEvent?.target as VisualElement;
+            var row = evt?.CurrentTarget ?? evt?.Target;
             var pointer = evt?.NativeEvent as IPointerEvent;
-            if (target == null || pointer == null)
+            if (row == null || pointer == null)
                 return 1;
-            float height = target.resolvedStyle.height;
+            float height = row.resolvedStyle.height;
             if (height <= 0f)
                 return 1;
-            float rel = pointer.localPosition.y / height;
+            float y = row.WorldToLocal(pointer.position).y;
+            float rel = y / height;
             return rel < 0.3f ? 0 : rel > 0.7f ? 2 : 1;
         }
 
+        /// <summary>POC ".style-entry b": only the export NAME is bold and
+        /// --style purple; " = new Style {" stays #cfcfda.</summary>
+        public static string ExportRichText(string line)
+        {
+            if (string.IsNullOrEmpty(line))
+                return "";
+            int split = line.IndexOf(" = ", System.StringComparison.Ordinal);
+            if (split < 0)
+                return line;
+            return "<b><color=#CE93D8>" + line.Substring(0, split) + "</color></b>"
+                + line.Substring(split);
+        }
+
+        /// <summary>POC ".card-section:last-child { border-bottom: none }" —
+        /// which section index is the bottom-most one this card renders
+        /// (0 signature, 1 imports, 2 body, 3 exports, 4 markup).</summary>
+        public static int LastSectionOf(BuilderCanvasNode node)
+        {
+            if (node == null)
+                return 0;
+            if (node.Markup.Count > 0)
+                return 4;
+            if (node.ExportDetail.Count > 0)
+                return 3;
+            if (node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook
+                || node.Body.Count > 0)
+                return 2;
+            if (node.Imports.Count > 0)
+                return 1;
+            return 0;
+        }
+
         public static bool DragActive => BuilderDragService.Active;
+
+        /// <summary>POC placeMenu(): menus open AT the click. Records the
+        /// gesture's panel-space point for the next BuilderSearchMenu.</summary>
+        public static void RememberMenuPointer(Ruitk.Core.ReactivePointerEvent evt)
+        {
+            if (evt == null)
+                return;
+            BuilderSearchMenu.RememberPointer(
+                new Vector2(evt.Position.x, evt.Position.y),
+                UnityEditor.EditorWindow.focusedWindow);
+        }
 
         /// <summary>Anchor-dot color per import kind marker (5 usage / 6 hook /
         /// 7 style).</summary>
@@ -242,53 +287,26 @@ namespace Ruitk.Builder
                 return;
             var p = ctx.painter2D;
             float width = CardWidthFor(CurrentLod);
+
+            // POC computeEdges: ONE edge per import row, PLUS one per markup row
+            // that instantiates a graph node — ShopScreen draws 6 + 3 curves, not 6.
             foreach (var edge in graph.Edges)
             {
                 if (edge.FromIndex < 0 || edge.FromIndex >= graph.Nodes.Count)
                     continue;
                 var from = graph.Nodes[edge.FromIndex];
-                float anchorY;
-                if (CurrentLod == 0)
-                    anchorY = PillH * 0.5f;
-                else
-                {
-                    anchorY = edge.TargetKind == BuilderNodeKind.Component
-                        && edge.ToIndex >= 0 && edge.ToIndex < graph.Nodes.Count
-                        ? UsageRowY(from, graph.Nodes[edge.ToIndex].Title)
-                        : -1f;
-                    if (anchorY < 0f)
-                        anchorY = ImportRowY(from, edge.Specifier);
-                }
+                float anchorY = CurrentLod == 0 ? PillH * 0.5f : ImportRowY(from, edge.Specifier);
                 var a = new Vector2(from.X + width, from.Y + anchorY);
 
                 if (edge.ToIndex >= 0 && edge.ToIndex < graph.Nodes.Count)
                 {
                     var to = graph.Nodes[edge.ToIndex];
-                    var b = new Vector2(to.X, to.Y + EdgeAnchorY);
                     Color color = edge.TargetKind == BuilderNodeKind.Hook ? HookEdge
                         : edge.TargetKind == BuilderNodeKind.Style ? StyleEdge
                         : UsageEdge;
-                    color.a = 0.85f;
                     bool dashed = edge.TargetKind == BuilderNodeKind.Style
                         || edge.TargetKind == BuilderNodeKind.Hook;
-                    float dx = Mathf.Max(40f, Mathf.Abs(b.x - a.x) * 0.45f);
-                    var c1 = new Vector2(a.x + dx, a.y);
-                    var c2 = new Vector2(b.x - dx, b.y);
-                    if (dashed)
-                        StrokeDashedBezier(p, a, c1, c2, b, color);
-                    else
-                    {
-                        p.strokeColor = color;
-                        p.lineWidth = 2f;
-                        p.BeginPath();
-                        p.MoveTo(a);
-                        p.BezierCurveTo(c1, c2, b);
-                        p.Stroke();
-                    }
-                    p.fillColor = color;
-                    p.BeginPath();
-                    p.Arc(b, 4f, 0f, 360f);
-                    p.Fill();
+                    StrokeEdge(p, a, new Vector2(to.X, to.Y + EdgeAnchorY), color, dashed);
                 }
                 else
                 {
@@ -300,6 +318,57 @@ namespace Ruitk.Builder
                     p.Stroke();
                 }
             }
+
+            if (CurrentLod == 0)
+                return;
+            for (int i = 0; i < graph.Nodes.Count; i++)
+            {
+                var from = graph.Nodes[i];
+                for (int r = 0; r < from.Markup.Count; r++)
+                {
+                    string tag = from.Markup[r].Text.Trim('<', '>');
+                    int target = IndexOfTitle(graph, tag);
+                    if (target < 0 || target == i)
+                        continue;
+                    var to = graph.Nodes[target];
+                    var a = new Vector2(from.X + width, from.Y + MarkupRowY(from, r));
+                    StrokeEdge(p, a, new Vector2(to.X, to.Y + EdgeAnchorY), UsageEdge, false);
+                }
+            }
+        }
+
+        private static int IndexOfTitle(BuilderGraph graph, string title)
+        {
+            if (string.IsNullOrEmpty(title))
+                return -1;
+            for (int i = 0; i < graph.Nodes.Count; i++)
+                if (graph.Nodes[i].Kind == BuilderNodeKind.Component
+                    && string.Equals(graph.Nodes[i].Title, title, System.StringComparison.Ordinal))
+                    return i;
+            return -1;
+        }
+
+        private static void StrokeEdge(Painter2D p, Vector2 a, Vector2 b, Color color, bool dashed)
+        {
+            color.a = 0.85f;
+            float dx = Mathf.Max(40f, Mathf.Abs(b.x - a.x) * 0.45f);
+            var c1 = new Vector2(a.x + dx, a.y);
+            var c2 = new Vector2(b.x - dx, b.y);
+            if (dashed)
+                StrokeDashedBezier(p, a, c1, c2, b, color);
+            else
+            {
+                p.strokeColor = color;
+                p.lineWidth = 2f;
+                p.BeginPath();
+                p.MoveTo(a);
+                p.BezierCurveTo(c1, c2, b);
+                p.Stroke();
+            }
+            p.fillColor = color;
+            p.BeginPath();
+            p.Arc(b, 4f, 0f, 360f);
+            p.Fill();
         }
 
         /// <summary>Edges leave the importer at ITS import row (matched by
@@ -329,21 +398,8 @@ namespace Ruitk.Builder
         /// the target component. The Y is estimated from the card's section
         /// stack (header, signature, imports, chips, island, markup rows) —
         /// approximate because chip wrapping varies, but row-true in shape.</summary>
-        private static float UsageRowY(BuilderCanvasNode from, string targetTitle)
+        private static float MarkupRowY(BuilderCanvasNode from, int rowIdx)
         {
-            int rowIdx = -1;
-            string wanted = "<" + targetTitle + ">";
-            for (int i = 0; i < from.Markup.Count; i++)
-            {
-                if (from.Markup[i].Text == wanted)
-                {
-                    rowIdx = i;
-                    break;
-                }
-            }
-            if (rowIdx < 0)
-                return -1f;
-
             float y = HeaderH;
             if (!string.IsNullOrEmpty(from.Signature))
                 y += SignatureSectionH;

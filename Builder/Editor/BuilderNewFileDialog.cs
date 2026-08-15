@@ -17,6 +17,8 @@ namespace Ruitk.Builder
     internal sealed class BuilderNewFileDialog : EditorWindow
     {
         private static readonly Regex s_pascal = new Regex("^[A-Z][A-Za-z0-9]*$");
+        private static readonly Regex s_camel = new Regex("^[a-z][A-Za-z0-9]*$");
+        private static readonly Regex s_use = new Regex("^use[A-Z][A-Za-z0-9]*$");
 
         private string _directory;
         private BuilderWindow _owner;
@@ -25,13 +27,17 @@ namespace Ruitk.Builder
         private Label _error;
 
         private string _presetKind;
+        private System.Action<string> _onCreated;
 
-        public static void Show(string directory, BuilderWindow owner, string presetKind = null)
+        public static void Show(
+            string directory, BuilderWindow owner, string presetKind = null,
+            System.Action<string> onCreated = null)
         {
             var window = CreateInstance<BuilderNewFileDialog>();
             window._directory = directory;
             window._owner = owner;
             window._presetKind = presetKind;
+            window._onCreated = onCreated;
             window.titleContent = new GUIContent("New UITKX File");
             window.minSize = new Vector2(340f, 128f);
             window.maxSize = new Vector2(340f, 128f);
@@ -70,13 +76,14 @@ namespace Ruitk.Builder
         private void Create()
         {
             string name = (_nameField.value ?? "").Trim();
-            if (!s_pascal.IsMatch(name))
+            string kind = _kindField.value;
+            string invalid = Validate(kind, name);
+            if (invalid != null)
             {
-                _error.text = "Name must be a PascalCase identifier (start uppercase, letters/digits only).";
+                _error.text = invalid;
                 return;
             }
 
-            string kind = _kindField.value;
             string fileName = kind switch
             {
                 "Hooks" => name + ".hooks.uitkx",
@@ -93,7 +100,26 @@ namespace Ruitk.Builder
             File.WriteAllText(path, TemplateFor(kind, name));
             AssetDatabase.Refresh();
             Close();
+            _onCreated?.Invoke(path);
             _owner?.OpenAdditionalFile(path);
+        }
+
+        /// <summary>POC validatePascal / validateUse / validateCamel — one rule
+        /// (and one message) per kind.</summary>
+        private static string Validate(string kind, string name)
+        {
+            switch (kind)
+            {
+                case "Hooks":
+                    return s_use.IsMatch(name)
+                        ? null
+                        : "hook names start with 'use' (useSomething)";
+                case "Style":
+                case "Utils":
+                    return s_camel.IsMatch(name) ? null : "camelCase identifier required";
+                default:
+                    return s_pascal.IsMatch(name) ? null : "PascalCase identifier required";
+            }
         }
 
         private static string TemplateFor(string kind, string name)
@@ -103,7 +129,7 @@ namespace Ruitk.Builder
                 case "Style":
                     return "export Style " + name + "Root = new Style {\n  FlexGrow = 1,\n};\n";
                 case "Hooks":
-                    return "export (int value, Action increment) use" + name
+                    return "export (int value, Action increment) " + name
                         + "() {\n  var (value, setValue) = useState(0);\n"
                         + "  return (value, () => setValue(value + 1));\n}\n";
                 case "Utils":

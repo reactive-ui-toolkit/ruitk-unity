@@ -35,7 +35,9 @@ namespace Ruitk.Builder
 
         public Action<string, int> OnRowClick;
         public Action<string, int, int> OnRowContext;
-        public Action<string> OnCreateRequested;
+        public Action<string, float, float> OnCreateRequested;
+        public Action<int> OnSelect;
+        public Action<string> OnToast;
         public Action<string, int, int, string> OnRowDrop;
         public Action<string, string, int> OnStyleAddEntry;
         public Action<string> OnAddHook;
@@ -105,6 +107,70 @@ namespace Ruitk.Builder
             ZoomChanged?.Invoke(_zoom);
         }
 
+        /// <summary>POC commitNode(): a model edit rebuilds ONE card and redraws
+        /// the edges — it never reloads the tree. Re-parses the changed file
+        /// into the live graph node and re-renders in place, so zoom, camera,
+        /// card selection and row selection all survive the commit.</summary>
+        public void RefreshGraph(string filePath, Func<string, string> readText)
+        {
+            if (_graph == null || _container == null)
+                return;
+            int index = _graph.IndexOf(System.IO.Path.GetFullPath(filePath));
+            if (index < 0)
+                return;
+            try
+            {
+                BuilderGraphService.PopulateCardDetail(_graph.Nodes[index], readText);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+            RenderCanvas();
+        }
+
+        /// <summary>POC follow-up editors (addAttr / addHook / wrap-in-directive
+        /// all open the new element's inline field): opens an inline editor on
+        /// the mounted canvas without a remount.</summary>
+        public void BeginEdit(string editKey, string editText)
+        {
+            if (_container == null || _graph == null)
+                return;
+            _beginEditKey = editKey;
+            _beginEditText = editText ?? "";
+            _beginEditVersion++;
+            RenderCanvas();
+        }
+
+        private string _beginEditKey = "";
+        private string _beginEditText = "";
+        private int _beginEditVersion;
+
+        /// <summary>Canvas row index of a source line, for BeginEdit keys.</summary>
+        public int RowIndexOfLine(string filePath, int sourceLine)
+        {
+            var node = FindNode(System.IO.Path.GetFullPath(filePath));
+            if (node == null)
+                return -1;
+            for (int i = 0; i < node.Markup.Count; i++)
+                if (node.Markup[i].SourceLine == sourceLine)
+                    return i;
+            return -1;
+        }
+
+        /// <summary>Seeds the persisted layout slot for a file about to be
+        /// created, so the new card appears where the user right-clicked.</summary>
+        public void PlaceNewCard(string filePath, float x, float y)
+        {
+            if (_config == null)
+                return;
+            _config.SetPosition(filePath, x, y);
+            _config.Save();
+        }
+
+        public int NodeIndexOf(string filePath) =>
+            _graph?.IndexOf(System.IO.Path.GetFullPath(filePath)) ?? -1;
+
         private void RenderCanvas()
         {
             var onOpenFile = _onOpenFile;
@@ -122,9 +188,16 @@ namespace Ruitk.Builder
                         ViewCamX = _camX,
                         ViewCamY = _camY,
                         ViewVersion = _viewVersion,
+                        BeginEditKey = _beginEditKey,
+                        BeginEditText = _beginEditText,
+                        BeginEditVersion = _beginEditVersion,
                         OnOpenFile = onOpenFile,
                         OnLayoutChanged = SaveLayout,
-                        OnSelect = null,
+                        OnSelect = index =>
+                        {
+                            if (_graph != null && index >= 0 && index < _graph.Nodes.Count)
+                                OnSelect?.Invoke(index);
+                        },
                         OnCameraChanged = (x, y, z) =>
                         {
                             _camX = x;
@@ -135,10 +208,10 @@ namespace Ruitk.Builder
                             if (lodChanged)
                                 ZoomChanged?.Invoke(z);
                         },
-                        OnCardContext = index => ShowCardMenu(index, onOpenFile),
+                        OnCardContext = ShowCardMenu,
                         OnRowClick = (path, line) => OnRowClick?.Invoke(path, line),
                         OnRowContext = (path, line, rowIdx) => OnRowContext?.Invoke(path, line, rowIdx),
-                        OnCanvasContext = ShowCreateMenu,
+                        OnCanvasContext = (wx, wy) => ShowCreateMenu(wx, wy),
                         OnRowDrop = (path, rowIdx, band, payload) =>
                             OnRowDrop?.Invoke(path, rowIdx, band, payload),
                         OnStyleAddEntry = (path, styleName, closeLine) =>
@@ -188,34 +261,37 @@ namespace Ruitk.Builder
             return i < 0 ? null : _graph.Nodes[i];
         }
 
-        private void ShowCreateMenu()
+        private void ShowCreateMenu(float worldX, float worldY)
         {
             BuilderSearchMenu.ShowSimple("create", new List<BuilderSearchMenu.Item>
             {
                 new BuilderSearchMenu.Item
                 {
                     Label = "New component  (.uitkx)",
-                    OnPick = () => OnCreateRequested?.Invoke("Component"),
+                    OnPick = () => OnCreateRequested?.Invoke("Component", worldX, worldY),
                 },
                 new BuilderSearchMenu.Item
                 {
                     Label = "New style module  (.style.uitkx)",
-                    OnPick = () => OnCreateRequested?.Invoke("Style"),
+                    OnPick = () => OnCreateRequested?.Invoke("Style", worldX, worldY),
                 },
                 new BuilderSearchMenu.Item
                 {
                     Label = "New hook module  (.hooks.uitkx)",
-                    OnPick = () => OnCreateRequested?.Invoke("Hooks"),
+                    OnPick = () => OnCreateRequested?.Invoke("Hooks", worldX, worldY),
                 },
                 new BuilderSearchMenu.Item
                 {
                     Label = "New util module  (.uitkx)",
-                    OnPick = () => OnCreateRequested?.Invoke("Utils"),
+                    OnPick = () => OnCreateRequested?.Invoke("Utils", worldX, worldY),
                 },
             });
         }
 
-        private void ShowCardMenu(int index, Action<string> onOpenFile)
+        /// <summary>POC openCardMenu: exactly ONE item under the node-id title —
+        /// "Delete &lt;file&gt;" — guarded by a non-blocking toast when anything
+        /// still references the file.</summary>
+        private void ShowCardMenu(int index)
         {
             if (_graph == null || index < 0 || index >= _graph.Nodes.Count)
                 return;
@@ -224,71 +300,26 @@ namespace Ruitk.Builder
             {
                 new BuilderSearchMenu.Item
                 {
-                    Label = "Open",
-                    OnPick = () => onOpenFile?.Invoke(node.FilePath),
-                },
-                new BuilderSearchMenu.Item
-                {
-                    Label = "Show in Project",
-                    OnPick = () =>
-                    {
-                        string assetPath = ToAssetPath(node.FilePath);
-                        var asset = assetPath == null
-                            ? null
-                            : UnityEditor.AssetDatabase.LoadMainAssetAtPath(assetPath);
-                        if (asset != null)
-                            UnityEditor.EditorGUIUtility.PingObject(asset);
-                    },
-                },
-                new BuilderSearchMenu.Item
-                {
-                    Label = "Copy Path",
-                    OnPick = () =>
-                        UnityEditor.EditorGUIUtility.systemCopyBuffer = node.FilePath,
-                },
-                BuilderSearchMenu.Separator,
-                new BuilderSearchMenu.Item
-                {
                     Label = "Delete " + System.IO.Path.GetFileName(node.FilePath),
                     OnPick = () =>
                     {
                         var referencedBy = new List<string>();
                         foreach (var edge in _graph.Edges)
-                            if (edge.ToIndex == index && edge.FromIndex >= 0)
+                            if (edge.ToIndex == index && edge.FromIndex >= 0
+                                && !referencedBy.Contains(_graph.Nodes[edge.FromIndex].Title))
                                 referencedBy.Add(_graph.Nodes[edge.FromIndex].Title);
                         if (referencedBy.Count > 0)
                         {
-                            UnityEditor.EditorUtility.DisplayDialog(
-                                "Can't delete",
-                                "Still referenced by " + string.Join(", ", referencedBy) + ".",
-                                "OK");
+                            OnToast?.Invoke(
+                                "Can't delete: still referenced by "
+                                + string.Join(", ", referencedBy) + ".");
                             return;
                         }
-                        if (UnityEditor.EditorUtility.DisplayDialog(
-                                "Delete file?",
-                                System.IO.Path.GetFileName(node.FilePath) + " will be deleted from disk.",
-                                "Delete", "Cancel"))
-                            OnDeleteFile?.Invoke(node.FilePath);
+                        OnDeleteFile?.Invoke(node.FilePath);
                     },
                 },
             };
             BuilderSearchMenu.ShowSimple(node.Title, items);
-        }
-
-        private static string ToAssetPath(string fullPath)
-        {
-            try
-            {
-                string projectRoot = System.IO.Path.GetDirectoryName(UnityEngine.Application.dataPath);
-                string full = System.IO.Path.GetFullPath(fullPath).Replace('\\', '/');
-                string root = System.IO.Path.GetFullPath(projectRoot ?? "").Replace('\\', '/');
-                if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                    return full.Substring(root.Length).TrimStart('/');
-            }
-            catch
-            {
-            }
-            return null;
         }
 
         public void Unmount()

@@ -31,7 +31,6 @@ namespace Ruitk.Builder
         private static readonly Color HookTint = new Color(0.506f, 0.780f, 0.518f);
         private static readonly Color StyleTint = new Color(0.808f, 0.576f, 0.847f);
         private static readonly Color UtilTint = new Color(1.000f, 0.718f, 0.302f);
-        private static readonly Color DirectiveTint = new Color(0.808f, 0.576f, 0.847f);
 
         private static readonly Color Panel2 = new Color(0.165f, 0.165f, 0.192f);
         private static readonly Color Line = new Color(0.227f, 0.227f, 0.267f);
@@ -195,7 +194,6 @@ namespace Ruitk.Builder
                 return;
             }
 
-            AddDirectiveEntries();
             SortSections();
             Rebuild();
         }
@@ -271,7 +269,7 @@ namespace Ruitk.Builder
         private static readonly string[] s_sectionOrder =
         {
             "Native elements", "Custom components", "Hooks",
-            "Style modules", "Util modules", "Directives",
+            "Style modules", "Util modules",
         };
 
         /// <summary>POC ordering: sections in POC order, the seven POC native
@@ -303,29 +301,6 @@ namespace Ruitk.Builder
                     return ra.CompareTo(rb);
                 return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
             });
-        }
-
-        private void AddDirectiveEntries()
-        {
-            var directives = new (string Name, string Snippet)[]
-            {
-                ("@if", "@if (condition) {\n  return (\n    <VisualElement />\n  );\n}\n"),
-                ("@if/else", "@if (condition) {\n  return (\n    <VisualElement />\n  );\n} else {\n  return (\n    <VisualElement />\n  );\n}\n"),
-                ("@for", "@for (int i = 0; i < count; i++) {\n  return (\n    <VisualElement key={$\"item-{i}\"} />\n  );\n}\n"),
-                ("@foreach", "@foreach (var item in items) {\n  return (\n    <VisualElement key={item.ToString()} />\n  );\n}\n"),
-                ("@switch", "@switch (value) {\n  @case (0) {\n    return (\n      <VisualElement />\n    );\n  }\n  @default {\n    return (\n      <VisualElement />\n    );\n  }\n}\n"),
-            };
-            foreach (var (name, snippet) in directives)
-            {
-                _entries.Add(new Entry
-                {
-                    Name = name,
-                    Description = "Directive block — the body wraps markup in return (...).",
-                    Snippet = snippet,
-                    Section = "Directives",
-                    Tint = DirectiveTint,
-                });
-            }
         }
 
         private static string PayloadFor(Entry entry)
@@ -361,6 +336,12 @@ namespace Ruitk.Builder
             {
                 if (_filter.Length > 0
                     && entry.Name.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                // POC NATIVE ELEMENTS is a curated seven; the rest of the live
+                // schema stays behind the search field.
+                if (_filter.Length == 0
+                    && entry.Section == "Native elements"
+                    && Array.IndexOf(NativeTagOrder, entry.Name.Trim('<', '>')) < 0)
                     continue;
                 if (entry.Section != section)
                 {

@@ -221,6 +221,7 @@ namespace Ruitk.Builder
                 });
             }
 
+            string[] allLines = text.Split('\n');
             int hookCount = 0;
             foreach (Match m in s_hookCall.Matches(text))
             {
@@ -242,6 +243,9 @@ namespace Ruitk.Builder
                     Text = lhs == null ? hook : hook + "  →  " + lhs,
                     Kind = BuilderCardLineKind.Hook,
                     SourceLine = line1,
+                    SourceText = line1 >= 1 && line1 <= allLines.Length
+                        ? allLines[line1 - 1].Trim()
+                        : "",
                 });
                 hookCount++;
             }
@@ -253,6 +257,7 @@ namespace Ruitk.Builder
                 WalkMarkup(root, 0, node.Markup, registeredSet, ref budget);
             if (budget <= 0)
                 node.Markup.Add(new BuilderCardLine { Text = "…", Kind = BuilderCardLineKind.Plain });
+            FillDirectiveText(node, allLines);
 
             node.ExportDetail.Clear();
             if (node.Kind == BuilderNodeKind.Style)
@@ -273,12 +278,13 @@ namespace Ruitk.Builder
         private static readonly Regex s_exportHeader = new Regex(
             @"^export\s+(?:VirtualNode|\([^)]*\))\s+(\w+)\s*(\([^)]*\))", RegexOptions.Compiled);
 
-        /// <summary>POC signature line: bold name + dimmed props signature,
-        /// pulled from the export header (component and hook files).</summary>
+        /// <summary>POC cardHtml: the props-row section exists ONLY for component
+        /// and hook cards — style/util cards go straight from the title bar to
+        /// EXPORTS, so their signature stays empty.</summary>
         private static string ExtractSignature(string text, BuilderCanvasNode node)
         {
             if (node.Kind != BuilderNodeKind.Component && node.Kind != BuilderNodeKind.Hook)
-                return node.Title;
+                return "";
             foreach (string raw in text.Split('\n'))
             {
                 var match = s_exportHeader.Match(raw.Trim());
@@ -350,21 +356,31 @@ namespace Ruitk.Builder
                     SourceLine = i + 1,
                 });
                 int j = i + 1;
+                var body = new List<string>();
+                int bodyStart = 0;
+                int bodyEnd = 0;
                 for (; j < lines.Length; j++)
                 {
-                    string body = lines[j].Trim();
-                    if (body.StartsWith("}", StringComparison.Ordinal))
+                    string bodyLine = lines[j].Trim();
+                    if (bodyLine.StartsWith("}", StringComparison.Ordinal))
                         break;
-                    if (body.Length == 0)
+                    if (bodyLine.Length == 0)
                         continue;
+                    if (bodyStart == 0)
+                        bodyStart = j + 1;
+                    bodyEnd = j + 1;
+                    body.Add(bodyLine);
+                }
+                if (body.Count > 0)
                     node.ExportDetail.Add(new BuilderCardLine
                     {
-                        Text = body,
+                        Text = string.Join("\n", body),
                         Kind = BuilderCardLineKind.Plain,
                         Depth = 1,
-                        SourceLine = j + 1,
+                        BadgeKind = 12,
+                        SourceLine = bodyStart,
+                        EndLine = bodyEnd,
                     });
-                }
                 node.ExportDetail.Add(new BuilderCardLine
                 {
                     Text = "}",
@@ -401,6 +417,8 @@ namespace Ruitk.Builder
                 {
                     Text = styleName + " = new Style {",
                     Kind = BuilderCardLineKind.Export,
+                    BadgeKind = 13,
+                    AttrsText = styleName,
                     SourceLine = i + 1,
                 });
                 int j = i + 1;
@@ -473,57 +491,87 @@ namespace Ruitk.Builder
                         WalkMarkup(child, depth + 1, lines, registered, ref budget);
                     break;
                 case IfNode ifNode:
-                    budget--;
-                    lines.Add(new BuilderCardLine
+                {
+                    for (int bi = 0; bi < ifNode.Branches.Length; bi++)
                     {
-                        Text = "@if", Depth = depth, Kind = BuilderCardLineKind.Directive,
-                        BadgeKind = 1, SourceLine = ifNode.SourceLine,
-                    });
-                    foreach (var branch in ifNode.Branches)
+                        var branch = ifNode.Branches[bi];
+                        int start = lines.Count;
                         foreach (var child in branch.Payload.Body)
-                            WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                            WalkMarkup(child, depth, lines, registered, ref budget);
+                        bool isElse = bi > 0;
+                        Attach(lines, start, isElse ? 3 : 1,
+                            isElse ? (branch.Condition == null ? "@else" : "@else if") : "@if",
+                            bi == 0 ? ifNode.SourceLine : branch.SourceLine);
+                    }
                     break;
+                }
                 case ForeachNode fe:
-                    budget--;
-                    lines.Add(new BuilderCardLine
-                    {
-                        Text = "@foreach", Depth = depth, Kind = BuilderCardLineKind.Directive,
-                        BadgeKind = 2, SourceLine = fe.SourceLine,
-                    });
+                {
+                    int start = lines.Count;
                     foreach (var child in fe.Payload.Body)
-                        WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                        WalkMarkup(child, depth, lines, registered, ref budget);
+                    Attach(lines, start, 2, "@foreach", fe.SourceLine);
                     break;
+                }
                 case ForNode f:
-                    budget--;
-                    lines.Add(new BuilderCardLine
-                    {
-                        Text = "@for", Depth = depth, Kind = BuilderCardLineKind.Directive,
-                        BadgeKind = 4, SourceLine = f.SourceLine,
-                    });
+                {
+                    int start = lines.Count;
                     foreach (var child in f.Payload.Body)
-                        WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                        WalkMarkup(child, depth, lines, registered, ref budget);
+                    Attach(lines, start, 4, "@for", f.SourceLine);
                     break;
+                }
                 case WhileNode w:
-                    budget--;
-                    lines.Add(new BuilderCardLine
-                    {
-                        Text = "@while", Depth = depth, Kind = BuilderCardLineKind.Directive,
-                        BadgeKind = 4, SourceLine = w.SourceLine,
-                    });
+                {
+                    int start = lines.Count;
                     foreach (var child in w.Payload.Body)
-                        WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                        WalkMarkup(child, depth, lines, registered, ref budget);
+                    Attach(lines, start, 4, "@while", w.SourceLine);
                     break;
+                }
                 case SwitchNode s:
-                    budget--;
-                    lines.Add(new BuilderCardLine
-                    {
-                        Text = "@switch", Depth = depth, Kind = BuilderCardLineKind.Directive,
-                        BadgeKind = 4, SourceLine = s.SourceLine,
-                    });
+                {
                     foreach (var c in s.Cases)
+                    {
+                        int start = lines.Count;
                         foreach (var child in c.Payload.Body)
-                            WalkMarkup(child, depth + 1, lines, registered, ref budget);
+                            WalkMarkup(child, depth, lines, registered, ref budget);
+                        Attach(lines, start, 4,
+                            c.ValueExpression == null ? "@default" : "@case", c.SourceLine);
+                    }
                     break;
+                }
+            }
+        }
+
+        /// <summary>POC jsxRowHtml: a directive is a PROPERTY of the element node,
+        /// so the badge rides the FIRST element row the branch produced — never a
+        /// row of its own, and never an extra indent level.</summary>
+        private static void Attach(
+            List<BuilderCardLine> lines, int start, int badgeKind, string badgeText, int directiveLine)
+        {
+            if (start >= lines.Count)
+                return;
+            var row = lines[start];
+            if (row.BadgeKind != 0)
+                return;
+            row.BadgeKind = badgeKind;
+            row.BadgeText = badgeText;
+            row.DirectiveLine = directiveLine;
+        }
+
+        /// <summary>Fills DirectiveText from the buffer so the badge's inline
+        /// editor seeds the real header ("@foreach (var item in items)").</summary>
+        private static void FillDirectiveText(BuilderCanvasNode node, string[] lines)
+        {
+            foreach (var row in node.Markup)
+            {
+                if (row.DirectiveLine <= 0 || row.DirectiveLine > lines.Length)
+                    continue;
+                string raw = lines[row.DirectiveLine - 1].Trim();
+                if (raw.EndsWith("{", StringComparison.Ordinal))
+                    raw = raw.Substring(0, raw.Length - 1).TrimEnd();
+                row.DirectiveText = raw;
             }
         }
 

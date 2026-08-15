@@ -74,6 +74,13 @@ export Style CardSection = new Style {
   BorderBottomColor = Rgba(58, 58, 68, 153),
 };
 
+export Style CardSectionLast = new Style {
+  PaddingLeft = Px(12),
+  PaddingRight = Px(12),
+  PaddingTop = Px(7),
+  PaddingBottom = Px(7),
+};
+
 export Style CardSignature = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(12),
@@ -89,6 +96,76 @@ export Style CardSectionHeader = new Style {
 export Style CardImportLine = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(11),
+  FlexGrow = 1,
+  FlexShrink = 1,
+  Overflow = OverflowHidden,
+  WhiteSpace = WsNowrap,
+  TextOverflow = TextEllipsis,
+};
+
+export Style InlineEdit = new Style {
+  BackgroundColor = Hex("#17171b"),
+  Color = Hex("#d6d6dc"),
+  FontSize = Px(11.5f),
+  BorderRadius = Px(4),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#4fc3f7"),
+  BorderRightColor = Hex("#4fc3f7"),
+  BorderBottomColor = Hex("#4fc3f7"),
+  BorderLeftColor = Hex("#4fc3f7"),
+  PaddingLeft = Px(6),
+  PaddingRight = Px(6),
+  PaddingTop = Px(2),
+  PaddingBottom = Px(2),
+  MinWidth = Px(60),
+  MaxWidth = Px(240),
+  FlexGrow = 1,
+};
+
+export Style InlineEditArea = new Style {
+  BackgroundColor = Hex("#17171b"),
+  Color = Hex("#d6d6dc"),
+  FontSize = Px(11.5f),
+  BorderRadius = Px(4),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#4fc3f7"),
+  BorderRightColor = Hex("#4fc3f7"),
+  BorderBottomColor = Hex("#4fc3f7"),
+  BorderLeftColor = Hex("#4fc3f7"),
+  PaddingLeft = Px(6),
+  PaddingRight = Px(6),
+  PaddingTop = Px(2),
+  PaddingBottom = Px(2),
+  MinHeight = Px(84),
+};
+
+export Style CodeIsland = new Style {
+  BackgroundColor = Hex("#17171b"),
+  BorderRadius = Px(6),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#3a3a44"),
+  BorderRightColor = Hex("#3a3a44"),
+  BorderBottomColor = Hex("#3a3a44"),
+  BorderLeftColor = Hex("#3a3a44"),
+  PaddingLeft = Px(9),
+  PaddingRight = Px(9),
+  PaddingTop = Px(6),
+  PaddingBottom = Px(6),
+};
+
+export Style CodeIslandLine = new Style {
+  Color = Hex("#bdbdc7"),
+  FontSize = Px(11.5f),
+  WhiteSpace = WsPre,
 };
 
 export Style CardExport = new Style {

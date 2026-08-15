@@ -78,7 +78,9 @@ namespace Ruitk.Builder
             _previewHost.RegisterCallback<PointerDownEvent>(OnPreviewPicked, TrickleDown.TrickleDown);
             container.Add(_previewHost);
 
-            container.Add(new Label("PROPS — AUTO-GENERATED KNOBS")
+            // POC: the section headers are emitted only `if (rows.length)` /
+            // `if (stateRows.length)` — a style/hook/util module shows neither.
+            _knobsHeader = new Label("PROPS — AUTO-GENERATED KNOBS")
             {
                 style =
                 {
@@ -89,8 +91,10 @@ namespace Ruitk.Builder
                     borderTopWidth = 1f,
                     borderTopColor = new Color(0.227f, 0.227f, 0.267f),
                     paddingTop = 8f,
+                    display = DisplayStyle.None,
                 },
-            });
+            };
+            container.Add(_knobsHeader);
             _knobsHost = new VisualElement
             {
                 name = "builder-preview-knobs",
@@ -98,7 +102,7 @@ namespace Ruitk.Builder
             };
             container.Add(_knobsHost);
 
-            container.Add(new Label("STATE — LIVE HOOK VALUES")
+            _stateHeader = new Label("STATE — LIVE HOOK VALUES")
             {
                 style =
                 {
@@ -106,8 +110,10 @@ namespace Ruitk.Builder
                     fontSize = 10f,
                     letterSpacing = 1f,
                     marginTop = 8f, marginLeft = 8f, marginBottom = 6f,
+                    display = DisplayStyle.None,
                 },
-            });
+            };
+            container.Add(_stateHeader);
             _stateHost = new VisualElement
             {
                 style = { flexShrink = 0f, maxHeight = 140f, paddingLeft = 8f, paddingBottom = 4f },
@@ -116,8 +122,11 @@ namespace Ruitk.Builder
             EditorApplication.update += TickStatePanel;
         }
 
+        private Label _knobsHeader;
+        private Label _stateHeader;
         private VisualElement _stateHost;
         private double _nextStateRefresh;
+        private readonly List<string> _stateNames = new List<string>();
 
         private void TickStatePanel()
         {
@@ -141,9 +150,15 @@ namespace Ruitk.Builder
             _stateHost.Clear();
             var root = _renderer?.Fiber?.Root?.Current;
             if (root == null)
+            {
+                if (_stateHeader != null)
+                    _stateHeader.style.display = DisplayStyle.None;
                 return;
+            }
             int shown = 0;
             CollectHookRows(root, ref shown);
+            if (_stateHeader != null)
+                _stateHeader.style.display = shown > 0 ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void CollectHookRows(FiberNode fiber, ref int shown)
@@ -157,9 +172,19 @@ namespace Ruitk.Builder
                     int dot = owner.LastIndexOf('.');
                     if (dot >= 0)
                         owner = owner.Substring(dot + 1);
+                    bool isFocused = string.Equals(
+                        owner,
+                        Path.GetFileNameWithoutExtension(_filePath ?? "")
+                            .Replace(".style", "").Replace(".hooks", ""),
+                        StringComparison.Ordinal);
                     for (int i = 0; i < states.Count && shown < 12; i++)
                     {
-                        var field = BuildStateField(owner + "[" + i + "]", states[i]);
+                        // POC stateRows: the row is labelled with the hook's own
+                        // declared variable name (`gold`), not an index.
+                        string label = isFocused && i < _stateNames.Count
+                            ? _stateNames[i]
+                            : owner + "[" + i + "]";
+                        var field = BuildStateField(label, states[i]);
                         if (field == null)
                             continue;
                         _stateHost.Add(field);
@@ -170,6 +195,22 @@ namespace Ruitk.Builder
                     CollectHookRows(fiber.Child, ref shown);
                 fiber = fiber.Sibling;
             }
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex s_useState =
+            new System.Text.RegularExpressions.Regex(
+                @"var\s*\(\s*([A-Za-z_]\w*)\s*,[^)]*\)\s*=\s*useState\s*(?:<[^>\n]*>)?\s*\(",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>The useState destructuring names, in declaration order — the
+        /// fiber's HookStates list is indexed positionally by the same order.</summary>
+        private void CollectStateNames(string bufferText)
+        {
+            _stateNames.Clear();
+            if (string.IsNullOrEmpty(bufferText))
+                return;
+            foreach (System.Text.RegularExpressions.Match m in s_useState.Matches(bufferText))
+                _stateNames.Add(m.Groups[1].Value);
         }
 
         /// <summary>POC §7: state fields are EDITABLE — an int/float/string/bool
@@ -257,11 +298,16 @@ namespace Ruitk.Builder
         public void ShowFile(string uitkxPath, string bufferText, Assembly assemblyHint)
         {
             _filePath = uitkxPath;
+            CollectStateNames(bufferText);
             var type = ResolveComponentType(uitkxPath, assemblyHint);
             if (type == null)
             {
                 SetStatus(NoPreviewText(uitkxPath));
                 UnmountPreview();
+                if (_knobsHost != null)
+                    _knobsHost.Clear();
+                if (_knobsHeader != null)
+                    _knobsHeader.style.display = DisplayStyle.None;
                 return;
             }
 
@@ -327,11 +373,16 @@ namespace Ruitk.Builder
         /// component's file (the documented limitation).</summary>
         private void OnPreviewPicked(PointerDownEvent evt)
         {
-            if (!evt.ctrlKey || _renderer == null)
+            if (_renderer == null)
                 return;
             var picked = evt.target as VisualElement;
             if (picked == null)
                 return;
+            // POC: a plain left click selects the owning component; interactive
+            // controls (`ev.target.tagName !== "BUTTON"`) keep their own clicks.
+            for (var el = picked; el != null && el != _previewHost; el = el.parent)
+                if (el is Button || el is TextField || el is Toggle || el is Slider)
+                    return;
 
             var ownerByElement = new Dictionary<object, string>();
             var root = _renderer.Fiber?.Root?.Current;
@@ -504,6 +555,8 @@ namespace Ruitk.Builder
             if (_knobsHost == null)
                 return;
             _knobsHost.Clear();
+            if (_knobsHeader != null)
+                _knobsHeader.style.display = DisplayStyle.None;
             if (_knobProps == null)
                 return;
 
@@ -538,6 +591,21 @@ namespace Ruitk.Builder
                     _knobsHost.Add(field);
                 }
             }
+
+            if (_knobsHeader != null && _knobsHost.childCount > 0)
+                _knobsHeader.style.display = DisplayStyle.Flex;
+            if (_knobsHost.childCount > 0)
+                _knobsHost.Add(new Label(
+                    "rendered from the real component — every edit re-renders")
+                {
+                    style =
+                    {
+                        color = new Color(0.545f, 0.545f, 0.588f),
+                        fontSize = 11f,
+                        whiteSpace = WhiteSpace.Normal,
+                        marginTop = 4f, marginLeft = 4f,
+                    },
+                });
         }
     }
 }
