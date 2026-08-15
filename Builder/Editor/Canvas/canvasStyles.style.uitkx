@@ -96,10 +96,14 @@ export Style CardSectionLast = new Style {
   PaddingBottom = Px(7),
 };
 
+// POC ".props-row" declares only colour/family/size — no white-space, no overflow,
+// no text-overflow — so a signature wider than the card WRAPS and grows its
+// section. A pinned Height cut the tail of every long signature mid-word.
 export Style CardSignature = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(12),
-  Height = Px(17.4f),
+  MinHeight = Px(17.4f),
+  WhiteSpace = WsNormal,
   TextAlign = TextMiddleLeft,
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
@@ -214,6 +218,12 @@ export Style InlineEditArea = new Style {
 // would swallow the canvas zoom gesture over every island. Double-click still
 // opens the full text in the inline editor.
 export Style CodeIsland = new Style {
+  // POC emits the BODY island with an inline "margin-top: 6px" —
+  // 6px of card ground between the last hook chip and the island. The chips
+  // wrapper cancels its trailing chip margin (MarginBottom -5), so without this
+  // the island butted straight against the chip row. The hover/trace variants
+  // carry the same margin or the island jumps when the pointer enters it.
+  MarginTop = Px(6),
   BackgroundColor = Hex("#17171b"),
   Overflow = OverflowHidden,
   BorderRadius = Px(6),
@@ -247,6 +257,7 @@ export Style CodeIslandLine = new Style {
 // POC ".code-island:hover { border-color: var(--accent) }" — the island is an
 // editable surface, so hovering it says so.
 export Style CodeIslandHover = new Style {
+  MarginTop = Px(6),
   BackgroundColor = Hex("#17171b"),
   Overflow = OverflowHidden,
   BorderRadius = Px(6),
@@ -266,6 +277,7 @@ export Style CodeIslandHover = new Style {
 
 // POC ".code-island.hl" — a code island whose text names a traced hook state.
 export Style CodeIslandTrace = new Style {
+  MarginTop = Px(6),
   BackgroundColor = Hex("#221d12"),
   Overflow = OverflowHidden,
   BorderRadius = Px(6),

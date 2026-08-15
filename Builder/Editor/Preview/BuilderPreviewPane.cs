@@ -66,6 +66,10 @@ namespace Ruitk.Builder
         {
             field.style.marginLeft = 4f;
             field.style.marginBottom = 6f;
+            // POC "#preview { overflow: auto }" scrolls when the strip is long; a
+            // krow never squashes. Without this the surplus rows were compressed
+            // into each other and painted over the notes below them.
+            field.style.flexShrink = 0f;
             if (field is Toggle toggleField)
             {
                 toggleField.labelElement.style.color = BuilderPalette.Dim;
@@ -75,22 +79,41 @@ namespace Ruitk.Builder
             if (label != null)
             {
                 label.style.color = BuilderPalette.Dim;
+                // POC ".knobs label { width: 70px }" is a FLEX ITEM with the default
+                // "min-width: auto", so a name wider than 70px grows the column
+                // instead of being cut. Unity's base-field label ellipsises inside
+                // a fixed width, which made distinct hook names indistinguishable.
                 label.style.minWidth = 70f;
-                label.style.width = 70f;
+                label.style.width = StyleKeyword.Auto;
+                label.style.flexShrink = 0f;
+                label.style.overflow = Overflow.Visible;
+                label.style.textOverflow = TextOverflow.Clip;
                 label.style.fontSize = 12f;
             }
             var input = field.Q(className: "unity-base-field__input");
             if (input != null)
             {
-                StyleInput(input, BuilderPalette.Panel2);
-                input.style.fontSize = 12f;
-                // POC ".knobs input[type=text|number] { width: 110px }": the value box
-                // is a fixed plate, not a stretch — only input[type=range] is flex:1.
-                if (!(field is Toggle) && !(field is Slider) && !(field is SliderInt))
+                // POC ".knobs input[type=checkbox]" carries NO rule at all — no
+                // plate, no border, no width: a bare ~13px checkbox right after the
+                // label. Only text/number inputs get the panel2 plate.
+                if (field is Toggle)
                 {
                     input.style.flexGrow = 0f;
                     input.style.flexShrink = 0f;
-                    input.style.width = 110f;
+                    input.style.width = StyleKeyword.Auto;
+                }
+                else
+                {
+                    StyleInput(input, BuilderPalette.Panel2);
+                    input.style.fontSize = 12f;
+                    // POC ".knobs input[type=text|number] { width: 110px }": the value box
+                    // is a fixed plate, not a stretch — only input[type=range] is flex:1.
+                    if (!(field is Slider) && !(field is SliderInt))
+                    {
+                        input.style.flexGrow = 0f;
+                        input.style.flexShrink = 0f;
+                        input.style.width = 110f;
+                    }
                 }
             }
             return field;
@@ -257,7 +280,11 @@ namespace Ruitk.Builder
             _knobsHost = new VisualElement
             {
                 name = "builder-preview-knobs",
-                style = { flexShrink = 0f, maxHeight = 220f, paddingLeft = 4f },
+                // POC ".knobs" is ordinary flow content inside "#preview { overflow:
+                // auto }" — the strip keeps its natural height and the PANE scrolls.
+                // A maxHeight here had the surplus rows spill out of the box and
+                // paint over the section that followed.
+                style = { flexShrink = 0f, paddingLeft = 4f },
             };
             _knobsBlock.Add(_knobsHost);
 
@@ -278,7 +305,7 @@ namespace Ruitk.Builder
                 // 4px here plus Field's own 4px margin lands the rows on the same
                 // 8px gutter the section headers use — the POC's krows sit flush
                 // under "STATE — LIVE HOOK VALUES", not indented past it.
-                style = { flexShrink = 0f, maxHeight = 140f, paddingLeft = 4f, paddingBottom = 4f },
+                style = { flexShrink = 0f, paddingLeft = 4f, paddingBottom = 4f },
             };
             _knobsBlock.Add(_stateHost);
             _notesHost = new VisualElement { style = { flexShrink = 0f } };
@@ -538,13 +565,14 @@ namespace Ruitk.Builder
                             alignItems = Align.Center,
                             marginLeft = 4f,
                             marginBottom = 6f,
+                            flexShrink = 0f,
                         },
                     };
                     row.Add(new Label(label)
                     {
                         style =
                         {
-                            color = rowStyle, minWidth = 70f, width = 70f,
+                            color = rowStyle, minWidth = 70f,
                             flexShrink = 0f, fontSize = 12f,
                         },
                     });
@@ -825,22 +853,22 @@ namespace Ruitk.Builder
         private string NoPreviewText(string uitkxPath)
         {
             string name = Path.GetFileName(uitkxPath) ?? "";
+            string signature = "";
+            string consumers = "";
+            if (ModuleInfoProvider != null)
+            {
+                try
+                {
+                    var info = ModuleInfoProvider(uitkxPath);
+                    signature = info.Signature ?? "";
+                    consumers = info.Consumers ?? "";
+                }
+                catch (Exception)
+                {
+                }
+            }
             if (name.EndsWith(".hooks.uitkx", StringComparison.OrdinalIgnoreCase))
             {
-                string signature = "";
-                string consumers = "";
-                if (ModuleInfoProvider != null)
-                {
-                    try
-                    {
-                        var info = ModuleInfoProvider(uitkxPath);
-                        signature = info.Signature ?? "";
-                        consumers = info.Consumers ?? "";
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
                 // The graph already carries the parsed export header and the
                 // incoming hook edges; the generic clause is only the fallback for
                 // a module nothing imports yet.
@@ -854,9 +882,23 @@ namespace Ruitk.Builder
                     + "Double-click its code island to edit the body.";
             }
             if (name.EndsWith(".style.uitkx", StringComparison.OrdinalIgnoreCase))
+            {
+                // POC ".nopreview" for a style module names the CONCRETE importer and
+                // the CONCRETE export ("select ShopScreen first, then edit root's …");
+                // both are on the graph, so the generic phrasing is only the fallback
+                // for a module nothing imports yet / one with no export parsed.
+                int comma = consumers.IndexOf(',');
+                string importer = comma > 0 ? consumers.Substring(0, comma) : consumers;
+                string who = importer.Length > 0
+                    ? "<b>" + importer + "</b>"
+                    : "<b>the component that imports it</b>";
+                string what = signature.Length > 0
+                    ? "<b>" + signature + "</b>"
+                    : "<b>an entry</b>";
                 return "Style module — no visual of its own. Zoom to L2 and click an entry to "
-                    + "edit it. Tip: select <b>the component that imports it</b> first, then edit "
-                    + "<b>an entry</b>'s BackgroundColor hex — the live preview repaints.";
+                    + "edit it. Tip: select " + who + " first, then edit "
+                    + what + "'s BackgroundColor hex — the live preview repaints.";
+            }
             return "Util module — no visual. Its exported functions land on the file's "
                 + "<b>__Exports</b> class; drag the module onto a component to import them by name.";
         }

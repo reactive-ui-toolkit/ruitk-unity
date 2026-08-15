@@ -1816,7 +1816,23 @@ namespace Ruitk.Builder
                         consumers.Add(title);
                 }
             }
-            return (self.Signature ?? "", string.Join(", ", consumers));
+            // A style/util module has no declaration head at all; what the POC's
+            // ".nopreview" names for one is its FIRST export ("edit root's
+            // BackgroundColor hex"), which the card already parsed onto ExportDetail.
+            string signature = self.ExposedSignature;
+            if (string.IsNullOrEmpty(signature))
+                signature = self.Signature;
+            if (string.IsNullOrEmpty(signature))
+            {
+                foreach (var detail in self.ExportDetail)
+                {
+                    if (string.IsNullOrEmpty(detail.AttrsText) || detail.BadgeKind != 13)
+                        continue;
+                    signature = detail.AttrsText;
+                    break;
+                }
+            }
+            return (signature ?? "", string.Join(", ", consumers));
         }
 
         /// <summary>Debounced buffer-edit entry point (CodeField/authoring call

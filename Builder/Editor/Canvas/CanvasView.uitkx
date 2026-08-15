@@ -231,10 +231,15 @@ export VirtualNode CanvasView(
                 // The global box-sizing:border-box reset in index.html puts this
                 // frame INSIDE the authored .card width, and UITK Width is
                 // border-box too, so CardWidthFor carries the POC number as-is.
-                BorderTopWidth = 1.5f,
-                BorderRightWidth = 1.5f,
-                BorderBottomWidth = 1.5f,
-                BorderLeftWidth = 1.5f,
+                // The authored 1.5 laid down ~1.8 device px of ink at the L1 zoom
+                // against the ~1.1 the POC lays down (UITK spreads a fractional
+                // border across the next whole device pixel instead of dimming it),
+                // so the width carries the same measured compensation
+                // CardHeader/CardSection already do.
+                BorderTopWidth = 1.15f,
+                BorderRightWidth = 1.15f,
+                BorderBottomWidth = 1.15f,
+                BorderLeftWidth = 1.15f,
                 BorderTopColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
                 BorderRightColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
                 BorderBottomColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
@@ -884,7 +889,12 @@ export VirtualNode CanvasView(
                                         PaddingBottom = Px(2),
                                         PaddingLeft = Px(detail.Depth > 0 ? detail.Depth * 24f : 6f),
                                         PaddingRight = Px(6),
-                                        Height = Px(21.4f),
+                                        // POC ".style-entry" carries no white-space
+                                        // rule, so an entry wider than the card
+                                        // wraps and the row GROWS. A pinned height
+                                        // clipped the tail of a long entry instead.
+                                        MinHeight = Px(21.4f),
+                                        WhiteSpace = WsNormal,
                                         TextAlign = TextMiddleLeft,
                                         BorderRadius = Px(4),
                                         BackgroundColor = editableLine && hoverChipKey == entryKey
@@ -1269,7 +1279,7 @@ export VirtualNode CanvasView(
                 );
               }
             </VisualElement>
-            @if (isSelected && lod >= 1) {
+            @if (isSelected) {
               return (
                 <VisualElement style={CanvasStyles.SelectionRing} pickingMode={PickIgnore} />
               );

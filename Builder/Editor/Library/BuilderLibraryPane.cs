@@ -55,12 +55,11 @@ namespace Ruitk.Builder
         private TextField _search;
         private string _filter = "";
 
-        /// <summary>Width one row occupies when its name fits — the viewport, so a
-        /// short pill is exactly as wide as the pane like the POC's block-level
-        /// ".lib-item". A longer name grows PAST it (UI Toolkit gives overflowing
-        /// glyphs no scrollable extent, so the box has to carry the name) and the
-        /// list's horizontal scroller reaches the rest, which is what
-        /// "#lib-body { overflow-x: auto }" does in the POC.</summary>
+        /// <summary>Width every row occupies — the viewport, so a pill is exactly as
+        /// wide as the pane like the POC's block-level ".lib-item", and the search
+        /// box shares its gutter. The POC pane is "overflow-y: auto" only: a name
+        /// wider than the box wraps inside it, so no row ever needs a horizontal
+        /// extent.</summary>
         private float _rowWidth;
 
         public async void Attach(VisualElement container, Action onNewFile = null)
@@ -140,7 +139,15 @@ namespace Ruitk.Builder
 
             var search = new TextField
             {
-                style = { marginTop = 8f, marginBottom = 8f, flexShrink = 0f },
+                // POC "#lib-search { display:block; width:100%; box-sizing:border-box }"
+                // as the first child of the 8px-padded "#lib-body": the box shares its
+                // left and right edge with every pill. Unity's base-field carries 3px
+                // side margins of its own, which inset the field past the pill gutter.
+                style =
+                {
+                    marginTop = 8f, marginBottom = 8f, flexShrink = 0f,
+                    marginLeft = 0f, marginRight = 0f,
+                },
             };
             search.textEdition.placeholder = "search library…";
             BuilderPreviewPane.StyleInput(search);
@@ -160,9 +167,14 @@ namespace Ruitk.Builder
             // and "#lib-body { overflow-y: auto }" is the scroller — so the search box
             // scrolls away with the list instead of being pinned above it. The rows go
             // in a sibling host so a rebuild never removes (and unfocuses) the field.
-            var scroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal)
+            // POC "#lib-body { overflow-y: auto }" — VERTICAL only. The horizontal
+            // scroller Unity added for over-wide rows laid its thumb across the
+            // bottom of the pane and clipped the last pill; the POC never shows one
+            // because a ".lib-item" is a block that WRAPS its text instead.
+            var scroll = new ScrollView(ScrollViewMode.Vertical)
             {
                 style = { flexGrow = 1f, paddingLeft = 8f },
+                horizontalScrollerVisibility = ScrollerVisibility.Hidden,
             };
             // The POC pane shows no editor chrome and its pills keep the full 8px
             // gutter; Unity's default scroller is a light control laid out INSIDE
@@ -432,7 +444,7 @@ namespace Ruitk.Builder
                 if (!(child.userData is string tag))
                     continue;
                 if (tag == "lib-item")
-                    child.style.minWidth = _rowWidth;
+                    child.style.width = _rowWidth;
                 else if (tag == "lib-hint")
                     child.style.width = _rowWidth;
             }
@@ -486,14 +498,20 @@ namespace Ruitk.Builder
                         marginBottom = 4f,
                         // POC ".lib-item" inherits body's 1.45 line box: 12px text
                         // becomes a 17.4px line, so the box is 28px tall, not the
-                        // 25px UI Toolkit's line-height-less Label produces.
-                        height = 28f,
+                        // 25px UI Toolkit's line-height-less Label produces. It is a
+                        // BLOCK with no white-space rule, so a name wider than the
+                        // pane wraps and the pill grows taller instead of running
+                        // past the pane edge — minHeight, not a pinned height.
+                        minHeight = 28f,
+                        whiteSpace = WhiteSpace.Normal,
                         unityTextAlign = TextAnchor.MiddleLeft,
                         flexShrink = 0f,
                         // The legacy dynamic-Font `unityFont` slot is ignored by
                         // UI Toolkit's text engine — only a FontDefinition takes.
                         unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
-                        minWidth = _rowWidth > 0f ? _rowWidth : 0f,
+                        width = _rowWidth > 0f
+                            ? new StyleLength(_rowWidth)
+                            : new StyleLength(StyleKeyword.Auto),
                     },
                 };
                 row.userData = "lib-item";

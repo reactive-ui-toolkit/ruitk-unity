@@ -81,6 +81,11 @@ namespace Ruitk.Builder
         public string FilePath;
         public string Title;
         public string Signature;
+
+        /// <summary>POC ".nopreview": a hook module names what it hands back —
+        /// "useCart(gold, setGold) → (Count, Buy)". The card's signature row shows
+        /// the declaration head only, so the return tuple is carried separately.</summary>
+        public string ExposedSignature;
         public BuilderNodeKind Kind;
         public float X;
         public float Y;

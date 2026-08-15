@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -179,20 +180,40 @@ namespace Ruitk.Builder
             node.IslandLines.Clear();
             FillExportsFromSource(node, text);
             node.Signature = ExtractSignature(text, node);
+            node.ExposedSignature = ExtractExposedSignature(text, node);
             ExtractIslandLines(text, node);
 
             var parsed = BuilderLanguage.Parse(text, node.FilePath);
 
+            // POC cardHtml emits one .imp-row per entry in n.imports — EVERY import
+            // line in the file, because the card IS the editing surface. A namespace
+            // import ("@UnityEngine.UIElements") is filed by the parser in
+            // Directives.UsingDirectives, NOT in Directives.Imports, so walking the
+            // module imports alone dropped those rows and the card disagreed with the
+            // SOURCE pane. Both sequences are merged back into source-line order.
+            var importRows = new List<BuilderCardLine>();
+            foreach (var ns in parsed.Directives.UsingDirectives)
+            {
+                string payload = ns.Payload ?? "";
+                // Namespace imports resolve to no graph node, so they carry
+                // BadgeKind 8: a text-only row with no anchor dot and no edge.
+                importRows.Add(new BuilderCardLine
+                {
+                    Text = ns.FromImportSyntax
+                        ? "import \"@" + payload + "\""
+                        : "@using " + payload,
+                    AttrsText = "@" + payload,
+                    Kind = BuilderCardLineKind.Import,
+                    BadgeKind = BuilderCanvasDrawing.NamespaceImportBadge,
+                    SourceLine = ns.Line,
+                });
+            }
             foreach (var import in parsed.Directives.Imports)
             {
                 string spec = import.Specifier ?? "";
-                // POC cardHtml emits one .imp-row per entry in n.imports — EVERY
-                // import line in the file, because the card IS the editing surface.
-                // Namespace imports resolve to no graph node, so they carry
-                // BadgeKind 8: a text-only row with no anchor dot and no edge.
                 if (spec.StartsWith("@", StringComparison.Ordinal))
                 {
-                    node.Imports.Add(new BuilderCardLine
+                    importRows.Add(new BuilderCardLine
                     {
                         Text = "import \"" + spec + "\"",
                         AttrsText = spec,
@@ -226,7 +247,7 @@ namespace Ruitk.Builder
                 int dotKind = spec.EndsWith(".style", StringComparison.OrdinalIgnoreCase) ? 7
                     : spec.EndsWith(".hooks", StringComparison.OrdinalIgnoreCase) ? 6
                     : 5;
-                node.Imports.Add(new BuilderCardLine
+                importRows.Add(new BuilderCardLine
                 {
                     Text = "import " + clause + " from \"" + spec + "\"",
                     AttrsText = spec,
@@ -235,6 +256,10 @@ namespace Ruitk.Builder
                     SourceLine = import.Line,
                 });
             }
+            // File order is what the SOURCE pane shows; OrderBy is stable, so two
+            // rows the parser gave the same line keep their sequence order.
+            foreach (var row in importRows.OrderBy(r => r.SourceLine))
+                node.Imports.Add(row);
 
             string[] allLines = text.Split('\n');
             // POC cardHtml walks the WHOLE model — every hook chip, every JSX row
@@ -337,6 +362,34 @@ namespace Ruitk.Builder
             if (wide.Success)
                 return wide.Groups["name"].Value + "(" + Collapse(wide.Groups["args"].Value) + ")";
             return node.Title + "()";
+        }
+
+        private static readonly Regex s_exportReturns = new Regex(
+            @"(?:^|\n)\s*export\s+\((?<ret>[^)]*)\)\s*(?<name>\w+)\s*\((?<args>[^)]*)\)",
+            RegexOptions.Compiled);
+
+        /// <summary>POC ".nopreview" for a hook module: "useCart(gold, setGold) →
+        /// (Count, Buy)" — the declaration head PLUS the names of the return tuple,
+        /// which the card's own signature row does not carry.</summary>
+        private static string ExtractExposedSignature(string text, BuilderCanvasNode node)
+        {
+            if (string.IsNullOrEmpty(node.Signature))
+                return "";
+            var match = s_exportReturns.Match(text);
+            if (!match.Success)
+                return node.Signature;
+            var names = new List<string>();
+            foreach (string part in match.Groups["ret"].Value.Split(','))
+            {
+                string piece = Collapse(part);
+                if (piece.Length == 0)
+                    continue;
+                int space = piece.LastIndexOf(' ');
+                names.Add(space >= 0 ? piece.Substring(space + 1) : piece);
+            }
+            if (names.Count == 0)
+                return node.Signature;
+            return node.Signature + " → (" + string.Join(", ", names) + ")";
         }
 
         /// <summary>POC code island: every setup statement between the header and

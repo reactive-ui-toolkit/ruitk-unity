@@ -376,26 +376,42 @@ namespace Ruitk.Builder
             var rect = ctx.visualElement.contentRect;
             if (rect.width <= 0f || rect.height <= 0f)
                 return;
-            var p = ctx.painter2D;
-            p.fillColor = new Color(0.173f, 0.173f, 0.200f);
-            p.BeginPath();
-            // The gradient's "circle at 1px 1px, #2c2c33 1px" covers a 2x2 box;
-            // integer coordinates keep every dot fully opaque instead of letting
-            // a fractional quad antialias half its ink away.
-            for (float y = 1f; y < rect.height; y += 26f)
+            // The CSS gradient is "circle at 1px 1px, #2c2c33 1px, transparent 1px"
+            // on a 26px tile — a HARD stop, so the covered pixels are 0 and 1 of the
+            // tile and nothing bleeds onto pixel 2. Painter2D antialiases its fills
+            // and put a 1/255 halo around every dot (a 4x4 footprint against the
+            // POC's 2x2), so the lattice is written as raw quads instead: a mesh
+            // vertex run has no coverage falloff at all.
+            int cols = Mathf.FloorToInt((rect.width - 1f) / 26f) + 1;
+            int rows = Mathf.FloorToInt((rect.height - 1f) / 26f) + 1;
+            if (cols <= 0 || rows <= 0)
+                return;
+            // ushort indices cap one mesh at 65535 vertices; 16000 dots is well past
+            // any window the builder opens in and keeps the allocation legal.
+            int dots = Mathf.Min(cols * rows, 16000);
+            var mesh = ctx.Allocate(dots * 4, dots * 6);
+            var color = new Color(0.173f, 0.173f, 0.200f);
+            int drawn = 0;
+            for (int row = 0; row < rows && drawn < dots; row++)
             {
-                float y0 = Mathf.Floor(y);
-                for (float x = 1f; x < rect.width; x += 26f)
+                float y0 = row * 26f;
+                for (int col = 0; col < cols && drawn < dots; col++)
                 {
-                    float x0 = Mathf.Floor(x);
-                    p.MoveTo(new Vector2(x0, y0));
-                    p.LineTo(new Vector2(x0 + 2f, y0));
-                    p.LineTo(new Vector2(x0 + 2f, y0 + 2f));
-                    p.LineTo(new Vector2(x0, y0 + 2f));
-                    p.ClosePath();
+                    float x0 = col * 26f;
+                    ushort v = (ushort)(drawn * 4);
+                    mesh.SetNextVertex(new Vertex { position = new Vector3(x0, y0, Vertex.nearZ), tint = color });
+                    mesh.SetNextVertex(new Vertex { position = new Vector3(x0 + 2f, y0, Vertex.nearZ), tint = color });
+                    mesh.SetNextVertex(new Vertex { position = new Vector3(x0 + 2f, y0 + 2f, Vertex.nearZ), tint = color });
+                    mesh.SetNextVertex(new Vertex { position = new Vector3(x0, y0 + 2f, Vertex.nearZ), tint = color });
+                    mesh.SetNextIndex(v);
+                    mesh.SetNextIndex((ushort)(v + 1));
+                    mesh.SetNextIndex((ushort)(v + 2));
+                    mesh.SetNextIndex(v);
+                    mesh.SetNextIndex((ushort)(v + 2));
+                    mesh.SetNextIndex((ushort)(v + 3));
+                    drawn++;
                 }
             }
-            p.Fill();
         }
 
         /// <summary>POC ".card { border: 1px solid var(--line) }" / ".card.sel
@@ -405,17 +421,17 @@ namespace Ruitk.Builder
         /// alpha-modulates a sub-pixel border far less aggressively and painted a
         /// hard #303038 hairline, which made the L0 pills read as outlined chips
         /// instead of flat plates — the alpha is folded down at L0 to match.
-        /// The SELECTED gold gets the same treatment: probed on
-        /// poc-l0-architecture.png the selected top edge peaks at #4C442C over two
-        /// rows, i.e. the 1.5px #ffd54f frame plus its .25 spread ring collapse to
-        /// ~0.4 px-equivalent of ink at zoom 0.30. The 2px SelectionRing is not
-        /// emitted at lod 0 at all (CanvasView gates it on lod &gt;= 1, because
-        /// 2 world px = 0.6 screen px there and UI Toolkit paints it as a full
-        /// hairline), so this frame alone has to land on the POC's ~0.19 peak.</summary>
+        /// The SELECTED gold is dimmed but NOT erased: probed on
+        /// poc-l0-architecture.png the selected edge lays gold on TWO device rows
+        /// per side (#494025 over #4C442C on top, peak #695A2F at the bottom),
+        /// ~0.39 coverage per side — the 1.5px #ffd54f frame plus the .25 spread
+        /// ring, both scaled by the 0.30 zoom. The ring is emitted at lod 0 too
+        /// (it carries the outer row); this frame carries the inner one, so 0.2
+        /// under-inked it to a single olive hairline.</summary>
         public static Color CardFrameBorderColor(bool selected, int lod)
         {
             if (selected)
-                return new Color(1f, 0.835f, 0.310f, lod == 0 ? 0.2f : 1f);
+                return new Color(1f, 0.835f, 0.310f, lod == 0 ? 0.4f : 1f);
             var line = BuilderPalette.Line;
             if (lod == 0)
                 line.a = 0.12f;
