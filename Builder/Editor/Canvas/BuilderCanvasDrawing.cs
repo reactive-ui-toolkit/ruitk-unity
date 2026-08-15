@@ -82,6 +82,15 @@ namespace Ruitk.Builder
 
         public static bool DragActive => BuilderDragService.Active;
 
+        /// <summary>Anchor-dot color per import kind marker (5 usage / 6 hook /
+        /// 7 style).</summary>
+        public static Color DotColor(int dotKind) => dotKind switch
+        {
+            6 => new Color(0.427f, 0.659f, 0.435f),
+            7 => new Color(0.647f, 0.467f, 0.702f),
+            _ => new Color(0.361f, 0.545f, 0.690f),
+        };
+
         public static Color BadgeColor(int badgeKind) => badgeKind switch
         {
             1 => new Color(1.00f, 0.72f, 0.30f),

@@ -151,6 +151,23 @@ namespace Ruitk.Builder
             _canvasHost.OnRowDrop = OnCanvasRowDrop;
             _canvasHost.OnStyleAddEntry = OnStyleAddEntry;
             _canvasHost.OnRowAttrsEdit = OnRowAttrsEdited;
+            _canvasHost.OnAddHook = path =>
+            {
+                OpenSession(Path.GetFullPath(path));
+                InsertBeforeLastReturn(Path.GetFullPath(path), "  var (value, setValue) = useState(0);");
+            };
+            _canvasHost.OnDeleteFile = path =>
+            {
+                string projectRel = path.Replace('\\', '/');
+                int idx = projectRel.IndexOf("/Assets/", System.StringComparison.OrdinalIgnoreCase);
+                if (idx < 0)
+                    idx = projectRel.IndexOf("/Packages/", System.StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                    UnityEditor.AssetDatabase.DeleteAsset(projectRel.Substring(idx + 1));
+                else
+                    File.Delete(path);
+                MountCanvas();
+            };
             _canvasHost.OnCreateRequested = kind =>
             {
                 string dir = string.IsNullOrEmpty(_focusFile) ? null : Path.GetDirectoryName(_focusFile);

@@ -15,7 +15,15 @@ export Style EdgeLayer = new Style {
 export Style CardHeader = new Style {
   FlexDirection = FlexRow,
   AlignItems = AlignCenter,
-  Padding = Px(6),
+  PaddingLeft = Px(12),
+  PaddingRight = Px(12),
+  PaddingTop = Px(8),
+  PaddingBottom = Px(8),
+  BackgroundColor = Hex("#2a2a31"),
+  BorderBottomWidth = 1,
+  BorderBottomColor = Hex("#3a3a44"),
+  BorderTopLeftRadius = Px(9),
+  BorderTopRightRadius = Px(9),
 };
 
 export Style CardTitle = new Style {

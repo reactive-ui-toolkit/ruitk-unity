@@ -31,6 +31,8 @@ namespace Ruitk.Builder
         public Action<string, int, int, string> OnRowDrop;
         public Action<string, string, int> OnStyleAddEntry;
         public Action<string, int, string> OnRowAttrsEdit;
+        public Action<string> OnAddHook;
+        public Action<string> OnDeleteFile;
 
         public async void Mount(
             VisualElement container,
@@ -99,6 +101,13 @@ namespace Ruitk.Builder
                             OnStyleAddEntry?.Invoke(path, styleName, closeLine),
                         OnRowAttrsEdit = (path, line, attrs) =>
                             OnRowAttrsEdit?.Invoke(path, line, attrs),
+                        OnAddHook = path => OnAddHook?.Invoke(path),
+                        OnRowNavigate = tag =>
+                        {
+                            var target = FindNodeByTitle(tag);
+                            if (target != null)
+                                onOpenFile?.Invoke(target.FilePath);
+                        },
                     }
                 )
             );
@@ -154,6 +163,30 @@ namespace Ruitk.Builder
             });
             menu.AddItem(new UnityEngine.GUIContent("Copy Path"), false, () =>
                 UnityEditor.EditorGUIUtility.systemCopyBuffer = node.FilePath);
+            menu.AddSeparator("");
+            menu.AddItem(
+                new UnityEngine.GUIContent("Delete " + System.IO.Path.GetFileName(node.FilePath)),
+                false,
+                () =>
+                {
+                    var referencedBy = new List<string>();
+                    foreach (var edge in _graph.Edges)
+                        if (edge.ToIndex == index && edge.FromIndex >= 0)
+                            referencedBy.Add(_graph.Nodes[edge.FromIndex].Title);
+                    if (referencedBy.Count > 0)
+                    {
+                        UnityEditor.EditorUtility.DisplayDialog(
+                            "Can't delete",
+                            "Still referenced by " + string.Join(", ", referencedBy) + ".",
+                            "OK");
+                        return;
+                    }
+                    if (UnityEditor.EditorUtility.DisplayDialog(
+                            "Delete file?",
+                            System.IO.Path.GetFileName(node.FilePath) + " will be deleted from disk.",
+                            "Delete", "Cancel"))
+                        OnDeleteFile?.Invoke(node.FilePath);
+                });
             menu.ShowAsContext();
         }
 

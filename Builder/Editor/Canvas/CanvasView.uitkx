@@ -17,7 +17,9 @@ export VirtualNode CanvasView(
   Action onCanvasContext = null,
   Action<string, int, int, string> onRowDrop = null,
   Action<string, string, int> onStyleAddEntry = null,
-  Action<string, int, string> onRowAttrsEdit = null
+  Action<string, int, string> onRowAttrsEdit = null,
+  Action<string> onAddHook = null,
+  Action<string> onRowNavigate = null
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -244,12 +246,33 @@ export VirtualNode CanvasView(
                         <VisualElement>
                           <Label text="IMPORTS" style={CanvasStyles.CardSectionHeader} />
                           @for (int x = 0; x < node.Imports.Count; x++) {
+                            var imp = node.Imports[x];
                             return (
-                              <Label
+                              <VisualElement
                                 key={$"imp-{x}"}
-                                text={node.Imports[x].Text}
-                                style={CanvasStyles.CardImportLine}
-                              />
+                                style={new Style { FlexDirection = FlexRow, AlignItems = AlignCenter }}
+                              >
+                                <Label
+                                  text={imp.Text}
+                                  style={new Style {
+                                    Color = Hex("#8b8b96"),
+                                    FontSize = Px(9),
+                                    FlexGrow = 1,
+                                    FlexShrink = 1,
+                                    Overflow = OverflowHidden,
+                                  }}
+                                />
+                                <VisualElement
+                                  style={new Style {
+                                    Width = Px(8),
+                                    Height = Px(8),
+                                    BorderRadius = Px(4),
+                                    BackgroundColor = BuilderCanvasDrawing.DotColor(imp.BadgeKind),
+                                    MarginLeft = Px(6),
+                                    FlexShrink = 0,
+                                  }}
+                                />
+                              </VisualElement>
                             );
                           }
                         </VisualElement>
@@ -301,7 +324,74 @@ export VirtualNode CanvasView(
                                 />
                               );
                             }
+                            @if (node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook) {
+                              return (
+                                <Label
+                                  text="+ hook"
+                                  onPointerDown={e => {
+                                    if (onAddHook != null) {
+                                      onAddHook(node.FilePath);
+                                    }
+                                    e.StopPropagation();
+                                  }}
+                                  style={new Style {
+                                    Color = Hex("#8b8b96"),
+                                    FontSize = Px(10),
+                                    BorderRadius = Px(10),
+                                    BorderTopWidth = 1,
+                                    BorderRightWidth = 1,
+                                    BorderBottomWidth = 1,
+                                    BorderLeftWidth = 1,
+                                    BorderTopColor = Hex("#3a3a44"),
+                                    BorderRightColor = Hex("#3a3a44"),
+                                    BorderBottomColor = Hex("#3a3a44"),
+                                    BorderLeftColor = Hex("#3a3a44"),
+                                    PaddingLeft = Px(9),
+                                    PaddingRight = Px(9),
+                                    PaddingTop = Px(2),
+                                    PaddingBottom = Px(2),
+                                    MarginBottom = Px(5),
+                                  }}
+                                />
+                              );
+                            }
                           </VisualElement>
+                          @if (lod == 2 && node.IslandLines.Count > 0) {
+                            return (
+                              <VisualElement
+                                style={new Style {
+                                  BackgroundColor = Hex("#17171b"),
+                                  BorderRadius = Px(6),
+                                  BorderTopWidth = 1,
+                                  BorderRightWidth = 1,
+                                  BorderBottomWidth = 1,
+                                  BorderLeftWidth = 1,
+                                  BorderTopColor = Hex("#3a3a44"),
+                                  BorderRightColor = Hex("#3a3a44"),
+                                  BorderBottomColor = Hex("#3a3a44"),
+                                  BorderLeftColor = Hex("#3a3a44"),
+                                  PaddingLeft = Px(9),
+                                  PaddingRight = Px(9),
+                                  PaddingTop = Px(6),
+                                  PaddingBottom = Px(6),
+                                  MarginTop = Px(6),
+                                }}
+                              >
+                                @for (int ci = 0; ci < node.IslandLines.Count; ci++) {
+                                  return (
+                                    <Label
+                                      key={$"isl-{ci}"}
+                                      text={node.IslandLines[ci]}
+                                      style={new Style {
+                                        Color = Hex("#bdbdc7"),
+                                        FontSize = Px(10),
+                                      }}
+                                    />
+                                  );
+                                }
+                              </VisualElement>
+                            );
+                          }
                         </VisualElement>
                       );
                     }
@@ -403,6 +493,13 @@ export VirtualNode CanvasView(
                                   if (e.Button == 1) {
                                     if (onRowContext != null) {
                                       onRowContext(node.FilePath, row.SourceLine, rowIdx);
+                                    }
+                                    e.StopPropagation();
+                                    return;
+                                  }
+                                  if (e.ClickCount >= 2 && row.Kind == BuilderCardLineKind.Component) {
+                                    if (onRowNavigate != null) {
+                                      onRowNavigate(row.Text.Trim('<', '>'));
                                     }
                                     e.StopPropagation();
                                     return;

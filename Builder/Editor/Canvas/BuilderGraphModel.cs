@@ -67,6 +67,10 @@ namespace Ruitk.Builder
         /// lines (Plain, Depth 1, L2-only), and "+ entry" affordances
         /// (BadgeKind 9, AttrsText = the style export name).</summary>
         public List<BuilderCardLine> ExportDetail = new List<BuilderCardLine>();
+
+        /// <summary>Setup-code lines (non-hook statements) shown as the POC's
+        /// code island at L2.</summary>
+        public List<string> IslandLines = new List<string>();
     }
 
     /// <summary>One import edge; indices into the node list (broken edges keep To = -1).</summary>

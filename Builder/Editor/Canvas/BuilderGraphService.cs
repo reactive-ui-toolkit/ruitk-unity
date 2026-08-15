@@ -176,7 +176,9 @@ namespace Ruitk.Builder
             node.Imports.Clear();
             node.Body.Clear();
             node.Markup.Clear();
-            node.Signature = node.Kind == BuilderNodeKind.Component ? node.Title + "()" : node.Title;
+            node.IslandLines.Clear();
+            node.Signature = ExtractSignature(text, node);
+            ExtractIslandLines(text, node);
 
             var parsed = BuilderLanguage.Parse(text, node.FilePath);
 
@@ -188,10 +190,14 @@ namespace Ruitk.Builder
                 string names = import.Names.IsDefaultOrEmpty || import.Names.Length == 0
                     ? "*"
                     : "{ " + string.Join(", ", import.Names) + " }";
+                int dotKind = spec.EndsWith(".style", StringComparison.OrdinalIgnoreCase) ? 7
+                    : spec.EndsWith(".hooks", StringComparison.OrdinalIgnoreCase) ? 6
+                    : 5;
                 node.Imports.Add(new BuilderCardLine
                 {
                     Text = names + "  ←  " + spec,
                     Kind = BuilderCardLineKind.Import,
+                    BadgeKind = dotKind,
                 });
             }
 
@@ -226,6 +232,8 @@ namespace Ruitk.Builder
             node.ExportDetail.Clear();
             if (node.Kind == BuilderNodeKind.Style)
                 ParseStyleDetail(text, node);
+            else if (node.Kind == BuilderNodeKind.Util)
+                ParseUtilDetail(text, node);
             else if (node.Markup.Count == 0 && node.Exports.Count > 0)
             {
                 foreach (string export in node.Exports)
@@ -234,6 +242,109 @@ namespace Ruitk.Builder
                         Text = export,
                         Kind = BuilderCardLineKind.Export,
                     });
+            }
+        }
+
+        private static readonly Regex s_exportHeader = new Regex(
+            @"^export\s+(?:VirtualNode|\([^)]*\))\s+(\w+)\s*(\([^)]*\))", RegexOptions.Compiled);
+
+        /// <summary>POC signature line: bold name + dimmed props signature,
+        /// pulled from the export header (component and hook files).</summary>
+        private static string ExtractSignature(string text, BuilderCanvasNode node)
+        {
+            if (node.Kind != BuilderNodeKind.Component && node.Kind != BuilderNodeKind.Hook)
+                return node.Title;
+            foreach (string raw in text.Split('\n'))
+            {
+                var match = s_exportHeader.Match(raw.Trim());
+                if (match.Success)
+                    return match.Groups[1].Value + match.Groups[2].Value;
+            }
+            return node.Title + "()";
+        }
+
+        /// <summary>POC code island: the setup statements between the header and
+        /// the return that are not hook declarations (capped at 5).</summary>
+        private static void ExtractIslandLines(string text, BuilderCanvasNode node)
+        {
+            if (node.Kind != BuilderNodeKind.Component && node.Kind != BuilderNodeKind.Hook)
+                return;
+            bool inBody = false;
+            foreach (string raw in text.Split('\n'))
+            {
+                string line = raw.Trim();
+                if (!inBody)
+                {
+                    if (s_exportHeader.IsMatch(line))
+                        inBody = true;
+                    continue;
+                }
+                if (line.StartsWith("return (", StringComparison.Ordinal))
+                    break;
+                if (line.Length == 0
+                    || s_hookCall.IsMatch(line)
+                    || line.StartsWith("import ", StringComparison.Ordinal))
+                    continue;
+                node.IslandLines.Add(line);
+                if (node.IslandLines.Count == 5)
+                {
+                    node.IslandLines.Add("…");
+                    break;
+                }
+            }
+        }
+
+        /// <summary>POC util card: value exports as-is; function exports as
+        /// "sig {" + body lines (L2) + "}".</summary>
+        private static void ParseUtilDetail(string text, BuilderCanvasNode node)
+        {
+            string[] lines = text.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (!line.StartsWith("export ", StringComparison.Ordinal))
+                    continue;
+                if (line.Contains("=") && !line.Contains("("))
+                {
+                    node.ExportDetail.Add(new BuilderCardLine
+                    {
+                        Text = line,
+                        Kind = BuilderCardLineKind.Export,
+                        SourceLine = i + 1,
+                    });
+                    continue;
+                }
+                if (!line.Contains("("))
+                    continue;
+                node.ExportDetail.Add(new BuilderCardLine
+                {
+                    Text = line.TrimEnd('{', ' ') + " {",
+                    Kind = BuilderCardLineKind.Export,
+                    SourceLine = i + 1,
+                });
+                int j = i + 1;
+                for (; j < lines.Length; j++)
+                {
+                    string body = lines[j].Trim();
+                    if (body.StartsWith("}", StringComparison.Ordinal))
+                        break;
+                    if (body.Length == 0)
+                        continue;
+                    node.ExportDetail.Add(new BuilderCardLine
+                    {
+                        Text = body,
+                        Kind = BuilderCardLineKind.Plain,
+                        Depth = 1,
+                        SourceLine = j + 1,
+                    });
+                }
+                node.ExportDetail.Add(new BuilderCardLine
+                {
+                    Text = "}",
+                    Kind = BuilderCardLineKind.Plain,
+                    SourceLine = j + 1,
+                });
+                i = j;
             }
         }
 
