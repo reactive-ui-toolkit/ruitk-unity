@@ -229,7 +229,8 @@ namespace Ruitk.Builder
             // the POC's entity.
             const string Bullet = " \u00a0•\u00a0 ";
             var footer = new Label(
-                "Wheel: zoom" + Bullet + "Drag Library items onto rows (top=before, bottom=after, "
+                "Wheel: zoom (Ctrl+wheel over a scrolling section)" + Bullet
+                + "Drag Library items onto rows (top=before, bottom=after, "
                 + "middle=inside) or BODY (hooks); drag rows to reorder" + Bullet + "Right-click rows / "
                 + "cards / canvas for typed attributes, directives, delete, create" + Bullet + "L2: click "
                 + "attrs / badges / style entries to edit" + Bullet + "Source pane: edit → apply "
@@ -276,7 +277,11 @@ namespace Ruitk.Builder
                 return;
             _canvasHost?.Unmount();
             _canvasHost = new BuilderCanvasHost();
-            _canvasHost.ZoomChanged = zoom => SetActiveMode(BuilderCanvasHost.LodOf(zoom));
+            _canvasHost.ZoomChanged = zoom =>
+            {
+                SetActiveMode(BuilderCanvasHost.LodOf(zoom));
+                _canvasHost?.RestyleScrollers();
+            };
             _canvasHost.OnRowClick = OnCanvasRowClicked;
             _canvasHost.OnRowContext = OnCanvasRowContext;
             _canvasHost.OnRowDrop = OnCanvasRowDrop;
@@ -431,8 +436,12 @@ namespace Ruitk.Builder
             var set = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
             foreach (string element in BuilderSchemaCache.ElementNames)
                 set.Add(element);
+            // Only COMPONENT exports are legal tags — feeding style/util export
+            // names in would make <BgDeep /> pass the unknown-element check.
             foreach (var node in nodes)
             {
+                if (node.Kind != BuilderNodeKind.Component)
+                    continue;
                 foreach (string export in node.Exports)
                     set.Add(export);
                 if (!string.IsNullOrEmpty(node.Title))
@@ -450,6 +459,8 @@ namespace Ruitk.Builder
                 return;
             container.Clear();
             _libraryPane = new BuilderLibraryPane();
+            _libraryPane.SchemaLoaded =
+                () => _codeField?.SetKnownElements(KnownElementsOrNull());
             // POC btnLibNew → openCreateMenu at the button: "+ new" opens the same
             // four-item create menu the empty-canvas right-click does.
             _libraryPane.Attach(container, NewFile);
@@ -961,7 +972,9 @@ namespace Ruitk.Builder
 
         /// <summary>Adds an @else / @else if clause at the construct's final
         /// close: "}" becomes "} @else … {" with a fresh "}" after it. The new
-        /// clause is empty and renders as its own head row.</summary>
+        /// clause is empty and renders as its own head row. The close line must
+        /// actually BE a lone closer — a mis-tracked CloseLine must bail, never
+        /// overwrite user markup.</summary>
         private void AddIfClause(string filePath, BuilderCardLine head, int cardIndex, bool withCondition)
         {
             var session = _workspace.TryGet(filePath);
@@ -971,6 +984,11 @@ namespace Ruitk.Builder
             int closeIdx = head.CloseLine - 1;
             if (closeIdx < 0 || closeIdx >= lines.Count)
                 return;
+            if (lines[closeIdx].Trim() != "}")
+            {
+                Toast("Couldn't locate the block's closing brace — nothing changed.");
+                return;
+            }
             string indent = BuilderText.LeadingIndent(lines[closeIdx]);
             string header = withCondition ? "@else if (condition)" : "@else";
             lines[closeIdx] = indent + "} " + header + " {";
@@ -1022,15 +1040,30 @@ namespace Ruitk.Builder
             int close = row.CloseLine - 1;
             if (head < 0 || close < head || close >= lines.Count)
                 return;
+            // Brace bookkeeping depends on the head form. Shared head
+            // ("} @else {") means this clause's head line carried the PREVIOUS
+            // clause's closer; the parser-legal separate-line form ("@else {"
+            // on its own line) means the previous clause already closed itself.
+            // Inserting the compensating '}' for the separate form — or leaving
+            // the next head's leading '}' after deleting a separate middle
+            // clause before a shared next head — unbalances the file (review
+            // findings, 2026-08-16).
+            bool sharedHead = lines[head].TrimStart().StartsWith("}", System.StringComparison.Ordinal);
             if (lines[close].Contains("@"))
             {
                 lines.RemoveRange(head, close - head);
+                bool nextShared = lines[head].TrimStart()
+                    .StartsWith("}", System.StringComparison.Ordinal);
+                if (!sharedHead && nextShared)
+                    lines[head] = BuilderText.LeadingIndent(lines[head])
+                        + lines[head].TrimStart().Substring(1).TrimStart();
             }
             else
             {
-                string indent = BuilderText.LeadingIndent(lines[head]);
+                string closeIndent = BuilderText.LeadingIndent(lines[close]);
                 lines.RemoveRange(head, close - head + 1);
-                lines.Insert(head, indent + "}");
+                if (sharedHead)
+                    lines.Insert(head, closeIndent + "}");
             }
             ApplyProgrammaticEdit(
                 filePath, string.Join("\n", lines), "delete " + row.BadgeText + " clause");
@@ -1177,40 +1210,71 @@ namespace Ruitk.Builder
             BeginEditOnDirectiveLine(filePath, cardIndex, row.SourceLine);
         }
 
-        /// <summary>An element dropped INSIDE a directive clause must land in
-        /// the clause's return markup, never at C# statement level. An empty
-        /// clause gets its return scaffold in the same commit.</summary>
-        private void InsertIntoClause(string filePath, BuilderCardLine head, string tag)
+        /// <summary>Resolves where an "inside" drop on a directive head lands:
+        /// the clause's FIRST element row (drops nest into the clause's real
+        /// markup — a clause return has ONE root, so siblinging the root would
+        /// not compile). False with a user-facing reason when the clause cannot
+        /// take the drop safely: a body sitting on its label line (single-line
+        /// arms need expanding first) or a @switch head whose arms must be
+        /// targeted individually.</summary>
+        private static bool TryClauseNestTarget(
+            BuilderCanvasNode node, int headIdx,
+            out BuilderCardLine target, out string blockReason)
         {
+            target = null;
+            blockReason = null;
+            var head = node.Markup[headIdx];
+            for (int i = headIdx + 1; i < node.Markup.Count; i++)
+            {
+                var r = node.Markup[i];
+                if (r.Depth <= head.Depth)
+                    break;
+                if (r.Kind == BuilderCardLineKind.Directive)
+                    continue;
+                if (r.SourceLine == head.DirectiveLine)
+                {
+                    blockReason = "This arm's body sits on its label line — expand it to a block first.";
+                    return false;
+                }
+                target = r;
+                return true;
+            }
+            if (head.BadgeKind == 14)
+            {
+                blockReason = "Drop into a specific @case arm, not the @switch head.";
+                return false;
+            }
+            return false;
+        }
+
+        /// <summary>An element dropped INSIDE a directive clause must land in
+        /// the clause's return markup, never at C# statement level: it nests
+        /// into the clause's root element, and an EMPTY clause gets its return
+        /// scaffold in the same commit.</summary>
+        private void InsertIntoClause(string filePath, BuilderCanvasNode node, int headIdx, string tag)
+        {
+            var head = node.Markup[headIdx];
+            if (TryClauseNestTarget(node, headIdx, out var target, out string blockReason))
+            {
+                InsertChildTag(filePath, target, tag);
+                return;
+            }
+            if (blockReason != null)
+            {
+                Toast(blockReason);
+                return;
+            }
             var session = _workspace.TryGet(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
-            int headIdx = head.DirectiveLine - 1;
-            int closeIdx = System.Math.Max(head.DirectiveLine, head.CloseLine) - 1;
-            if (headIdx < 0 || headIdx >= lines.Count)
+            int headLineIdx = head.DirectiveLine - 1;
+            if (headLineIdx < 0 || headLineIdx >= lines.Count)
                 return;
-            closeIdx = Mathf.Clamp(closeIdx, headIdx, lines.Count - 1);
-            string indent = BuilderText.LeadingIndent(lines[headIdx]);
-            int returnIdx = -1;
-            for (int i = headIdx; i <= closeIdx; i++)
-            {
-                if (lines[i].Trim().StartsWith("return (", System.StringComparison.Ordinal))
-                {
-                    returnIdx = i;
-                    break;
-                }
-            }
-            if (returnIdx >= 0)
-            {
-                lines.Insert(returnIdx + 1, indent + "    " + SeededTag(tag));
-            }
-            else
-            {
-                lines.Insert(headIdx + 1, indent + "  return (");
-                lines.Insert(headIdx + 2, indent + "    " + SeededTag(tag));
-                lines.Insert(headIdx + 3, indent + "  );");
-            }
+            string indent = BuilderText.LeadingIndent(lines[headLineIdx]);
+            lines.Insert(headLineIdx + 1, indent + "  return (");
+            lines.Insert(headLineIdx + 2, indent + "    " + SeededTag(tag));
+            lines.Insert(headLineIdx + 3, indent + "  );");
             AddUsageImport(lines, filePath, tag);
             ApplyProgrammaticEdit(
                 filePath, string.Join("\n", lines), "<" + tag + "> into " + head.BadgeText);
@@ -1401,7 +1465,7 @@ namespace Ruitk.Builder
                     if (band == 1)
                     {
                         if (row.Kind == BuilderCardLineKind.Directive)
-                            InsertIntoClause(full, row, name);
+                            InsertIntoClause(full, node, rowIdx, name);
                         else
                             InsertChildTag(full, row, name);
                         break;
@@ -1500,6 +1564,19 @@ namespace Ruitk.Builder
                         || srcRowIdx == rowIdx)
                         break;
                     var srcRow = srcNode.Markup[srcRowIdx];
+                    // An "inside" move onto a directive head must land in the
+                    // clause's return markup exactly like the insert path — the
+                    // raw line range after the clause's ');' is C# statement
+                    // level and never compiles (review finding, 2026-08-16).
+                    if (row.Kind == BuilderCardLineKind.Directive && band == 1)
+                    {
+                        if (!TryClauseNestTarget(node, rowIdx, out var clauseTarget, out string why))
+                        {
+                            Toast(why ?? "This clause is empty — drop a new element into it first.");
+                            break;
+                        }
+                        row = clauseTarget;
+                    }
                     // §8.1: a construct head's move carries the WHOLE block —
                     // every clause through the final close. Element rows carry
                     // their own tag span; continuation clauses never arm.
@@ -1634,8 +1711,25 @@ namespace Ruitk.Builder
             string full = Path.GetFullPath(filePath);
             if (string.IsNullOrWhiteSpace(newText))
             {
-                // POC editDirectiveInline: an emptied badge removes the directive
-                // and keeps the element.
+                // POC editDirectiveInline: an emptied badge removes the
+                // directive and keeps the element. A CONTINUATION clause
+                // (@else/@case) must go through clause deletion — the construct
+                // unwrap assumes it starts at a construct head and corrupts the
+                // brace balance from a clause line.
+                var node = _canvasHost?.FindNode(full);
+                if (node != null)
+                {
+                    foreach (var markupRow in node.Markup)
+                    {
+                        if (markupRow.Kind == BuilderCardLineKind.Directive
+                            && markupRow.DirectiveLine == sourceLine
+                            && markupRow.ClauseIndex > 0)
+                        {
+                            DeleteClause(full, markupRow);
+                            return;
+                        }
+                    }
+                }
                 RemoveDirectiveBlock(full, sourceLine);
                 return;
             }

@@ -85,7 +85,10 @@ namespace Ruitk.Builder
             _config.ApplyTo(_graph);
             _camX = _config.CameraX;
             _camY = _config.CameraY;
-            _zoom = _config.Zoom <= 0f ? 1f : _config.Zoom;
+            // Layouts persisted before the wheel floor rose to the POC's 0.30
+            // preset load below it and invert the first zoom-out gesture; clamp
+            // on load so the stored camera is always inside the live range.
+            _zoom = _config.Zoom <= 0f ? 1f : Mathf.Max(0.30f, _config.Zoom);
 
             _onOpenFile = onOpenFile;
             _container.Clear();
@@ -115,18 +118,29 @@ namespace Ruitk.Builder
                 return default;
             VisualElement rowEl = null;
             VisualElement cardEl = null;
-            for (var walk = panel.Pick(panelPos); walk != null; walk = walk.parent)
+            bool inCanvas = false;
+            var picked = panel.Pick(panelPos);
+            // A release on a scroller thumb is not a drop target — treating it
+            // as a card-level drop appended elements the user never aimed at.
+            if (picked != null && picked.GetFirstAncestorOfType<Scroller>() != null)
+                return default;
+            for (var walk = picked; walk != null; walk = walk.parent)
             {
+                if (walk == _container)
+                {
+                    inCanvas = true;
+                    break;
+                }
                 string name = walk.name ?? "";
                 if (rowEl == null && name.StartsWith("row-", StringComparison.Ordinal))
                     rowEl = walk;
-                if (name.StartsWith("card-", StringComparison.Ordinal))
-                {
+                if (cardEl == null && name.StartsWith("card-", StringComparison.Ordinal))
                     cardEl = walk;
-                    break;
-                }
             }
-            if (cardEl == null)
+            // Names are only trustworthy INSIDE the canvas pane — the preview
+            // mounts arbitrary user components whose elements could carry a
+            // "card-N" name of their own.
+            if (!inCanvas || cardEl == null)
                 return default;
             if (!int.TryParse(cardEl.name.Substring(5), out int cardIndex)
                 || cardIndex < 0 || cardIndex >= _graph.Nodes.Count)
@@ -166,6 +180,28 @@ namespace Ruitk.Builder
                 Band = 1,
                 CardIndex = cardIndex,
             };
+        }
+
+        /// <summary>Ctrl+wheel zoom for pointers over a scrolling section —
+        /// the same anchored-zoom math the canvas root runs, driven host-side
+        /// because the section ScrollView consumes the plain wheel.</summary>
+        private void WheelZoom(float deltaY, UnityEngine.Vector2 panelPos)
+        {
+            if (_container == null || _graph == null)
+                return;
+            float factor = deltaY < 0f ? 1.12f : 1f / 1.12f;
+            float next = UnityEngine.Mathf.Clamp(_zoom * factor, 0.30f, 2.2f);
+            if (UnityEngine.Mathf.Approximately(next, _zoom))
+                return;
+            var local = _container.WorldToLocal(panelPos);
+            float scale = next / _zoom;
+            _camX = local.x - (local.x - _camX) * scale;
+            _camY = local.y - (local.y - _camY) * scale;
+            _zoom = next;
+            _viewVersion++;
+            RenderCanvas();
+            SaveLayout();
+            ZoomChanged?.Invoke(_zoom);
         }
 
         /// <summary>POC toolbar L0/L1/L2: jump the camera to a zoom preset. The
@@ -330,6 +366,12 @@ namespace Ruitk.Builder
         /// in editor chrome and steal a line of height; the shared pass turns it
         /// into the same 8px dark overlay every other scroller in the window
         /// wears, so the island keeps the height CanvasView pinned on it.</summary>
+        /// <summary>Re-runs the scroller pass after a zoom/LOD change — a
+        /// wheel-driven LOD flip re-renders through the fiber without
+        /// RenderCanvas, so freshly created section ScrollViews would otherwise
+        /// keep stock chrome and no edge-repaint wire until the next mount.</summary>
+        public void RestyleScrollers() => StyleIslandScrollers();
+
         private void StyleIslandScrollers()
         {
             if (_container == null)
@@ -358,6 +400,15 @@ namespace Ruitk.Builder
                         {
                             view.userData = s_scrollWired;
                             view.verticalScroller.valueChanged += _ => edgeLayer.MarkDirtyRepaint();
+                            // A scrollable section consumes the plain wheel (it
+                            // scrolls); Ctrl+wheel stays a zoom everywhere.
+                            view.RegisterCallback<WheelEvent>(evt =>
+                            {
+                                if (!evt.ctrlKey)
+                                    return;
+                                evt.StopImmediatePropagation();
+                                WheelZoom(evt.delta.y, evt.mousePosition);
+                            }, TrickleDown.TrickleDown);
                         }
                     }
                 }

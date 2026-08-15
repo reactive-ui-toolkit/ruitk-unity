@@ -648,6 +648,7 @@ namespace Ruitk.Builder
                 bool declaresComponent = !IsModuleFile(uitkxPath)
                     && bufferText != null
                     && bufferText.Contains("export VirtualNode ");
+                _statusIsModuleCopy = !declaresComponent;
                 SetStatus(!declaresComponent
                     ? NoPreviewText(uitkxPath)
                     : "Component type not found — does the project compile?\n"
@@ -761,9 +762,14 @@ namespace Ruitk.Builder
         /// export signature and the real consumers.</summary>
         public void RefreshModuleNotes()
         {
-            if (_showingNoPreview && !string.IsNullOrEmpty(_filePath))
+            // Only re-apply the MODULE copy — a component file showing the
+            // "type not found" compile message must keep it (the module copy
+            // was the misleading text UB-15 replaced).
+            if (_showingNoPreview && _statusIsModuleCopy && !string.IsNullOrEmpty(_filePath))
                 SetStatus(NoPreviewText(_filePath));
         }
+
+        private bool _statusIsModuleCopy;
 
         /// <summary>Called after a preview compile of the shown file — re-resolve
         /// from the freshly loaded assembly so remounts use the new body.</summary>

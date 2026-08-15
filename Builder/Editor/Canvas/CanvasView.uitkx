@@ -117,6 +117,7 @@ export VirtualNode CanvasView(
         }
       }}
       onPointerUp={e => {
+        BuilderDragService.PointerUp(e);
         if (panning.Current && onCameraChanged != null) {
           onCameraChanged(camX, camY, zoom);
         }
@@ -988,7 +989,7 @@ export VirtualNode CanvasView(
                                   // never arms. The service captures the pointer;
                                   // a release under the travel threshold stays a
                                   // plain click (the select below already ran).
-                                  if (headRow ? row.ClauseIndex == 0 : rowIdx != firstElementIdx) {
+                                  if (e.Button == 0 && (headRow ? row.ClauseIndex == 0 : rowIdx != firstElementIdx)) {
                                     BuilderDragService.Begin($"move:{node.FilePath}:{rowIdx}",
                                       headRow ? row.BadgeText + " block" : row.Text, e);
                                   }

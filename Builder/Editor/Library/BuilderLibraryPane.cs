@@ -55,6 +55,10 @@ namespace Ruitk.Builder
         private TextField _search;
         private string _filter = "";
 
+        /// <summary>Fires once the LSP schema has been parsed into
+        /// BuilderSchemaCache — the window re-pushes knownElements then.</summary>
+        public Action SchemaLoaded;
+
         /// <summary>Width every row occupies — the viewport, so a pill is exactly as
         /// wide as the pane like the POC's block-level ".lib-item", and the search
         /// box shares its gutter. The POC pane is "overflow-y: auto" only: a name
@@ -278,6 +282,10 @@ namespace Ruitk.Builder
                     if (names.Count > 0)
                         BuilderSchemaCache.RegisterControlFlow(names);
                 }
+                // The schema often lands AFTER the graph's first knownElements
+                // push — let the window re-push so custom-tag colouring and the
+                // unknown-element check arm without a re-open.
+                SchemaLoaded?.Invoke();
 
                 var hooks = await client.RequestHooks();
                 if ((hooks?["hooks"] ?? hooks?["Hooks"]) is JArray hookArr)
@@ -551,9 +559,13 @@ namespace Ruitk.Builder
                 // captures the pointer on arm (UB-32); a press-release under the
                 // travel threshold stays a harmless click.
                 row.RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    if (evt.button != 0)
+                        return;
                     BuilderDragService.Begin(
                         PayloadFor(captured), captured.Name, row, evt.pointerId,
-                        new Vector2(evt.position.x, evt.position.y)));
+                        new Vector2(evt.position.x, evt.position.y));
+                });
                 row.RegisterCallback<PointerMoveEvent>(evt =>
                     BuilderDragService.PointerMove(new Vector2(evt.position.x, evt.position.y)));
                 row.RegisterCallback<PointerUpEvent>(evt =>

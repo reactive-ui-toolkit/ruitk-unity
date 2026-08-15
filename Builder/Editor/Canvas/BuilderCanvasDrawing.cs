@@ -830,6 +830,19 @@ namespace Ruitk.Builder
             var bound = el.worldBound;
             if (bound.width <= 0f || bound.height <= 0f)
                 return;
+            // A target row scrolled partly out of its capped section paints
+            // only the visible slice — the hint must never bleed over the rows
+            // that occlude it (same clamp AnchorOf applies to the dots).
+            var scroll = el.GetFirstAncestorOfType<ScrollView>();
+            if (scroll != null && scroll.name == "ruitk-section-scroll"
+                && scroll.contentViewport != null)
+            {
+                var viewport = scroll.contentViewport.worldBound;
+                bound.yMin = Mathf.Max(bound.yMin, viewport.yMin);
+                bound.yMax = Mathf.Min(bound.yMax, viewport.yMax);
+                if (bound.height <= 0f)
+                    return;
+            }
             Vector2 min = world.WorldToLocal(new Vector2(bound.xMin, bound.yMin));
             Vector2 max = world.WorldToLocal(new Vector2(bound.xMax, bound.yMax));
             var accent = BuilderPalette.Accent;

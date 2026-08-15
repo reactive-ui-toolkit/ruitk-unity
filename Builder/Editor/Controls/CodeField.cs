@@ -258,7 +258,12 @@ namespace Ruitk.Builder
             _input.style.color = BuilderPalette.Text;
             _input.style.display = DisplayStyle.None;
             FlattenInputTree();
-            _input.RegisterCallback<AttachToPanelEvent>(_ => FlattenInputTree());
+            _input.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                FlattenInputTree();
+                if (_coloredEdit)
+                    ApplyColoredEditInk();
+            });
             _input.RegisterValueChangedCallback(OnInputChanged);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
             _input.RegisterCallback<PointerDownEvent>(_ => _userCaretActive = true);
@@ -294,20 +299,22 @@ namespace Ruitk.Builder
         {
             _editing = editing;
             _input.style.display = editing ? DisplayStyle.Flex : DisplayStyle.None;
-            _coloredEdit = editing && TryBeginColoredEdit();
-            _scroll.style.display = !editing || _coloredEdit
-                ? DisplayStyle.Flex
-                : DisplayStyle.None;
             if (!editing)
             {
+                // Restore BEFORE clearing the flag — the old order made
+                // EndColoredEdit an unconditional no-op and left the input's
+                // ink transparent for every read-mode session after the first
+                // coloured edit (review finding, 2026-08-16).
                 EndColoredEdit();
+                _scroll.style.display = DisplayStyle.Flex;
                 _userCaretActive = false;
                 Recolor(TextLf);
+                return;
             }
-            else if (_coloredEdit)
-            {
+            _coloredEdit = TryBeginColoredEdit();
+            _scroll.style.display = _coloredEdit ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_coloredEdit)
                 Recolor(TextLf);
-            }
         }
 
         private bool TryBeginColoredEdit()
@@ -325,6 +332,13 @@ namespace Ruitk.Builder
                 if (inner.horizontalScroller != null)
                     inner.horizontalScroller.valueChanged += _ => SyncListingScroll(inner);
             }
+            ApplyColoredEditInk();
+            SyncListingScroll(inner);
+            return true;
+        }
+
+        private void ApplyColoredEditInk()
+        {
             _input.style.backgroundColor = BuilderPalette.Transparent;
             foreach (var text in _input.Query<TextElement>().ToList())
                 text.style.color = BuilderPalette.Transparent;
@@ -333,14 +347,10 @@ namespace Ruitk.Builder
             var band = BuilderPalette.Accent;
             band.a = 0.3f;
             selection.selectionColor = band;
-            SyncListingScroll(inner);
-            return true;
         }
 
         private void EndColoredEdit()
         {
-            if (!_coloredEdit)
-                return;
             _coloredEdit = false;
             _input.style.backgroundColor = BuilderPalette.Ground;
             foreach (var text in _input.Query<TextElement>().ToList())
@@ -364,7 +374,10 @@ namespace Ruitk.Builder
             // selection blue.
             _selectedLine1 = line1;
             Recolor(TextLf);
-            if (line1 >= 1 && line1 <= _linesHost.childCount)
+            // In coloured edit mode the input's internal scroller OWNS the
+            // listing offset — scrolling the listing directly would shear it
+            // off the transparent glyphs; the caret move below drives both.
+            if (!_coloredEdit && line1 >= 1 && line1 <= _linesHost.childCount)
                 _scroll.ScrollTo(_linesHost[line1 - 1]);
             if (!_editing)
                 return;
@@ -408,7 +421,10 @@ namespace Ruitk.Builder
 
         public void SetContent(string textLf, string filePath, HashSet<string> knownElements)
         {
-            _filePath = filePath ?? "";
+            string nextPath = filePath ?? "";
+            if (!string.Equals(_filePath, nextPath, StringComparison.OrdinalIgnoreCase))
+                _overlayDiagnostics = null;
+            _filePath = nextPath;
             _knownElements = knownElements;
             _suppressChange = true;
             _input.value = textLf ?? "";

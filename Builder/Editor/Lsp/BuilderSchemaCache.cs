@@ -100,7 +100,12 @@ namespace Ruitk.Builder
         /// <summary>Type-driven default so an inserted attribute COMPILES
         /// (UB-14): the old name heuristic wrote <c>focusable={value}</c>. The
         /// inline editor still opens on the value immediately after the insert,
-        /// so these are starting points, not guesses at intent.</summary>
+        /// so these are starting points, not guesses at intent. HARD RULE: no
+        /// default may contain a nested '}' — the attribute edit/remove regexes
+        /// match values with <c>\{[^}]*\}</c>, and a brace-bearing default
+        /// (lambda bodies, object initializers) corrupts the tag on its very
+        /// next edit (review finding, 2026-08-16). Delegates and objects
+        /// default to null, which every prop accepts.</summary>
         public static string DefaultValueFor(string name, string type)
         {
             type = type ?? "";
@@ -118,25 +123,17 @@ namespace Ruitk.Builder
                 case "float":
                 case "double":
                     return "{0f}";
-                case "Style":
-                    return "{new Style { }}";
-                case "Action":
-                    return "{() => { }}";
             }
-            if (type.StartsWith("Action<", StringComparison.Ordinal))
-                return "{_ => { }}";
-            if (type.StartsWith("Func", StringComparison.Ordinal))
-                return "{() => default}";
-            if (type.EndsWith("Handler", StringComparison.Ordinal))
-                return "{e => { }}";
+            if (type == "Action" || type.StartsWith("Action<", StringComparison.Ordinal)
+                || type.StartsWith("Func", StringComparison.Ordinal)
+                || type.EndsWith("Handler", StringComparison.Ordinal)
+                || type == "Style")
+                return "{null}";
             if (BuilderStyleSurface.TryEnumToken(type, out string token))
                 return "{" + token + "}";
             if (type.Length == 0 && (name == "text" || name == "label"))
                 return "\"text\"";
-            if (type.Length == 0 && name.Length > 2
-                && name.StartsWith("on", StringComparison.Ordinal) && char.IsUpper(name[2]))
-                return "{e => { }}";
-            return "{default}";
+            return "{null}";
         }
     }
 }

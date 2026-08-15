@@ -244,7 +244,7 @@ namespace Ruitk.Core
             ("UseState", 1, "var (value, setValue) = useState(0);"),
             ("UseEffect", 0, "useEffect(() => { return null; }, null);"),
             ("UseLayoutEffect", 0, "useLayoutEffect(() => { return null; }, null);"),
-            ("UseRef", 1, "var elRef = useRef<VisualElement?>(null);"),
+            ("UseRef", 1, "var elRef = useRef<UnityEngine.UIElements.VisualElement?>(null);"),
             ("UseCallback", 1, "var callback = useCallback(() => 0, null);"),
             ("UseMemo", 1, "var memo = useMemo(() => 0, null);"),
             ("UseContext", 0, "var context = useContext<object>(\"key\");"),

@@ -957,16 +957,30 @@ namespace Ruitk.Builder
 
         /// <summary>1-based line of the '}' closing the block whose head is
         /// <paramref name="headLine1"/>. Counting starts at the first '{' so the
-        /// shared "} @else {" head form skips its leading closer. Brace-blind to
-        /// string literals, matching the editor's other brace walks.</summary>
+        /// shared "} @else {" head form skips its leading closer. Braces inside
+        /// double-quoted strings are skipped — a '}' in an attribute value must
+        /// not truncate the clause (the register's review caught exactly that
+        /// corrupting Add-@else/Delete-block).</summary>
         private static int ClauseCloseLine(string[] lines, int headLine1)
         {
             int depth = 0;
             bool opened = false;
             for (int i = headLine1 - 1; i >= 0 && i < lines.Length; i++)
             {
+                bool inString = false;
                 foreach (char c in lines[i])
                 {
+                    if (inString)
+                    {
+                        if (c == '"')
+                            inString = false;
+                        continue;
+                    }
+                    if (c == '"')
+                    {
+                        inString = true;
+                        continue;
+                    }
                     if (c == '{')
                     {
                         depth++;
