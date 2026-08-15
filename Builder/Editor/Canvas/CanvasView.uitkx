@@ -301,6 +301,9 @@ export VirtualNode CanvasView(
                         PaddingRight = Px(12),
                         PaddingTop = Px(3),
                         PaddingBottom = Px(3),
+                        // 15px in the POC body line box (1.45) plus the 3px pair.
+                        Height = Px(27.75f),
+                        TextAlign = TextMiddleLeft,
                         MarginRight = Px(12),
                       }}
                     />
@@ -346,6 +349,11 @@ export VirtualNode CanvasView(
                         PaddingRight = Px(7),
                         PaddingTop = Px(1),
                         PaddingBottom = Px(1),
+                        // 10px in the POC body line box (1.45) plus the 1px pair:
+                        // on poc-l1-cards.png the ShopScreen kind badge is 12 screen
+                        // px at zoom 0.75, i.e. 16.5 CSS.
+                        Height = Px(16.5f),
+                        TextAlign = TextMiddleLeft,
                         MarginRight = Px(8),
                       }}
                     />
@@ -545,6 +553,7 @@ export VirtualNode CanvasView(
                                     }
                                     e.StopPropagation();
                                   }}
+                                  onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawDashedChipBorder(ctx, hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"))}
                                   style={new Style {
                                     Color = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#8b8b96"),
                                     FontSize = Px(11.5f),
@@ -553,18 +562,15 @@ export VirtualNode CanvasView(
                                     UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                     BackgroundColor = Hex("#2a2a31"),
                                     BorderRadius = Px(10),
-                                    BorderTopWidth = 1.5f,
-                                    BorderRightWidth = 1.5f,
-                                    BorderBottomWidth = 1.5f,
-                                    BorderLeftWidth = 1.5f,
-                                    BorderTopColor = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"),
-                                    BorderRightColor = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"),
-                                    BorderBottomColor = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"),
-                                    BorderLeftColor = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"),
-                                    PaddingLeft = Px(9),
-                                    PaddingRight = Px(9),
-                                    PaddingTop = Px(1.5f),
-                                    PaddingBottom = Px(1.5f),
+                                    // POC .chip-add sets border-style: dashed — the
+                                    // affordance reads as an affordance only because
+                                    // its outline is broken. UI Toolkit has no dashed
+                                    // border, so the solid one is dropped here and
+                                    // the rounded outline is painted 3-on / 3-off.
+                                    PaddingLeft = Px(10.5f),
+                                    PaddingRight = Px(10.5f),
+                                    PaddingTop = Px(3),
+                                    PaddingBottom = Px(3),
                                     MarginBottom = Px(5),
                                   }}
                                 />
@@ -792,8 +798,16 @@ export VirtualNode CanvasView(
                                         FontSize = Px(12),
                                         UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                         MarginLeft = Px(detail.Depth * 24f),
+                                        // POC .style-entry is padding 2px 6px at
+                                        // font-size 12 — a 17.4px line box plus the
+                                        // 2px pair, measured as a 16 screen px pitch
+                                        // at zoom 0.75 on poc-l1-cards.png.
                                         PaddingTop = Px(2),
                                         PaddingBottom = Px(2),
+                                        PaddingLeft = Px(6),
+                                        PaddingRight = Px(6),
+                                        Height = Px(21.4f),
+                                        TextAlign = TextMiddleLeft,
                                         BorderRadius = Px(4),
                                         BackgroundColor = editableLine && hoverChipKey == entryKey
                                           ? (isUtilSig ? Rgba(255, 183, 77, 31) : Rgba(206, 147, 216, 31))
@@ -992,6 +1006,10 @@ export VirtualNode CanvasView(
                                         BorderRadius = Px(7),
                                         PaddingLeft = Px(6),
                                         PaddingRight = Px(6),
+                                        // POC .badge is padding 0 6px — 10px in the
+                                        // body line box, no vertical padding at all.
+                                        Height = Px(14.5f),
+                                        TextAlign = TextMiddleLeft,
                                         MarginRight = Px(6),
                                         FlexShrink = 0,
                                       }}

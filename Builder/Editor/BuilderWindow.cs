@@ -92,8 +92,12 @@ namespace Ruitk.Builder
                     flexDirection = FlexDirection.Row,
                     alignItems = Align.Center,
                     flexShrink = 0f,
-                    paddingTop = 8f,
-                    paddingBottom = 8f,
+                    // POC "#toolbar { padding: 8px 12px }" measures 40px of fill
+                    // plus its 1px rule; Unity's font metrics add ~3px over Segoe
+                    // at the same padding, so the band is pinned instead.
+                    height = 41f,
+                    paddingTop = 0f,
+                    paddingBottom = 0f,
                     paddingLeft = 12f,
                     paddingRight = 12f,
                     backgroundColor = Panel,
@@ -339,7 +343,6 @@ namespace Ruitk.Builder
             if (_libraryPane != null)
                 return;
             container.Clear();
-            container.style.flexGrow = 1f;
             _libraryPane = new BuilderLibraryPane();
             // POC btnLibNew → openCreateMenu at the button: "+ new" opens the same
             // four-item create menu the empty-canvas right-click does.
@@ -355,10 +358,20 @@ namespace Ruitk.Builder
             {
                 container.Clear();
                 container.style.backgroundColor = Panel;
-                // POC "#preview { padding: 12px }".
-                var previewSection = new VisualElement { style = { flexGrow = 1f, paddingTop = 12f, paddingBottom = 12f, paddingLeft = 12f, paddingRight = 12f } };
+                // POC "#preview { overflow: auto; padding: 12px }" — a tall render
+                // or a long knobs list scrolls INSIDE the pane; a plain container
+                // clipped both against the bottom of the frame with no way out.
+                var previewSection = new ScrollView(ScrollViewMode.Vertical)
+                {
+                    style =
+                    {
+                        flexGrow = 1f, minHeight = 0f,
+                        paddingTop = 12f, paddingBottom = 12f,
+                        paddingLeft = 12f, paddingRight = 12f,
+                    },
+                };
                 var codeSection = new VisualElement { style = { flexGrow = 1f } };
-                var previewPane = new VisualElement { style = { minHeight = 120f } };
+                var previewPane = new VisualElement { style = { minHeight = 120f, minWidth = 0f } };
                 previewPane.Add(PaneTitle("LIVE PREVIEW", out _previewName));
                 previewPane.Add(previewSection);
                 var sourcePane = new VisualElement { style = { minHeight = 120f } };
@@ -371,7 +384,11 @@ namespace Ruitk.Builder
                 sourcePane.Add(PaneTitle(
                     "SOURCE — .UITKX", out _sourceName, _editButton, _applyButton, _cancelButton));
                 sourcePane.Add(codeSection);
-                var sideSplit = new TwoPaneSplitView(0, 380f, TwoPaneSplitViewOrientation.Vertical)
+                // POC "#preview { flex: 0 0 380px }" sizes the BODY, not the pane:
+                // on poc-l1-cards.png the preview title is 41..71 and its body
+                // 72..451. The fixed dimension here covers the whole pane, so the
+                // 31px title band is added on top of the POC's 380.
+                var sideSplit = new TwoPaneSplitView(0, 411f, TwoPaneSplitViewOrientation.Vertical)
                 {
                     style = { flexGrow = 1f },
                 };
@@ -2023,26 +2040,74 @@ namespace Ruitk.Builder
         /// hover — not Unity's stock hairline drag handle.</summary>
         private static void StyleSplitter(TwoPaneSplitView split, bool vertical)
         {
+            // Restyling Unity's dragline anchor was the previous attempt and it
+            // photographed as the stock hairline: a screenshot probe of the shipped
+            // build read ONE pixel of #232323 (Unity's own anchor colour) at the
+            // canvas|side boundary and nothing at all at preview|source. The band is
+            // therefore painted by an element we own, pinned to the boundary from
+            // the first pane's resolved layout, and the anchor is still widened so
+            // the grab area matches the band when Unity lets it through.
+            var gutter = new VisualElement
+            {
+                name = "ruitk-splitter-gutter",
+                pickingMode = PickingMode.Ignore,
+                style = { position = Position.Absolute, backgroundColor = Panel },
+            };
+            if (vertical)
+            {
+                gutter.style.left = 0f;
+                gutter.style.right = 0f;
+                gutter.style.height = 6f;
+                gutter.style.borderTopWidth = 1f;
+                gutter.style.borderBottomWidth = 1f;
+                gutter.style.borderTopColor = Line;
+                gutter.style.borderBottomColor = Line;
+            }
+            else
+            {
+                gutter.style.top = 0f;
+                gutter.style.bottom = 0f;
+                gutter.style.width = 6f;
+                gutter.style.borderLeftWidth = 1f;
+                gutter.style.borderRightWidth = 1f;
+                gutter.style.borderLeftColor = Line;
+                gutter.style.borderRightColor = Line;
+            }
+            split.hierarchy.Add(gutter);
+
+            VisualElement tracked = null;
+
+            void Place()
+            {
+                if (split.childCount == 0)
+                    return;
+                var first = split[0];
+                if (!ReferenceEquals(tracked, first))
+                {
+                    tracked = first;
+                    first.RegisterCallback<GeometryChangedEvent>(_ => Place());
+                }
+                var box = first.layout;
+                if (float.IsNaN(box.width) || float.IsNaN(box.height))
+                    return;
+                if (vertical)
+                    gutter.style.top = Mathf.Round(box.yMax) - 3f;
+                else
+                    gutter.style.left = Mathf.Round(box.xMax) - 3f;
+            }
+
             // TwoPaneSplitView rebuilds its resizer whenever it re-inits (first
-            // geometry pass, child changes), so a one-shot pass at frame 0 styled an
-            // anchor that Unity then threw away — leaving the stock hairline. The
-            // pass is idempotent and re-runs on every geometry change.
+            // geometry pass, child changes), so the pass is idempotent and re-runs.
             void Apply()
             {
+                Place();
                 var anchor = split.Q(null, "unity-two-pane-split-view__dragline-anchor");
                 if (anchor == null)
                     return;
-                anchor.style.backgroundColor = Panel;
-                // The visible band is the ANCHOR, but the dragline child is sized by
-                // Unity's USS and paints over it; both carry the 6px gutter.
                 var dragline = split.Q(null, "unity-two-pane-split-view__dragline");
                 if (vertical)
                 {
                     anchor.style.height = 6f;
-                    anchor.style.borderTopWidth = 1f;
-                    anchor.style.borderBottomWidth = 1f;
-                    anchor.style.borderTopColor = Line;
-                    anchor.style.borderBottomColor = Line;
                     if (dragline != null)
                     {
                         dragline.style.height = 6f;
@@ -2053,10 +2118,6 @@ namespace Ruitk.Builder
                 else
                 {
                     anchor.style.width = 6f;
-                    anchor.style.borderLeftWidth = 1f;
-                    anchor.style.borderRightWidth = 1f;
-                    anchor.style.borderLeftColor = Line;
-                    anchor.style.borderRightColor = Line;
                     if (dragline != null)
                     {
                         dragline.style.width = 6f;
@@ -2064,16 +2125,19 @@ namespace Ruitk.Builder
                     }
                     BuilderCursor.Set(anchor, MouseCursor.ResizeHorizontal);
                 }
+                anchor.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
                 if (dragline != null)
                     dragline.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
                 if (anchor.userData is string tag && tag == "ruitk-gutter")
                     return;
                 anchor.userData = "ruitk-gutter";
-                anchor.RegisterCallback<MouseEnterEvent>(_ => anchor.style.backgroundColor = Accent);
-                anchor.RegisterCallback<MouseLeaveEvent>(_ => anchor.style.backgroundColor = Panel);
+                // POC "#vsplit:hover { background: var(--accent) }" — the band, not
+                // the invisible anchor, is what the user sees light up.
+                anchor.RegisterCallback<MouseEnterEvent>(_ => gutter.style.backgroundColor = Accent);
+                anchor.RegisterCallback<MouseLeaveEvent>(_ => gutter.style.backgroundColor = Panel);
             }
 
-            split.schedule.Execute(Apply).ExecuteLater(0);
+            split.schedule.Execute(Apply).Every(120).ForDuration(2000);
             split.RegisterCallback<GeometryChangedEvent>(_ => Apply());
         }
 
@@ -2115,8 +2179,13 @@ namespace Ruitk.Builder
                     justifyContent = Justify.SpaceBetween,
                     flexShrink = 0f,
                     backgroundColor = Panel2,
+                    // POC ".pane-title { padding: 7px 12px }" measures a 30px band
+                    // plus its 1px rule (poc-l1-cards.png column x=60: 41..70 fill,
+                    // 71 border). Unity's font metrics add a pixel at the same
+                    // padding, so the band is pinned rather than padded.
+                    height = 31f,
                     paddingLeft = 12f, paddingRight = 12f,
-                    paddingTop = 7f, paddingBottom = 7f,
+                    paddingTop = 0f, paddingBottom = 0f,
                     borderBottomWidth = 1f,
                     borderBottomColor = Line,
                 },

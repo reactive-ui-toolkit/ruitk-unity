@@ -295,15 +295,15 @@ namespace Ruitk.Builder
                 var states = fiber.ComponentState?.HookStates;
                 if (states != null && states.Count > 0)
                 {
-                    string owner = fiber.Family?.Id ?? "component";
-                    int dot = owner.LastIndexOf('.');
-                    if (dot >= 0)
-                        owner = owner.Substring(dot + 1);
-                    bool isFocused = string.Equals(
-                        owner,
-                        Path.GetFileNameWithoutExtension(_filePath ?? "")
-                            .Replace(".style", "").Replace(".hooks", ""),
-                        StringComparison.Ordinal);
+                    // The preview mounts the component through V.Func(delegate,…),
+                    // NOT the Family overload, so every fiber it owns has a null
+                    // Family — matching on Family.Id skipped the loop outright and
+                    // the STATE block never showed a row. The render method IS the
+                    // identity: the focused component is the fiber whose typed
+                    // render is the delegate this pane mounted.
+                    bool isFocused = _renderDelegate != null
+                        && fiber.TypedRender != null
+                        && fiber.TypedRender.Method == _renderDelegate.Method;
                     // POC stateRows are built from node.hooks of the SELECTED
                     // component only — a child's internals never surface here.
                     for (int i = 0; isFocused && i < states.Count && shown < 12; i++)
@@ -805,8 +805,6 @@ namespace Ruitk.Builder
             _seededFrom = null;
             if (_knobsHeader != null)
                 _knobsHeader.style.display = DisplayStyle.None;
-            if (_knobProps == null)
-                return;
 
             string usageAttrs = "";
             string blob = "";
@@ -824,7 +822,12 @@ namespace Ruitk.Builder
                 }
             }
 
-            foreach (var prop in _knobProps.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            // A component with no generated Props type still gets the note rows —
+            // the POC appends them unconditionally as the last rows of the block,
+            // so the early return that used to sit above this loop dropped them.
+            foreach (var prop in _knobProps == null
+                ? System.Array.Empty<PropertyInfo>()
+                : _knobProps.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (!prop.CanWrite || !prop.CanRead)
                     continue;

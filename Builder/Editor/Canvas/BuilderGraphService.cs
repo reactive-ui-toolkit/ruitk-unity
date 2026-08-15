@@ -177,6 +177,7 @@ namespace Ruitk.Builder
             node.Body.Clear();
             node.Markup.Clear();
             node.IslandLines.Clear();
+            FillExportsFromSource(node, text);
             node.Signature = ExtractSignature(text, node);
             ExtractIslandLines(text, node);
 
@@ -276,6 +277,35 @@ namespace Ruitk.Builder
         private static readonly Regex s_exportHeader = new Regex(
             @"^export\s+(?:VirtualNode|\([^)]*\))\s+(\w+)\s*(\([^)]*\))", RegexOptions.Compiled);
 
+        /// <summary>The same declaration read over the WHOLE buffer, so a hook
+        /// module whose return tuple is spread across lines still resolves:
+        /// <c>export (\n GameState state,\n … \n) useGalagaGame(\n … \n)</c> never
+        /// matched the per-line header, which cost the card its real signature and
+        /// left the library's HOOKS section without its "(module)" row whenever the
+        /// language server answered with no exports for the file.</summary>
+        private static readonly Regex s_exportDecl = new Regex(
+            @"(?:^|\n)\s*export\s+(?:VirtualNode\s+|\([^)]*\)\s*)(?<name>\w+)\s*\((?<args>[^)]*)\)",
+            RegexOptions.Compiled);
+
+        private static string Collapse(string text) =>
+            Regex.Replace(text ?? "", @"\s+", " ").Trim();
+
+        /// <summary>Declared component/hook export names read from the source, used
+        /// only when the workspace graph hands the file back with none.</summary>
+        private static void FillExportsFromSource(BuilderCanvasNode node, string text)
+        {
+            if (node.Exports.Count > 0)
+                return;
+            if (node.Kind != BuilderNodeKind.Component && node.Kind != BuilderNodeKind.Hook)
+                return;
+            foreach (Match m in s_exportDecl.Matches(text))
+            {
+                string name = m.Groups["name"].Value;
+                if (name.Length > 0 && !node.Exports.Contains(name))
+                    node.Exports.Add(name);
+            }
+        }
+
         /// <summary>POC cardHtml: the props-row section exists ONLY for component
         /// and hook cards — style/util cards go straight from the title bar to
         /// EXPORTS, so their signature stays empty.</summary>
@@ -289,6 +319,9 @@ namespace Ruitk.Builder
                 if (match.Success)
                     return match.Groups[1].Value + match.Groups[2].Value;
             }
+            var wide = s_exportDecl.Match(text);
+            if (wide.Success)
+                return wide.Groups["name"].Value + "(" + Collapse(wide.Groups["args"].Value) + ")";
             return node.Title + "()";
         }
 

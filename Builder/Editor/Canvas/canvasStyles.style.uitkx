@@ -217,6 +217,12 @@ export Style CodeIsland = new Style {
 export Style CodeIslandLine = new Style {
   Color = Hex("#bdbdc7"),
   FontSize = Px(11.5f),
+  // POC ".code-island" inherits the body's 1.45 line box at font-size 11.5 →
+  // 16.7px rows (poc-l2-edit.png: 18 CSS px between island lines at zoom 1.25).
+  // Every other code-bearing row style already carries its line box; this one
+  // did not, so the island read ~30% tighter than the POC's.
+  Height = Px(16.7f),
+  TextAlign = TextMiddleLeft,
   WhiteSpace = WsPre,
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
@@ -312,7 +318,12 @@ export Style CardShadowFar = new Style {
   Right = Px(-9),
   Bottom = Px(-15),
   BorderRadius = Px(19),
-  BackgroundColor = Rgba(0, 0, 0, 26),
+  // POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }" composites to an
+  // effective alpha of .26 directly under the card and ~.15 at the sides
+  // (probed on poc-l1-cards.png: #141417 below, #17171B beside, over the
+  // #1B1B1F ground). The four layers all overlap under the card, so the old
+  // 26/33/41/56 run composited to .49 — twice the POC's pool of black.
+  BackgroundColor = Rgba(0, 0, 0, 10),
 };
 
 export Style CardShadowMid = new Style {
@@ -322,7 +333,7 @@ export Style CardShadowMid = new Style {
   Right = Px(-6),
   Bottom = Px(-12),
   BorderRadius = Px(16),
-  BackgroundColor = Rgba(0, 0, 0, 33),
+  BackgroundColor = Rgba(0, 0, 0, 14),
 };
 
 export Style CardShadowNear = new Style {
@@ -332,7 +343,7 @@ export Style CardShadowNear = new Style {
   Right = Px(-3),
   Bottom = Px(-9),
   BorderRadius = Px(13),
-  BackgroundColor = Rgba(0, 0, 0, 41),
+  BackgroundColor = Rgba(0, 0, 0, 17),
 };
 
 export Style CardShadow = new Style {
@@ -342,7 +353,7 @@ export Style CardShadow = new Style {
   Right = Px(0),
   Bottom = Px(-6),
   BorderRadius = Px(10),
-  BackgroundColor = Rgba(0, 0, 0, 56),
+  BackgroundColor = Rgba(0, 0, 0, 31),
 };
 
 export Style CardExport = new Style {

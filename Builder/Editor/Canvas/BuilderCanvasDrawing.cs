@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -561,10 +562,106 @@ namespace Ruitk.Builder
                 p.BezierCurveTo(c1, c2, b);
                 p.Stroke();
             }
+            // POC drawEdges(): the PATH carries opacity="0.85", the terminal
+            // <circle r="4"> carries no opacity attribute at all — probed on
+            // poc-l0-architecture.png the Header dot is exactly #5C8BB0, full
+            // saturation. Reusing the stroke colour washed every endpoint out.
+            color.a = 1f;
             p.fillColor = color;
             p.BeginPath();
             p.Arc(b, 4f / CurrentZoom, 0f, 360f);
             p.Fill();
+        }
+
+        /// <summary>POC ".chip-add { border-style: dashed }" — UI Toolkit has no
+        /// dashed border, so the add-chip's rounded outline is painted as a
+        /// 3-on / 3-off walk around the element's own box. Local units are CSS px
+        /// (the canvas layer carries the zoom transform), so the dash period is
+        /// fixed exactly like the POC's scaled 1px border.</summary>
+        public static void DrawDashedChipBorder(MeshGenerationContext ctx, Color color)
+        {
+            if (ctx?.visualElement == null)
+                return;
+            var ve = ctx.visualElement;
+            float w = ve.layout.width;
+            float h = ve.layout.height;
+            if (float.IsNaN(w) || float.IsNaN(h) || w <= 4f || h <= 4f)
+                return;
+
+            const float lineWidth = 1.5f;
+            float inset = lineWidth * 0.5f;
+            float x0 = inset;
+            float y0 = inset;
+            float x1 = w - inset;
+            float y1 = h - inset;
+            float radius = Mathf.Min(10f, Mathf.Min(x1 - x0, y1 - y0) * 0.5f);
+
+            var path = new List<Vector2>(64);
+            void Corner(Vector2 center, float from, float to)
+            {
+                for (int i = 0; i <= 6; i++)
+                {
+                    float angle = Mathf.Deg2Rad * Mathf.Lerp(from, to, i / 6f);
+                    path.Add(new Vector2(
+                        center.x + Mathf.Cos(angle) * radius,
+                        center.y + Mathf.Sin(angle) * radius));
+                }
+            }
+
+            path.Add(new Vector2(x0 + radius, y0));
+            path.Add(new Vector2(x1 - radius, y0));
+            Corner(new Vector2(x1 - radius, y0 + radius), -90f, 0f);
+            path.Add(new Vector2(x1, y1 - radius));
+            Corner(new Vector2(x1 - radius, y1 - radius), 0f, 90f);
+            path.Add(new Vector2(x0 + radius, y1));
+            Corner(new Vector2(x0 + radius, y1 - radius), 90f, 180f);
+            path.Add(new Vector2(x0, y0 + radius));
+            Corner(new Vector2(x0 + radius, y0 + radius), 180f, 270f);
+            path.Add(new Vector2(x0 + radius, y0));
+
+            var p = ctx.painter2D;
+            p.strokeColor = color;
+            p.lineWidth = lineWidth;
+            const float on = 3f;
+            const float off = 3f;
+            bool pen = true;
+            float left = on;
+            var cursor = path[0];
+            p.BeginPath();
+            p.MoveTo(cursor);
+            for (int i = 1; i < path.Count; i++)
+            {
+                var next = path[i];
+                float remaining = Vector2.Distance(cursor, next);
+                while (remaining > 0f)
+                {
+                    if (remaining < left)
+                    {
+                        left -= remaining;
+                        if (pen)
+                            p.LineTo(next);
+                        cursor = next;
+                        break;
+                    }
+                    var split = Vector2.Lerp(cursor, next, left / remaining);
+                    if (pen)
+                    {
+                        p.LineTo(split);
+                        p.Stroke();
+                    }
+                    remaining -= left;
+                    cursor = split;
+                    pen = !pen;
+                    left = pen ? on : off;
+                    if (pen)
+                    {
+                        p.BeginPath();
+                        p.MoveTo(cursor);
+                    }
+                }
+            }
+            if (pen)
+                p.Stroke();
         }
 
         /// <summary>Which import row (by specifier) an edge leaves from, or -1.</summary>

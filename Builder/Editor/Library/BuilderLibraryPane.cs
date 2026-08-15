@@ -74,8 +74,13 @@ namespace Ruitk.Builder
                     alignItems = Align.Center,
                     justifyContent = Justify.SpaceBetween,
                     backgroundColor = Panel2,
+                    flexShrink = 0f,
+                    // POC ".pane-title { padding: 7px 12px }" measures a 30px band
+                    // plus its 1px rule; pinned because Unity's font metrics run
+                    // taller than Segoe UI at the same padding.
+                    height = 31f,
                     paddingLeft = 12f, paddingRight = 12f,
-                    paddingTop = 7f, paddingBottom = 7f,
+                    paddingTop = 0f, paddingBottom = 0f,
                     borderBottomWidth = 1f, borderBottomColor = Line,
                 },
             };

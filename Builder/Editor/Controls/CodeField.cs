@@ -123,8 +123,18 @@ namespace Ruitk.Builder
             element.style.marginLeft = 0f;
             element.style.marginRight = 0f;
             element.style.fontSize = 12f;
+            element.style.unityParagraphSpacing = LineLead;
             element.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
         }
+
+        /// <summary>POC "#srcpane .srcline" inherits the body's 13px/1.45 metric at
+        /// font-size 12, so the line pitch is 17.4px (measured on
+        /// poc-l1-cards.png: import rows at y=501, 518, 536, 553, 570, 588). Unity's
+        /// mono face packs the same 12px glyphs at a 12px pitch (measured on
+        /// unity-showcase-l0.png: 527, 539, 551, 563, …), so the leading is added
+        /// back as paragraph spacing — on the overlay AND on the hidden input, or
+        /// the caret stops tracking the glyphs it is meant to sit between.</summary>
+        private const float LineLead = 5.4f;
 
         private void FlattenInputTree()
         {
@@ -164,6 +174,7 @@ namespace Ruitk.Builder
                     fontSize = 12f,
                 },
             };
+            _overlay.style.unityParagraphSpacing = LineLead;
             _overlay.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
             host.Add(_overlay);
 
@@ -174,6 +185,7 @@ namespace Ruitk.Builder
             _input.style.right = 0f;
             _input.style.bottom = 0f;
             _input.style.fontSize = 12f;
+            _input.style.unityParagraphSpacing = LineLead;
             _input.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
             _input.style.marginTop = 0f;
             _input.style.marginBottom = 0f;
@@ -511,10 +523,10 @@ namespace Ruitk.Builder
                 case SemanticTokenTypes.Keyword:
                     return "#C792EA";
                 case SemanticTokenTypes.String:
-                    return "#C3E88D";
+                    return StringColor;
                 case SemanticTokenTypes.Number:
                 case SemanticTokenTypes.Expression:
-                    return "#FFB74D";
+                    return ExprColor;
                 case SemanticTokenTypes.Comment:
                     return "#616E7A";
                 case SemanticTokenTypes.Function:
@@ -548,6 +560,59 @@ namespace Ruitk.Builder
             return false;
         }
 
+        private const string StringColor = "#C3E88D";
+        private const string ExprColor = "#FFB74D";
+
+        private static bool[] s_inBrace = new bool[512];
+
+        /// <summary>POC tokenize(): after strings are painted, EVERY <c>{…}</c> run
+        /// on the line becomes class .e (var(--warn) #ffb74d) — which is why
+        /// <c>import { Header }</c> and <c>key={item.Id}</c> are orange in the POC
+        /// captures while the LSP classifies those same names as Element/Property
+        /// and paints them blue. Strings keep their green because the POC wraps
+        /// them first and the brace span nests around them.</summary>
+        private static void MarkBraces(string line)
+        {
+            if (s_inBrace.Length < line.Length)
+                s_inBrace = new bool[Mathf.NextPowerOfTwo(line.Length + 1)];
+            for (int i = 0; i < line.Length; i++)
+                s_inBrace[i] = false;
+            int open = -1;
+            for (int i = 0; i < line.Length; i++)
+            {
+                if (line[i] == '{')
+                    open = i;
+                else if (line[i] == '}' && open >= 0)
+                {
+                    for (int j = open; j <= i; j++)
+                        s_inBrace[j] = true;
+                    open = -1;
+                }
+            }
+        }
+
+        private static string EffectiveColor(int column, string color) =>
+            color == StringColor || !s_inBrace[column] ? color : ExprColor;
+
+        private static void AppendColored(
+            StringBuilder sb, string line, int start, int end, string color)
+        {
+            int i = start;
+            while (i < end)
+            {
+                string effective = EffectiveColor(i, color);
+                int j = i + 1;
+                while (j < end && EffectiveColor(j, color) == effective)
+                    j++;
+                string text = Escape(line.Substring(i, j - i));
+                if (effective != null)
+                    sb.Append("<color=").Append(effective).Append('>').Append(text).Append("</color>");
+                else
+                    sb.Append(text);
+                i = j;
+            }
+        }
+
         private static string BuildRichText(
             string textLf, SemanticTokenData[] tokens, int selectedLine1, List<string> traceNames)
         {
@@ -564,6 +629,7 @@ namespace Ruitk.Builder
             for (int i = 0; i < lines.Length; i++)
             {
                 string line = lines[i];
+                MarkBraces(line);
                 if (i > 0)
                     sb.Append('\n');
                 bool selected = selectedLine1 == i + 1;
@@ -578,7 +644,7 @@ namespace Ruitk.Builder
                 }
                 if (!byLine.TryGetValue(i, out var list))
                 {
-                    sb.Append(Escape(line));
+                    AppendColored(sb, line, 0, line.Length, null);
                     if (selected)
                         sb.Append("</mark>");
                     continue;
@@ -591,17 +657,12 @@ namespace Ruitk.Builder
                     int end = Mathf.Clamp(token.Column + token.Length, start, line.Length);
                     if (start < cursor)
                         continue;
-                    sb.Append(Escape(line.Substring(cursor, start - cursor)));
-                    string color = ColorFor(token.TokenType);
-                    string text = Escape(line.Substring(start, end - start));
-                    if (color != null)
-                        sb.Append("<color=").Append(color).Append('>').Append(text).Append("</color>");
-                    else
-                        sb.Append(text);
+                    AppendColored(sb, line, cursor, start, null);
+                    AppendColored(sb, line, start, end, ColorFor(token.TokenType));
                     cursor = end;
                 }
                 if (cursor < line.Length)
-                    sb.Append(Escape(line.Substring(cursor)));
+                    AppendColored(sb, line, cursor, line.Length, null);
                 if (selected)
                     sb.Append("</mark>");
             }
