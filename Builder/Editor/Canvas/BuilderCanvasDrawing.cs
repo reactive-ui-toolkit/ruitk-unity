@@ -19,6 +19,11 @@ namespace Ruitk.Builder
 
         public const float EdgeAnchorY = 18f;
 
+        /// <summary>Import-row marker for a namespace import ("@UnityEngine.UIElements"):
+        /// the row is on the card like every other import line, but it resolves to
+        /// no graph node, so it carries no anchor dot and no edge.</summary>
+        public const int NamespaceImportBadge = 8;
+
         /// <summary>Card geometry the edge painter estimates anchors from — kept
         /// in lockstep with canvasStyles (POC .card-title / .card-section
         /// paddings and the per-row font sizes).</summary>
@@ -111,11 +116,12 @@ namespace Ruitk.Builder
             }
         }
 
-        /// <summary>POC ".card" widths are CSS content-box (300 / 340 / 430) inside
-        /// a 1.5px frame, so the outer box the browser paints is 3px wider. UITK
-        /// Width is border-box, so the frame is added here.</summary>
+        /// <summary>POC ".card" widths (300 / 340 / 430) are OUTER boxes: index.html
+        /// carries a global "* { box-sizing: border-box }" reset, so the 1.5px frame
+        /// is inside the declared width. UI Toolkit Width is border-box too (Yoga
+        /// counts border + padding), so the authored numbers transfer unchanged.</summary>
         public static float CardWidthFor(int lod) =>
-            (lod == 0 ? 300f : lod == 1 ? 340f : 430f) + 3f;
+            lod == 0 ? 300f : lod == 1 ? 340f : 430f;
 
         private static readonly Color UsageEdge = new Color(0.361f, 0.545f, 0.690f);
         private static readonly Color HookEdge = new Color(0.427f, 0.659f, 0.435f);
@@ -159,14 +165,29 @@ namespace Ruitk.Builder
         }
 
         /// <summary>Chip line "useState  →  gold, setGold" → POC coloring:
-        /// hook name green, state names warn-gold.</summary>
+        /// hook name green, state names warn-gold. The POC joins the .st spans with
+        /// a bare ", " that sits OUTSIDE any span, so the separator inherits the
+        /// chip's own --text #d6d6dc — it is not a state name.</summary>
         public static string ChipRichText(string bodyLineText)
         {
             int arrow = bodyLineText.IndexOf("  →  ", System.StringComparison.Ordinal);
             if (arrow < 0)
                 return "<color=#81C784>" + bodyLineText + "</color>";
-            return "<color=#81C784>" + bodyLineText.Substring(0, arrow) + "</color> → <color=#FFB74D>"
-                + bodyLineText.Substring(arrow + 5) + "</color>";
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<color=#81C784>").Append(bodyLineText, 0, arrow).Append("</color> → ");
+            string names = bodyLineText.Substring(arrow + 5);
+            int at = 0;
+            while (at < names.Length)
+            {
+                int sep = names.IndexOf(", ", at, System.StringComparison.Ordinal);
+                int end = sep < 0 ? names.Length : sep;
+                sb.Append("<color=#FFB74D>").Append(names, at, end - at).Append("</color>");
+                if (sep < 0)
+                    break;
+                sb.Append(", ");
+                at = sep + 2;
+            }
+            return sb.ToString();
         }
 
         /// <summary>POC 6.6 band math: rel &lt; 0.3 → before (0), rel &gt; 0.7 →
@@ -220,6 +241,17 @@ namespace Ruitk.Builder
         }
 
         public static bool DragActive => BuilderDragService.Active;
+
+        /// <summary>POC "body.lod0 .pill { cursor: move }" / ".card-title
+        /// { cursor: move }" — the card's drag handle says so on hover, distinct
+        /// from "#canvasWrap { cursor: grab }" that every card would otherwise
+        /// inherit from the canvas pane.</summary>
+        public static void SetMoveCursor(Ruitk.Core.ReactivePanelEvent evt)
+        {
+            if (evt?.Target == null)
+                return;
+            BuilderCursor.Set(evt.Target, UnityEditor.MouseCursor.MoveArrow);
+        }
 
         /// <summary>POC placeMenu(): menus open AT the click. Records the
         /// gesture's panel-space point for the next BuilderSearchMenu.</summary>
@@ -376,11 +408,15 @@ namespace Ruitk.Builder
         /// #232329 fill (probed #24242a on poc-l0-architecture.png). UI Toolkit
         /// alpha-modulates a sub-pixel border far less aggressively and painted a
         /// hard #303038 hairline, which made the L0 pills read as outlined chips
-        /// instead of flat plates — the alpha is folded down at L0 to match.</summary>
+        /// instead of flat plates — the alpha is folded down at L0 to match.
+        /// The SELECTED gold gets the same treatment: probed on
+        /// poc-l0-architecture.png the selected top edge peaks at #4C442C over two
+        /// rows, i.e. the 1.5px #ffd54f frame plus its .25 spread ring collapse to
+        /// ~0.4 px-equivalent of ink at zoom 0.30.</summary>
         public static Color CardFrameBorderColor(bool selected, int lod)
         {
             if (selected)
-                return new Color(1f, 0.835f, 0.310f);
+                return new Color(1f, 0.835f, 0.310f, lod == 0 ? 0.4f : 1f);
             var line = new Color(0.227f, 0.227f, 0.267f);
             if (lod == 0)
                 line.a = 0.12f;
@@ -499,6 +535,34 @@ namespace Ruitk.Builder
             p.Fill();
         }
 
+        /// <summary>POC ".jsx-attrs .expr:hover { text-decoration: underline dotted }"
+        /// — hovering an attribute value rules a dotted line under it and leaves the
+        /// row ground untouched. UI Toolkit has no text-decoration, so the rule is
+        /// painted as 1-on / 1-off dots the width of the value, in the value's own
+        /// colour, just below its baseline.</summary>
+        public static void DrawDottedUnderline(MeshGenerationContext ctx, Color color, bool on)
+        {
+            if (!on || ctx?.visualElement == null)
+                return;
+            var rect = ctx.visualElement.contentRect;
+            if (rect.width <= 0f || rect.height <= 0f)
+                return;
+            float y = rect.height - 2.5f;
+            var p = ctx.painter2D;
+            p.fillColor = color;
+            p.BeginPath();
+            for (float x = 0f; x < rect.width; x += 2f)
+            {
+                float w = Mathf.Min(1f, rect.width - x);
+                p.MoveTo(new Vector2(x, y));
+                p.LineTo(new Vector2(x + w, y));
+                p.LineTo(new Vector2(x + w, y + 1f));
+                p.LineTo(new Vector2(x, y + 1f));
+                p.ClosePath();
+            }
+            p.Fill();
+        }
+
         public static void DrawEdges(MeshGenerationContext ctx, BuilderGraph graph)
         {
             if (ctx == null || graph == null)
@@ -546,9 +610,13 @@ namespace Ruitk.Builder
             Vector2 TargetOf(int index, BuilderCanvasNode to)
             {
                 var rect = CardRect(index, to);
+                // POC: "y2 = r2.top - wr.top + 18" is measured off getBoundingClientRect,
+                // so the 18 is 18 SCREEN px at every zoom. Our anchors are world-space,
+                // so the offset is divided by the live zoom. The lod0 branch is a
+                // fraction of the card height and is already zoom-invariant.
                 return CurrentLod == 0
                     ? new Vector2(rect.xMin, rect.yMin + rect.height * 0.5f)
-                    : new Vector2(rect.xMin, rect.yMin + EdgeAnchorY);
+                    : new Vector2(rect.xMin, rect.yMin + EdgeAnchorY / CurrentZoom);
             }
 
             // POC computeEdges: ONE edge per import row, PLUS one per markup row
@@ -659,7 +727,12 @@ namespace Ruitk.Builder
         private static void StrokeEdge(Painter2D p, Vector2 a, Vector2 b, Color color, bool dashed)
         {
             color.a = 0.85f;
-            float dx = Mathf.Max(40f, Mathf.Abs(b.x - a.x) * 0.45f);
+            // POC drawEdges: "Math.max(40, Math.abs(x2 - x1) * 0.45)" over SCREEN
+            // coordinates (getBoundingClientRect), so the floor is 40 SCREEN px —
+            // ~133 world px at the L0 zoom, which is what gives the back-edges their
+            // wide S-bow. The proportional term is scale-invariant; only the
+            // constant needs the world conversion, like lineWidth and the dot radius.
+            float dx = Mathf.Max(40f / CurrentZoom, Mathf.Abs(b.x - a.x) * 0.45f);
             var c1 = new Vector2(a.x + dx, a.y);
             var c2 = new Vector2(b.x - dx, b.y);
             if (dashed)

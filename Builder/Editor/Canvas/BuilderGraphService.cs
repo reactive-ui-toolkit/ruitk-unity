@@ -186,8 +186,22 @@ namespace Ruitk.Builder
             foreach (var import in parsed.Directives.Imports)
             {
                 string spec = import.Specifier ?? "";
+                // POC cardHtml emits one .imp-row per entry in n.imports — EVERY
+                // import line in the file, because the card IS the editing surface.
+                // Namespace imports resolve to no graph node, so they carry
+                // BadgeKind 8: a text-only row with no anchor dot and no edge.
                 if (spec.StartsWith("@", StringComparison.Ordinal))
+                {
+                    node.Imports.Add(new BuilderCardLine
+                    {
+                        Text = "import \"" + spec + "\"",
+                        AttrsText = spec,
+                        Kind = BuilderCardLineKind.Import,
+                        BadgeKind = BuilderCanvasDrawing.NamespaceImportBadge,
+                        SourceLine = import.Line,
+                    });
                     continue;
+                }
                 string clause;
                 if (import.IsStar)
                     clause = "* as " + (import.StarAlias ?? "Module");
@@ -865,7 +879,10 @@ namespace Ruitk.Builder
                     y = 80f;
                 if (node.X == 0f && node.Y == 0f)
                 {
-                    node.X = 80f + d * (BuilderCanvasDrawing.CardWidth + 160f);
+                    // The POC's authored sample positions are the only spec for the
+                    // intended grid: columns at x = 60 / 620 / 1180, i.e. origin 60
+                    // and a 560 pitch = the 340 card plus a 220 gutter.
+                    node.X = 60f + d * (BuilderCanvasDrawing.CardWidth + 220f);
                     node.Y = y;
                 }
                 columnY[d] = Math.Max(y, node.Y) + EstimateCardHeight(node) + 48f;

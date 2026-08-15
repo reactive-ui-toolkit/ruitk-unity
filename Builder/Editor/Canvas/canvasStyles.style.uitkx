@@ -109,7 +109,8 @@ export Style CardSectionHeader = new Style {
   FontSize = Px(10),
   Height = Px(14.5f),
   TextAlign = TextMiddleLeft,
-  LetterSpacing = Px(1),
+  // POC ".sec-label { letter-spacing: .08em }" at font-size 10 = 0.8px per char.
+  LetterSpacing = Px(0.8f),
   MarginBottom = Px(5),
 };
 
@@ -205,8 +206,16 @@ export Style InlineEditArea = new Style {
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 
+// POC ".code-island { white-space: pre; overflow-x: auto }" — a line wider than
+// the card stays INSIDE the island; nothing paints past its border. UI Toolkit's
+// default overflow is Visible, so a pre-formatted line ran out over the card edge.
+// A horizontal ScrollView is not used for the "auto" half: UI Toolkit's ScrollView
+// consumes the mouse wheel when only its horizontal scroller is usable, which
+// would swallow the canvas zoom gesture over every island. Double-click still
+// opens the full text in the inline editor.
 export Style CodeIsland = new Style {
   BackgroundColor = Hex("#17171b"),
+  Overflow = OverflowHidden,
   BorderRadius = Px(6),
   BorderTopWidth = 1,
   BorderRightWidth = 1,
@@ -239,6 +248,7 @@ export Style CodeIslandLine = new Style {
 // editable surface, so hovering it says so.
 export Style CodeIslandHover = new Style {
   BackgroundColor = Hex("#17171b"),
+  Overflow = OverflowHidden,
   BorderRadius = Px(6),
   BorderTopWidth = 1,
   BorderRightWidth = 1,
@@ -257,6 +267,7 @@ export Style CodeIslandHover = new Style {
 // POC ".code-island.hl" — a code island whose text names a traced hook state.
 export Style CodeIslandTrace = new Style {
   BackgroundColor = Hex("#221d12"),
+  Overflow = OverflowHidden,
   BorderRadius = Px(6),
   BorderTopWidth = 1,
   BorderRightWidth = 1,

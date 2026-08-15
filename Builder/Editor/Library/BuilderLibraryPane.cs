@@ -157,11 +157,18 @@ namespace Ruitk.Builder
             // and "#lib-body { overflow-y: auto }" is the scroller — so the search box
             // scrolls away with the list instead of being pinned above it. The rows go
             // in a sibling host so a rebuild never removes (and unfocuses) the field.
-            var scroll = new ScrollView { style = { flexGrow = 1f, paddingLeft = 8f, paddingRight = 8f } };
+            var scroll = new ScrollView { style = { flexGrow = 1f, paddingLeft = 8f } };
             // The POC pane shows no editor chrome and its pills keep the full 8px
             // gutter; Unity's default scroller is a light control laid out INSIDE
             // the pane, which stole 13px from every row.
             BuilderWindow.StyleScrollers(scroll);
+            // Yoga resolves an absolutely positioned child's "right" against the
+            // parent's CONTENT box, so the 8px right padding pulled the overlay
+            // thumb 8px INSIDE the list and it painted over every pill's right
+            // border (the POC pane never shows scrollbar chrome over a pill). The
+            // gutter moves onto the content container instead, which leaves the
+            // thumb in the empty 8px lane the POC keeps between pill and pane edge.
+            scroll.contentContainer.style.paddingRight = 8f;
             scroll.contentContainer.Add(search);
             var rowsHost = new VisualElement();
             scroll.contentContainer.Add(rowsHost);

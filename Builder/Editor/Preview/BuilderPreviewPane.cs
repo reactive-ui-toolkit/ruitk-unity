@@ -40,6 +40,7 @@ namespace Ruitk.Builder
         private Type _componentType;
         private IProps _knobProps;
         private string _filePath;
+        private bool _showingNoPreview;
 
         public event Action<string> ComponentPicked;
 
@@ -569,6 +570,7 @@ namespace Ruitk.Builder
                 RuntimeHelpers.RunModuleConstructor(owner.Module.ModuleHandle);
             if (type == null || render == null)
             {
+                _showingNoPreview = true;
                 SetStatus(NoPreviewText(uitkxPath));
                 UnmountPreview();
                 if (_knobsHost != null)
@@ -585,6 +587,7 @@ namespace Ruitk.Builder
                     _previewHost.style.display = DisplayStyle.None;
                 return;
             }
+            _showingNoPreview = false;
             if (_previewHost != null)
                 _previewHost.style.display = DisplayStyle.Flex;
             if (_knobsBlock != null)
@@ -667,6 +670,18 @@ namespace Ruitk.Builder
                 {
                 }
             }
+        }
+
+        /// <summary>The graph loads asynchronously, so the first ShowFile for a
+        /// module runs while ModuleInfoProvider still has no nodes and both
+        /// clauses fall back to the generic phrasing — which then contradicts the
+        /// signature line and the green edge the canvas draws a moment later. The
+        /// window calls this once the graph is in, so the copy names the real
+        /// export signature and the real consumers.</summary>
+        public void RefreshModuleNotes()
+        {
+            if (_showingNoPreview && !string.IsNullOrEmpty(_filePath))
+                SetStatus(NoPreviewText(_filePath));
         }
 
         /// <summary>Called after a preview compile of the shown file — re-resolve

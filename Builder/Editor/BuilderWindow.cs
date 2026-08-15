@@ -353,7 +353,11 @@ namespace Ruitk.Builder
             _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
             _canvasHost.Mount(
                 container, _focusFile, OpenFileFromCanvas, ReadBufferOrDisk,
-                graph => _libraryPane?.SetWorkspaceEntries(graph));
+                graph =>
+                {
+                    _libraryPane?.SetWorkspaceEntries(graph);
+                    _previewPane?.RefreshModuleNotes();
+                });
             MountPreview();
             MountLibrary();
         }
@@ -2228,7 +2232,14 @@ namespace Ruitk.Builder
             split.hierarchy.Add(gutter);
 
             VisualElement tracked = null;
+            VisualElement trackedNext = null;
 
+            // POC: the 6px splitter sits in the LANE between the two panes — on
+            // poc-boot.png the preview body runs 72..451 (the full 380), the hsplit
+            // is 452..457 and the SOURCE title starts at 458 with nothing between.
+            // Centering the band on the first pane's edge instead left the lane's
+            // trailing pixels bare whenever TwoPaneSplitView reserves one, which is
+            // the 3px of empty panel that showed up above the SOURCE title.
             void Place()
             {
                 if (split.childCount == 0)
@@ -2239,13 +2250,33 @@ namespace Ruitk.Builder
                     tracked = first;
                     first.RegisterCallback<GeometryChangedEvent>(_ => Place());
                 }
+                var second = split.childCount > 1 ? split[1] : null;
+                if (second != null && !ReferenceEquals(trackedNext, second))
+                {
+                    trackedNext = second;
+                    second.RegisterCallback<GeometryChangedEvent>(_ => Place());
+                }
                 var box = first.layout;
                 if (float.IsNaN(box.width) || float.IsNaN(box.height))
                     return;
+                var next = second != null ? second.layout : box;
+                bool haveNext = second != null
+                    && !float.IsNaN(next.width) && !float.IsNaN(next.height);
+                float start = Mathf.Round(vertical ? box.yMax : box.xMax);
+                float lane = haveNext
+                    ? Mathf.Round(vertical ? next.yMin : next.xMin) - start
+                    : 0f;
+                bool inLane = lane >= 6f;
                 if (vertical)
-                    gutter.style.top = Mathf.Round(box.yMax) - 3f;
+                {
+                    gutter.style.top = inLane ? start : start - 3f;
+                    gutter.style.height = inLane ? lane : 6f;
+                }
                 else
-                    gutter.style.left = Mathf.Round(box.xMax) - 3f;
+                {
+                    gutter.style.left = inLane ? start : start - 3f;
+                    gutter.style.width = inLane ? lane : 6f;
+                }
             }
 
             // TwoPaneSplitView rebuilds its resizer whenever it re-inits (first

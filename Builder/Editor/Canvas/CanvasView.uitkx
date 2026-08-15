@@ -228,8 +228,9 @@ export VirtualNode CanvasView(
                 BorderRadius = Px(10),
                 // POC .card is a 1.5px solid --line frame - a DIFFERENT rule from
                 // .card-title border-bottom 1px, which stays at 1f in canvasStyles.
-                // UITK Width is border-box, so CardWidthFor carries the POC content
-                // width plus this frame.
+                // The global box-sizing:border-box reset in index.html puts this
+                // frame INSIDE the authored .card width, and UITK Width is
+                // border-box too, so CardWidthFor carries the POC number as-is.
                 BorderTopWidth = 1.5f,
                 BorderRightWidth = 1.5f,
                 BorderBottomWidth = 1.5f,
@@ -285,6 +286,7 @@ export VirtualNode CanvasView(
                 return (
                   <VisualElement
                     style={CanvasStyles.CardPill}
+                    onAttachToPanel={e => { BuilderCanvasDrawing.SetMoveCursor(e); }}
                     onPointerDown={e => {
                       if (e.Button == 0 && e.ClickCount < 2) {
                         dragCard.Current = index;
@@ -339,6 +341,7 @@ export VirtualNode CanvasView(
                 return (
                   <VisualElement
                     style={CanvasStyles.CardHeader}
+                    onAttachToPanel={e => { BuilderCanvasDrawing.SetMoveCursor(e); }}
                     onPointerDown={e => {
                       if (e.Button == 0 && e.ClickCount < 2) {
                         dragCard.Current = index;
@@ -414,39 +417,43 @@ export VirtualNode CanvasView(
                                   text={imp.Text}
                                   style={CanvasStyles.CardImportLine}
                                 />
-                                <VisualElement
-                                  name={$"a-imp-{index}-{x}"}
-                                  style={new Style {
-                                    Width = Px(8),
-                                    Height = Px(8),
-                                    MarginLeft = Px(6),
-                                    FlexShrink = 0,
-                                    Overflow = OverflowVisible,
-                                  }}
-                                >
-                                  <VisualElement
-                                    style={new Style {
-                                      Position = PosAbsolute,
-                                      Left = Px(-2),
-                                      Top = Px(-2),
-                                      Width = Px(12),
-                                      Height = Px(12),
-                                      BorderRadius = Px(6),
-                                      BackgroundColor = BuilderCanvasDrawing.DotHalo(imp.BadgeKind),
-                                    }}
-                                  />
-                                  <VisualElement
-                                    style={new Style {
-                                      Position = PosAbsolute,
-                                      Left = Px(0),
-                                      Top = Px(0),
-                                      Width = Px(8),
-                                      Height = Px(8),
-                                      BorderRadius = Px(4),
-                                      BackgroundColor = BuilderCanvasDrawing.DotColor(imp.BadgeKind),
-                                    }}
-                                  />
-                                </VisualElement>
+                                @if (imp.BadgeKind != BuilderCanvasDrawing.NamespaceImportBadge) {
+                                  return (
+                                    <VisualElement
+                                      name={$"a-imp-{index}-{x}"}
+                                      style={new Style {
+                                        Width = Px(8),
+                                        Height = Px(8),
+                                        MarginLeft = Px(6),
+                                        FlexShrink = 0,
+                                        Overflow = OverflowVisible,
+                                      }}
+                                    >
+                                      <VisualElement
+                                        style={new Style {
+                                          Position = PosAbsolute,
+                                          Left = Px(-2),
+                                          Top = Px(-2),
+                                          Width = Px(12),
+                                          Height = Px(12),
+                                          BorderRadius = Px(6),
+                                          BackgroundColor = BuilderCanvasDrawing.DotHalo(imp.BadgeKind),
+                                        }}
+                                      />
+                                      <VisualElement
+                                        style={new Style {
+                                          Position = PosAbsolute,
+                                          Left = Px(0),
+                                          Top = Px(0),
+                                          Width = Px(8),
+                                          Height = Px(8),
+                                          BorderRadius = Px(4),
+                                          BackgroundColor = BuilderCanvasDrawing.DotColor(imp.BadgeKind),
+                                        }}
+                                      />
+                                    </VisualElement>
+                                  );
+                                }
                               </VisualElement>
                             );
                           }
@@ -728,6 +735,7 @@ export VirtualNode CanvasView(
                                     <VisualElement
                                       style={new Style {
                                         BackgroundColor = Hex("#17171b"),
+                                        Overflow = OverflowHidden,
                                         BorderRadius = Px(6),
                                         BorderTopWidth = 1,
                                         BorderRightWidth = 1,
@@ -1164,6 +1172,7 @@ export VirtualNode CanvasView(
                                                     setEditOrig(innerValue);
                                                     e.StopPropagation();
                                                   }}
+                                                  onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawDottedUnderline(ctx, Hex("#ffb74d"), hoverChipKey == attrKey)}
                                                   style={new Style {
                                                     Color = Hex("#ffb74d"),
                                                     FontSize = Px(12),
@@ -1175,7 +1184,6 @@ export VirtualNode CanvasView(
                                                     MarginRight = Px(0),
                                                     PaddingLeft = Px(0),
                                                     PaddingRight = Px(0),
-                                                    BackgroundColor = hoverChipKey == attrKey ? Rgba(255, 183, 77, 31) : Rgba(0, 0, 0, 0),
                                                   }}
                                                 />
                                               );
