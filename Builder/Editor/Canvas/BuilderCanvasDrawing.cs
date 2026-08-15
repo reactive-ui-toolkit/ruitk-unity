@@ -64,6 +64,24 @@ namespace Ruitk.Builder
                 + bodyLineText.Substring(arrow + 5) + "</color>";
         }
 
+        /// <summary>POC 6.6 band math: rel &lt; 0.3 → before (0), rel &gt; 0.7 →
+        /// after (2), else inside (1) — computed from the pointer's local Y in
+        /// the hovered row.</summary>
+        public static int DropBand(Ruitk.Core.ReactivePointerEvent evt)
+        {
+            var target = evt?.NativeEvent?.target as VisualElement;
+            var pointer = evt?.NativeEvent as IPointerEvent;
+            if (target == null || pointer == null)
+                return 1;
+            float height = target.resolvedStyle.height;
+            if (height <= 0f)
+                return 1;
+            float rel = pointer.localPosition.y / height;
+            return rel < 0.3f ? 0 : rel > 0.7f ? 2 : 1;
+        }
+
+        public static bool DragActive => BuilderDragService.Active;
+
         public static Color BadgeColor(int badgeKind) => badgeKind switch
         {
             1 => new Color(1.00f, 0.72f, 0.30f),

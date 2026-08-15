@@ -147,6 +147,7 @@ namespace Ruitk.Builder
             _canvasHost = new BuilderCanvasHost();
             _canvasHost.OnRowClick = OnCanvasRowClicked;
             _canvasHost.OnRowContext = OnCanvasRowContext;
+            _canvasHost.OnRowDrop = OnCanvasRowDrop;
             _canvasHost.OnCreateRequested = kind =>
             {
                 string dir = string.IsNullOrEmpty(_focusFile) ? null : Path.GetDirectoryName(_focusFile);
@@ -374,6 +375,128 @@ namespace Ruitk.Builder
             menu.AddItem(new GUIContent("Delete element"), false, () =>
                 DeleteLinesInFile(full, row.SourceLine, row.EndLine > 0 ? row.EndLine : row.SourceLine));
             menu.ShowAsContext();
+        }
+
+        /// <summary>POC 6.6 drop resolution: element/component payloads insert a
+        /// seeded tag before/after/inside the target row; hooks land before the
+        /// last return; style/util modules add the import line; row moves
+        /// relocate the source line range (same file only).</summary>
+        private void OnCanvasRowDrop(string filePath, int rowIdx, int band, string payload)
+        {
+            if (string.IsNullOrEmpty(payload))
+                return;
+            string full = Path.GetFullPath(filePath);
+            var node = _canvasHost?.FindNode(full);
+            if (node == null || rowIdx < 0 || rowIdx >= node.Markup.Count)
+                return;
+            var row = node.Markup[rowIdx];
+            var session = _workspace.TryGet(full) ?? OpenSession(full);
+            if (session == null || session.IsReadOnly)
+            {
+                ShowNotification(new GUIContent("Read-only file"));
+                return;
+            }
+
+            int colon = payload.IndexOf(':');
+            string kind = colon < 0 ? payload : payload.Substring(0, colon);
+            string name = colon < 0 ? "" : payload.Substring(colon + 1);
+            string indent = IndentOf(full, row.SourceLine);
+
+            switch (kind)
+            {
+                case "element":
+                case "component":
+                {
+                    string seeded = name == "Label" ? "<Label text=\"New label\" />"
+                        : name == "Button" ? "<Button text=\"Click\" />"
+                        : "<" + name + " />";
+                    if (band == 0)
+                        InsertLinesInFile(full, row.SourceLine - 1, indent + seeded);
+                    else if (band == 2)
+                        InsertLinesInFile(full, row.EndLine > 0 ? row.EndLine : row.SourceLine, indent + seeded);
+                    else
+                        InsertLinesInFile(full, row.SourceLine, indent + "  " + seeded);
+                    break;
+                }
+                case "hook":
+                {
+                    string decl = name == "useState" ? "var (value, setValue) = useState(0);"
+                        : name == "useEffect" ? "useEffect(() => { }, null);"
+                        : name == "useMemo" ? "var memo = useMemo(() => 0, null);"
+                        : name == "useRef" ? "var elRef = useRef<VisualElement?>(null);"
+                        : "var value = " + name + "();";
+                    InsertBeforeLastReturn(full, "  " + decl);
+                    break;
+                }
+                case "stylemod":
+                case "utilmod":
+                {
+                    var module = _canvasHost.FindNodeByTitle(
+                        kind == "stylemod" ? name : name);
+                    string import = BuildImportLine(full, module, kind == "stylemod", name);
+                    if (import != null)
+                        InsertLinesInFile(full, 0, import);
+                    break;
+                }
+                case "snippet":
+                    _codeField?.InsertAtCaret(name);
+                    break;
+            }
+        }
+
+        private BuilderDocumentSession OpenSession(string filePath)
+        {
+            _workspace.Open(filePath);
+            return _workspace.TryGet(filePath);
+        }
+
+        private void InsertBeforeLastReturn(string filePath, string line)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int at = -1;
+            for (int i = lines.Count - 1; i >= 0; i--)
+            {
+                if (lines[i].TrimStart().StartsWith("return (", System.StringComparison.Ordinal))
+                {
+                    at = i;
+                    break;
+                }
+            }
+            if (at < 0)
+                return;
+            lines.Insert(at, line);
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+        }
+
+        private static string BuildImportLine(
+            string importerPath, BuilderCanvasNode module, bool styleModule, string name)
+        {
+            if (module == null)
+                return null;
+            try
+            {
+                string importerDir = Path.GetDirectoryName(importerPath) ?? "";
+                string rel = Path.GetRelativePath(importerDir, module.FilePath)
+                    .Replace('\\', '/');
+                if (rel.EndsWith(".uitkx", System.StringComparison.OrdinalIgnoreCase))
+                    rel = rel.Substring(0, rel.Length - ".uitkx".Length);
+                if (!rel.StartsWith(".", System.StringComparison.Ordinal))
+                    rel = "./" + rel;
+                if (styleModule)
+                    return "import * as " + char.ToUpperInvariant(name[0]) + name.Substring(1)
+                        + " from \"" + rel + "\"";
+                string names = module.Exports.Count > 0
+                    ? string.Join(", ", module.Exports)
+                    : name;
+                return "import { " + names + " } from \"" + rel + "\"";
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private string IndentOf(string filePath, int line1)

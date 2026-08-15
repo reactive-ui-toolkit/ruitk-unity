@@ -246,6 +246,27 @@ namespace Ruitk.Builder
             }
         }
 
+        private static string PayloadFor(Entry entry)
+        {
+            string bare = entry.Name.Trim('<', '>');
+            switch (entry.Section)
+            {
+                case "Native elements":
+                    return "element:" + bare;
+                case "Custom components":
+                    return "component:" + bare;
+                case "Hooks":
+                case "Hook modules":
+                    return "hook:" + bare;
+                case "Style modules":
+                    return "stylemod:" + bare;
+                case "Util modules":
+                    return "utilmod:" + bare;
+                default:
+                    return "snippet:" + entry.Snippet;
+            }
+        }
+
         private void Rebuild()
         {
             if (_listHost == null)
@@ -283,7 +304,14 @@ namespace Ruitk.Builder
                     },
                 };
                 var captured = entry;
-                row.RegisterCallback<PointerDownEvent>(_ => _insert?.Invoke(captured.Snippet, captured.Section));
+                row.RegisterCallback<PointerDownEvent>(_ =>
+                    BuilderDragService.Arm(PayloadFor(captured)));
+                row.RegisterCallback<PointerUpEvent>(_ =>
+                {
+                    if (BuilderDragService.Active && BuilderDragService.IsQuickClick)
+                        _insert?.Invoke(captured.Snippet, captured.Section);
+                    BuilderDragService.Cancel();
+                });
                 row.RegisterCallback<MouseEnterEvent>(_ =>
                     row.style.backgroundColor = new Color(0.18f, 0.24f, 0.30f));
                 row.RegisterCallback<MouseLeaveEvent>(_ =>

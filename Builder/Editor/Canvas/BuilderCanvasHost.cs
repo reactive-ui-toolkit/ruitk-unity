@@ -28,6 +28,7 @@ namespace Ruitk.Builder
         public Action<string, int> OnRowClick;
         public Action<string, int, int> OnRowContext;
         public Action<string> OnCreateRequested;
+        public Action<string, int, int, string> OnRowDrop;
 
         public async void Mount(
             VisualElement container,
@@ -90,9 +91,21 @@ namespace Ruitk.Builder
                         OnRowClick = (path, line) => OnRowClick?.Invoke(path, line),
                         OnRowContext = (path, line, rowIdx) => OnRowContext?.Invoke(path, line, rowIdx),
                         OnCanvasContext = ShowCreateMenu,
+                        OnRowDrop = (path, rowIdx, band, payload) =>
+                            OnRowDrop?.Invoke(path, rowIdx, band, payload),
                     }
                 )
             );
+        }
+
+        public BuilderCanvasNode FindNodeByTitle(string title)
+        {
+            if (_graph == null)
+                return null;
+            foreach (var node in _graph.Nodes)
+                if (string.Equals(node.Title, title, StringComparison.OrdinalIgnoreCase))
+                    return node;
+            return null;
         }
 
         public BuilderCanvasNode FindNode(string filePath)

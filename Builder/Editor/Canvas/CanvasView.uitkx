@@ -14,7 +14,8 @@ export VirtualNode CanvasView(
   Action<int> onCardContext = null,
   Action<string, int> onRowClick = null,
   Action<string, int, int> onRowContext = null,
-  Action onCanvasContext = null
+  Action onCanvasContext = null,
+  Action<string, int, int, string> onRowDrop = null
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -23,6 +24,8 @@ export VirtualNode CanvasView(
   var (selRowNode, setSelRowNode) = useState(-1);
   var (selRowIdx, setSelRowIdx) = useState(-1);
   var (traceStates, setTraceStates) = useState((string)null);
+  var (dragRowKey, setDragRowKey) = useState(-1);
+  var (dragBand, setDragBand) = useState(1);
   var (layoutVersion, setLayoutVersion) = useState(0);
 
   var panning = useRef(false);
@@ -52,6 +55,10 @@ export VirtualNode CanvasView(
         }
       }}
       onPointerUp={e => {
+        BuilderDragService.Cancel();
+        if (dragRowKey >= 0) {
+          setDragRowKey(-1);
+        }
         if (panning.Current && onCameraChanged != null) {
           onCameraChanged(camX, camY, zoom);
         }
@@ -301,8 +308,10 @@ export VirtualNode CanvasView(
                           @for (int x = 0; x < node.Markup.Count; x++) {
                             var row = node.Markup[x];
                             int rowIdx = x;
+                            int rowKey = index * 1000 + rowIdx;
                             bool rowSel = selRowNode == index && selRowIdx == rowIdx;
                             bool rowHl = BuilderCanvasDrawing.RowMatchesTrace(row.AttrsText, traceStates);
+                            bool dropHere = dragRowKey == rowKey;
                             return (
                               <VisualElement
                                 key={$"mk-{x}"}
@@ -315,11 +324,31 @@ export VirtualNode CanvasView(
                                   PaddingTop = Px(1),
                                   PaddingBottom = Px(1),
                                   BorderRadius = Px(5),
-                                  BackgroundColor = rowSel
-                                    ? Rgba(255, 213, 79, 38)
-                                    : rowHl
-                                      ? Rgba(255, 183, 77, 46)
-                                      : Rgba(0, 0, 0, 0),
+                                  BackgroundColor = dropHere && dragBand == 1
+                                    ? Rgba(79, 195, 247, 30)
+                                    : rowSel
+                                      ? Rgba(255, 213, 79, 38)
+                                      : rowHl
+                                        ? Rgba(255, 183, 77, 46)
+                                        : Rgba(0, 0, 0, 0),
+                                  BorderTopWidth = dropHere && dragBand == 0 ? 2 : 0,
+                                  BorderTopColor = Hex("#4fc3f7"),
+                                  BorderBottomWidth = dropHere && dragBand == 2 ? 2 : 0,
+                                  BorderBottomColor = Hex("#4fc3f7"),
+                                }}
+                                onPointerMove={e => {
+                                  if (BuilderCanvasDrawing.DragActive) {
+                                    setDragRowKey(rowKey);
+                                    setDragBand(BuilderCanvasDrawing.DropBand(e));
+                                    e.StopPropagation();
+                                  }
+                                }}
+                                onPointerUp={e => {
+                                  if (BuilderCanvasDrawing.DragActive && onRowDrop != null) {
+                                    onRowDrop(node.FilePath, rowIdx, dragBand, BuilderDragService.Take());
+                                    setDragRowKey(-1);
+                                    e.StopPropagation();
+                                  }
                                 }}
                                 onPointerDown={e => {
                                   if (e.Button == 1) {
