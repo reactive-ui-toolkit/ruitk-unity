@@ -262,6 +262,30 @@ namespace Ruitk.Builder
                     }
                 )
             );
+            StyleIslandScrollers();
+        }
+
+        /// <summary>The L2 code islands scroll horizontally like the POC's
+        /// ".code-island { overflow-x: auto }". Unity's stock scroller is a light
+        /// control laid out INSIDE the island, which would both repaint the card
+        /// in editor chrome and steal a line of height; the shared pass turns it
+        /// into the same 8px dark overlay every other scroller in the window
+        /// wears, so the island keeps the height CanvasView pinned on it.</summary>
+        private void StyleIslandScrollers()
+        {
+            if (_container == null)
+                return;
+            _container.schedule.Execute(() =>
+            {
+                if (_container == null)
+                    return;
+                foreach (var view in _container.Query<ScrollView>("ruitk-island-scroll").ToList())
+                {
+                    BuilderWindow.StyleScrollers(view);
+                    if (view.horizontalScroller != null)
+                        view.horizontalScroller.style.height = 6f;
+                }
+            });
         }
 
         /// <summary>POC LOD bands: &lt;0.45 = L0, &lt;1.05 = L1, else L2.</summary>

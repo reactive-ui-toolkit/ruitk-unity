@@ -38,14 +38,18 @@ namespace Ruitk.Builder
         private static readonly Color Accent = new Color(0.310f, 0.765f, 0.969f);
 
         /// <summary>The POC's curated native-tag order — these lead the section,
-        /// the rest of the live schema follows alphabetically.</summary>
+        /// the rest of the live schema follows alphabetically. Ordering only: the
+        /// POC hardcodes seven tags because it has no schema behind it, so
+        /// truncating the live schema to those seven would show FEWER elements
+        /// than our own data source has.</summary>
         public static readonly string[] NativeTagOrder =
         {
             "VisualElement", "Label", "Button", "ScrollView", "TextField", "Toggle", "Slider",
         };
 
         /// <summary>POC HOOK_TEMPLATES — the curated four that lead the HOOKS
-        /// section, followed by the tree's own hook modules.</summary>
+        /// section, then the rest of the live hook registry, then the tree's own
+        /// hook modules. Ordering only, same reason as NativeTagOrder.</summary>
         public static readonly string[] HookTemplates =
         {
             "useState", "useEffect", "useMemo", "useRef",
@@ -58,7 +62,16 @@ namespace Ruitk.Builder
 
         private readonly List<Entry> _entries = new List<Entry>();
         private VisualElement _listHost;
+        private TextField _search;
         private string _filter = "";
+
+        /// <summary>Width one row occupies when its name fits — the viewport, so a
+        /// short pill is exactly as wide as the pane like the POC's block-level
+        /// ".lib-item". A longer name grows PAST it (UI Toolkit gives overflowing
+        /// glyphs no scrollable extent, so the box has to carry the name) and the
+        /// list's horizontal scroller reaches the rest, which is what
+        /// "#lib-body { overflow-x: auto }" does in the POC.</summary>
+        private float _rowWidth;
 
         public async void Attach(VisualElement container, Action onNewFile = null)
         {
@@ -157,7 +170,10 @@ namespace Ruitk.Builder
             // and "#lib-body { overflow-y: auto }" is the scroller — so the search box
             // scrolls away with the list instead of being pinned above it. The rows go
             // in a sibling host so a rebuild never removes (and unfocuses) the field.
-            var scroll = new ScrollView { style = { flexGrow = 1f, paddingLeft = 8f } };
+            var scroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal)
+            {
+                style = { flexGrow = 1f, paddingLeft = 8f },
+            };
             // The POC pane shows no editor chrome and its pills keep the full 8px
             // gutter; Unity's default scroller is a light control laid out INSIDE
             // the pane, which stole 13px from every row.
@@ -169,11 +185,21 @@ namespace Ruitk.Builder
             // gutter moves onto the content container instead, which leaves the
             // thumb in the empty 8px lane the POC keeps between pill and pane edge.
             scroll.contentContainer.style.paddingRight = 8f;
+            scroll.contentContainer.style.alignItems = Align.FlexStart;
             scroll.contentContainer.Add(search);
+            _search = search;
             var rowsHost = new VisualElement();
             scroll.contentContainer.Add(rowsHost);
             _listHost = rowsHost;
             container.Add(scroll);
+            scroll.contentViewport.RegisterCallback<GeometryChangedEvent>(evt =>
+            {
+                float width = evt.newRect.width - 8f;
+                if (width <= 0f || Mathf.Abs(width - _rowWidth) < 0.5f)
+                    return;
+                _rowWidth = width;
+                ApplyRowWidth();
+            });
 
             // POC buildLibrary() seeds HOOK_TEMPLATES before it ever looks at the
             // tree, so the HOOKS section exists whatever the language server says.
@@ -403,11 +429,31 @@ namespace Ruitk.Builder
                 },
             };
 
+        private void ApplyRowWidth()
+        {
+            if (_rowWidth <= 0f)
+                return;
+            if (_search != null)
+                _search.style.width = _rowWidth;
+            if (_listHost == null)
+                return;
+            foreach (var child in _listHost.Children())
+            {
+                if (!(child.userData is string tag))
+                    continue;
+                if (tag == "lib-item")
+                    child.style.minWidth = _rowWidth;
+                else if (tag == "lib-hint")
+                    child.style.width = _rowWidth;
+            }
+        }
+
         private void Rebuild()
         {
             if (_listHost == null)
                 return;
             _listHost.Clear();
+            _listHost.style.alignItems = Align.FlexStart;
             string section = null;
             // POC buildLibrary() emits all five headers unconditionally, in order,
             // whether or not the tree contributes a row to any of them — an empty
@@ -418,18 +464,6 @@ namespace Ruitk.Builder
             {
                 if (_filter.Length > 0
                     && entry.Name.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0)
-                    continue;
-                // POC NATIVE ELEMENTS is a curated seven and HOOK_TEMPLATES a
-                // curated four (plus the tree's own "(module)" hooks); the rest of
-                // the live schema/registry stays behind the search field.
-                if (_filter.Length == 0
-                    && entry.Section == "Native elements"
-                    && Array.IndexOf(NativeTagOrder, entry.Name.Trim('<', '>')) < 0)
-                    continue;
-                if (_filter.Length == 0
-                    && entry.Section == "Hooks"
-                    && !entry.Name.EndsWith(" (module)", StringComparison.Ordinal)
-                    && Array.IndexOf(HookTemplates, entry.Name) < 0)
                     continue;
                 if (entry.Section != section)
                 {
@@ -469,8 +503,10 @@ namespace Ruitk.Builder
                         // The legacy dynamic-Font `unityFont` slot is ignored by
                         // UI Toolkit's text engine — only a FontDefinition takes.
                         unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                        minWidth = _rowWidth > 0f ? _rowWidth : 0f,
                     },
                 };
+                row.userData = "lib-item";
                 var captured = entry;
                 // POC ".lib-item" is draggable="true" ONLY — there is no click
                 // handler on the library body, so a misjudged click never mutates
@@ -505,7 +541,7 @@ namespace Ruitk.Builder
                     _listHost.Add(SectionHeader(s_sectionOrder[s]));
             }
 
-            _listHost.Add(new Label(LibraryHint)
+            var hint = new Label(LibraryHint)
             {
                 style =
                 {
@@ -514,8 +550,13 @@ namespace Ruitk.Builder
                     marginTop = 10f,
                     marginBottom = 8f,
                     whiteSpace = WhiteSpace.Normal,
+                    width = _rowWidth > 0f
+                        ? new StyleLength(_rowWidth)
+                        : new StyleLength(StyleKeyword.Auto),
                 },
-            });
+            };
+            hint.userData = "lib-hint";
+            _listHost.Add(hint);
         }
     }
 }

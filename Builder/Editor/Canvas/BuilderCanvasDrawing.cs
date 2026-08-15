@@ -412,11 +412,14 @@ namespace Ruitk.Builder
         /// The SELECTED gold gets the same treatment: probed on
         /// poc-l0-architecture.png the selected top edge peaks at #4C442C over two
         /// rows, i.e. the 1.5px #ffd54f frame plus its .25 spread ring collapse to
-        /// ~0.4 px-equivalent of ink at zoom 0.30.</summary>
+        /// ~0.4 px-equivalent of ink at zoom 0.30. The 2px SelectionRing is not
+        /// emitted at lod 0 at all (CanvasView gates it on lod &gt;= 1, because
+        /// 2 world px = 0.6 screen px there and UI Toolkit paints it as a full
+        /// hairline), so this frame alone has to land on the POC's ~0.19 peak.</summary>
         public static Color CardFrameBorderColor(bool selected, int lod)
         {
             if (selected)
-                return new Color(1f, 0.835f, 0.310f, lod == 0 ? 0.4f : 1f);
+                return new Color(1f, 0.835f, 0.310f, lod == 0 ? 0.2f : 1f);
             var line = new Color(0.227f, 0.227f, 0.267f);
             if (lod == 0)
                 line.a = 0.12f;
@@ -642,25 +645,19 @@ namespace Ruitk.Builder
                             from.X + width - 16f, from.Y + ImportRowY(from, edge.Specifier)));
                 }
 
-                if (edge.ToIndex >= 0 && edge.ToIndex < graph.Nodes.Count)
-                {
-                    var to = graph.Nodes[edge.ToIndex];
-                    Color color = edge.TargetKind == BuilderNodeKind.Hook ? HookEdge
-                        : edge.TargetKind == BuilderNodeKind.Style ? StyleEdge
-                        : UsageEdge;
-                    bool dashed = edge.TargetKind == BuilderNodeKind.Style
-                        || edge.TargetKind == BuilderNodeKind.Hook;
-                    StrokeEdge(p, a, TargetOf(edge.ToIndex, to), color, dashed);
-                }
-                else
-                {
-                    p.strokeColor = new Color(0.90f, 0.30f, 0.30f);
-                    p.lineWidth = 2f / CurrentZoom;
-                    p.BeginPath();
-                    p.MoveTo(a);
-                    p.LineTo(new Vector2(a.x + 48f, a.y));
-                    p.Stroke();
-                }
+                // POC drawEdges() line 1458: "if (!a || !target) return;" — an
+                // import whose target is not a card on the canvas draws NOTHING at
+                // any lod. The red stub this used to paint had no counterpart in
+                // the POC and, at lod 0, started from the card centre.
+                if (edge.ToIndex < 0 || edge.ToIndex >= graph.Nodes.Count)
+                    continue;
+                var to = graph.Nodes[edge.ToIndex];
+                Color color = edge.TargetKind == BuilderNodeKind.Hook ? HookEdge
+                    : edge.TargetKind == BuilderNodeKind.Style ? StyleEdge
+                    : UsageEdge;
+                bool dashed = edge.TargetKind == BuilderNodeKind.Style
+                    || edge.TargetKind == BuilderNodeKind.Hook;
+                StrokeEdge(p, a, TargetOf(edge.ToIndex, to), color, dashed);
             }
 
             // POC computeEdges() emits the markup-row edges at EVERY lod — only

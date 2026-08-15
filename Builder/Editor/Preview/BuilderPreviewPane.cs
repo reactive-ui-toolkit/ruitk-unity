@@ -199,6 +199,13 @@ namespace Ruitk.Builder
                     flexGrow = 0f,
                     flexShrink = 0f,
                     flexDirection = FlexDirection.Column,
+                    // A real component root is free to declare a stretching height,
+                    // and the mounted tree then grew the stage past the 380px body
+                    // and painted the knobs/STATE strip off the bottom of the pane
+                    // (nothing scrolled, because the stage's own layout box still
+                    // measured the viewport). ClampStage() caps the stage at the
+                    // room the strip leaves and the frame clips what overflows.
+                    overflow = Overflow.Hidden,
                     backgroundColor = new Color(0.063f, 0.063f, 0.078f),
                     borderTopWidth = 1f, borderBottomWidth = 1f,
                     borderLeftWidth = 1f, borderRightWidth = 1f,
@@ -282,8 +289,43 @@ namespace Ruitk.Builder
             _knobsBlock.Add(_stateHost);
             _notesHost = new VisualElement { style = { flexShrink = 0f } };
             _knobsBlock.Add(_notesHost);
+            container.RegisterCallback<GeometryChangedEvent>(_ => ClampStage());
+            _knobsBlock.RegisterCallback<GeometryChangedEvent>(_ => ClampStage());
             EditorApplication.update += TickStatePanel;
         }
+
+        /// <summary>POC "#preview { flex: 0 0 380px }" holds a content-sized
+        /// ".gp-root" and the ".knobs" strip under it. A render that wants more
+        /// than the body has to lose the argument — the strip is chrome and always
+        /// keeps its room; the stage clips (and the pane scrolls) instead.</summary>
+        private void ClampStage()
+        {
+            if (_previewHost == null || _container == null)
+                return;
+            float body = _container.contentRect.height;
+            if (float.IsNaN(body) || body <= 0f)
+                return;
+            float reserved = 0f;
+            if (_knobsBlock != null && _knobsBlock.resolvedStyle.display != DisplayStyle.None)
+            {
+                float knobs = _knobsBlock.layout.height;
+                if (!float.IsNaN(knobs))
+                    reserved += knobs + 10f;
+            }
+            if (_statusLabel != null && _statusLabel.resolvedStyle.display != DisplayStyle.None)
+            {
+                float status = _statusLabel.layout.height;
+                if (!float.IsNaN(status))
+                    reserved += status + 8f;
+            }
+            float room = Mathf.Max(120f, body - reserved);
+            if (Mathf.Abs(_stageMaxHeight - room) < 0.5f)
+                return;
+            _stageMaxHeight = room;
+            _previewHost.style.maxHeight = room;
+        }
+
+        private float _stageMaxHeight = -1f;
 
         private static readonly Color Line = new Color(0.227f, 0.227f, 0.267f);
 

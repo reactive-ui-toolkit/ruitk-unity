@@ -471,7 +471,12 @@ export VirtualNode CanvasView(
                             style={new Style {
                               FlexDirection = FlexRow,
                               FlexWrap = WrapOn,
-                              MarginBottom = Px(2),
+                              // POC ".chips { gap: 5px }" leaves NO gap under the
+                              // last chip row; UI Toolkit has no flex gap, so the
+                              // 5px lives on every chip's MarginBottom and the
+                              // trailing one is cancelled here. Without this the
+                              // BODY band measured 46px against the POC's 41.
+                              MarginBottom = Px(-5),
                             }}
                           >
                             @for (int x = 0; x < node.Body.Count; x++) {
@@ -682,15 +687,33 @@ export VirtualNode CanvasView(
                                   ? CanvasStyles.CodeIslandTrace
                                   : (hoverChipKey == $"island:{index}" ? CanvasStyles.CodeIslandHover : CanvasStyles.CodeIsland)}
                               >
-                                @for (int ci = 0; ci < node.IslandLines.Count; ci++) {
-                                  return (
-                                    <Label
-                                      key={$"isl-{ci}"}
-                                      text={node.IslandLines[ci]}
-                                      style={CanvasStyles.CodeIslandLine}
-                                    />
-                                  );
-                                }
+                                <ScrollView
+                                  name="ruitk-island-scroll"
+                                  mode="verticalandhorizontal"
+                                  verticalScrollerVisibility={UnityEngine.UIElements.ScrollerVisibility.Hidden}
+                                  horizontalScrollerVisibility={UnityEngine.UIElements.ScrollerVisibility.Auto}
+                                  style={new Style {
+                                    // POC ".code-island { white-space: pre; overflow-x: auto }" —
+                                    // a statement wider than the card is reachable
+                                    // instead of being cut at the card border. The
+                                    // height is pinned to the line stack (every
+                                    // CodeIslandLine is a fixed 16.7px box) so the
+                                    // scroller, which BuilderCanvasHost re-styles as
+                                    // an absolute overlay, never resizes the island.
+                                    Height = Px(node.IslandLines.Count * 16.7f),
+                                    FlexShrink = 0,
+                                  }}
+                                >
+                                  @for (int ci = 0; ci < node.IslandLines.Count; ci++) {
+                                    return (
+                                      <Label
+                                        key={$"isl-{ci}"}
+                                        text={node.IslandLines[ci]}
+                                        style={CanvasStyles.CodeIslandLine}
+                                      />
+                                    );
+                                  }
+                                </ScrollView>
                               </VisualElement>
                             );
                           }
@@ -1246,7 +1269,7 @@ export VirtualNode CanvasView(
                 );
               }
             </VisualElement>
-            @if (isSelected) {
+            @if (isSelected && lod >= 1) {
               return (
                 <VisualElement style={CanvasStyles.SelectionRing} pickingMode={PickIgnore} />
               );

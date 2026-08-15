@@ -668,9 +668,13 @@ namespace Ruitk.Builder
                     return "#4FC3F7";
                 case SemanticTokenTypes.Type:
                     return "#7FDBCA";
+                // POC tokenize() (index.html:1266-1275) has FOUR passes — strings,
+                // {…}, <Tag and the nine keywords. Attribute names are classified
+                // by none of them, so they keep ".srcline" ink #d6d6dc; painting
+                // them accent blue made `text=` read as loud as `<Label`.
                 case SemanticTokenTypes.Attribute:
                 case SemanticTokenTypes.Property:
-                    return "#4FC3F7";
+                    return null;
                 case SemanticTokenTypes.Directive:
                 case SemanticTokenTypes.DirectiveName:
                 case SemanticTokenTypes.Keyword:
@@ -694,13 +698,21 @@ namespace Ruitk.Builder
         private const string ExprColor = "#FFB74D";
         private const string KeywordColor = "#C792EA";
 
-        /// <summary>POC tokenize() line 1273: the keyword pass runs LAST, over
-        /// everything the earlier passes left alone. The LSP only classifies
+        /// <summary>POC tokenize() line 1273: the keyword pass runs LAST, over the
+        /// HTML the earlier passes already emitted, and its nested span WINS — so
+        /// `new` is purple even inside an orange `{…}` run. The LSP only classifies
         /// markup-side words as Keyword, so `VirtualNode`, `var`, `return`, `new`,
         /// `Style` and `as` in a C# body reached the pane as plain ink.</summary>
         private static readonly System.Text.RegularExpressions.Regex s_keywords =
             new System.Text.RegularExpressions.Regex(
                 @"\b(export|VirtualNode|Style|var|return|import|from|as|new)\b|(@if|@else|@foreach)",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>POC tokenize() pass 1:
+        /// <c>h.replace(/(&amp;quot;|")([^"]*)(")/g, …)</c>.</summary>
+        private static readonly System.Text.RegularExpressions.Regex s_strings =
+            new System.Text.RegularExpressions.Regex(
+                "\"[^\"\n]*\"",
                 System.Text.RegularExpressions.RegexOptions.Compiled);
 
         private static bool[] s_inBrace = new bool[512];
@@ -776,21 +788,22 @@ namespace Ruitk.Builder
                 }
             }
 
+            // POC tokenize() pass 1, and it runs BEFORE everything else: every
+            // quoted run on the line becomes ".s" green. The LSP only emits String
+            // tokens for C#-side literals, so a markup attribute value
+            // (text="SOLD OUT") arrived at the pane as plain ink.
+            foreach (System.Text.RegularExpressions.Match m in s_strings.Matches(line))
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    s_colors[i] = StringColor;
+
             MarkBraces(line);
             for (int i = 0; i < line.Length; i++)
                 if (s_inBrace[i] && s_colors[i] != StringColor)
                     s_colors[i] = ExprColor;
 
             foreach (System.Text.RegularExpressions.Match m in s_keywords.Matches(line))
-            {
-                bool free = true;
-                for (int i = m.Index; free && i < m.Index + m.Length; i++)
-                    free = s_colors[i] == null;
-                if (!free)
-                    continue;
                 for (int i = m.Index; i < m.Index + m.Length; i++)
                     s_colors[i] = KeywordColor;
-            }
 
             var sb = new StringBuilder(line.Length + 32);
             int cursor = 0;

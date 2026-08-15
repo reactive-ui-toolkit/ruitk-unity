@@ -116,7 +116,14 @@ namespace Ruitk.Builder
             });
             _statusLabel = new Label
             {
-                style = { unityTextAlign = TextAnchor.MiddleLeft, fontSize = 11f, color = Dim },
+                // POC "#toolbar { gap: 8px }" + ".sep { margin: 0 4px }" put 12px
+                // between a separator and each neighbour; the label carries the 4
+                // the separator's own margin no longer supplies on this side.
+                style =
+                {
+                    unityTextAlign = TextAnchor.MiddleLeft, fontSize = 11f, color = Dim,
+                    marginRight = 4f,
+                },
             };
             toolbar.Add(_statusLabel);
             toolbar.Add(Separator());
@@ -351,6 +358,16 @@ namespace Ruitk.Builder
             };
             _canvasHost.OnCreateRequested = ShowCreatePrompt;
             _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
+            // The side panes are built BEFORE the canvas mounts. Mount() is an
+            // async method that only suspends at its first real await, so a warm
+            // LSP client plus a cached tree ran the whole body — including the
+            // onGraphLoaded callback — synchronously, while _previewPane and
+            // _libraryPane were still null. The null-conditional calls below then
+            // silently no-opped and the module note kept the "no component imports
+            // it yet" fallback for the rest of the session even though the graph
+            // had the signature and the consumer edge.
+            MountPreview();
+            MountLibrary();
             _canvasHost.Mount(
                 container, _focusFile, OpenFileFromCanvas, ReadBufferOrDisk,
                 graph =>
@@ -358,8 +375,6 @@ namespace Ruitk.Builder
                     _libraryPane?.SetWorkspaceEntries(graph);
                     _previewPane?.RefreshModuleNotes();
                 });
-            MountPreview();
-            MountLibrary();
         }
 
         private void MountLibrary()
@@ -2267,14 +2282,22 @@ namespace Ruitk.Builder
                     ? Mathf.Round(vertical ? next.yMin : next.xMin) - start
                     : 0f;
                 bool inLane = lane >= 6f;
+                // When TwoPaneSplitView reserves less than the 6px lane, the band
+                // has to overhang one of the panes. Centering it on the boundary
+                // put 2px of gutter INSIDE the second pane, which ate 2 of the
+                // 12px inset the POC keeps between the splitter and "#preview"'s
+                // stage. The overhang goes to the first pane (the canvas, an
+                // infinite surface with no measurable chrome) instead, so the band
+                // ends exactly where the second pane's content box starts.
+                float trailing = start + lane;
                 if (vertical)
                 {
-                    gutter.style.top = inLane ? start : start - 3f;
+                    gutter.style.top = inLane ? start : trailing - 6f;
                     gutter.style.height = inLane ? lane : 6f;
                 }
                 else
                 {
-                    gutter.style.left = inLane ? start : start - 3f;
+                    gutter.style.left = inLane ? start : trailing - 6f;
                     gutter.style.width = inLane ? lane : 6f;
                 }
             }
@@ -2324,12 +2347,15 @@ namespace Ruitk.Builder
             split.RegisterCallback<GeometryChangedEvent>(_ => Apply());
         }
 
+        /// <summary>POC "#toolbar .sep { margin: 0 4px }" inside a "gap: 8px" row —
+        /// 12px of air on each side. UI Toolkit has no row gap here (the buttons
+        /// carry 4px margins instead), so the separator owns the other 8.</summary>
         private static VisualElement Separator() => new VisualElement
         {
             style =
             {
                 width = 1f, height = 20f, backgroundColor = Line,
-                marginLeft = 4f, marginRight = 4f, flexShrink = 0f,
+                marginLeft = 8f, marginRight = 8f, flexShrink = 0f,
             },
         };
 
@@ -2427,8 +2453,9 @@ namespace Ruitk.Builder
                 {
                     flexDirection = FlexDirection.Row,
                     alignItems = Align.Center,
+                    // POC ".legend { margin-left: auto }" and nothing on the right:
+                    // the last label ends exactly on the toolbar's 12px padding.
                     marginLeft = StyleKeyword.Auto,
-                    marginRight = 8f,
                 },
             };
             void AddDot(string label, Color color)
