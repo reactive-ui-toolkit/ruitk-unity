@@ -20,7 +20,7 @@ namespace Ruitk.Builder
         public static async Task<BuilderGraph> LoadTreeAsync(
             BuilderLspClient client, string focusFile, Func<string, string> readText = null)
         {
-            JToken raw = await client.RequestWorkspaceGraph();
+            JToken raw = await RequestGraphWithRetry(client);
             var nodes = (raw?["nodes"] ?? raw?["Nodes"]) as JArray ?? new JArray();
             var edges = (raw?["edges"] ?? raw?["Edges"]) as JArray ?? new JArray();
 
@@ -128,6 +128,33 @@ namespace Ruitk.Builder
 
             SeedDefaultPositions(graph, indexByFile.TryGetValue(root, out int rootIdx) ? rootIdx : 0);
             return graph;
+        }
+
+        /// <summary>OmniSharp cancels in-flight requests with -32801 (Content
+        /// Modified) whenever a didOpen/didChange lands — which the builder's
+        /// own preview didOpen does while the graph request waits out the
+        /// initial scan. The error is transient BY DEFINITION, so retry with
+        /// backoff instead of surfacing an empty window.</summary>
+        private static async Task<JToken> RequestGraphWithRetry(BuilderLspClient client)
+        {
+            Exception last = null;
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                try
+                {
+                    return await client.RequestWorkspaceGraph();
+                }
+                catch (Exception ex)
+                {
+                    string text = ex.ToString();
+                    bool transient = text.Contains("-32801") || text.Contains("Content Modified");
+                    last = ex;
+                    if (!transient)
+                        throw;
+                    await Task.Delay(400 * (attempt + 1));
+                }
+            }
+            throw last ?? new InvalidOperationException("workspace graph request failed");
         }
 
         private static readonly Regex s_hookCall = new Regex(
