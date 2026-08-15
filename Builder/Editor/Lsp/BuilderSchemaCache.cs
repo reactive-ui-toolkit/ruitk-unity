@@ -33,9 +33,12 @@ namespace Ruitk.Builder
             new AttrInfo("tooltip", "string"),
             new AttrInfo("focusable", "bool"),
             new AttrInfo("pickingMode", "PickingMode"),
+            new AttrInfo("viewDataKey", "string"),
+            new AttrInfo("usageHints", "UsageHints"),
             new AttrInfo("onClick", "Action"),
             new AttrInfo("onMouseEnter", "Action"),
             new AttrInfo("onMouseLeave", "Action"),
+            new AttrInfo("onGeometryChanged", "Action"),
         };
 
         public static void Register(string element, List<AttrInfo> attrs) =>

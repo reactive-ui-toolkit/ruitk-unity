@@ -192,6 +192,13 @@ export VirtualNode CanvasView(
                 BorderBottomColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
                 BorderLeftColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
               }}
+              onPointerUp={e => {
+                if (BuilderCanvasDrawing.DragActive && onRowDrop != null) {
+                  onRowDrop(node.FilePath, -1, 1, BuilderDragService.Take());
+                  setDragRowKey(-1);
+                  e.StopPropagation();
+                }
+              }}
               onPointerDown={e => {
                 if (e.Button == 1) {
                   BuilderCanvasDrawing.RememberMenuPointer(e);
