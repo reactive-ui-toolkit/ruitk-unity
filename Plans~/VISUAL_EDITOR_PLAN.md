@@ -150,9 +150,16 @@ Shared/Editor minimal touches: `ElementRegistry.RegisteredNames` (VE-16); `Uitkx
 
 ## 5. Work items and build order
 
+> **Execution note (owner directive 2026-08-15): all pause/checkpoint gates in
+> this table are DELETED.** Nothing below waits on an intermediate owner verdict
+> — the campaign runs straight through, measurements land continuously via
+> `BuilderSaveMetrics`/console logging, and validation happens on the finished
+> build. The parity contract superseding the UI rows is
+> `Plans~/POC_PARITY_SPEC.md`.
+
 | ID | Item | Depends on | Verify by |
 |---|---|---|---|
-| VE-00 | Spikes (**authored as `.uitkx` components** per full-dogfooding decision): CodeField overlay technique; canvas pan/zoom perf vs DoomGame; Immutable 6.0 in a 1.2.3.0-preloaded editor domain; LSP on bundled runtime per Unity version | GEN-2 fix (spikes are package-resident `.uitkx`) | spike notes recorded in this doc's §6 rows; frame-budget misses demote that control to hand-written |
+| VE-00 | Spikes (**authored as `.uitkx` components** per full-dogfooding decision): CodeField overlay technique; canvas pan/zoom perf vs DoomGame; Immutable 6.0 in a 1.2.3.0-preloaded editor domain; LSP on bundled runtime per Unity version | GEN-2 fix (spikes are package-resident `.uitkx`) | SHIPPED — spikes live under `Builder/Editor/Spikes/`; both controls stayed dogfooded (no demotion gate) |
 | GEN-2 | Asset registry scans writable package roots (extend `UitkxAssetRegistrySync` via the `PackageInfo` resolver `UitkxChangeWatcher.ResolveAssetFolderAbsolute` uses) — must-fix for dogfooding | — | `Asset<T>()`/`@uss` in embedded-package `.uitkx` resolves; existing `Assets/` behavior unchanged |
 | GEN-3 | Csproj postprocessor injects package-resident `.uitkx` as AdditionalFiles (dedupe across asmdef csprojs) — should-fix, IDE incrementality | — | package `.uitkx` present in generated csprojs exactly once |
 | VE-01 | Asmdef (+ full `precompiledReferences` list) + BOTH IVT lines + empty `BuilderWindow` + menu + Save/Abort scaffolding | VE-Q5 resolved | window opens/closes clean; smoke-compile gate |

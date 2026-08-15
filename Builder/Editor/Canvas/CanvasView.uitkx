@@ -168,9 +168,6 @@ export VirtualNode CanvasView(
                   e.StopPropagation();
                   return;
                 }
-                dragCard.Current = index;
-                lastX.Current = e.Position.x;
-                lastY.Current = e.Position.y;
                 setSelected(index);
                 if (onSelect != null) {
                   onSelect(index);
@@ -180,7 +177,17 @@ export VirtualNode CanvasView(
             >
               @if (lod == 0) {
                 return (
-                  <VisualElement style={CanvasStyles.CardHeader}>
+                  <VisualElement
+                    style={CanvasStyles.CardHeader}
+                    onPointerDown={e => {
+                      if (e.Button == 0 && e.ClickCount < 2) {
+                        dragCard.Current = index;
+                        lastX.Current = e.Position.x;
+                        lastY.Current = e.Position.y;
+                        setSelected(index);
+                      }
+                    }}
+                  >
                     <Label
                       text={node.Title}
                       style={new Style {
@@ -208,7 +215,17 @@ export VirtualNode CanvasView(
               }
               @if (lod >= 1) {
                 return (
-                  <VisualElement style={CanvasStyles.CardHeader}>
+                  <VisualElement
+                    style={CanvasStyles.CardHeader}
+                    onPointerDown={e => {
+                      if (e.Button == 0 && e.ClickCount < 2) {
+                        dragCard.Current = index;
+                        lastX.Current = e.Position.x;
+                        lastY.Current = e.Position.y;
+                        setSelected(index);
+                      }
+                    }}
+                  >
                     <Label
                       text={BuilderCanvasDrawing.KindLabel(node.Kind)}
                       style={new Style {
@@ -503,6 +520,9 @@ export VirtualNode CanvasView(
                                     }
                                     e.StopPropagation();
                                     return;
+                                  }
+                                  if (rowIdx > 0) {
+                                    BuilderDragService.Arm($"move:{node.FilePath}:{rowIdx}");
                                   }
                                   setSelRowNode(index);
                                   setSelRowIdx(rowIdx);

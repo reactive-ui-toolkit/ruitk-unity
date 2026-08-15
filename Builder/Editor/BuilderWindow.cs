@@ -366,6 +366,9 @@ namespace Ruitk.Builder
             var menu = new UnityEditor.GenericMenu();
             menu.AddItem(new GUIContent("Add attribute (typed)…"), false, () =>
                 ShowAttributeMenu(full, sourceLine, tag));
+            if (!string.IsNullOrEmpty(row.AttrsText))
+                menu.AddItem(new GUIContent("Remove attribute…"), false, () =>
+                    ShowRemoveAttributeMenu(full, sourceLine, row.AttrsText));
             menu.AddItem(new GUIContent("Add child element…"), false, () =>
                 InsertLinesInFile(full, sourceLine, IndentOf(full, sourceLine) + "  <VisualElement />"));
             menu.AddSeparator("");
@@ -446,7 +449,70 @@ namespace Ruitk.Builder
                 case "snippet":
                     _codeField?.InsertAtCaret(name);
                     break;
+                case "move":
+                {
+                    int split = name.LastIndexOf(':');
+                    if (split < 0)
+                        break;
+                    string srcPath = Path.GetFullPath(name.Substring(0, split));
+                    if (!int.TryParse(name.Substring(split + 1), out int srcRowIdx))
+                        break;
+                    if (!string.Equals(srcPath, full, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        ShowNotification(new GUIContent(
+                            "Moving across components isn't supported — delete and re-add"));
+                        break;
+                    }
+                    var srcNode = _canvasHost?.FindNode(srcPath);
+                    if (srcNode == null || srcRowIdx < 0 || srcRowIdx >= srcNode.Markup.Count
+                        || srcRowIdx == rowIdx)
+                        break;
+                    var srcRow = srcNode.Markup[srcRowIdx];
+                    MoveLineRange(
+                        full,
+                        srcRow.SourceLine,
+                        srcRow.EndLine > 0 ? srcRow.EndLine : srcRow.SourceLine,
+                        band == 0 ? row.SourceLine - 1
+                            : band == 2 ? (row.EndLine > 0 ? row.EndLine : row.SourceLine)
+                            : row.SourceLine,
+                        indent + (band == 1 ? "  " : ""));
+                    break;
+                }
             }
+        }
+
+        /// <summary>Relocates a 1-based inclusive line range to sit after
+        /// <paramref name="afterLine1"/> (0 = top), guarding against moving a
+        /// range into itself and re-indenting to the destination depth.</summary>
+        private void MoveLineRange(
+            string filePath, int fromLine1, int toLine1, int afterLine1, string destIndent)
+        {
+            if (afterLine1 >= fromLine1 - 1 && afterLine1 <= toLine1)
+                return;
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int from = Mathf.Clamp(fromLine1 - 1, 0, lines.Count - 1);
+            int to = Mathf.Clamp(toLine1 - 1, from, lines.Count - 1);
+            var moved = lines.GetRange(from, to - from + 1);
+
+            string srcIndent = "";
+            int w = 0;
+            while (w < moved[0].Length && moved[0][w] == ' ')
+                w++;
+            srcIndent = moved[0].Substring(0, w);
+            for (int i = 0; i < moved.Count; i++)
+            {
+                if (moved[i].StartsWith(srcIndent, System.StringComparison.Ordinal))
+                    moved[i] = destIndent + moved[i].Substring(srcIndent.Length);
+            }
+
+            lines.RemoveRange(from, to - from + 1);
+            int insertAt = afterLine1 > to ? afterLine1 - (to - from + 1) : afterLine1;
+            insertAt = Mathf.Clamp(insertAt, 0, lines.Count);
+            lines.InsertRange(insertAt, moved);
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
         }
 
         /// <summary>POC 6.3: in-place attrs edit commit — the open-tag line's
@@ -475,6 +541,26 @@ namespace Ruitk.Builder
                 return line.Substring(0, tagEnd) + mid + tail
                     + line.Substring(close + (selfClose ? 2 : 1));
             });
+        }
+
+        /// <summary>POC "Remove attribute…" submenu: lists the row's current
+        /// attributes (name = value), removing the picked one from the line.</summary>
+        private void ShowRemoveAttributeMenu(string filePath, int sourceLine, string attrsText)
+        {
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+            foreach (System.Text.RegularExpressions.Match match in
+                System.Text.RegularExpressions.Regex.Matches(
+                    attrsText, "(\\w+)=(\\{[^}]*\\}|\"[^\"]*\")"))
+            {
+                string full = match.Value;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = full,
+                    OnPick = () => EditLineInFile(filePath, sourceLine, line =>
+                        line.Replace(" " + full, "").Replace(full, "")),
+                });
+            }
+            BuilderSearchMenu.Show("remove attribute", "search attributes…", items);
         }
 
         /// <summary>POC 6.4 A.1: searchable typed-attribute menu with the
