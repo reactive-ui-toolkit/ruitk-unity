@@ -37,10 +37,45 @@ namespace Ruitk.Builder
         private string _filter = "";
         private Action<string, string> _insert;
 
-        public async void Attach(VisualElement container, Action<string, string> insertSnippet)
+        public async void Attach(
+            VisualElement container, Action<string, string> insertSnippet, Action onNewFile = null)
         {
             _insert = insertSnippet;
             container.Clear();
+
+            var titleRow = new VisualElement
+            {
+                style = { flexDirection = FlexDirection.Row, alignItems = Align.Center },
+            };
+            titleRow.Add(new Label("LIBRARY")
+            {
+                style =
+                {
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    fontSize = 10f,
+                    color = new Color(0.55f, 0.55f, 0.6f),
+                    marginTop = 6f, marginLeft = 6f, flexGrow = 1f,
+                },
+            });
+            if (onNewFile != null)
+            {
+                var newBtn = new Label("+ new")
+                {
+                    style =
+                    {
+                        fontSize = 10f,
+                        color = new Color(0.55f, 0.55f, 0.6f),
+                        marginRight = 8f, marginTop = 6f,
+                    },
+                };
+                newBtn.RegisterCallback<PointerDownEvent>(_ => onNewFile());
+                newBtn.RegisterCallback<MouseEnterEvent>(_ =>
+                    newBtn.style.color = new Color(0.31f, 0.76f, 0.97f));
+                newBtn.RegisterCallback<MouseLeaveEvent>(_ =>
+                    newBtn.style.color = new Color(0.55f, 0.55f, 0.6f));
+                titleRow.Add(newBtn);
+            }
+            container.Add(titleRow);
 
             var search = new TextField { style = { marginTop = 4f, marginLeft = 4f, marginRight = 4f } };
             search.textEdition.placeholder = "Search elements & hooks";

@@ -30,9 +30,14 @@ namespace Ruitk.Builder
         public Action<string> OnCreateRequested;
         public Action<string, int, int, string> OnRowDrop;
         public Action<string, string, int> OnStyleAddEntry;
-        public Action<string, int, string> OnRowAttrsEdit;
         public Action<string> OnAddHook;
         public Action<string> OnDeleteFile;
+        public Action<string, int, int, string> OnAttrValueEdit;
+        public Action<string, int, string> OnDirectiveEdit;
+        public Action<string, int, string> OnLineRewrite;
+        public Action<string, int, int, string> OnIslandEdit;
+        public Action<string> OnAddStyleExport;
+        public Action<string> OnAddUtilExport;
 
         public async void Mount(
             VisualElement container,
@@ -99,9 +104,17 @@ namespace Ruitk.Builder
                             OnRowDrop?.Invoke(path, rowIdx, band, payload),
                         OnStyleAddEntry = (path, styleName, closeLine) =>
                             OnStyleAddEntry?.Invoke(path, styleName, closeLine),
-                        OnRowAttrsEdit = (path, line, attrs) =>
-                            OnRowAttrsEdit?.Invoke(path, line, attrs),
                         OnAddHook = path => OnAddHook?.Invoke(path),
+                        OnAttrValueEdit = (path, line, ai, value) =>
+                            OnAttrValueEdit?.Invoke(path, line, ai, value),
+                        OnDirectiveEdit = (path, line, text) =>
+                            OnDirectiveEdit?.Invoke(path, line, text),
+                        OnLineRewrite = (path, line, text) =>
+                            OnLineRewrite?.Invoke(path, line, text),
+                        OnIslandEdit = (path, start, end, text) =>
+                            OnIslandEdit?.Invoke(path, start, end, text),
+                        OnAddStyleExport = path => OnAddStyleExport?.Invoke(path),
+                        OnAddUtilExport = path => OnAddUtilExport?.Invoke(path),
                         OnRowNavigate = tag =>
                         {
                             var target = FindNodeByTitle(tag);

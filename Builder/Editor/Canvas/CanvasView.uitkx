@@ -17,9 +17,14 @@ export VirtualNode CanvasView(
   Action onCanvasContext = null,
   Action<string, int, int, string> onRowDrop = null,
   Action<string, string, int> onStyleAddEntry = null,
-  Action<string, int, string> onRowAttrsEdit = null,
   Action<string> onAddHook = null,
-  Action<string> onRowNavigate = null
+  Action<string> onRowNavigate = null,
+  Action<string, int, int, string> onAttrValueEdit = null,
+  Action<string, int, string> onDirectiveEdit = null,
+  Action<string, int, string> onLineRewrite = null,
+  Action<string, int, int, string> onIslandEdit = null,
+  Action<string> onAddStyleExport = null,
+  Action<string> onAddUtilExport = null
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -30,7 +35,7 @@ export VirtualNode CanvasView(
   var (traceStates, setTraceStates) = useState((string)null);
   var (dragRowKey, setDragRowKey) = useState(-1);
   var (dragBand, setDragBand) = useState(1);
-  var (editRowKey, setEditRowKey) = useState(-1);
+  var (editKey, setEditKey) = useState("");
   var (editText, setEditText) = useState("");
   var (layoutVersion, setLayoutVersion) = useState(0);
 
@@ -316,6 +321,14 @@ export VirtualNode CanvasView(
                                   key={$"body-{x}"}
                                   text={node.Body[x].Kind == BuilderCardLineKind.Hook ? BuilderCanvasDrawing.ChipRichText(node.Body[x].Text) : node.Body[x].Text}
                                   enableRichText={true}
+                                  onPointerDown={e => {
+                                    if (e.ClickCount >= 2 && node.Body[bx].SourceLine > 0) {
+                                      if (onRowClick != null) {
+                                        onRowClick(node.FilePath, node.Body[bx].SourceLine);
+                                      }
+                                      e.StopPropagation();
+                                    }
+                                  }}
                                   onPointerEnter={e => { setTraceStates(BuilderCanvasDrawing.ChipStates(node.Body[bx].Text)); }}
                                   onPointerLeave={e => { setTraceStates((string)null); }}
                                   style={new Style {
@@ -373,9 +386,39 @@ export VirtualNode CanvasView(
                               );
                             }
                           </VisualElement>
-                          @if (lod == 2 && node.IslandLines.Count > 0) {
+                          @if (lod == 2 && node.IslandLines.Count > 0 && editKey == $"island:{index}") {
+                            return (
+                              <VisualElement style={new Style { MarginTop = Px(6) }}>
+                                <TextField
+                                  value={editText}
+                                  multiline={true}
+                                  onChange={ev => { setEditText(ev.newValue); }}
+                                  style={new Style { MinHeight = Px(60) }}
+                                />
+                                <Label
+                                  text="✓ commit"
+                                  onPointerDown={e => {
+                                    if (onIslandEdit != null) {
+                                      onIslandEdit(node.FilePath, node.IslandStartLine, node.IslandEndLine, editText);
+                                    }
+                                    setEditKey("");
+                                    e.StopPropagation();
+                                  }}
+                                  style={new Style { Color = Hex("#4fc3f7"), UnityFontStyle = FontBold, FontSize = Px(10) }}
+                                />
+                              </VisualElement>
+                            );
+                          }
+                          @if (lod == 2 && node.IslandLines.Count > 0 && editKey != $"island:{index}") {
                             return (
                               <VisualElement
+                                onPointerDown={e => {
+                                  if (e.ClickCount >= 2 && node.IslandStartLine > 0) {
+                                    setEditKey($"island:{index}");
+                                    setEditText(string.Join("\n", node.IslandLines));
+                                    e.StopPropagation();
+                                  }
+                                }}
                                 style={new Style {
                                   BackgroundColor = Hex("#17171b"),
                                   BorderRadius = Px(6),
@@ -418,13 +461,41 @@ export VirtualNode CanvasView(
                           <Label text="EXPORTS" style={CanvasStyles.CardSectionHeader} />
                           @for (int x = 0; x < node.ExportDetail.Count; x++) {
                             var detail = node.ExportDetail[x];
-                            bool isAdd = detail.BadgeKind == 9;
+                            bool isAdd = detail.BadgeKind == 9 || detail.BadgeKind == 10 || detail.BadgeKind == 11;
+                            bool editableLine = !isAdd
+                              && detail.Text != "}"
+                              && lod == 2;
+                            string entryKey = $"entry:{index}:{x}";
                             bool detailVisible = detail.Kind == BuilderCardLineKind.Export
                               || detail.Text == "}"
+                              || detail.BadgeKind == 10
+                              || detail.BadgeKind == 11
                               || lod == 2;
                             return (
                               <VisualElement key={$"ed-{x}"}>
-                                @if (detailVisible) {
+                                @if (detailVisible && editKey == entryKey) {
+                                  return (
+                                    <VisualElement style={new Style { FlexDirection = FlexRow, MarginLeft = Px(detail.Depth * 18f) }}>
+                                      <TextField
+                                        value={editText}
+                                        onChange={ev => { setEditText(ev.newValue); }}
+                                        style={new Style { FlexGrow = 1 }}
+                                      />
+                                      <Label
+                                        text="✓"
+                                        onPointerDown={e => {
+                                          if (onLineRewrite != null) {
+                                            onLineRewrite(node.FilePath, detail.SourceLine, editText);
+                                          }
+                                          setEditKey("");
+                                          e.StopPropagation();
+                                        }}
+                                        style={new Style { Color = Hex("#4fc3f7"), UnityFontStyle = FontBold, PaddingLeft = Px(4) }}
+                                      />
+                                    </VisualElement>
+                                  );
+                                }
+                                @if (detailVisible && editKey != entryKey) {
                                   return (
                                     <Label
                                       text={detail.Text}
@@ -439,10 +510,21 @@ export VirtualNode CanvasView(
                                         MarginLeft = Px(detail.Depth * 18f),
                                       }}
                                       onPointerDown={e => {
-                                        if (isAdd) {
+                                        if (detail.BadgeKind == 9) {
                                           if (onStyleAddEntry != null) {
                                             onStyleAddEntry(node.FilePath, detail.AttrsText, detail.SourceLine);
                                           }
+                                        } else if (detail.BadgeKind == 10) {
+                                          if (onAddStyleExport != null) {
+                                            onAddStyleExport(node.FilePath);
+                                          }
+                                        } else if (detail.BadgeKind == 11) {
+                                          if (onAddUtilExport != null) {
+                                            onAddUtilExport(node.FilePath);
+                                          }
+                                        } else if (editableLine) {
+                                          setEditKey(entryKey);
+                                          setEditText(detail.Text);
                                         } else if (onRowClick != null) {
                                           onRowClick(node.FilePath, detail.SourceLine);
                                         }
@@ -532,10 +614,39 @@ export VirtualNode CanvasView(
                                   e.StopPropagation();
                                 }}
                               >
-                                @if (row.BadgeKind > 0) {
+                                @if (row.BadgeKind > 0 && editKey == $"badge:{index}:{rowIdx}") {
+                                  return (
+                                    <VisualElement style={new Style { FlexDirection = FlexRow, FlexGrow = 1 }}>
+                                      <TextField
+                                        value={editText}
+                                        onChange={ev => { setEditText(ev.newValue); }}
+                                        style={new Style { FlexGrow = 1 }}
+                                      />
+                                      <Label
+                                        text="✓"
+                                        onPointerDown={e => {
+                                          if (onDirectiveEdit != null) {
+                                            onDirectiveEdit(node.FilePath, row.SourceLine, editText);
+                                          }
+                                          setEditKey("");
+                                          e.StopPropagation();
+                                        }}
+                                        style={new Style { Color = Hex("#4fc3f7"), UnityFontStyle = FontBold, PaddingLeft = Px(4) }}
+                                      />
+                                    </VisualElement>
+                                  );
+                                }
+                                @if (row.BadgeKind > 0 && editKey != $"badge:{index}:{rowIdx}") {
                                   return (
                                     <Label
                                       text={row.Text}
+                                      onPointerDown={e => {
+                                        if (lod == 2) {
+                                          setEditKey($"badge:{index}:{rowIdx}");
+                                          setEditText(row.Text);
+                                          e.StopPropagation();
+                                        }
+                                      }}
                                       style={new Style {
                                         FontSize = Px(9),
                                         UnityFontStyle = FontBold,
@@ -561,47 +672,93 @@ export VirtualNode CanvasView(
                                     />
                                   );
                                 }
-                                @if (lod == 2 && editRowKey == rowKey) {
+                                @if (lod == 2 && row.BadgeKind == 0) {
                                   return (
-                                    <VisualElement style={new Style { FlexDirection = FlexRow, FlexGrow = 1 }}>
-                                      <TextField
-                                        value={editText}
-                                        onChange={ev => { setEditText(ev.newValue); }}
-                                        style={new Style { FlexGrow = 1, MarginLeft = Px(6) }}
-                                      />
-                                      <Label
-                                        text="✓"
-                                        onPointerDown={e => {
-                                          if (onRowAttrsEdit != null) {
-                                            onRowAttrsEdit(node.FilePath, row.SourceLine, editText);
-                                          }
-                                          setEditRowKey(-1);
-                                          e.StopPropagation();
-                                        }}
-                                        style={new Style {
-                                          Color = Hex("#4fc3f7"),
-                                          UnityFontStyle = FontBold,
-                                          PaddingLeft = Px(6),
-                                          PaddingRight = Px(4),
-                                        }}
-                                      />
+                                    <VisualElement style={new Style { FlexDirection = FlexRow, FlexWrap = WrapOn, FlexShrink = 1 }}>
+                                      @for (int ai = 0; ai < row.AttrPairs.Count; ai++) {
+                                        int attrIdx = ai;
+                                        string pair = row.AttrPairs[ai];
+                                        int eq = pair.IndexOf('=');
+                                        string attrName = eq < 0 ? pair : pair.Substring(0, eq);
+                                        string attrValue = eq < 0 ? "" : pair.Substring(eq + 1);
+                                        bool isExpr = attrValue.StartsWith("{");
+                                        string innerValue = attrValue.Length >= 2 ? attrValue.Substring(1, attrValue.Length - 2) : "";
+                                        string attrKey = $"attr:{index}:{rowIdx}:{ai}";
+                                        return (
+                                          <VisualElement key={attrKey} style={new Style { FlexDirection = FlexRow, MarginLeft = Px(6) }}>
+                                            <Label
+                                              text={attrName + "=" + (isExpr ? "{" : "\"")}
+                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(10) }}
+                                            />
+                                            @if (editKey == attrKey) {
+                                              return (
+                                                <VisualElement style={new Style { FlexDirection = FlexRow }}>
+                                                  <TextField
+                                                    value={editText}
+                                                    onChange={ev => { setEditText(ev.newValue); }}
+                                                    style={new Style { MinWidth = Px(60) }}
+                                                  />
+                                                  <Label
+                                                    text="✓"
+                                                    onPointerDown={e => {
+                                                      if (onAttrValueEdit != null) {
+                                                        onAttrValueEdit(node.FilePath, row.SourceLine, attrIdx, editText);
+                                                      }
+                                                      setEditKey("");
+                                                      e.StopPropagation();
+                                                    }}
+                                                    style={new Style { Color = Hex("#4fc3f7"), UnityFontStyle = FontBold, PaddingLeft = Px(4) }}
+                                                  />
+                                                </VisualElement>
+                                              );
+                                            }
+                                            @if (editKey != attrKey) {
+                                              return (
+                                                <Label
+                                                  text={innerValue}
+                                                  onPointerDown={e => {
+                                                    setEditKey(attrKey);
+                                                    setEditText(innerValue);
+                                                    e.StopPropagation();
+                                                  }}
+                                                  style={new Style { Color = Hex("#ffb74d"), FontSize = Px(10) }}
+                                                />
+                                              );
+                                            }
+                                            <Label
+                                              text={isExpr ? "}" : "\""}
+                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(10) }}
+                                            />
+                                          </VisualElement>
+                                        );
+                                      }
+                                      @if (row.AttrPairs.Count == 0) {
+                                        return (
+                                          <Label
+                                            text="+ attrs"
+                                            onPointerDown={e => {
+                                              if (onRowContext != null) {
+                                                onRowContext(node.FilePath, row.SourceLine, rowIdx);
+                                              }
+                                              e.StopPropagation();
+                                            }}
+                                            style={new Style { Color = Hex("#5a5a64"), FontSize = Px(10), MarginLeft = Px(6) }}
+                                          />
+                                        );
+                                      }
                                     </VisualElement>
                                   );
                                 }
-                                @if (lod == 2 && editRowKey != rowKey && (row.AttrsText.Length > 0 || row.BadgeKind == 0)) {
+                                @if (row.Kind == BuilderCardLineKind.Component && row.BadgeKind == 0) {
                                   return (
-                                    <Label
-                                      text={row.AttrsText.Length > 0 ? row.AttrsText : "+ attrs"}
-                                      onPointerDown={e => {
-                                        setEditRowKey(rowKey);
-                                        setEditText(row.AttrsText);
-                                        e.StopPropagation();
-                                      }}
+                                    <VisualElement
                                       style={new Style {
-                                        Color = row.AttrsText.Length > 0 ? Hex("#9d9dab") : Hex("#5a5a64"),
-                                        FontSize = Px(10),
+                                        Width = Px(8),
+                                        Height = Px(8),
+                                        BorderRadius = Px(4),
+                                        BackgroundColor = BuilderCanvasDrawing.DotColor(5),
                                         MarginLeft = Px(6),
-                                        FlexShrink = 1,
+                                        FlexShrink = 0,
                                       }}
                                     />
                                   );

@@ -37,6 +37,10 @@ namespace Ruitk.Builder
         /// <summary>Attribute display text ("text=\"hi\" style={S.x}"), L2 only.</summary>
         public string AttrsText = "";
 
+        /// <summary>Per-attribute pairs ("text=\"hi\"", "style={S.x}") — the POC
+        /// edits each value individually.</summary>
+        public List<string> AttrPairs = new List<string>();
+
         /// <summary>1-based line in the source file (row→source-line sync).</summary>
         public int SourceLine;
 
@@ -71,6 +75,11 @@ namespace Ruitk.Builder
         /// <summary>Setup-code lines (non-hook statements) shown as the POC's
         /// code island at L2.</summary>
         public List<string> IslandLines = new List<string>();
+
+        /// <summary>1-based inclusive source range of the setup block the code
+        /// island displays (0 = none) — island edits replace this range.</summary>
+        public int IslandStartLine;
+        public int IslandEndLine;
     }
 
     /// <summary>One import edge; indices into the node list (broken edges keep To = -1).</summary>

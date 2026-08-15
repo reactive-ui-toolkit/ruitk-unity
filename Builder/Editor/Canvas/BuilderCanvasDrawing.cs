@@ -190,9 +190,19 @@ namespace Ruitk.Builder
                 if (edge.FromIndex < 0 || edge.FromIndex >= graph.Nodes.Count)
                     continue;
                 var from = graph.Nodes[edge.FromIndex];
-                var a = CurrentLod == 0
-                    ? new Vector2(from.X + width, from.Y + 24f)
-                    : new Vector2(from.X + width, from.Y + ImportRowY(from, edge.Specifier));
+                float anchorY;
+                if (CurrentLod == 0)
+                    anchorY = 24f;
+                else
+                {
+                    anchorY = edge.TargetKind == BuilderNodeKind.Component
+                        && edge.ToIndex >= 0 && edge.ToIndex < graph.Nodes.Count
+                        ? UsageRowY(from, graph.Nodes[edge.ToIndex].Title)
+                        : -1f;
+                    if (anchorY < 0f)
+                        anchorY = ImportRowY(from, edge.Specifier);
+                }
+                var a = new Vector2(from.X + width, from.Y + anchorY);
 
                 if (edge.ToIndex >= 0 && edge.ToIndex < graph.Nodes.Count)
                 {
@@ -257,6 +267,42 @@ namespace Ruitk.Builder
                 + (string.IsNullOrEmpty(node.Signature) ? 0f : 14f)
                 + 16f;
             return headerBlock + row * 13f + 6f;
+        }
+
+        /// <summary>POC usage edges leave from the markup row that instantiates
+        /// the target component. The Y is estimated from the card's section
+        /// stack (header, signature, imports, chips, island, markup rows) —
+        /// approximate because chip wrapping varies, but row-true in shape.</summary>
+        private static float UsageRowY(BuilderCanvasNode from, string targetTitle)
+        {
+            int rowIdx = -1;
+            string wanted = "<" + targetTitle + ">";
+            for (int i = 0; i < from.Markup.Count; i++)
+            {
+                if (from.Markup[i].Text == wanted)
+                {
+                    rowIdx = i;
+                    break;
+                }
+            }
+            if (rowIdx < 0)
+                return -1f;
+
+            float y = 34f;
+            if (!string.IsNullOrEmpty(from.Signature))
+                y += 14f;
+            if (from.Imports.Count > 0)
+                y += 16f + from.Imports.Count * 13f;
+            if (from.Body.Count > 0)
+            {
+                int chipRows = (from.Body.Count + 2) / 2;
+                y += 16f + chipRows * 24f;
+                if (CurrentLod == 2 && from.IslandLines.Count > 0)
+                    y += 14f + from.IslandLines.Count * 13f;
+            }
+            y += 16f;
+            y += rowIdx * (CurrentLod == 2 ? 19f : 17f) + 8f;
+            return y;
         }
 
         private static void StrokeDashedBezier(

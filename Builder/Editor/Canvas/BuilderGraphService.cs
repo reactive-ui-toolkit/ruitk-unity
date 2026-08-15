@@ -213,10 +213,15 @@ namespace Ruitk.Builder
                     : m.Groups[2].Success ? m.Groups[2].Value.Trim()
                     : null;
                 string hook = m.Groups[3].Value;
+                int line1 = 1;
+                for (int c = 0; c < m.Index && c < text.Length; c++)
+                    if (text[c] == '\n')
+                        line1++;
                 node.Body.Add(new BuilderCardLine
                 {
                     Text = lhs == null ? hook : hook + "  →  " + lhs,
                     Kind = BuilderCardLineKind.Hook,
+                    SourceLine = line1,
                 });
                 hookCount++;
             }
@@ -267,12 +272,15 @@ namespace Ruitk.Builder
         /// the return that are not hook declarations (capped at 5).</summary>
         private static void ExtractIslandLines(string text, BuilderCanvasNode node)
         {
+            node.IslandStartLine = 0;
+            node.IslandEndLine = 0;
             if (node.Kind != BuilderNodeKind.Component && node.Kind != BuilderNodeKind.Hook)
                 return;
+            string[] rawLines = text.Split('\n');
             bool inBody = false;
-            foreach (string raw in text.Split('\n'))
+            for (int i = 0; i < rawLines.Length; i++)
             {
-                string line = raw.Trim();
+                string line = rawLines[i].Trim();
                 if (!inBody)
                 {
                     if (s_exportHeader.IsMatch(line))
@@ -285,12 +293,11 @@ namespace Ruitk.Builder
                     || s_hookCall.IsMatch(line)
                     || line.StartsWith("import ", StringComparison.Ordinal))
                     continue;
-                node.IslandLines.Add(line);
-                if (node.IslandLines.Count == 5)
-                {
-                    node.IslandLines.Add("…");
-                    break;
-                }
+                if (node.IslandStartLine == 0)
+                    node.IslandStartLine = i + 1;
+                node.IslandEndLine = i + 1;
+                if (node.IslandLines.Count < 6)
+                    node.IslandLines.Add(line);
             }
         }
 
@@ -346,6 +353,14 @@ namespace Ruitk.Builder
                 });
                 i = j;
             }
+            if (node.ExportDetail.Count > 0)
+                node.ExportDetail.Add(new BuilderCardLine
+                {
+                    Text = "+ export",
+                    Kind = BuilderCardLineKind.Plain,
+                    BadgeKind = 11,
+                    SourceLine = lines.Length,
+                });
         }
 
         private static readonly Regex s_styleExport = new Regex(
@@ -401,6 +416,14 @@ namespace Ruitk.Builder
                 });
                 i = j;
             }
+            if (node.ExportDetail.Count > 0)
+                node.ExportDetail.Add(new BuilderCardLine
+                {
+                    Text = "+ style",
+                    Kind = BuilderCardLineKind.Plain,
+                    BadgeKind = 10,
+                    SourceLine = lines.Length,
+                });
         }
 
         private static void WalkMarkup(
@@ -421,6 +444,7 @@ namespace Ruitk.Builder
                             ? BuilderCardLineKind.Element
                             : BuilderCardLineKind.Component,
                         AttrsText = AttrsDisplay(element),
+                        AttrPairs = AttrPairsOf(element),
                         SourceLine = element.SourceLine,
                         EndLine = Math.Max(element.SourceLine,
                             Math.Max(element.CloseTagLine, element.EndLine)),
@@ -481,6 +505,26 @@ namespace Ruitk.Builder
                             WalkMarkup(child, depth + 1, lines, registered, ref budget);
                     break;
             }
+        }
+
+        private static List<string> AttrPairsOf(ElementNode element)
+        {
+            var pairs = new List<string>();
+            if (element.Attributes.IsDefaultOrEmpty)
+                return pairs;
+            foreach (var attr in element.Attributes)
+            {
+                switch (attr.Value)
+                {
+                    case StringLiteralValue s:
+                        pairs.Add(attr.Name + "=\"" + s.Value + "\"");
+                        break;
+                    case CSharpExpressionValue e:
+                        pairs.Add(attr.Name + "={" + e.Expression + "}");
+                        break;
+                }
+            }
+            return pairs;
         }
 
         private static string AttrsDisplay(ElementNode element)

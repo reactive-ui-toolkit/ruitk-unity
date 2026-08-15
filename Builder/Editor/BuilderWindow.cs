@@ -150,11 +150,83 @@ namespace Ruitk.Builder
             _canvasHost.OnRowContext = OnCanvasRowContext;
             _canvasHost.OnRowDrop = OnCanvasRowDrop;
             _canvasHost.OnStyleAddEntry = OnStyleAddEntry;
-            _canvasHost.OnRowAttrsEdit = OnRowAttrsEdited;
             _canvasHost.OnAddHook = path =>
             {
                 OpenSession(Path.GetFullPath(path));
                 InsertBeforeLastReturn(Path.GetFullPath(path), "  var (value, setValue) = useState(0);");
+            };
+            _canvasHost.OnAttrValueEdit = OnAttrValueEdited;
+            _canvasHost.OnDirectiveEdit = OnDirectiveEdited;
+            _canvasHost.OnLineRewrite = (path, line, text) =>
+                EditLineInFile(Path.GetFullPath(path), line, old =>
+                {
+                    int w = 0;
+                    while (w < old.Length && old[w] == ' ')
+                        w++;
+                    return old.Substring(0, w) + text.Trim();
+                });
+            _canvasHost.OnIslandEdit = (path, start, end, text) =>
+            {
+                var session = _workspace.TryGet(Path.GetFullPath(path));
+                if (session == null || session.IsReadOnly || start <= 0)
+                    return;
+                var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+                int from = Mathf.Clamp(start - 1, 0, lines.Count - 1);
+                int to = Mathf.Clamp(end - 1, from, lines.Count - 1);
+                lines.RemoveRange(from, to - from + 1);
+                var replacement = new System.Collections.Generic.List<string>();
+                foreach (string l in text.Replace("\r\n", "\n").Split('\n'))
+                    if (l.Trim().Length > 0)
+                        replacement.Add("  " + l.Trim());
+                lines.InsertRange(from, replacement);
+                ApplyProgrammaticEdit(Path.GetFullPath(path), string.Join("\n", lines));
+            };
+            _canvasHost.OnAddStyleExport = path =>
+                BuilderSearchMenu.Show(
+                    "new style export", "styleName",
+                    new System.Collections.Generic.List<BuilderSearchMenu.Item>(),
+                    free =>
+                    {
+                        if (!System.Text.RegularExpressions.Regex.IsMatch(free, "^[a-z][A-Za-z0-9]*$"))
+                            return new BuilderSearchMenu.Item { Label = "camelCase identifier required" };
+                        return new BuilderSearchMenu.Item
+                        {
+                            Label = "Create " + free,
+                            OnPick = () => AppendToFile(path,
+                                "\nexport Style " + free + " = new Style {\n  FlexGrow = 1,\n};"),
+                        };
+                    });
+            _canvasHost.OnAddUtilExport = path =>
+            {
+                var menu = new UnityEditor.GenericMenu();
+                menu.AddItem(new GUIContent("New function…"), false, () =>
+                    BuilderSearchMenu.Show("new exported function", "FunctionName",
+                        new System.Collections.Generic.List<BuilderSearchMenu.Item>(),
+                        free =>
+                        {
+                            if (!System.Text.RegularExpressions.Regex.IsMatch(free, "^[A-Z][A-Za-z0-9]*$"))
+                                return new BuilderSearchMenu.Item { Label = "PascalCase identifier required" };
+                            return new BuilderSearchMenu.Item
+                            {
+                                Label = "Create " + free,
+                                OnPick = () => AppendToFile(path,
+                                    "\nexport int " + free + "(int value) {\n  return value;\n}"),
+                            };
+                        }));
+                menu.AddItem(new GUIContent("New value…"), false, () =>
+                    BuilderSearchMenu.Show("new exported value", "ValueName",
+                        new System.Collections.Generic.List<BuilderSearchMenu.Item>(),
+                        free =>
+                        {
+                            if (!System.Text.RegularExpressions.Regex.IsMatch(free, "^[A-Z][A-Za-z0-9]*$"))
+                                return new BuilderSearchMenu.Item { Label = "PascalCase identifier required" };
+                            return new BuilderSearchMenu.Item
+                            {
+                                Label = "Create " + free,
+                                OnPick = () => AppendToFile(path, "\nexport int " + free + " = 0;"),
+                            };
+                        }));
+                menu.ShowAsContext();
             };
             _canvasHost.OnDeleteFile = path =>
             {
@@ -215,7 +287,7 @@ namespace Ruitk.Builder
                         _codeField?.InsertSnippet(snippet, isMarkup: false);
                     else
                         _codeField?.InsertAtCaret(snippet);
-                });
+                }, NewFile);
                 _outlinePane = new BuilderOutlinePane();
                 _outlinePane.Attach(
                     outlineSection,
@@ -515,32 +587,59 @@ namespace Ruitk.Builder
             ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
         }
 
-        /// <summary>POC 6.3: in-place attrs edit commit — the open-tag line's
-        /// attribute section (between the tag name and its closing) is replaced
-        /// with the edited text; an empty edit removes all attributes.</summary>
-        private void OnRowAttrsEdited(string filePath, int sourceLine, string newAttrs)
+
+        /// <summary>POC 6.3 per-attr commit: rewrite ONE attribute's value on
+        /// the row's open-tag line; an empty value removes the attribute.</summary>
+        private void OnAttrValueEdited(string filePath, int sourceLine, int attrIdx, string newValue)
         {
             EditLineInFile(Path.GetFullPath(filePath), sourceLine, line =>
             {
-                int open = line.IndexOf('<');
-                if (open < 0)
+                var matches = System.Text.RegularExpressions.Regex.Matches(
+                    line, "(\\w+)=(\\{[^}]*\\}|\"[^\"]*\")");
+                if (attrIdx < 0 || attrIdx >= matches.Count)
                     return line;
-                int tagEnd = open + 1;
-                while (tagEnd < line.Length
-                    && (char.IsLetterOrDigit(line[tagEnd]) || line[tagEnd] == '.'))
-                    tagEnd++;
-                int close = line.LastIndexOf("/>", System.StringComparison.Ordinal);
-                bool selfClose = close >= 0;
-                if (!selfClose)
-                    close = line.LastIndexOf('>');
-                if (close < 0 || close < tagEnd)
-                    return line;
-                string attrs = newAttrs.Trim();
-                string mid = attrs.Length == 0 ? "" : " " + attrs;
-                string tail = selfClose ? " />" : ">";
-                return line.Substring(0, tagEnd) + mid + tail
-                    + line.Substring(close + (selfClose ? 2 : 1));
+                var m = matches[attrIdx];
+                if (string.IsNullOrWhiteSpace(newValue))
+                {
+                    string removed = line.Remove(m.Index, m.Length);
+                    return removed.Replace("  ", " ");
+                }
+                string oldValue = m.Groups[2].Value;
+                bool expr = oldValue.StartsWith("{", System.StringComparison.Ordinal);
+                string wrapped = expr ? "{" + newValue + "}" : "\"" + newValue + "\"";
+                return line.Substring(0, m.Groups[2].Index) + wrapped
+                    + line.Substring(m.Groups[2].Index + m.Groups[2].Length);
             });
+        }
+
+        /// <summary>POC 6.3 directive commit: rewrite the directive header line
+        /// (text + " {"), preserving indent; empty text jumps to the source
+        /// line instead of guessing a block unwrap.</summary>
+        private void OnDirectiveEdited(string filePath, int sourceLine, string newText)
+        {
+            string full = Path.GetFullPath(filePath);
+            if (string.IsNullOrWhiteSpace(newText))
+            {
+                OnCanvasRowClicked(full, sourceLine);
+                return;
+            }
+            EditLineInFile(full, sourceLine, line =>
+            {
+                int w = 0;
+                while (w < line.Length && line[w] == ' ')
+                    w++;
+                return line.Substring(0, w) + newText.Trim().TrimEnd('{', ' ') + " {";
+            });
+        }
+
+        private void AppendToFile(string filePath, string block)
+        {
+            string full = Path.GetFullPath(filePath);
+            OpenSession(full);
+            var session = _workspace.TryGet(full);
+            if (session == null || session.IsReadOnly)
+                return;
+            ApplyProgrammaticEdit(full, session.BufferText.TrimEnd('\n') + block + "\n");
         }
 
         /// <summary>POC "Remove attribute…" submenu: lists the row's current
