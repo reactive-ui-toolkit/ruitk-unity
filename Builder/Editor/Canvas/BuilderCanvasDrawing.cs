@@ -83,24 +83,87 @@ namespace Ruitk.Builder
                 if (edge.FromIndex < 0 || edge.FromIndex >= graph.Nodes.Count)
                     continue;
                 var from = graph.Nodes[edge.FromIndex];
-                var a = new Vector2(from.X + CardWidth, from.Y + EdgeAnchorY);
+                var a = new Vector2(from.X + CardWidth, from.Y + ImportRowY(from, edge.Specifier));
 
-                p.lineWidth = 2f;
-                p.BeginPath();
-                p.MoveTo(a);
                 if (edge.ToIndex >= 0 && edge.ToIndex < graph.Nodes.Count)
                 {
                     var to = graph.Nodes[edge.ToIndex];
                     var b = new Vector2(to.X, to.Y + EdgeAnchorY);
+                    var color = KindColor(edge.TargetKind);
+                    color.a = 0.85f;
+                    bool dashed = edge.TargetKind == BuilderNodeKind.Style
+                        || edge.TargetKind == BuilderNodeKind.Hook
+                        || edge.TargetKind == BuilderNodeKind.Util;
                     float dx = Mathf.Max(40f, Mathf.Abs(b.x - a.x) * 0.5f);
-                    p.strokeColor = KindColor(edge.TargetKind);
-                    p.BezierCurveTo(new Vector2(a.x + dx, a.y), new Vector2(b.x - dx, b.y), b);
+                    var c1 = new Vector2(a.x + dx, a.y);
+                    var c2 = new Vector2(b.x - dx, b.y);
+                    if (dashed)
+                        StrokeDashedBezier(p, a, c1, c2, b, color);
+                    else
+                    {
+                        p.strokeColor = color;
+                        p.lineWidth = 1.5f;
+                        p.BeginPath();
+                        p.MoveTo(a);
+                        p.BezierCurveTo(c1, c2, b);
+                        p.Stroke();
+                    }
                 }
                 else
                 {
                     p.strokeColor = new Color(0.90f, 0.30f, 0.30f);
+                    p.lineWidth = 1.5f;
+                    p.BeginPath();
+                    p.MoveTo(a);
                     p.LineTo(new Vector2(a.x + 48f, a.y));
+                    p.Stroke();
                 }
+            }
+        }
+
+        /// <summary>Edges leave the importer at ITS import row (matched by
+        /// specifier), like the POC — not a shared card-level anchor.</summary>
+        private static float ImportRowY(BuilderCanvasNode node, string specifier)
+        {
+            if (node.Imports.Count == 0 || string.IsNullOrEmpty(specifier))
+                return EdgeAnchorY;
+            int row = -1;
+            for (int i = 0; i < node.Imports.Count; i++)
+            {
+                if (node.Imports[i].Text.EndsWith("  " + specifier, System.StringComparison.Ordinal)
+                    || node.Imports[i].Text.EndsWith("←  " + specifier, System.StringComparison.Ordinal))
+                {
+                    row = i;
+                    break;
+                }
+            }
+            if (row < 0)
+                return EdgeAnchorY;
+            float headerBlock = 24f
+                + (string.IsNullOrEmpty(node.Signature) ? 0f : 14f)
+                + 16f;
+            return headerBlock + row * 13f + 6f;
+        }
+
+        private static void StrokeDashedBezier(
+            Painter2D p, Vector2 a, Vector2 c1, Vector2 c2, Vector2 b, Color color)
+        {
+            const int segments = 28;
+            p.strokeColor = color;
+            p.lineWidth = 1.5f;
+            Vector2 Point(float t)
+            {
+                float u = 1f - t;
+                return u * u * u * a
+                    + 3f * u * u * t * c1
+                    + 3f * u * t * t * c2
+                    + t * t * t * b;
+            }
+            for (int i = 0; i < segments; i += 2)
+            {
+                p.BeginPath();
+                p.MoveTo(Point((float)i / segments));
+                p.LineTo(Point((float)(i + 1) / segments));
                 p.Stroke();
             }
         }
