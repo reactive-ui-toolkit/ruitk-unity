@@ -187,17 +187,37 @@ namespace Ruitk.Builder
                 string spec = import.Specifier ?? "";
                 if (spec.StartsWith("@", StringComparison.Ordinal))
                     continue;
-                string names = import.Names.IsDefaultOrEmpty || import.Names.Length == 0
-                    ? "*"
-                    : "{ " + string.Join(", ", import.Names) + " }";
+                string clause;
+                if (import.IsStar)
+                    clause = "* as " + (import.StarAlias ?? "Module");
+                else if (import.IsDefault)
+                    clause = import.DefaultAlias ?? "Default";
+                else if (import.Names.IsDefaultOrEmpty || import.Names.Length == 0)
+                    clause = "{ }";
+                else
+                {
+                    var rendered = new List<string>();
+                    for (int i = 0; i < import.Names.Length; i++)
+                    {
+                        string alias = import.Aliases.IsDefaultOrEmpty || import.Aliases.Length <= i
+                            ? null
+                            : import.Aliases[i];
+                        rendered.Add(string.IsNullOrEmpty(alias)
+                            ? import.Names[i]
+                            : import.Names[i] + " as " + alias);
+                    }
+                    clause = "{ " + string.Join(", ", rendered) + " }";
+                }
                 int dotKind = spec.EndsWith(".style", StringComparison.OrdinalIgnoreCase) ? 7
                     : spec.EndsWith(".hooks", StringComparison.OrdinalIgnoreCase) ? 6
                     : 5;
                 node.Imports.Add(new BuilderCardLine
                 {
-                    Text = names + "  ←  " + spec,
+                    Text = "import " + clause + " from \"" + spec + "\"",
+                    AttrsText = spec,
                     Kind = BuilderCardLineKind.Import,
                     BadgeKind = dotKind,
+                    SourceLine = import.Line,
                 });
             }
 
@@ -680,11 +700,17 @@ namespace Ruitk.Builder
 
         private static float EstimateCardHeight(BuilderCanvasNode node)
         {
-            int lines = node.Imports.Count + node.Body.Count + node.Markup.Count;
+            bool hasBody = node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook;
             int sections = (node.Imports.Count > 0 ? 1 : 0)
-                + (node.Body.Count > 0 ? 1 : 0)
-                + (node.Markup.Count > 0 ? 1 : 0);
-            return 46f + sections * 16f + lines * 13f;
+                + (hasBody ? 1 : 0)
+                + (node.Markup.Count > 0 ? 1 : 0)
+                + (node.ExportDetail.Count > 0 ? 1 : 0);
+            float height = 35f + (string.IsNullOrEmpty(node.Signature) ? 0f : 30f) + sections * 33f;
+            height += node.Imports.Count * 17f;
+            height += ((node.Body.Count + 2) / 2) * 26f;
+            height += node.Markup.Count * 21f;
+            height += node.ExportDetail.Count * 18f;
+            return height;
         }
 
         private static string Str(JToken token, string camel, string pascal) =>

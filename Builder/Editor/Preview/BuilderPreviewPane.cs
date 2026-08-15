@@ -60,7 +60,13 @@ namespace Ruitk.Builder
 
             _statusLabel = new Label
             {
-                style = { marginTop = 6f, marginLeft = 8f, color = new Color(0.6f, 0.6f, 0.65f) },
+                style =
+                {
+                    marginTop = 8f, marginLeft = 8f, marginRight = 8f,
+                    color = new Color(0.545f, 0.545f, 0.588f),
+                    unityFontStyleAndWeight = FontStyle.Italic,
+                    whiteSpace = WhiteSpace.Normal,
+                },
             };
             container.Add(_statusLabel);
 
@@ -72,6 +78,19 @@ namespace Ruitk.Builder
             _previewHost.RegisterCallback<PointerDownEvent>(OnPreviewPicked, TrickleDown.TrickleDown);
             container.Add(_previewHost);
 
+            container.Add(new Label("PROPS — AUTO-GENERATED KNOBS")
+            {
+                style =
+                {
+                    color = new Color(0.545f, 0.545f, 0.588f),
+                    fontSize = 10f,
+                    letterSpacing = 1f,
+                    marginTop = 8f, marginLeft = 8f, marginBottom = 6f,
+                    borderTopWidth = 1f,
+                    borderTopColor = new Color(0.227f, 0.227f, 0.267f),
+                    paddingTop = 8f,
+                },
+            });
             _knobsHost = new VisualElement
             {
                 name = "builder-preview-knobs",
@@ -83,10 +102,10 @@ namespace Ruitk.Builder
             {
                 style =
                 {
-                    color = new Color(0.42f, 0.42f, 0.48f),
-                    fontSize = 8f,
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    marginTop = 4f, marginLeft = 6f,
+                    color = new Color(0.545f, 0.545f, 0.588f),
+                    fontSize = 10f,
+                    letterSpacing = 1f,
+                    marginTop = 8f, marginLeft = 8f, marginBottom = 6f,
                 },
             });
             _stateHost = new VisualElement
@@ -177,7 +196,7 @@ namespace Ruitk.Builder
                 }
             }
 
-            var rowStyle = new Color(0.90f, 0.78f, 0.40f);
+            var rowStyle = new Color(0.545f, 0.545f, 0.588f);
             switch (value)
             {
                 case int i:
@@ -241,8 +260,7 @@ namespace Ruitk.Builder
             var type = ResolveComponentType(uitkxPath, assemblyHint);
             if (type == null)
             {
-                SetStatus("No generated component found for " + Path.GetFileName(uitkxPath)
-                    + " (style/hook modules have no visual preview)");
+                SetStatus(NoPreviewText(uitkxPath));
                 UnmountPreview();
                 return;
             }
@@ -373,6 +391,22 @@ namespace Ruitk.Builder
             }
             _renderDelegate = null;
             _componentType = null;
+        }
+
+        /// <summary>POC ".nopreview" copy, one per module kind — a style / hook /
+        /// util module has no visual of its own.</summary>
+        private static string NoPreviewText(string uitkxPath)
+        {
+            string name = Path.GetFileName(uitkxPath) ?? "";
+            if (name.EndsWith(".hooks.uitkx", StringComparison.OrdinalIgnoreCase))
+                return "Hook module — no visual. It exposes its hooks to the components that "
+                    + "import it (green edge). Double-click its code island to edit the body.";
+            if (name.EndsWith(".style.uitkx", StringComparison.OrdinalIgnoreCase))
+                return "Style module — no visual of its own. Zoom to L2 and click an entry to "
+                    + "edit it. Tip: select the component that imports it first, then edit an "
+                    + "entry's BackgroundColor hex — the live preview repaints.";
+            return "Util module — no visual. Its exported functions land on the file's __Exports "
+                + "class; drag the module onto a component to import them by name.";
         }
 
         private void SetStatus(string text)

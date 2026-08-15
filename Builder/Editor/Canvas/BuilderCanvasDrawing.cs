@@ -18,6 +18,23 @@ namespace Ruitk.Builder
 
         public const float EdgeAnchorY = 18f;
 
+        /// <summary>Card geometry the edge painter estimates anchors from — kept
+        /// in lockstep with canvasStyles (POC .card-title / .card-section
+        /// paddings and the per-row font sizes).</summary>
+        private const float HeaderH = 35f;
+
+        private const float PillH = 66f;
+
+        private const float SignatureSectionH = 30f;
+
+        private const float SectionOverheadH = 33f;
+
+        private const float ImportRowH = 17f;
+
+        private const float MarkupRowH = 21f;
+
+        private const float ChipRowH = 26f;
+
         /// <summary>Set by CanvasView each render; the edge painter shares it so
         /// anchors track the LOD-dependent card width (POC: 300 / 340 / 430).</summary>
         public static int CurrentLod = 1;
@@ -34,13 +51,13 @@ namespace Ruitk.Builder
             switch (kind)
             {
                 case BuilderNodeKind.Component:
-                    return new Color(0.31f, 0.76f, 0.97f);
+                    return new Color(0.310f, 0.765f, 0.969f);
                 case BuilderNodeKind.Hook:
-                    return new Color(0.70f, 0.62f, 0.86f);
+                    return new Color(0.506f, 0.780f, 0.518f);
                 case BuilderNodeKind.Style:
-                    return new Color(1.00f, 0.72f, 0.30f);
+                    return new Color(0.808f, 0.576f, 0.847f);
                 case BuilderNodeKind.Util:
-                    return new Color(0.51f, 0.78f, 0.52f);
+                    return new Color(1.000f, 0.718f, 0.302f);
                 default:
                     return new Color(0.55f, 0.55f, 0.60f);
             }
@@ -51,6 +68,19 @@ namespace Ruitk.Builder
             var c = KindColor(kind);
             c.a = 0.16f;
             return c;
+        }
+
+        /// <summary>POC props-row: the export name in bold text-color, the
+        /// parameter signature dimmed ("<b>Header</b>(string title, int gold)").</summary>
+        public static string SignatureRichText(string signature)
+        {
+            if (string.IsNullOrEmpty(signature))
+                return "";
+            int paren = signature.IndexOf('(');
+            if (paren < 0)
+                return "<b><color=#D6D6DC>" + signature + "</color></b>";
+            return "<b><color=#D6D6DC>" + signature.Substring(0, paren) + "</color></b>"
+                + signature.Substring(paren);
         }
 
         /// <summary>Chip line "useState  →  gold, setGold" → POC coloring:
@@ -148,9 +178,9 @@ namespace Ruitk.Builder
                 case BuilderNodeKind.Component:
                     return "component";
                 case BuilderNodeKind.Hook:
-                    return "hooks";
+                    return "hook";
                 case BuilderNodeKind.Style:
-                    return "style";
+                    return "styles";
                 case BuilderNodeKind.Util:
                     return "utils";
                 default:
@@ -163,20 +193,47 @@ namespace Ruitk.Builder
             switch (kind)
             {
                 case BuilderCardLineKind.Import:
-                    return new Color(0.50f, 0.70f, 0.84f);
+                    return new Color(0.545f, 0.545f, 0.588f);
                 case BuilderCardLineKind.Hook:
-                    return new Color(0.90f, 0.78f, 0.40f);
+                    return new Color(0.506f, 0.780f, 0.518f);
                 case BuilderCardLineKind.Element:
-                    return new Color(0.42f, 0.68f, 0.90f);
+                    return new Color(0.310f, 0.765f, 0.969f);
                 case BuilderCardLineKind.Component:
-                    return new Color(0.31f, 0.86f, 0.77f);
+                    return new Color(0.498f, 0.859f, 0.792f);
                 case BuilderCardLineKind.Directive:
-                    return new Color(0.77f, 0.53f, 0.75f);
+                    return new Color(0.808f, 0.576f, 0.847f);
                 case BuilderCardLineKind.Export:
-                    return new Color(0.62f, 0.78f, 0.55f);
+                    return new Color(0.808f, 0.576f, 0.847f);
                 default:
-                    return new Color(0.60f, 0.60f, 0.66f);
+                    return new Color(0.812f, 0.812f, 0.855f);
             }
+        }
+
+        /// <summary>POC canvas ground: a 26px dot lattice (#2c2c33, 1px) painted
+        /// in SCREEN space behind the camera-transformed world, matching the
+        /// radial-gradient background of #canvasWrap.</summary>
+        public static void DrawDotGrid(MeshGenerationContext ctx)
+        {
+            if (ctx?.visualElement == null)
+                return;
+            var rect = ctx.visualElement.contentRect;
+            if (rect.width <= 0f || rect.height <= 0f)
+                return;
+            var p = ctx.painter2D;
+            p.fillColor = new Color(0.173f, 0.173f, 0.200f);
+            p.BeginPath();
+            for (float y = 1f; y < rect.height; y += 26f)
+            {
+                for (float x = 1f; x < rect.width; x += 26f)
+                {
+                    p.MoveTo(new Vector2(x, y));
+                    p.LineTo(new Vector2(x + 1.5f, y));
+                    p.LineTo(new Vector2(x + 1.5f, y + 1.5f));
+                    p.LineTo(new Vector2(x, y + 1.5f));
+                    p.ClosePath();
+                }
+            }
+            p.Fill();
         }
 
         public static void DrawEdges(MeshGenerationContext ctx, BuilderGraph graph)
@@ -192,7 +249,7 @@ namespace Ruitk.Builder
                 var from = graph.Nodes[edge.FromIndex];
                 float anchorY;
                 if (CurrentLod == 0)
-                    anchorY = 24f;
+                    anchorY = PillH * 0.5f;
                 else
                 {
                     anchorY = edge.TargetKind == BuilderNodeKind.Component
@@ -254,8 +311,7 @@ namespace Ruitk.Builder
             int row = -1;
             for (int i = 0; i < node.Imports.Count; i++)
             {
-                if (node.Imports[i].Text.EndsWith("  " + specifier, System.StringComparison.Ordinal)
-                    || node.Imports[i].Text.EndsWith("←  " + specifier, System.StringComparison.Ordinal))
+                if (string.Equals(node.Imports[i].AttrsText, specifier, System.StringComparison.Ordinal))
                 {
                     row = i;
                     break;
@@ -263,10 +319,10 @@ namespace Ruitk.Builder
             }
             if (row < 0)
                 return EdgeAnchorY;
-            float headerBlock = 24f
-                + (string.IsNullOrEmpty(node.Signature) ? 0f : 14f)
-                + 16f;
-            return headerBlock + row * 13f + 6f;
+            float headerBlock = HeaderH
+                + (string.IsNullOrEmpty(node.Signature) ? 0f : SignatureSectionH)
+                + SectionOverheadH;
+            return headerBlock + row * ImportRowH + ImportRowH * 0.5f;
         }
 
         /// <summary>POC usage edges leave from the markup row that instantiates
@@ -288,20 +344,20 @@ namespace Ruitk.Builder
             if (rowIdx < 0)
                 return -1f;
 
-            float y = 34f;
+            float y = HeaderH;
             if (!string.IsNullOrEmpty(from.Signature))
-                y += 14f;
+                y += SignatureSectionH;
             if (from.Imports.Count > 0)
-                y += 16f + from.Imports.Count * 13f;
-            if (from.Body.Count > 0)
+                y += SectionOverheadH + from.Imports.Count * ImportRowH;
+            if (from.Kind == BuilderNodeKind.Component || from.Kind == BuilderNodeKind.Hook)
             {
                 int chipRows = (from.Body.Count + 2) / 2;
-                y += 16f + chipRows * 24f;
+                y += SectionOverheadH + chipRows * ChipRowH;
                 if (CurrentLod == 2 && from.IslandLines.Count > 0)
-                    y += 14f + from.IslandLines.Count * 13f;
+                    y += 18f + from.IslandLines.Count * 16f;
             }
-            y += 16f;
-            y += rowIdx * (CurrentLod == 2 ? 19f : 17f) + 8f;
+            y += SectionOverheadH;
+            y += rowIdx * MarkupRowH + MarkupRowH * 0.5f;
             return y;
         }
 

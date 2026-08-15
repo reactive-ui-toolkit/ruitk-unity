@@ -24,7 +24,11 @@ export VirtualNode CanvasView(
   Action<string, int, string> onLineRewrite = null,
   Action<string, int, int, string> onIslandEdit = null,
   Action<string> onAddStyleExport = null,
-  Action<string> onAddUtilExport = null
+  Action<string> onAddUtilExport = null,
+  float viewZoom = 0f,
+  float viewCamX = 0f,
+  float viewCamY = 0f,
+  int viewVersion = 0
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -34,6 +38,7 @@ export VirtualNode CanvasView(
   var (selRowIdx, setSelRowIdx) = useState(-1);
   var (traceStates, setTraceStates) = useState((string)null);
   var (dragRowKey, setDragRowKey) = useState(-1);
+  var (hoverRowKey, setHoverRowKey) = useState(-1);
   var (dragBand, setDragBand) = useState(1);
   var (editKey, setEditKey) = useState("");
   var (editText, setEditText) = useState("");
@@ -43,6 +48,17 @@ export VirtualNode CanvasView(
   var dragCard = useRef(-1);
   var lastX = useRef(0f);
   var lastY = useRef(0f);
+  var appliedView = useRef(viewVersion);
+
+  if (appliedView.Current != viewVersion) {
+    appliedView.Current = viewVersion;
+    setZoom(viewZoom);
+    setCamX(viewCamX);
+    setCamY(viewCamY);
+    zoom = viewZoom;
+    camX = viewCamX;
+    camY = viewCamY;
+  }
 
   int lod = zoom < 0.45f ? 0 : (zoom < 1.05f ? 1 : 2);
   bool lodFull = lod >= 1;
@@ -122,6 +138,11 @@ export VirtualNode CanvasView(
       }}
     >
       <VisualElement
+        style={CanvasStyles.DotGrid}
+        pickingMode={PickIgnore}
+        onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawDotGrid(ctx)}
+      />
+      <VisualElement
         style={new Style {
           Position = PosAbsolute,
           Top = Px(0),
@@ -183,7 +204,7 @@ export VirtualNode CanvasView(
               @if (lod == 0) {
                 return (
                   <VisualElement
-                    style={CanvasStyles.CardHeader}
+                    style={CanvasStyles.CardPill}
                     onPointerDown={e => {
                       if (e.Button == 0 && e.ClickCount < 2) {
                         dragCard.Current = index;
@@ -194,18 +215,10 @@ export VirtualNode CanvasView(
                     }}
                   >
                     <Label
-                      text={node.Title}
-                      style={new Style {
-                        FontSize = Px(20),
-                        UnityFontStyle = FontBold,
-                        Color = Hex("#e4e4ea"),
-                        FlexGrow = 1,
-                      }}
-                    />
-                    <Label
                       text={BuilderCanvasDrawing.KindLabel(node.Kind)}
                       style={new Style {
                         FontSize = Px(15),
+                        UnityFontStyle = FontBold,
                         Color = BuilderCanvasDrawing.KindColor(node.Kind),
                         BackgroundColor = BuilderCanvasDrawing.KindBadgeBg(node.Kind),
                         BorderRadius = Px(12),
@@ -213,6 +226,16 @@ export VirtualNode CanvasView(
                         PaddingRight = Px(12),
                         PaddingTop = Px(3),
                         PaddingBottom = Px(3),
+                        MarginRight = Px(12),
+                      }}
+                    />
+                    <Label
+                      text={node.Title}
+                      style={new Style {
+                        FontSize = Px(26),
+                        UnityFontStyle = FontBold,
+                        Color = Hex("#d6d6dc"),
+                        FlexGrow = 1,
                       }}
                     />
                   </VisualElement>
@@ -257,7 +280,13 @@ export VirtualNode CanvasView(
               }
               @if (lod >= 1 && node.Signature != null && node.Signature.Length > 0) {
                 return (
-                  <Label text={node.Signature} style={CanvasStyles.CardSignature} />
+                  <VisualElement style={CanvasStyles.CardSection}>
+                    <Label
+                      text={BuilderCanvasDrawing.SignatureRichText(node.Signature)}
+                      enableRichText={true}
+                      style={CanvasStyles.CardSignature}
+                    />
+                  </VisualElement>
                 );
               }
               @if (lodFull) {
@@ -265,24 +294,23 @@ export VirtualNode CanvasView(
                   <VisualElement style={CanvasStyles.CardBody}>
                     @if (node.Imports.Count > 0) {
                       return (
-                        <VisualElement>
+                        <VisualElement style={CanvasStyles.CardSection}>
                           <Label text="IMPORTS" style={CanvasStyles.CardSectionHeader} />
                           @for (int x = 0; x < node.Imports.Count; x++) {
                             var imp = node.Imports[x];
                             return (
                               <VisualElement
                                 key={$"imp-{x}"}
-                                style={new Style { FlexDirection = FlexRow, AlignItems = AlignCenter }}
+                                style={new Style {
+                                  FlexDirection = FlexRow,
+                                  AlignItems = AlignCenter,
+                                  PaddingTop = Px(1),
+                                  PaddingBottom = Px(1),
+                                }}
                               >
                                 <Label
                                   text={imp.Text}
-                                  style={new Style {
-                                    Color = Hex("#8b8b96"),
-                                    FontSize = Px(9),
-                                    FlexGrow = 1,
-                                    FlexShrink = 1,
-                                    Overflow = OverflowHidden,
-                                  }}
+                                  style={CanvasStyles.CardImportLine}
                                 />
                                 <VisualElement
                                   style={new Style {
@@ -300,9 +328,9 @@ export VirtualNode CanvasView(
                         </VisualElement>
                       );
                     }
-                    @if (node.Body.Count > 0) {
+                    @if (node.Body.Count > 0 || node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook) {
                       return (
-                        <VisualElement>
+                        <VisualElement style={CanvasStyles.CardSection}>
                           <Label
                             text={node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook ? "BODY — HOOKS & STATE" : "EXPORTS"}
                             style={CanvasStyles.CardSectionHeader}
@@ -333,7 +361,7 @@ export VirtualNode CanvasView(
                                   onPointerLeave={e => { setTraceStates((string)null); }}
                                   style={new Style {
                                     Color = BuilderCanvasDrawing.LineColor(node.Body[x].Kind),
-                                    FontSize = Px(10),
+                                    FontSize = Px(11.5f),
                                     BackgroundColor = Hex("#2a2a31"),
                                     BorderRadius = Px(10),
                                     BorderTopWidth = 1,
@@ -366,7 +394,7 @@ export VirtualNode CanvasView(
                                   }}
                                   style={new Style {
                                     Color = Hex("#8b8b96"),
-                                    FontSize = Px(10),
+                                    FontSize = Px(11.5f),
                                     BorderRadius = Px(10),
                                     BorderTopWidth = 1,
                                     BorderRightWidth = 1,
@@ -444,7 +472,7 @@ export VirtualNode CanvasView(
                                       text={node.IslandLines[ci]}
                                       style={new Style {
                                         Color = Hex("#bdbdc7"),
-                                        FontSize = Px(10),
+                                        FontSize = Px(11.5f),
                                       }}
                                     />
                                   );
@@ -457,7 +485,7 @@ export VirtualNode CanvasView(
                     }
                     @if (node.ExportDetail.Count > 0) {
                       return (
-                        <VisualElement>
+                        <VisualElement style={CanvasStyles.CardSection}>
                           <Label text="EXPORTS" style={CanvasStyles.CardSectionHeader} />
                           @for (int x = 0; x < node.ExportDetail.Count; x++) {
                             var detail = node.ExportDetail[x];
@@ -505,7 +533,7 @@ export VirtualNode CanvasView(
                                           : detail.Kind == BuilderCardLineKind.Export
                                             ? Hex("#ce93d8")
                                             : Hex("#cfcfda"),
-                                        FontSize = Px(11),
+                                        FontSize = Px(12),
                                         UnityFontStyle = detail.Kind == BuilderCardLineKind.Export ? FontBold : FontNormal,
                                         MarginLeft = Px(detail.Depth * 18f),
                                       }}
@@ -541,7 +569,7 @@ export VirtualNode CanvasView(
                     }
                     @if (node.Markup.Count > 0) {
                       return (
-                        <VisualElement>
+                        <VisualElement style={CanvasStyles.CardSection}>
                           <Label text="RETURN — MARKUP" style={CanvasStyles.CardSectionHeader} />
                           @for (int x = 0; x < node.Markup.Count; x++) {
                             var row = node.Markup[x];
@@ -559,8 +587,8 @@ export VirtualNode CanvasView(
                                   MarginLeft = Px(row.Depth * 14f),
                                   PaddingLeft = Px(6),
                                   PaddingRight = Px(6),
-                                  PaddingTop = Px(1),
-                                  PaddingBottom = Px(1),
+                                  PaddingTop = Px(2.5f),
+                                  PaddingBottom = Px(2.5f),
                                   BorderRadius = Px(5),
                                   BackgroundColor = dropHere && dragBand == 1
                                     ? Rgba(79, 195, 247, 30)
@@ -568,11 +596,23 @@ export VirtualNode CanvasView(
                                       ? Rgba(255, 213, 79, 38)
                                       : rowHl
                                         ? Rgba(255, 183, 77, 46)
-                                        : Rgba(0, 0, 0, 0),
+                                        : hoverRowKey == rowKey
+                                          ? Rgba(79, 195, 247, 20)
+                                          : Rgba(0, 0, 0, 0),
                                   BorderTopWidth = dropHere && dragBand == 0 ? 2 : 0,
                                   BorderTopColor = Hex("#4fc3f7"),
                                   BorderBottomWidth = dropHere && dragBand == 2 ? 2 : 0,
                                   BorderBottomColor = Hex("#4fc3f7"),
+                                }}
+                                onPointerEnter={e => {
+                                  if (hoverRowKey != rowKey) {
+                                    setHoverRowKey(rowKey);
+                                  }
+                                }}
+                                onPointerLeave={e => {
+                                  if (hoverRowKey == rowKey) {
+                                    setHoverRowKey(-1);
+                                  }
                                 }}
                                 onPointerMove={e => {
                                   if (BuilderCanvasDrawing.DragActive) {
@@ -648,7 +688,7 @@ export VirtualNode CanvasView(
                                         }
                                       }}
                                       style={new Style {
-                                        FontSize = Px(9),
+                                        FontSize = Px(10),
                                         UnityFontStyle = FontBold,
                                         Color = BuilderCanvasDrawing.BadgeColor(row.BadgeKind),
                                         BackgroundColor = BuilderCanvasDrawing.BadgeBg(row.BadgeKind),
@@ -666,7 +706,7 @@ export VirtualNode CanvasView(
                                       text={row.Text}
                                       style={new Style {
                                         Color = BuilderCanvasDrawing.LineColor(row.Kind),
-                                        FontSize = Px(11),
+                                        FontSize = Px(12),
                                         UnityFontStyle = row.Kind == BuilderCardLineKind.Component ? FontBold : FontNormal,
                                       }}
                                     />
@@ -688,7 +728,7 @@ export VirtualNode CanvasView(
                                           <VisualElement key={attrKey} style={new Style { FlexDirection = FlexRow, MarginLeft = Px(6) }}>
                                             <Label
                                               text={attrName + "=" + (isExpr ? "{" : "\"")}
-                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(10) }}
+                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(12) }}
                                             />
                                             @if (editKey == attrKey) {
                                               return (
@@ -721,13 +761,13 @@ export VirtualNode CanvasView(
                                                     setEditText(innerValue);
                                                     e.StopPropagation();
                                                   }}
-                                                  style={new Style { Color = Hex("#ffb74d"), FontSize = Px(10) }}
+                                                  style={new Style { Color = Hex("#ffb74d"), FontSize = Px(12) }}
                                                 />
                                               );
                                             }
                                             <Label
                                               text={isExpr ? "}" : "\""}
-                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(10) }}
+                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(12) }}
                                             />
                                           </VisualElement>
                                         );
@@ -742,7 +782,7 @@ export VirtualNode CanvasView(
                                               }
                                               e.StopPropagation();
                                             }}
-                                            style={new Style { Color = Hex("#5a5a64"), FontSize = Px(10), MarginLeft = Px(6) }}
+                                            style={new Style { Color = Hex("#8b8b96"), FontSize = Px(12), MarginLeft = Px(6) }}
                                           />
                                         );
                                       }
@@ -773,46 +813,6 @@ export VirtualNode CanvasView(
                 );
               }
             </VisualElement>
-          );
-        }
-      </VisualElement>
-      <VisualElement
-        style={new Style {
-          Position = PosAbsolute,
-          Top = Px(8),
-          Left = Px(8),
-          FlexDirection = FlexRow,
-        }}
-      >
-        @for (int m = 0; m < 3; m++) {
-          int presetIndex = m;
-          float presetZoom = m == 0 ? 0.30f : m == 1 ? 0.75f : 1.25f;
-          string modeLabel = m == 0 ? "L0 Architecture" : m == 1 ? "L1 Cards" : "L2 Edit";
-          return (
-            <Label
-              key={modeLabel}
-              text={modeLabel}
-              onPointerDown={e => {
-                setZoom(presetZoom);
-                setCamX(60f);
-                setCamY(30f);
-                if (onCameraChanged != null) {
-                  onCameraChanged(60f, 30f, presetZoom);
-                }
-                e.StopPropagation();
-              }}
-              style={new Style {
-                FontSize = Px(10),
-                Color = lod == presetIndex ? Hex("#17171b") : Hex("#9a9aa6"),
-                BackgroundColor = lod == presetIndex ? Hex("#4fc3f7") : Hex("#232329"),
-                BorderRadius = Px(4),
-                PaddingLeft = Px(8),
-                PaddingRight = Px(8),
-                PaddingTop = Px(3),
-                PaddingBottom = Px(3),
-                MarginRight = Px(4),
-              }}
-            />
           );
         }
       </VisualElement>

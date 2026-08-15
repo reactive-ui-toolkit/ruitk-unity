@@ -20,26 +20,70 @@ namespace Ruitk.Builder
             public string Label;
             public string Detail;
             public Action OnPick;
+
+            /// <summary>POC ".ctx .sep" divider row (no label, not pickable).</summary>
+            public bool IsSeparator;
+
+            /// <summary>POC ".ctx .mh" inline section header inside the list.</summary>
+            public string Header;
         }
+
+        public static Item Separator => new Item { IsSeparator = true };
+
+        public static Item SectionHeader(string text) => new Item { Header = text };
 
         private List<Item> _items;
         private Func<string, Item> _freeform;
         private string _title;
         private string _placeholder;
+        private bool _searchable = true;
         private TextField _search;
         private ScrollView _list;
+
+        /// <summary>POC plain context menu (row / card / create): title header,
+        /// no search field, separators and inline section headers, sized to its
+        /// content like the in-page ".ctx" menu.</summary>
+        public static void ShowSimple(string title, List<Item> items)
+        {
+            int rows = 0;
+            int widest = title?.Length ?? 0;
+            foreach (var item in items)
+            {
+                rows++;
+                int length = item.IsSeparator ? 0
+                    : item.Header != null ? item.Header.Length
+                    : (item.Label?.Length ?? 0);
+                if (length > widest)
+                    widest = length;
+            }
+            Open(
+                title, null, items, null, searchable: false,
+                width: Mathf.Clamp(widest * 7.2f + 30f, 195f, 420f),
+                height: 24f + rows * 21f + 10f);
+        }
 
         public static void Show(
             string title,
             string placeholder,
             List<Item> items,
             Func<string, Item> freeform = null)
+            => Open(title, placeholder, items, freeform, true, 260f, 320f);
+
+        private static void Open(
+            string title,
+            string placeholder,
+            List<Item> items,
+            Func<string, Item> freeform,
+            bool searchable,
+            float width,
+            float height)
         {
             var window = CreateInstance<BuilderSearchMenu>();
             window._title = title;
             window._placeholder = placeholder;
             window._items = items;
             window._freeform = freeform;
+            window._searchable = searchable;
             // Event.current is null outside OnGUI (GenericMenu callbacks, UITK
             // pointer events) — fall back to the focused window's center so the
             // popup never lands at the screen origin.
@@ -50,7 +94,7 @@ namespace Ruitk.Builder
                 anchor = focusedWindow.position.center - new Vector2(130f, 160f);
             else
                 anchor = new Vector2(400f, 300f);
-            window.position = new Rect(anchor.x, anchor.y + 8f, 260f, 320f);
+            window.position = new Rect(anchor.x, anchor.y + 8f, width, height);
             window.ShowPopup();
             window.Focus();
         }
@@ -68,41 +112,52 @@ namespace Ruitk.Builder
             root.style.borderLeftColor = new Color(0.23f, 0.23f, 0.27f);
             root.style.borderRightColor = new Color(0.23f, 0.23f, 0.27f);
 
-            root.Add(new Label(_title)
-            {
-                style =
+            if (!string.IsNullOrEmpty(_title))
+                root.Add(new Label(_title.ToUpperInvariant())
                 {
-                    fontSize = 10f,
-                    color = new Color(0.55f, 0.55f, 0.59f),
-                    paddingLeft = 10f, paddingTop = 4f, paddingBottom = 2f,
-                },
-            });
+                    style =
+                    {
+                        fontSize = 10f,
+                        color = new Color(0.545f, 0.545f, 0.588f),
+                        paddingLeft = 10f, paddingTop = 4f, paddingBottom = 2f,
+                    },
+                });
 
-            _search = new TextField
+            if (_searchable)
             {
-                style = { marginLeft = 6f, marginRight = 6f, marginBottom = 4f },
-            };
-            _search.textEdition.placeholder = _placeholder ?? "search…";
-            _search.RegisterValueChangedCallback(_ => Rebuild());
-            _search.RegisterCallback<KeyDownEvent>(evt =>
-            {
-                if (evt.keyCode == KeyCode.Escape)
+                _search = new TextField
                 {
-                    Close();
-                    evt.StopPropagation();
-                }
-                else if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+                    style = { marginLeft = 6f, marginRight = 6f, marginBottom = 4f },
+                };
+                _search.textEdition.placeholder = _placeholder ?? "search…";
+                _search.RegisterValueChangedCallback(_ => Rebuild());
+                _search.RegisterCallback<KeyDownEvent>(evt =>
                 {
-                    PickFirst();
-                    evt.StopPropagation();
-                }
-            }, TrickleDown.TrickleDown);
-            root.Add(_search);
+                    if (evt.keyCode == KeyCode.Escape)
+                    {
+                        Close();
+                        evt.StopPropagation();
+                    }
+                    else if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+                    {
+                        PickFirst();
+                        evt.StopPropagation();
+                    }
+                }, TrickleDown.TrickleDown);
+                root.Add(_search);
+            }
 
             _list = new ScrollView { style = { flexGrow = 1f, maxHeight = 300f } };
             root.Add(_list);
             Rebuild();
-            _search.schedule.Execute(() => _search.Focus());
+            if (_searchable)
+                _search.schedule.Execute(() => _search.Focus());
+            else
+                root.RegisterCallback<KeyDownEvent>(evt =>
+                {
+                    if (evt.keyCode == KeyCode.Escape)
+                        Close();
+                });
         }
 
         private void OnLostFocus() => Close();
@@ -127,10 +182,39 @@ namespace Ruitk.Builder
             int shown = 0;
             foreach (var item in _items)
             {
+                if (item.IsSeparator)
+                {
+                    if (filter.Length == 0)
+                        _list.contentContainer.Add(new VisualElement
+                        {
+                            style =
+                            {
+                                height = 1f,
+                                marginTop = 4f, marginBottom = 4f,
+                                marginLeft = 2f, marginRight = 2f,
+                                backgroundColor = new Color(0.227f, 0.227f, 0.267f),
+                            },
+                        });
+                    continue;
+                }
+                if (item.Header != null)
+                {
+                    if (filter.Length == 0)
+                        _list.contentContainer.Add(new Label(item.Header.ToUpperInvariant())
+                        {
+                            style =
+                            {
+                                fontSize = 10f,
+                                color = new Color(0.545f, 0.545f, 0.588f),
+                                paddingLeft = 10f, paddingTop = 4f, paddingBottom = 2f,
+                            },
+                        });
+                    continue;
+                }
                 if (filter.Length > 0
                     && item.Label.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
-                AddRow(item, new Color(0.84f, 0.84f, 0.86f));
+                AddRow(item, new Color(0.839f, 0.839f, 0.863f));
                 shown++;
             }
             if (_freeform != null && filter.Trim().Length > 0)

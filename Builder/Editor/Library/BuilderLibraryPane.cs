@@ -22,15 +22,33 @@ namespace Ruitk.Builder
             public string Description;
             public string Snippet;
             public string Section;
+            public string Payload;
             public Color Tint = new Color(0.80f, 0.80f, 0.84f);
         }
 
-        private static readonly Color ElementTint = new Color(0.42f, 0.68f, 0.90f);
-        private static readonly Color ComponentTint = new Color(0.31f, 0.86f, 0.77f);
-        private static readonly Color HookTint = new Color(0.90f, 0.78f, 0.40f);
-        private static readonly Color StyleTint = new Color(1.00f, 0.72f, 0.30f);
-        private static readonly Color UtilTint = new Color(0.51f, 0.78f, 0.52f);
-        private static readonly Color DirectiveTint = new Color(0.77f, 0.53f, 0.75f);
+        private static readonly Color ElementTint = new Color(0.310f, 0.765f, 0.969f);
+        private static readonly Color ComponentTint = new Color(0.498f, 0.859f, 0.792f);
+        private static readonly Color HookTint = new Color(0.506f, 0.780f, 0.518f);
+        private static readonly Color StyleTint = new Color(0.808f, 0.576f, 0.847f);
+        private static readonly Color UtilTint = new Color(1.000f, 0.718f, 0.302f);
+        private static readonly Color DirectiveTint = new Color(0.808f, 0.576f, 0.847f);
+
+        private static readonly Color Panel2 = new Color(0.165f, 0.165f, 0.192f);
+        private static readonly Color Line = new Color(0.227f, 0.227f, 0.267f);
+        private static readonly Color Dim = new Color(0.545f, 0.545f, 0.588f);
+        private static readonly Color Accent = new Color(0.310f, 0.765f, 0.969f);
+
+        /// <summary>The POC's curated native-tag order — these lead the section,
+        /// the rest of the live schema follows alphabetically.</summary>
+        public static readonly string[] NativeTagOrder =
+        {
+            "VisualElement", "Label", "Button", "ScrollView", "TextField", "Toggle", "Slider",
+        };
+
+        private const string LibraryHint =
+            "Drag onto a JSX row: top edge inserts before, bottom edge after, middle nests "
+            + "inside. Drag hooks onto BODY; style/util modules onto a card (adds the import). "
+            + "Drag existing rows to reorder.";
 
         private readonly List<Entry> _entries = new List<Entry>();
         private VisualElement _listHost;
@@ -43,42 +61,69 @@ namespace Ruitk.Builder
             _insert = insertSnippet;
             container.Clear();
 
+            container.style.backgroundColor = new Color(0.137f, 0.137f, 0.161f);
+
             var titleRow = new VisualElement
-            {
-                style = { flexDirection = FlexDirection.Row, alignItems = Align.Center },
-            };
-            titleRow.Add(new Label("LIBRARY")
             {
                 style =
                 {
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    fontSize = 10f,
-                    color = new Color(0.55f, 0.55f, 0.6f),
-                    marginTop = 6f, marginLeft = 6f, flexGrow = 1f,
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    justifyContent = Justify.SpaceBetween,
+                    backgroundColor = Panel2,
+                    paddingLeft = 12f, paddingRight = 12f,
+                    paddingTop = 7f, paddingBottom = 7f,
+                    borderBottomWidth = 1f, borderBottomColor = Line,
                 },
+            };
+            titleRow.Add(new Label("LIBRARY")
+            {
+                style = { fontSize = 11f, color = Dim },
             });
             if (onNewFile != null)
             {
                 var newBtn = new Label("+ new")
                 {
+                    tooltip = "create a component / style module / hook module",
                     style =
                     {
                         fontSize = 10f,
-                        color = new Color(0.55f, 0.55f, 0.6f),
-                        marginRight = 8f, marginTop = 6f,
+                        color = new Color(0.839f, 0.839f, 0.863f),
+                        backgroundColor = Panel2,
+                        borderTopWidth = 1f, borderBottomWidth = 1f,
+                        borderLeftWidth = 1f, borderRightWidth = 1f,
+                        borderTopColor = Line, borderBottomColor = Line,
+                        borderLeftColor = Line, borderRightColor = Line,
+                        borderTopLeftRadius = 3f, borderTopRightRadius = 3f,
+                        borderBottomLeftRadius = 3f, borderBottomRightRadius = 3f,
+                        paddingLeft = 7f, paddingRight = 7f,
+                        paddingTop = 1f, paddingBottom = 1f,
                     },
                 };
                 newBtn.RegisterCallback<PointerDownEvent>(_ => onNewFile());
                 newBtn.RegisterCallback<MouseEnterEvent>(_ =>
-                    newBtn.style.color = new Color(0.31f, 0.76f, 0.97f));
+                {
+                    newBtn.style.borderTopColor = Accent;
+                    newBtn.style.borderBottomColor = Accent;
+                    newBtn.style.borderLeftColor = Accent;
+                    newBtn.style.borderRightColor = Accent;
+                });
                 newBtn.RegisterCallback<MouseLeaveEvent>(_ =>
-                    newBtn.style.color = new Color(0.55f, 0.55f, 0.6f));
+                {
+                    newBtn.style.borderTopColor = Line;
+                    newBtn.style.borderBottomColor = Line;
+                    newBtn.style.borderLeftColor = Line;
+                    newBtn.style.borderRightColor = Line;
+                });
                 titleRow.Add(newBtn);
             }
             container.Add(titleRow);
 
-            var search = new TextField { style = { marginTop = 4f, marginLeft = 4f, marginRight = 4f } };
-            search.textEdition.placeholder = "Search elements & hooks";
+            var search = new TextField
+            {
+                style = { marginTop = 8f, marginLeft = 8f, marginRight = 8f, marginBottom = 8f },
+            };
+            search.textEdition.placeholder = "search library…";
             search.RegisterValueChangedCallback(e =>
             {
                 _filter = e.newValue ?? "";
@@ -86,7 +131,7 @@ namespace Ruitk.Builder
             });
             container.Add(search);
 
-            var scroll = new ScrollView { style = { flexGrow = 1f } };
+            var scroll = new ScrollView { style = { flexGrow = 1f, paddingLeft = 8f, paddingRight = 8f } };
             _listHost = scroll.contentContainer;
             container.Add(scroll);
 
@@ -151,7 +196,6 @@ namespace Ruitk.Builder
             }
 
             AddDirectiveEntries();
-            AddStyleKeyEntries();
             SortSections();
             Rebuild();
         }
@@ -165,7 +209,7 @@ namespace Ruitk.Builder
                 e.Section == "Custom components"
                 || e.Section == "Style modules"
                 || e.Section == "Util modules"
-                || e.Section == "Hook modules");
+                || (e.Section == "Hooks" && e.Name.EndsWith(" (module)", StringComparison.Ordinal)));
             if (graph == null)
             {
                 Rebuild();
@@ -200,10 +244,11 @@ namespace Ruitk.Builder
                         foreach (string export in node.Exports)
                             _entries.Add(new Entry
                             {
-                                Name = export,
+                                Name = export + " (module)",
                                 Description = node.FilePath,
                                 Snippet = export + "()",
-                                Section = "Hook modules",
+                                Section = "Hooks",
+                                Payload = "hook:" + export,
                                 Tint = HookTint,
                             });
                         break;
@@ -225,9 +270,24 @@ namespace Ruitk.Builder
 
         private static readonly string[] s_sectionOrder =
         {
-            "Native elements", "Custom components", "Hooks", "Hook modules",
-            "Style modules", "Util modules", "Directives", "Style keys",
+            "Native elements", "Custom components", "Hooks",
+            "Style modules", "Util modules", "Directives",
         };
+
+        /// <summary>POC ordering: sections in POC order, the seven POC native
+        /// tags first inside their section, hook modules after the ambient
+        /// hooks, everything else alphabetical.</summary>
+        private static int RankWithin(Entry entry)
+        {
+            if (entry.Section == "Native elements")
+            {
+                int index = Array.IndexOf(NativeTagOrder, entry.Name.Trim('<', '>'));
+                return index < 0 ? NativeTagOrder.Length : index;
+            }
+            if (entry.Section == "Hooks")
+                return entry.Name.EndsWith(" (module)", StringComparison.Ordinal) ? 1 : 0;
+            return 0;
+        }
 
         private void SortSections()
         {
@@ -237,6 +297,10 @@ namespace Ruitk.Builder
                 int sb = Array.IndexOf(s_sectionOrder, b.Section);
                 if (sa != sb)
                     return sa.CompareTo(sb);
+                int ra = RankWithin(a);
+                int rb = RankWithin(b);
+                if (ra != rb)
+                    return ra.CompareTo(rb);
                 return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
             });
         }
@@ -264,25 +328,10 @@ namespace Ruitk.Builder
             }
         }
 
-        private void AddStyleKeyEntries()
-        {
-            foreach (var prop in typeof(Ruitk.Props.Typed.Style).GetProperties(
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-            {
-                if (!prop.CanWrite)
-                    continue;
-                _entries.Add(new Entry
-                {
-                    Name = prop.Name,
-                    Description = prop.PropertyType.Name,
-                    Snippet = prop.Name + " = ",
-                    Section = "Style keys",
-                });
-            }
-        }
-
         private static string PayloadFor(Entry entry)
         {
+            if (!string.IsNullOrEmpty(entry.Payload))
+                return entry.Payload;
             string bare = entry.Name.Trim('<', '>');
             switch (entry.Section)
             {
@@ -316,14 +365,14 @@ namespace Ruitk.Builder
                 if (entry.Section != section)
                 {
                     section = entry.Section;
-                    _listHost.Add(new Label(section)
+                    _listHost.Add(new Label(section.ToUpperInvariant())
                     {
                         style =
                         {
-                            unityFontStyleAndWeight = FontStyle.Bold,
-                            marginTop = 6f, marginLeft = 6f,
-                            color = new Color(0.55f, 0.55f, 0.6f),
+                            marginTop = 10f, marginBottom = 5f,
+                            color = Dim,
                             fontSize = 10f,
+                            letterSpacing = 1f,
                         },
                     });
                 }
@@ -332,10 +381,18 @@ namespace Ruitk.Builder
                     tooltip = entry.Description,
                     style =
                     {
-                        marginLeft = 10f,
-                        paddingTop = 1f,
-                        paddingBottom = 1f,
+                        fontSize = 12f,
                         color = entry.Tint,
+                        backgroundColor = Panel2,
+                        borderTopWidth = 1f, borderBottomWidth = 1f,
+                        borderLeftWidth = 1f, borderRightWidth = 1f,
+                        borderTopColor = Line, borderBottomColor = Line,
+                        borderLeftColor = Line, borderRightColor = Line,
+                        borderTopLeftRadius = 5f, borderTopRightRadius = 5f,
+                        borderBottomLeftRadius = 5f, borderBottomRightRadius = 5f,
+                        paddingLeft = 9f, paddingRight = 9f,
+                        paddingTop = 4f, paddingBottom = 4f,
+                        marginBottom = 4f,
                     },
                 };
                 var captured = entry;
@@ -348,11 +405,33 @@ namespace Ruitk.Builder
                     BuilderDragService.Cancel();
                 });
                 row.RegisterCallback<MouseEnterEvent>(_ =>
-                    row.style.backgroundColor = new Color(0.18f, 0.24f, 0.30f));
+                {
+                    row.style.borderTopColor = Accent;
+                    row.style.borderBottomColor = Accent;
+                    row.style.borderLeftColor = Accent;
+                    row.style.borderRightColor = Accent;
+                });
                 row.RegisterCallback<MouseLeaveEvent>(_ =>
-                    row.style.backgroundColor = StyleKeyword.Null);
+                {
+                    row.style.borderTopColor = Line;
+                    row.style.borderBottomColor = Line;
+                    row.style.borderLeftColor = Line;
+                    row.style.borderRightColor = Line;
+                });
                 _listHost.Add(row);
             }
+
+            _listHost.Add(new Label(LibraryHint)
+            {
+                style =
+                {
+                    fontSize = 10.5f,
+                    color = Dim,
+                    marginTop = 10f,
+                    marginBottom = 8f,
+                    whiteSpace = WhiteSpace.Normal,
+                },
+            });
         }
     }
 }

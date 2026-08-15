@@ -1,7 +1,15 @@
 export Style Root = new Style {
   FlexGrow = 1,
   Overflow = OverflowHidden,
-  BackgroundColor = Hex("#17171b"),
+  BackgroundColor = Hex("#1b1b1f"),
+};
+
+export Style DotGrid = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Right = Px(0),
+  Bottom = Px(0),
 };
 
 export Style EdgeLayer = new Style {
@@ -26,8 +34,18 @@ export Style CardHeader = new Style {
   BorderTopRightRadius = Px(9),
 };
 
+export Style CardPill = new Style {
+  FlexDirection = FlexRow,
+  AlignItems = AlignCenter,
+  PaddingLeft = Px(20),
+  PaddingRight = Px(20),
+  PaddingTop = Px(16),
+  PaddingBottom = Px(16),
+};
+
 export Style CardTitle = new Style {
-  Color = Hex("#e4e4ea"),
+  Color = Hex("#d6d6dc"),
+  FontSize = Px(14),
   UnityFontStyle = FontBold,
   FlexGrow = 1,
 };
@@ -44,29 +62,33 @@ export Style CardLock = new Style {
 };
 
 export Style CardBody = new Style {
-  PaddingLeft = Px(8),
-  PaddingRight = Px(8),
-  PaddingBottom = Px(6),
+  FlexShrink = 0,
+};
+
+export Style CardSection = new Style {
+  PaddingLeft = Px(12),
+  PaddingRight = Px(12),
+  PaddingTop = Px(7),
+  PaddingBottom = Px(7),
+  BorderBottomWidth = 1,
+  BorderBottomColor = Rgba(58, 58, 68, 153),
 };
 
 export Style CardSignature = new Style {
   Color = Hex("#8b8b96"),
-  FontSize = Px(9),
-  PaddingLeft = Px(8),
-  MarginBottom = Px(2),
+  FontSize = Px(12),
 };
 
 export Style CardSectionHeader = new Style {
-  Color = Hex("#5a5a64"),
-  FontSize = Px(8),
-  UnityFontStyle = FontBold,
-  MarginTop = Px(5),
-  MarginBottom = Px(1),
+  Color = Hex("#8b8b96"),
+  FontSize = Px(10),
+  LetterSpacing = Px(1),
+  MarginBottom = Px(5),
 };
 
 export Style CardImportLine = new Style {
-  Color = Hex("#7fb3d5"),
-  FontSize = Px(9),
+  Color = Hex("#8b8b96"),
+  FontSize = Px(11),
 };
 
 export Style CardExport = new Style {

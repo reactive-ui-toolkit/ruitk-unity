@@ -24,6 +24,14 @@ namespace Ruitk.Builder
         private float _camX;
         private float _camY;
         private float _zoom = 1f;
+        private int _viewVersion;
+        private Action<string> _onOpenFile;
+
+        /// <summary>Reports the live zoom so the toolbar's L0/L1/L2 buttons can
+        /// show the active LOD (POC toolbar, not a canvas overlay).</summary>
+        public Action<float> ZoomChanged;
+
+        public float Zoom => _zoom;
 
         public Action<string, int> OnRowClick;
         public Action<string, int, int> OnRowContext;
@@ -75,7 +83,31 @@ namespace Ruitk.Builder
             _camY = _config.CameraY;
             _zoom = _config.Zoom <= 0f ? 1f : _config.Zoom;
 
+            _onOpenFile = onOpenFile;
             _container.Clear();
+            ZoomChanged?.Invoke(_zoom);
+            RenderCanvas();
+        }
+
+        /// <summary>POC toolbar L0/L1/L2: jump the camera to a zoom preset. The
+        /// mounted CanvasView applies it through a bumped view version rather
+        /// than a remount, so the graph is not reloaded.</summary>
+        public void SetViewPreset(float zoom)
+        {
+            if (_container == null || _graph == null)
+                return;
+            _zoom = zoom;
+            _camX = 60f;
+            _camY = 30f;
+            _viewVersion++;
+            RenderCanvas();
+            SaveLayout();
+            ZoomChanged?.Invoke(_zoom);
+        }
+
+        private void RenderCanvas()
+        {
+            var onOpenFile = _onOpenFile;
             EditorRootRendererUtility.Render(
                 _container,
                 V.Func(
@@ -86,6 +118,10 @@ namespace Ruitk.Builder
                         InitialCamX = _camX,
                         InitialCamY = _camY,
                         InitialZoom = _zoom,
+                        ViewZoom = _zoom,
+                        ViewCamX = _camX,
+                        ViewCamY = _camY,
+                        ViewVersion = _viewVersion,
                         OnOpenFile = onOpenFile,
                         OnLayoutChanged = SaveLayout,
                         OnSelect = null,
@@ -93,8 +129,11 @@ namespace Ruitk.Builder
                         {
                             _camX = x;
                             _camY = y;
+                            bool lodChanged = LodOf(_zoom) != LodOf(z);
                             _zoom = z;
                             SaveLayout();
+                            if (lodChanged)
+                                ZoomChanged?.Invoke(z);
                         },
                         OnCardContext = index => ShowCardMenu(index, onOpenFile),
                         OnRowClick = (path, line) => OnRowClick?.Invoke(path, line),
@@ -126,6 +165,9 @@ namespace Ruitk.Builder
             );
         }
 
+        /// <summary>POC LOD bands: &lt;0.45 = L0, &lt;1.05 = L1, else L2.</summary>
+        public static int LodOf(float zoom) => zoom < 0.45f ? 0 : zoom < 1.05f ? 1 : 2;
+
         public BuilderCanvasNode FindNodeByTitle(string title)
         {
             if (_graph == null)
@@ -135,6 +177,8 @@ namespace Ruitk.Builder
                     return node;
             return null;
         }
+
+        public List<BuilderCanvasNode> Nodes => _graph?.Nodes;
 
         public BuilderCanvasNode FindNode(string filePath)
         {
@@ -146,16 +190,29 @@ namespace Ruitk.Builder
 
         private void ShowCreateMenu()
         {
-            var menu = new UnityEditor.GenericMenu();
-            menu.AddItem(new UnityEngine.GUIContent("New component  (.uitkx)"), false,
-                () => OnCreateRequested?.Invoke("Component"));
-            menu.AddItem(new UnityEngine.GUIContent("New style module  (.style.uitkx)"), false,
-                () => OnCreateRequested?.Invoke("Style"));
-            menu.AddItem(new UnityEngine.GUIContent("New hook module  (.hooks.uitkx)"), false,
-                () => OnCreateRequested?.Invoke("Hooks"));
-            menu.AddItem(new UnityEngine.GUIContent("New util module  (.uitkx)"), false,
-                () => OnCreateRequested?.Invoke("Utils"));
-            menu.ShowAsContext();
+            BuilderSearchMenu.ShowSimple("create", new List<BuilderSearchMenu.Item>
+            {
+                new BuilderSearchMenu.Item
+                {
+                    Label = "New component  (.uitkx)",
+                    OnPick = () => OnCreateRequested?.Invoke("Component"),
+                },
+                new BuilderSearchMenu.Item
+                {
+                    Label = "New style module  (.style.uitkx)",
+                    OnPick = () => OnCreateRequested?.Invoke("Style"),
+                },
+                new BuilderSearchMenu.Item
+                {
+                    Label = "New hook module  (.hooks.uitkx)",
+                    OnPick = () => OnCreateRequested?.Invoke("Hooks"),
+                },
+                new BuilderSearchMenu.Item
+                {
+                    Label = "New util module  (.uitkx)",
+                    OnPick = () => OnCreateRequested?.Invoke("Utils"),
+                },
+            });
         }
 
         private void ShowCardMenu(int index, Action<string> onOpenFile)
@@ -163,44 +220,59 @@ namespace Ruitk.Builder
             if (_graph == null || index < 0 || index >= _graph.Nodes.Count)
                 return;
             var node = _graph.Nodes[index];
-            var menu = new UnityEditor.GenericMenu();
-            menu.AddItem(new UnityEngine.GUIContent("Open"), false, () => onOpenFile?.Invoke(node.FilePath));
-            menu.AddItem(new UnityEngine.GUIContent("Show in Project"), false, () =>
+            var items = new List<BuilderSearchMenu.Item>
             {
-                string assetPath = ToAssetPath(node.FilePath);
-                var asset = assetPath == null
-                    ? null
-                    : UnityEditor.AssetDatabase.LoadMainAssetAtPath(assetPath);
-                if (asset != null)
-                    UnityEditor.EditorGUIUtility.PingObject(asset);
-            });
-            menu.AddItem(new UnityEngine.GUIContent("Copy Path"), false, () =>
-                UnityEditor.EditorGUIUtility.systemCopyBuffer = node.FilePath);
-            menu.AddSeparator("");
-            menu.AddItem(
-                new UnityEngine.GUIContent("Delete " + System.IO.Path.GetFileName(node.FilePath)),
-                false,
-                () =>
+                new BuilderSearchMenu.Item
                 {
-                    var referencedBy = new List<string>();
-                    foreach (var edge in _graph.Edges)
-                        if (edge.ToIndex == index && edge.FromIndex >= 0)
-                            referencedBy.Add(_graph.Nodes[edge.FromIndex].Title);
-                    if (referencedBy.Count > 0)
+                    Label = "Open",
+                    OnPick = () => onOpenFile?.Invoke(node.FilePath),
+                },
+                new BuilderSearchMenu.Item
+                {
+                    Label = "Show in Project",
+                    OnPick = () =>
                     {
-                        UnityEditor.EditorUtility.DisplayDialog(
-                            "Can't delete",
-                            "Still referenced by " + string.Join(", ", referencedBy) + ".",
-                            "OK");
-                        return;
-                    }
-                    if (UnityEditor.EditorUtility.DisplayDialog(
-                            "Delete file?",
-                            System.IO.Path.GetFileName(node.FilePath) + " will be deleted from disk.",
-                            "Delete", "Cancel"))
-                        OnDeleteFile?.Invoke(node.FilePath);
-                });
-            menu.ShowAsContext();
+                        string assetPath = ToAssetPath(node.FilePath);
+                        var asset = assetPath == null
+                            ? null
+                            : UnityEditor.AssetDatabase.LoadMainAssetAtPath(assetPath);
+                        if (asset != null)
+                            UnityEditor.EditorGUIUtility.PingObject(asset);
+                    },
+                },
+                new BuilderSearchMenu.Item
+                {
+                    Label = "Copy Path",
+                    OnPick = () =>
+                        UnityEditor.EditorGUIUtility.systemCopyBuffer = node.FilePath,
+                },
+                BuilderSearchMenu.Separator,
+                new BuilderSearchMenu.Item
+                {
+                    Label = "Delete " + System.IO.Path.GetFileName(node.FilePath),
+                    OnPick = () =>
+                    {
+                        var referencedBy = new List<string>();
+                        foreach (var edge in _graph.Edges)
+                            if (edge.ToIndex == index && edge.FromIndex >= 0)
+                                referencedBy.Add(_graph.Nodes[edge.FromIndex].Title);
+                        if (referencedBy.Count > 0)
+                        {
+                            UnityEditor.EditorUtility.DisplayDialog(
+                                "Can't delete",
+                                "Still referenced by " + string.Join(", ", referencedBy) + ".",
+                                "OK");
+                            return;
+                        }
+                        if (UnityEditor.EditorUtility.DisplayDialog(
+                                "Delete file?",
+                                System.IO.Path.GetFileName(node.FilePath) + " will be deleted from disk.",
+                                "Delete", "Cancel"))
+                            OnDeleteFile?.Invoke(node.FilePath);
+                    },
+                },
+            };
+            BuilderSearchMenu.ShowSimple(node.Title, items);
         }
 
         private static string ToAssetPath(string fullPath)

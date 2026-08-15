@@ -21,11 +21,20 @@ namespace Ruitk.Builder
         [SerializeField] private BuilderWorkspace _workspace = new BuilderWorkspace();
         [SerializeField] private string _focusFile = string.Empty;
 
-        private Label _statusLabel;
+        internal static readonly Color Panel = new Color(0.137f, 0.137f, 0.161f);
+        internal static readonly Color Panel2 = new Color(0.165f, 0.165f, 0.192f);
+        internal static readonly Color Line = new Color(0.227f, 0.227f, 0.267f);
+        internal static readonly Color Text = new Color(0.839f, 0.839f, 0.863f);
+        internal static readonly Color Dim = new Color(0.545f, 0.545f, 0.588f);
+        internal static readonly Color Accent = new Color(0.310f, 0.765f, 0.969f);
 
+        private Label _statusLabel;
+        private Label _previewName;
+        private Label _sourceName;
+
+        [System.NonSerialized] private Button[] _modeButtons;
         [System.NonSerialized] private BuilderCanvasHost _canvasHost;
         [System.NonSerialized] private BuilderLibraryPane _libraryPane;
-        [System.NonSerialized] private BuilderOutlinePane _outlinePane;
         [System.NonSerialized] private CodeField _codeField;
         [System.NonSerialized] private BuilderPreviewPane _previewPane;
         [System.NonSerialized] private BuilderPreviewCompiler _previewCompiler;
@@ -81,21 +90,49 @@ namespace Ruitk.Builder
                 style =
                 {
                     flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
                     flexShrink = 0f,
-                    paddingTop = 4f,
-                    paddingBottom = 4f,
-                    paddingLeft = 6f,
-                    paddingRight = 6f,
+                    paddingTop = 8f,
+                    paddingBottom = 8f,
+                    paddingLeft = 12f,
+                    paddingRight = 12f,
+                    backgroundColor = Panel,
+                    borderBottomWidth = 1f,
+                    borderBottomColor = Line,
                 },
             };
-            toolbar.Add(new Button(SaveAll) { text = "Save" });
-            toolbar.Add(new Button(AbortAll) { text = "Abort" });
-            toolbar.Add(new Button(NewFile) { text = "New File" });
-            toolbar.Add(new Button(ToggleHelp) { text = "? How to drive it" });
-            _statusLabel = new Label { style = { unityTextAlign = TextAnchor.MiddleLeft, marginLeft = 10f } };
+            toolbar.Add(new Label("RUITK Visual Editor")
+            {
+                style =
+                {
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    color = Accent,
+                    marginRight = 8f,
+                },
+            });
+            _statusLabel = new Label
+            {
+                style = { unityTextAlign = TextAnchor.MiddleLeft, fontSize = 11f, color = Dim },
+            };
             toolbar.Add(_statusLabel);
+            toolbar.Add(Separator());
+            _modeButtons = new Button[3];
+            string[] modeLabels = { "L0 Architecture", "L1 Cards", "L2 Edit" };
+            float[] modeZooms = { 0.30f, 0.75f, 1.25f };
+            for (int i = 0; i < 3; i++)
+            {
+                float zoom = modeZooms[i];
+                var button = ToolbarButton(modeLabels[i], () => _canvasHost?.SetViewPreset(zoom));
+                _modeButtons[i] = button;
+                toolbar.Add(button);
+            }
+            toolbar.Add(Separator());
+            toolbar.Add(ToolbarButton("Save", SaveAll));
+            toolbar.Add(ToolbarButton("Abort", AbortAll));
+            toolbar.Add(ToolbarButton("? How to drive it", ToggleHelp));
             toolbar.Add(BuildLegend());
             root.Add(toolbar);
+            SetActiveMode(1);
 
             var outerSplit = new TwoPaneSplitView(0, 205f, TwoPaneSplitViewOrientation.Horizontal)
             {
@@ -110,21 +147,25 @@ namespace Ruitk.Builder
             root.Add(outerSplit);
 
             var footer = new Label(
-                "Wheel: zoom • L0/L1/L2 set the zoom level • Click rows to jump to source; "
-                + "Ctrl+Click the preview to jump to a component • Right-click rows / cards / canvas "
-                + "for typed attributes, directives, delete, create • Palette click inserts; "
-                + "Ctrl+Space completes • Drag the splitters to resize")
+                "Wheel: zoom  •  Drag Library items onto rows (top=before, bottom=after, "
+                + "middle=inside) or BODY (hooks); drag rows to reorder  •  Right-click rows / "
+                + "cards / canvas for typed attributes, directives, delete, create  •  L2: click "
+                + "attrs / badges / style entries to edit  •  Source pane: type to edit — "
+                + "re-parses live  •  Drag splitters to resize")
             {
                 style =
                 {
                     flexShrink = 0f,
                     fontSize = 11f,
-                    color = new Color(0.55f, 0.55f, 0.59f),
+                    color = Dim,
+                    backgroundColor = Panel,
                     paddingLeft = 12f,
-                    paddingTop = 4f,
-                    paddingBottom = 4f,
+                    paddingRight = 12f,
+                    paddingTop = 5f,
+                    paddingBottom = 5f,
+                    whiteSpace = WhiteSpace.Normal,
                     borderTopWidth = 1f,
-                    borderTopColor = new Color(0.23f, 0.23f, 0.27f),
+                    borderTopColor = Line,
                 },
             };
             root.Add(footer);
@@ -146,6 +187,7 @@ namespace Ruitk.Builder
                 return;
             _canvasHost?.Unmount();
             _canvasHost = new BuilderCanvasHost();
+            _canvasHost.ZoomChanged = zoom => SetActiveMode(BuilderCanvasHost.LodOf(zoom));
             _canvasHost.OnRowClick = OnCanvasRowClicked;
             _canvasHost.OnRowContext = OnCanvasRowContext;
             _canvasHost.OnRowDrop = OnCanvasRowDrop;
@@ -197,10 +239,12 @@ namespace Ruitk.Builder
                         };
                     });
             _canvasHost.OnAddUtilExport = path =>
-            {
-                var menu = new UnityEditor.GenericMenu();
-                menu.AddItem(new GUIContent("New function…"), false, () =>
-                    BuilderSearchMenu.Show("new exported function", "FunctionName",
+                BuilderSearchMenu.ShowSimple("add export", new System.Collections.Generic.List<BuilderSearchMenu.Item>
+                {
+                    new BuilderSearchMenu.Item
+                    {
+                        Label = "New function…",
+                        OnPick = () => BuilderSearchMenu.Show("new exported function", "FunctionName",
                         new System.Collections.Generic.List<BuilderSearchMenu.Item>(),
                         free =>
                         {
@@ -212,9 +256,12 @@ namespace Ruitk.Builder
                                 OnPick = () => AppendToFile(path,
                                     "\nexport int " + free + "(int value) {\n  return value;\n}"),
                             };
-                        }));
-                menu.AddItem(new GUIContent("New value…"), false, () =>
-                    BuilderSearchMenu.Show("new exported value", "ValueName",
+                        }),
+                    },
+                    new BuilderSearchMenu.Item
+                    {
+                        Label = "New value…",
+                        OnPick = () => BuilderSearchMenu.Show("new exported value", "ValueName",
                         new System.Collections.Generic.List<BuilderSearchMenu.Item>(),
                         free =>
                         {
@@ -225,9 +272,9 @@ namespace Ruitk.Builder
                                 Label = "Create " + free,
                                 OnPick = () => AppendToFile(path, "\nexport int " + free + " = 0;"),
                             };
-                        }));
-                menu.ShowAsContext();
-            };
+                        }),
+                    },
+                });
             _canvasHost.OnDeleteFile = path =>
             {
                 string projectRel = path.Replace('\\', '/');
@@ -258,54 +305,24 @@ namespace Ruitk.Builder
             var container = rootVisualElement?.Q("builder-library");
             if (container == null)
                 return;
-            if (_libraryPane == null)
-            {
-                container.Clear();
-                var paletteSection = new VisualElement { style = { flexGrow = 1f } };
-                var outlineSection = new VisualElement
-                {
-                    style =
-                    {
-                        flexGrow = 1f,
-                        borderTopWidth = 1f,
-                        borderTopColor = new Color(0.2f, 0.2f, 0.23f),
-                    },
-                };
-                container.Add(paletteSection);
-                container.Add(outlineSection);
-
-                _libraryPane = new BuilderLibraryPane();
-                _libraryPane.Attach(paletteSection, (snippet, section) =>
-                {
-                    bool markup = section == "Native elements"
-                        || section == "Custom components"
-                        || section == "Directives";
-                    bool body = section == "Hooks" || section == "Hook modules";
-                    if (markup)
-                        _codeField?.InsertSnippet(snippet, isMarkup: true);
-                    else if (body)
-                        _codeField?.InsertSnippet(snippet, isMarkup: false);
-                    else
-                        _codeField?.InsertAtCaret(snippet);
-                }, NewFile);
-                _outlinePane = new BuilderOutlinePane();
-                _outlinePane.Attach(
-                    outlineSection,
-                    () => _workspace.TryGet(_focusFile)?.BufferText,
-                    ApplyOutlineEdit);
-            }
-            _outlinePane.ShowFile(_focusFile);
-        }
-
-        private void ApplyOutlineEdit(string bufferLf)
-        {
-            var session = _workspace.TryGet(_focusFile);
-            if (session == null || session.IsReadOnly)
+            if (_libraryPane != null)
                 return;
-            session.ApplyEdit(bufferLf);
-            _codeField?.SetContent(bufferLf, _focusFile, null);
-            RefreshChrome();
-            NotifyBufferChanged();
+            container.Clear();
+            container.style.flexGrow = 1f;
+            _libraryPane = new BuilderLibraryPane();
+            _libraryPane.Attach(container, (snippet, section) =>
+            {
+                bool markup = section == "Native elements"
+                    || section == "Custom components"
+                    || section == "Directives";
+                bool body = section == "Hooks";
+                if (markup)
+                    _codeField?.InsertSnippet(snippet, isMarkup: true);
+                else if (body)
+                    _codeField?.InsertSnippet(snippet, isMarkup: false);
+                else
+                    _codeField?.InsertAtCaret(snippet);
+            }, NewFile);
         }
 
         private void MountPreview()
@@ -316,18 +333,22 @@ namespace Ruitk.Builder
             if (_previewPane == null)
             {
                 container.Clear();
+                container.style.backgroundColor = Panel;
                 var previewSection = new VisualElement { style = { flexGrow = 1f } };
-                var codeSection = new VisualElement
+                var codeSection = new VisualElement { style = { flexGrow = 1f } };
+                var previewPane = new VisualElement { style = { minHeight = 120f } };
+                previewPane.Add(PaneTitle("LIVE PREVIEW", out _previewName));
+                previewPane.Add(previewSection);
+                var sourcePane = new VisualElement { style = { minHeight = 120f } };
+                sourcePane.Add(PaneTitle("SOURCE — .UITKX", out _sourceName));
+                sourcePane.Add(codeSection);
+                var sideSplit = new TwoPaneSplitView(0, 380f, TwoPaneSplitViewOrientation.Vertical)
                 {
-                    style =
-                    {
-                        flexGrow = 1f,
-                        borderTopWidth = 1f,
-                        borderTopColor = new Color(0.2f, 0.2f, 0.23f),
-                    },
+                    style = { flexGrow = 1f },
                 };
-                container.Add(previewSection);
-                container.Add(codeSection);
+                sideSplit.Add(previewPane);
+                sideSplit.Add(sourcePane);
+                container.Add(sideSplit);
 
                 _previewPane = new BuilderPreviewPane();
                 _previewPane.ComponentPicked += OnPreviewComponentPicked;
@@ -338,6 +359,11 @@ namespace Ruitk.Builder
                 codeSection.Add(_codeField);
             }
             var session = _workspace.TryGet(_focusFile);
+            if (_previewName != null)
+                _previewName.text = "<" + Path.GetFileNameWithoutExtension(_focusFile)
+                    .Replace(".style", "").Replace(".hooks", "") + ">";
+            if (_sourceName != null)
+                _sourceName.text = Path.GetFileName(_focusFile).ToUpperInvariant();
             _previewPane.ShowFile(_focusFile, session?.BufferText, null);
             _codeField.SetContent(session?.BufferText ?? "", _focusFile, null);
             _codeField.SetEditable(session != null && !session.IsReadOnly);
@@ -407,7 +433,6 @@ namespace Ruitk.Builder
             if (session == null || session.IsReadOnly)
                 return;
             session.ApplyEdit(bufferLf);
-            _outlinePane?.Rebuild();
             SyncLspBuffer(_focusFile, bufferLf, open: false);
             RefreshChrome();
             NotifyBufferChanged();
@@ -435,26 +460,107 @@ namespace Ruitk.Builder
             var row = node.Markup[rowIdx];
             string tag = row.Text.Trim('<', '>');
 
-            var menu = new UnityEditor.GenericMenu();
-            menu.AddItem(new GUIContent("Add attribute (typed)…"), false, () =>
-                ShowAttributeMenu(full, sourceLine, tag));
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>
+            {
+                new BuilderSearchMenu.Item
+                {
+                    Label = "Add attribute (typed)…",
+                    OnPick = () => ShowAttributeMenu(full, sourceLine, tag),
+                },
+                new BuilderSearchMenu.Item
+                {
+                    Label = "Add child element…",
+                    OnPick = () => ShowAddChildMenu(full, row, tag),
+                },
+            };
             if (!string.IsNullOrEmpty(row.AttrsText))
-                menu.AddItem(new GUIContent("Remove attribute…"), false, () =>
-                    ShowRemoveAttributeMenu(full, sourceLine, row.AttrsText));
-            menu.AddItem(new GUIContent("Add child element…"), false, () =>
-                InsertLinesInFile(full, sourceLine, IndentOf(full, sourceLine) + "  <VisualElement />"));
-            menu.AddSeparator("");
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Remove attribute…",
+                    OnPick = () => ShowRemoveAttributeMenu(full, sourceLine, row.AttrsText),
+                });
+            items.Add(BuilderSearchMenu.Separator);
             if (row.BadgeKind == 0)
             {
-                menu.AddItem(new GUIContent("Wrap in @if"), false, () =>
-                    WrapRowInDirective(full, row, "@if (condition) {"));
-                menu.AddItem(new GUIContent("Wrap in @foreach"), false, () =>
-                    WrapRowInDirective(full, row, "@foreach (var item in items) {"));
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Wrap in @if",
+                    OnPick = () => WrapRowInDirective(full, row, "@if (condition) {"),
+                });
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Wrap in @foreach",
+                    OnPick = () => WrapRowInDirective(full, row, "@foreach (var item in items) {"),
+                });
             }
-            menu.AddSeparator("");
-            menu.AddItem(new GUIContent("Delete element"), false, () =>
-                DeleteLinesInFile(full, row.SourceLine, row.EndLine > 0 ? row.EndLine : row.SourceLine));
-            menu.ShowAsContext();
+            else
+            {
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Edit " + row.Text + " condition",
+                    OnPick = () => OnCanvasRowClicked(full, row.SourceLine),
+                });
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "Remove directive",
+                    OnPick = () => DeleteLinesInFile(full, row.SourceLine, row.SourceLine),
+                });
+            }
+            items.Add(BuilderSearchMenu.Separator);
+            items.Add(new BuilderSearchMenu.Item
+            {
+                Label = "Delete element",
+                OnPick = () => DeleteLinesInFile(
+                    full, row.SourceLine, row.EndLine > 0 ? row.EndLine : row.SourceLine),
+            });
+            BuilderSearchMenu.ShowSimple("<" + tag + ">", items);
+        }
+
+        /// <summary>POC "Add child element…": a searchable menu of native
+        /// elements then the tree's custom components; the pick lands as a
+        /// nested tag one indent inside the target row.</summary>
+        private void ShowAddChildMenu(string filePath, BuilderCardLine row, string tag)
+        {
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>
+            {
+                BuilderSearchMenu.SectionHeader("native elements"),
+            };
+            void AddChild(string childTag)
+            {
+                string seeded = childTag == "Label" ? "<Label text=\"New label\" />"
+                    : childTag == "Button" ? "<Button text=\"Click\" />"
+                    : "<" + childTag + " />";
+                InsertLinesInFile(
+                    filePath, row.SourceLine, IndentOf(filePath, row.SourceLine) + "  " + seeded);
+            }
+            foreach (string element in BuilderLibraryPane.NativeTagOrder)
+            {
+                string captured = element;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = "<" + captured + ">",
+                    OnPick = () => AddChild(captured),
+                });
+            }
+            items.Add(BuilderSearchMenu.Separator);
+            items.Add(BuilderSearchMenu.SectionHeader("custom components"));
+            var graphNode = _canvasHost?.FindNode(filePath);
+            foreach (var candidate in _canvasHost?.Nodes
+                ?? new System.Collections.Generic.List<BuilderCanvasNode>())
+            {
+                if (candidate.Kind != BuilderNodeKind.Component || candidate == graphNode)
+                    continue;
+                foreach (string export in candidate.Exports)
+                {
+                    string captured = export;
+                    items.Add(new BuilderSearchMenu.Item
+                    {
+                        Label = "<" + captured + ">",
+                        OnPick = () => AddChild(captured),
+                    });
+                }
+            }
+            BuilderSearchMenu.Show("add child to <" + tag + ">", "search elements…", items);
         }
 
         /// <summary>POC 6.6 drop resolution: element/component payloads insert a
@@ -682,25 +788,73 @@ namespace Ruitk.Builder
                 });
             }
 
+            var component = _canvasHost?.FindNodeByTitle(tag);
+            bool custom = component != null && component.Kind == BuilderNodeKind.Component;
             var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+            if (custom)
+            {
+                foreach (var (name, type) in PropsOf(component))
+                {
+                    string capturedName = name;
+                    string capturedType = type;
+                    items.Add(new BuilderSearchMenu.Item
+                    {
+                        Label = capturedName + "  :  " + capturedType,
+                        OnPick = () => AddAttr(capturedName, capturedType),
+                    });
+                }
+                items.Add(BuilderSearchMenu.Separator);
+                items.Add(BuilderSearchMenu.SectionHeader(
+                    "not declared on " + tag + " — needs a matching prop"));
+            }
             foreach (var attr in BuilderSchemaCache.AttributesFor(tag))
             {
                 string name = attr.Name;
                 string type = attr.Type;
                 items.Add(new BuilderSearchMenu.Item
                 {
-                    Label = name,
-                    Detail = type,
+                    Label = name + "  :  " + type,
                     OnPick = () => AddAttr(name, type),
                 });
             }
             BuilderSearchMenu.Show(
-                "attributes — " + tag, "search attributes…", items,
+                custom ? "attributes — typed props of " + tag : "attributes — UI Toolkit schema",
+                "search attributes…", items,
                 free => new BuilderSearchMenu.Item
                 {
                     Label = "add \"" + free + "\" (untyped)",
                     OnPick = () => AddAttr(free, ""),
                 });
+        }
+
+        /// <summary>POC typed-props attribute source: the target component's own
+        /// signature parameters (plus the always-available list "key").</summary>
+        private static System.Collections.Generic.List<(string Name, string Type)> PropsOf(
+            BuilderCanvasNode component)
+        {
+            var props = new System.Collections.Generic.List<(string, string)>();
+            string signature = component?.Signature ?? "";
+            int open = signature.IndexOf('(');
+            int close = signature.LastIndexOf(')');
+            if (open >= 0 && close > open)
+            {
+                string inner = signature.Substring(open + 1, close - open - 1);
+                foreach (string raw in inner.Split(','))
+                {
+                    string part = raw.Trim();
+                    if (part.Length == 0)
+                        continue;
+                    int eq = part.IndexOf('=');
+                    if (eq >= 0)
+                        part = part.Substring(0, eq).Trim();
+                    int space = part.LastIndexOf(' ');
+                    if (space <= 0)
+                        continue;
+                    props.Add((part.Substring(space + 1), part.Substring(0, space)));
+                }
+            }
+            props.Add(("key", "list key"));
+            return props;
         }
 
         private static readonly (string Key, string Type)[] s_styleKeys =
@@ -915,7 +1069,6 @@ namespace Ruitk.Builder
             if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(_focusFile),
                     System.StringComparison.OrdinalIgnoreCase))
                 _codeField?.SetContent(newBufferLf, _focusFile, null);
-            _outlinePane?.Rebuild();
             SyncLspBuffer(filePath, newBufferLf, open: false);
             RefreshChrome();
             NotifyBufferChanged();
@@ -1001,8 +1154,8 @@ namespace Ruitk.Builder
                 style =
                 {
                     position = Position.Absolute,
-                    top = 12f, left = 12f, width = 340f,
-                    backgroundColor = new Color(0.137f, 0.137f, 0.16f, 0.97f),
+                    top = 12f, left = 12f, width = 330f,
+                    backgroundColor = new Color(0.137f, 0.137f, 0.161f, 0.97f),
                     borderTopWidth = 1f, borderBottomWidth = 1f,
                     borderLeftWidth = 1f, borderRightWidth = 1f,
                     borderTopColor = new Color(0.23f, 0.23f, 0.27f),
@@ -1020,31 +1173,112 @@ namespace Ruitk.Builder
             });
             string[] steps =
             {
-                "1. Wheel zooms (to cursor), drag background pans, drag a card moves it.",
+                "1. Wheel zooms (to cursor), drag background pans, drag a title bar moves a card.",
                 "2. Zoom all the way out — L0 is the live architecture diagram.",
-                "3. Click a card — its source and live preview appear on the right.",
-                "4. Hover a hook chip — every row using its state lights up.",
-                "5. Zoom close (L2) — attributes and style entries appear.",
-                "6. Click a row — its source line highlights. Ctrl+Click the preview — same, per component.",
-                "7. At L2 click an attrs string (or '+ attrs') to edit it in place; ✓ commits.",
-                "8. Drag a Library item onto a row — top third before, bottom third after, middle nests inside. Hooks drop as declarations; style/util modules add the import.",
-                "9. Right-click a row — searchable typed attributes, directives, delete. Right-click a card — open/ping/copy. Right-click empty canvas or New File — create.",
-                "10. On a style card, '+ entry' chains a searchable key menu into value helpers.",
-                "11. Edit state under STATE — LIVE HOOK VALUES; the preview re-renders.",
-                "12. The code pane is bidirectional — type or Ctrl+Space; Save writes every dirty buffer in one batch.",
-                "13. Drag the splitters to resize.",
+                "3. Click a component card — live preview + its source appear on the right.",
+                "4. Hover a hook chip — every usage lights up in JSX and source.",
+                "5. Zoom close (L2) — attributes, code islands and directive badges appear.",
+                "6. Select a card, drag a props knob — watch the @if branch flip live.",
+                "7. Click a JSX row → its source line highlights. Ctrl+Click an element in the preview → same.",
+                "8. Edit on the canvas (at L2): click an attribute value, a directive badge, or a style entry to edit inline ({} and quotes stay outside the field); double-click a code island to edit body code. ✓ commits → the source regenerates.",
+                "9. Drag from the Library (left, searchable) onto a JSX row — top edge inserts before, bottom edge after, middle nests inside. Drag existing rows to reorder. Hooks drop onto BODY, style modules onto a card (adds the import).",
+                "10. Right-click a row — searchable typed attributes (native schema / component props, untyped fallback), remove attribute, directives, delete. Emptying an attribute's value also removes it. Right-click a card title — open / ping / copy / delete. Right-click empty canvas or + new — create component / style / hook / util module.",
+                "11. Style authoring — on a style card, + entry gives searchable keys then value helpers (Px/Pct/Hex/Rgba/FlexRow…); + style adds another export.",
+                "12. Source pane is bidirectional — type in it (Ctrl+Space completes): it re-parses into the model and the card updates. Save writes every dirty buffer in one batch.",
+                "13. Edit state under STATE — LIVE HOOK VALUES; the live preview repaints. Drag the splitters to resize panes.",
             };
             foreach (string step in steps)
                 help.Add(new Label(step)
                 {
                     style =
                     {
-                        color = new Color(0.84f, 0.84f, 0.86f), fontSize = 11f,
-                        whiteSpace = WhiteSpace.Normal, marginBottom = 4f,
+                        color = Text, fontSize = 12f,
+                        whiteSpace = WhiteSpace.Normal, marginBottom = 5f,
                     },
                 });
             canvas.Add(help);
             _helpOverlay = help;
+        }
+
+        /// <summary>POC "#toolbar button": panel2 fill, line border, 4px radius,
+        /// 12px label — the active mode flips to the accent fill.</summary>
+        private static Button ToolbarButton(string text, System.Action onClick)
+        {
+            var button = new Button(onClick) { text = text };
+            button.style.backgroundColor = Panel2;
+            button.style.color = Text;
+            button.style.fontSize = 12f;
+            button.style.borderTopWidth = 1f;
+            button.style.borderBottomWidth = 1f;
+            button.style.borderLeftWidth = 1f;
+            button.style.borderRightWidth = 1f;
+            button.style.borderTopColor = Line;
+            button.style.borderBottomColor = Line;
+            button.style.borderLeftColor = Line;
+            button.style.borderRightColor = Line;
+            button.style.borderTopLeftRadius = 4f;
+            button.style.borderTopRightRadius = 4f;
+            button.style.borderBottomLeftRadius = 4f;
+            button.style.borderBottomRightRadius = 4f;
+            button.style.paddingLeft = 10f;
+            button.style.paddingRight = 10f;
+            button.style.paddingTop = 4f;
+            button.style.paddingBottom = 4f;
+            button.style.marginLeft = 4f;
+            button.style.marginRight = 4f;
+            button.style.unityFontStyleAndWeight = FontStyle.Normal;
+            return button;
+        }
+
+        private static VisualElement Separator() => new VisualElement
+        {
+            style =
+            {
+                width = 1f, height = 20f, backgroundColor = Line,
+                marginLeft = 4f, marginRight = 4f, flexShrink = 0f,
+            },
+        };
+
+        private void SetActiveMode(int lod)
+        {
+            if (_modeButtons == null)
+                return;
+            for (int i = 0; i < _modeButtons.Length; i++)
+            {
+                bool active = i == lod;
+                var button = _modeButtons[i];
+                button.style.backgroundColor = active ? Accent : Panel2;
+                button.style.color = active ? new Color(0.063f, 0.133f, 0.173f) : Text;
+                button.style.borderTopColor = active ? Accent : Line;
+                button.style.borderBottomColor = active ? Accent : Line;
+                button.style.borderLeftColor = active ? Accent : Line;
+                button.style.borderRightColor = active ? Accent : Line;
+                button.style.unityFontStyleAndWeight = active ? FontStyle.Bold : FontStyle.Normal;
+            }
+        }
+
+        /// <summary>POC ".pane-title": uppercase 11px dim label on panel2 with a
+        /// line under it, and an accent name pinned right.</summary>
+        private static VisualElement PaneTitle(string left, out Label rightName)
+        {
+            var row = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    justifyContent = Justify.SpaceBetween,
+                    flexShrink = 0f,
+                    backgroundColor = Panel2,
+                    paddingLeft = 12f, paddingRight = 12f,
+                    paddingTop = 7f, paddingBottom = 7f,
+                    borderBottomWidth = 1f,
+                    borderBottomColor = Line,
+                },
+            };
+            row.Add(new Label(left) { style = { fontSize = 11f, color = Dim } });
+            rightName = new Label { style = { fontSize = 11f, color = Accent } };
+            row.Add(rightName);
+            return row;
         }
 
         private static VisualElement BuildLegend()
