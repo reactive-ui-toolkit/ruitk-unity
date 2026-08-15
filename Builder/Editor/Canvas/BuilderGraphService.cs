@@ -85,14 +85,20 @@ namespace Ruitk.Builder
 
             var graph = new BuilderGraph { RootPath = root };
             var indexByFile = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var sourceCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (string file in member)
             {
-                exportsByFile.TryGetValue(file, out var info);
+                // TryGetValue's out on a miss is default((List<string>, BuilderNodeKind)),
+                // and default(BuilderNodeKind) is Component — so every file the export
+                // snapshot did not cover was silently badged "component". The miss is
+                // seeded explicitly and resolved from the source instead.
+                if (!exportsByFile.TryGetValue(file, out var info))
+                    info = (new List<string>(), BuilderNodeKind.Unknown);
                 var node = new BuilderCanvasNode
                 {
                     FilePath = file,
                     Title = Path.GetFileNameWithoutExtension(file).Replace(".style", "").Replace(".hooks", ""),
-                    Kind = ClassifyByPathAndExports(file, info.Kind),
+                    Kind = ClassifyByPathAndExports(file, info.Kind, ReadSource(file, readText, sourceCache)),
                     IsReadOnly = BuilderWorkspace.IsReadOnlyLocation(file),
                     Exports = info.Names ?? new List<string>(),
                 };
@@ -161,6 +167,35 @@ namespace Ruitk.Builder
         private static readonly Regex s_hookCall = new Regex(
             @"(?:var\s*\(([^)]*)\)\s*=\s*|var\s+(\w+)\s*=\s*)?\b(use[A-Z][A-Za-z0-9]*)\s*(?:<[^>\n]*>)?\s*\(",
             RegexOptions.Compiled);
+
+        /// <summary>The head of an exported declaration, up to and including the
+        /// opening parenthesis of its parameter list — every export form the
+        /// grammar has: <c>export VirtualNode Name(</c>, <c>export (ret) useX(</c>
+        /// and <c>export Type Name(</c>. s_hookCall's whole "var x =" prefix is
+        /// OPTIONAL, so it also fires on a DECLARATION head like
+        /// <c>) useGalagaGame(</c> — which put a phantom "useGalagaGame" chip at the
+        /// front of the hook module's own BODY section, ahead of the hooks the body
+        /// really calls. A hook-call match landing inside one of these spans is the
+        /// declaration, not a call.</summary>
+        private static readonly Regex s_exportHeadSpan = new Regex(
+            @"(?:^|\n)[ \t]*export\s+(?:VirtualNode\s+|\([^)]*\)\s*|[\w<>,\.\[\]\?]+\s+)\w+\s*(?:<[^>\n]*>)?\s*\(",
+            RegexOptions.Compiled);
+
+        private static List<(int Start, int End)> ExportHeadSpans(string text)
+        {
+            var spans = new List<(int, int)>();
+            foreach (Match m in s_exportHeadSpan.Matches(text))
+                spans.Add((m.Index, m.Index + m.Length));
+            return spans;
+        }
+
+        private static bool InsideExportHead(List<(int Start, int End)> spans, int index)
+        {
+            foreach (var span in spans)
+                if (index >= span.Start && index < span.End)
+                    return true;
+            return false;
+        }
 
         /// <summary>Fills the POC-card sections: imports, hooks-and-state lines,
         /// and the flattened return-markup tree, from the live buffer when one
@@ -266,8 +301,11 @@ namespace Ruitk.Builder
             // and every island line is on the card, because the card IS the
             // editing surface. An elided tail would be unselectable, undroppable
             // and un-right-clickable at every LOD.
+            var declSpans = ExportHeadSpans(text);
             foreach (Match m in s_hookCall.Matches(text))
             {
+                if (InsideExportHead(declSpans, m.Index))
+                    continue;
                 string lhs = m.Groups[1].Success ? m.Groups[1].Value.Trim()
                     : m.Groups[2].Success ? m.Groups[2].Value.Trim()
                     : null;
@@ -875,16 +913,63 @@ namespace Ruitk.Builder
             return best ?? focus;
         }
 
-        private static BuilderNodeKind ClassifyByPathAndExports(string file, BuilderNodeKind exportKind)
+        private static string ReadSource(
+            string file, Func<string, string> readText, Dictionary<string, string> cache)
+        {
+            if (cache.TryGetValue(file, out string cached))
+                return cached;
+            string text = null;
+            try
+            {
+                text = readText?.Invoke(file);
+                if (text == null && File.Exists(file))
+                    text = File.ReadAllText(file);
+            }
+            catch (Exception)
+            {
+                text = null;
+            }
+            cache[file] = text ?? "";
+            return cache[file];
+        }
+
+        private static readonly Regex s_exportComponentDecl = new Regex(
+            @"(?:^|\n)\s*export\s+VirtualNode\s+\w+\s*\(", RegexOptions.Compiled);
+
+        private static readonly Regex s_exportHookDecl = new Regex(
+            @"(?:^|\n)\s*export\s+(?:\([^)]*\)\s*|[\w<>,\.\[\]\?]+\s+)(?:use[A-Z][A-Za-z0-9]*)\s*(?:<[^>\n]*>)?\s*\(",
+            RegexOptions.Compiled);
+
+        private static readonly Regex s_exportAnything = new Regex(
+            @"(?:^|\n)\s*export\s+\S", RegexOptions.Compiled);
+
+        /// <summary>POC kindClass()/kindLabel(): only a file that exports a
+        /// VirtualNode is a "component" (blue); a module that exports plain
+        /// values/functions is a "utils" (orange). Falling back to Component
+        /// whenever the language server answered with no kind badged every
+        /// util module — GameLogic.uitkx, which exports only
+        /// <c>export GameState CreateInitialState()</c> and
+        /// <c>export GameState Update(...)</c> — as a component. The fallback now
+        /// reads the declaration heads, which is the same rule the LSP's own
+        /// DirectiveParser applies.</summary>
+        private static BuilderNodeKind ClassifyByPathAndExports(
+            string file, BuilderNodeKind exportKind, string source)
         {
             string name = Path.GetFileName(file);
             if (name.EndsWith(".style.uitkx", StringComparison.OrdinalIgnoreCase))
                 return BuilderNodeKind.Style;
             if (name.EndsWith(".hooks.uitkx", StringComparison.OrdinalIgnoreCase))
                 return BuilderNodeKind.Hook;
-            if (exportKind == BuilderNodeKind.Unknown)
-                return BuilderNodeKind.Component;
-            return exportKind;
+            if (!string.IsNullOrEmpty(source))
+            {
+                if (s_exportComponentDecl.IsMatch(source))
+                    return BuilderNodeKind.Component;
+                if (s_exportHookDecl.IsMatch(source))
+                    return BuilderNodeKind.Hook;
+                if (s_exportAnything.IsMatch(source))
+                    return BuilderNodeKind.Util;
+            }
+            return exportKind == BuilderNodeKind.Unknown ? BuilderNodeKind.Component : exportKind;
         }
 
         private static BuilderNodeKind ParseKind(string kind) => kind switch
@@ -940,18 +1025,95 @@ namespace Ruitk.Builder
             }
         }
 
+        /// <summary>Consolas advance at the two card font sizes (0.6 em), used to
+        /// predict which rows WRAP — the flat per-row charges the estimate used
+        /// before counted one line for an 8-line signature and two chips per row
+        /// for chips that take a row each, so two column neighbours could be
+        /// packed with no gutter at all between them and the upper card's bottom
+        /// border, radii and drop shadow were never drawn.</summary>
+        private const float MonoAdvance12 = 7.2f;
+
+        private const float MonoAdvance115 = 6.9f;
+
+        private static int WrapLines(int chars, float available, float advance)
+        {
+            if (chars <= 0)
+                return 1;
+            int perLine = Math.Max(1, (int)(available / advance));
+            return (chars + perLine - 1) / perLine;
+        }
+
+        /// <summary>Card height at the TALLEST lod, so the 48px gutter survives
+        /// every zoom: L1 (340) is the narrowest box that still draws every
+        /// section, and L2 (430) is the only one that rides the attribute run on
+        /// the markup rows.</summary>
         private static float EstimateCardHeight(BuilderCanvasNode node)
         {
+            const float cardWidth = 340f;
+            const float sectionInner = cardWidth - 24f;
             bool hasBody = node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook;
-            int sections = (node.Imports.Count > 0 ? 1 : 0)
-                + (hasBody ? 1 : 0)
-                + (node.Markup.Count > 0 ? 1 : 0)
-                + (node.ExportDetail.Count > 0 ? 1 : 0);
-            float height = 35f + (string.IsNullOrEmpty(node.Signature) ? 0f : 30f) + sections * 33f;
-            height += node.Imports.Count * 17f;
-            height += ((node.Body.Count + 2) / 2) * 26f;
-            height += node.Markup.Count * 21f;
-            height += node.ExportDetail.Count * 18f;
+
+            float height = 38f;
+
+            if (!string.IsNullOrEmpty(node.Signature))
+                height += 15f + WrapLines(node.Signature.Length, sectionInner, MonoAdvance12) * 17.4f;
+
+            if (node.Imports.Count > 0)
+                height += 34.5f + node.Imports.Count * 19.7f;
+
+            if (node.Body.Count > 0 || hasBody)
+            {
+                height += 34.5f;
+                float chipMax = cardWidth - 30f;
+                float used = 0f;
+                int rows = 1;
+                for (int i = 0; i <= node.Body.Count; i++)
+                {
+                    // 18 padding + 2 border + 5 right margin around the chip text;
+                    // the trailing entry is the "+ hook" affordance.
+                    float w = i == node.Body.Count
+                        ? (hasBody ? 71f : 0f)
+                        : Math.Min(chipMax, 25f + (node.Body[i].Text?.Length ?? 0) * MonoAdvance115);
+                    if (w <= 0f)
+                        continue;
+                    if (used > 0f && used + w > sectionInner)
+                    {
+                        rows++;
+                        used = 0f;
+                    }
+                    used += w;
+                }
+                height += rows * 27.7f;
+                if (node.IslandLines.Count > 0)
+                    height += 20f + node.IslandLines.Count * 16.7f;
+            }
+
+            if (node.Markup.Count > 0)
+            {
+                height += 34.5f;
+                foreach (var row in node.Markup)
+                {
+                    int chars = (row.Text?.Length ?? 0) + (row.AttrsText?.Length ?? 0)
+                        + (string.IsNullOrEmpty(row.BadgeText) ? 0 : row.BadgeText.Length + 3);
+                    float available = 430f - 26f - row.Depth * 14f;
+                    height += WrapLines(chars, available, MonoAdvance12) * 17.4f + 5f;
+                }
+            }
+
+            if (node.ExportDetail.Count > 0)
+            {
+                height += 34.5f;
+                foreach (var line in node.ExportDetail)
+                {
+                    int lines = 1;
+                    string text = line.Text ?? "";
+                    for (int c = 0; c < text.Length; c++)
+                        if (text[c] == '\n')
+                            lines++;
+                    height += lines * 18f;
+                }
+            }
+
             return height;
         }
 

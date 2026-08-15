@@ -249,6 +249,10 @@ export Style CodeIslandLine = new Style {
   // Every other code-bearing row style already carries its line box; this one
   // did not, so the island read ~30% tighter than the POC's.
   Height = Px(16.7f),
+  // The island ScrollView pins its own height to IslandLines.Count * 16.7, so a
+  // mono face whose min-content box beats the declared one would clip the last
+  // line instead of merely loosening the pitch.
+  MinHeight = Px(0),
   TextAlign = TextMiddleLeft,
   WhiteSpace = WsPre,
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,

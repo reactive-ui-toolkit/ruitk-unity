@@ -78,6 +78,13 @@ namespace Ruitk.Builder
         {
             var root = rootVisualElement;
             root.style.flexGrow = 1f;
+            // "-unity-font-definition" is an inherited property, so the POC's
+            // proportional face is pinned ONCE here and cascades to the toolbar,
+            // the library, the preview strip, the legend and the footer hint.
+            // Code-bearing surfaces re-pin the mono face over it as they already do.
+            var uiFont = BuilderCanvasDrawing.UiFontDefinition;
+            if (uiFont.font != null)
+                root.style.unityFontDefinition = uiFont;
 
             var toolbar = new VisualElement
             {

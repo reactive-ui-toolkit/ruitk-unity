@@ -116,6 +116,52 @@ namespace Ruitk.Builder
             }
         }
 
+        /// <summary>POC 'font: 13px/1.45 "Segoe UI", system-ui, sans-serif' — the
+        /// PROPORTIONAL face behind every non-code surface (toolbar, library,
+        /// legend, section labels, footer hint). Unity left it at the editor
+        /// default, whose advances run ~8px wider over a 15-character button
+        /// label, so the chrome silhouette drifted from the POC's even though
+        /// size, weight and colour matched. Resolved from the OS by NAME (never a
+        /// font path — see the machine-local-paths rule); a machine without any
+        /// of them keeps the editor font.</summary>
+        public static Font UiFont()
+        {
+            if (s_uiResolved)
+                return s_ui;
+            s_uiResolved = true;
+            try
+            {
+                s_ui = Font.CreateDynamicFontFromOSFont(
+                    new[] { "Segoe UI", "Helvetica Neue", "Helvetica", "DejaVu Sans", "Arial" }, 12);
+            }
+            catch (System.Exception)
+            {
+                s_ui = null;
+            }
+            return s_ui;
+        }
+
+        private static Font s_ui;
+        private static bool s_uiResolved;
+        private static bool s_uiDefResolved;
+        private static FontDefinition s_uiDef;
+
+        /// <summary>The proportional face as a typed-Style value. Stays default
+        /// when the OS has none of the candidates, which leaves the inheriting
+        /// element on Unity's own editor font instead of blanking its text.</summary>
+        public static FontDefinition UiFontDefinition
+        {
+            get
+            {
+                if (s_uiDefResolved)
+                    return s_uiDef;
+                s_uiDefResolved = true;
+                var font = UiFont();
+                s_uiDef = font != null ? FontDefinition.FromFont(font) : default;
+                return s_uiDef;
+            }
+        }
+
         /// <summary>POC ".card" widths (300 / 340 / 430) are OUTER boxes: index.html
         /// carries a global "* { box-sizing: border-box }" reset, so the 1.5px frame
         /// is inside the declared width. UI Toolkit Width is border-box too (Yoga
@@ -426,12 +472,17 @@ namespace Ruitk.Builder
         /// per side (#494025 over #4C442C on top, peak #695A2F at the bottom),
         /// ~0.39 coverage per side — the 1.5px #ffd54f frame plus the .25 spread
         /// ring, both scaled by the 0.30 zoom. The ring is emitted at lod 0 too
-        /// (it carries the outer row); this frame carries the inner one, so 0.2
-        /// under-inked it to a single olive hairline.</summary>
+        /// (it carries the outer row); this frame carries the inner one.
+        /// The selected gold takes NO alpha fold-down at any lod: the sub-pixel
+        /// frame width at the 0.30 zoom already performs the browser's own
+        /// coverage dimming. Probed gold coverage over the two edge rows —
+        /// POC 0.225 + 0.186 = 0.411; Unity with the 0.4 fold-down measured
+        /// 0.136 + 0.118 = 0.254, of which the 2px .25 spread ring contributes a
+        /// fixed 0.151, so scaling the frame share by 1/0.4 lands on 0.409.</summary>
         public static Color CardFrameBorderColor(bool selected, int lod)
         {
             if (selected)
-                return new Color(1f, 0.835f, 0.310f, lod == 0 ? 0.4f : 1f);
+                return new Color(1f, 0.835f, 0.310f, 1f);
             var line = BuilderPalette.Line;
             if (lod == 0)
                 line.a = 0.12f;

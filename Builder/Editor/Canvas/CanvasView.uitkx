@@ -1133,7 +1133,7 @@ export VirtualNode CanvasView(
                                 }
                                 @if (lod == 2 && editKey != $"badge:{index}:{rowIdx}") {
                                   return (
-                                    <VisualElement style={new Style { FlexDirection = FlexRow, FlexWrap = WrapOn, FlexShrink = 1, FlexGrow = 1 }}>
+                                    <VisualElement style={new Style { FlexDirection = FlexRow, FlexWrap = WrapOn, FlexShrink = 1, FlexGrow = 1, MinHeight = Px(0) }}>
                                       @for (int ai = 0; ai < row.AttrPairs.Count; ai++) {
                                         int attrIdx = ai;
                                         string pair = row.AttrPairs[ai];
@@ -1144,7 +1144,7 @@ export VirtualNode CanvasView(
                                         string innerValue = attrValue.Length >= 2 ? attrValue.Substring(1, attrValue.Length - 2) : "";
                                         string attrKey = $"attr:{index}:{rowIdx}:{ai}";
                                         return (
-                                          <VisualElement key={attrKey} style={new Style { FlexDirection = FlexRow, MarginLeft = Px(6) }}>
+                                          <VisualElement key={attrKey} style={new Style { FlexDirection = FlexRow, MarginLeft = Px(6), MinHeight = Px(0) }}>
                                             <Label
                                               text={attrName + "="}
                                               style={CanvasStyles.AttrName}
@@ -1210,6 +1210,14 @@ export VirtualNode CanvasView(
                                                     Color = Hex("#ffb74d"),
                                                     FontSize = Px(12),
                                                     Height = Px(17.4f),
+                                                    // The auto flex minimum of the mono
+                                                    // face is TALLER than the declared
+                                                    // 1.45 box, so without this the
+                                                    // value label — the last piece of the
+                                                    // attribute run still carrying it —
+                                                    // sized every L2 markup row to 23.4
+                                                    // where the POC measures 22.4.
+                                                    MinHeight = Px(0),
                                                     TextAlign = TextMiddleLeft,
                                                     UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                                     BorderRadius = Px(3),

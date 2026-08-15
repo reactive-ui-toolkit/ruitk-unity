@@ -64,7 +64,14 @@ namespace Ruitk.Builder
         /// library/context search boxes use) — never Unity's grey inspector field.</summary>
         internal static T Field<T>(T field) where T : VisualElement
         {
-            field.style.marginLeft = 4f;
+            // POC ".knobs .krow" carries no left offset at all — "#preview
+            // { padding: 12px }" is the ONLY inset, and it already positions the
+            // ui-mock frame. A margin here pushed every row label ~10px past the
+            // preview frame and past the dashed rule directly above it. Unity's own
+            // ".unity-base-field" ships a left margin of its own, so the value is
+            // pinned to 0 rather than merely left unset.
+            field.style.marginLeft = 0f;
+            field.style.marginRight = 0f;
             field.style.marginBottom = 6f;
             // POC "#preview { overflow: auto }" scrolls when the strip is long; a
             // krow never squashes. Without this the surplus rows were compressed
@@ -85,6 +92,8 @@ namespace Ruitk.Builder
                 // a fixed width, which made distinct hook names indistinguishable.
                 label.style.minWidth = 70f;
                 label.style.width = StyleKeyword.Auto;
+                label.style.marginLeft = 0f;
+                label.style.paddingLeft = 0f;
                 label.style.flexShrink = 0f;
                 label.style.overflow = Overflow.Visible;
                 label.style.textOverflow = TextOverflow.Clip;
@@ -272,7 +281,7 @@ namespace Ruitk.Builder
                     color = BuilderPalette.Dim,
                     fontSize = 10f,
                     letterSpacing = 1f,
-                    marginLeft = 8f, marginBottom = 6f,
+                    marginBottom = 6f,
                     display = DisplayStyle.None,
                 },
             };
@@ -284,7 +293,7 @@ namespace Ruitk.Builder
                 // auto }" — the strip keeps its natural height and the PANE scrolls.
                 // A maxHeight here had the surplus rows spill out of the box and
                 // paint over the section that followed.
-                style = { flexShrink = 0f, paddingLeft = 4f },
+                style = { flexShrink = 0f },
             };
             _knobsBlock.Add(_knobsHost);
 
@@ -295,17 +304,14 @@ namespace Ruitk.Builder
                     color = BuilderPalette.Dim,
                     fontSize = 10f,
                     letterSpacing = 1f,
-                    marginTop = 8f, marginLeft = 8f, marginBottom = 6f,
+                    marginTop = 8f, marginBottom = 6f,
                     display = DisplayStyle.None,
                 },
             };
             _knobsBlock.Add(_stateHeader);
             _stateHost = new VisualElement
             {
-                // 4px here plus Field's own 4px margin lands the rows on the same
-                // 8px gutter the section headers use — the POC's krows sit flush
-                // under "STATE — LIVE HOOK VALUES", not indented past it.
-                style = { flexShrink = 0f, paddingLeft = 4f, paddingBottom = 4f },
+                style = { flexShrink = 0f, paddingBottom = 4f },
             };
             _knobsBlock.Add(_stateHost);
             _notesHost = new VisualElement { style = { flexShrink = 0f } };
