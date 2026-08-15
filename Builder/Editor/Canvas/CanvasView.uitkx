@@ -118,15 +118,15 @@ export VirtualNode CanvasView(
                 Width = Px(cardWidth),
                 Translate = Xlate(Px(node.X), Px(node.Y)),
                 BackgroundColor = Hex("#232329"),
-                BorderRadius = Px(8),
-                BorderTopWidth = isSelected ? 2 : 1,
-                BorderRightWidth = isSelected ? 2 : 1,
-                BorderBottomWidth = isSelected ? 2 : 1,
-                BorderLeftWidth = isSelected ? 2 : 1,
-                BorderTopColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
-                BorderRightColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
-                BorderBottomColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
-                BorderLeftColor = isSelected ? Hex("#4fc3f7") : Hex("#303038"),
+                BorderRadius = Px(10),
+                BorderTopWidth = isSelected ? 2f : 1.5f,
+                BorderRightWidth = isSelected ? 2f : 1.5f,
+                BorderBottomWidth = isSelected ? 2f : 1.5f,
+                BorderLeftWidth = isSelected ? 2f : 1.5f,
+                BorderTopColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
+                BorderRightColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
+                BorderBottomColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
+                BorderLeftColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
               }}
               onPointerDown={e => {
                 if (e.Button == 1) {
@@ -168,12 +168,14 @@ export VirtualNode CanvasView(
                     <Label
                       text={BuilderCanvasDrawing.KindLabel(node.Kind)}
                       style={new Style {
-                        FontSize = Px(12),
-                        Color = Hex("#17171b"),
-                        BackgroundColor = BuilderCanvasDrawing.KindColor(node.Kind),
-                        BorderRadius = Px(4),
-                        PaddingLeft = Px(6),
-                        PaddingRight = Px(6),
+                        FontSize = Px(15),
+                        Color = BuilderCanvasDrawing.KindColor(node.Kind),
+                        BackgroundColor = BuilderCanvasDrawing.KindBadgeBg(node.Kind),
+                        BorderRadius = Px(12),
+                        PaddingLeft = Px(12),
+                        PaddingRight = Px(12),
+                        PaddingTop = Px(3),
+                        PaddingBottom = Px(3),
                       }}
                     />
                   </VisualElement>
@@ -185,13 +187,16 @@ export VirtualNode CanvasView(
                     <Label
                       text={BuilderCanvasDrawing.KindLabel(node.Kind)}
                       style={new Style {
-                        FontSize = Px(8),
-                        Color = Hex("#17171b"),
-                        BackgroundColor = BuilderCanvasDrawing.KindColor(node.Kind),
-                        BorderRadius = Px(3),
-                        PaddingLeft = Px(4),
-                        PaddingRight = Px(4),
-                        MarginRight = Px(6),
+                        FontSize = Px(10),
+                        UnityFontStyle = FontBold,
+                        Color = BuilderCanvasDrawing.KindColor(node.Kind),
+                        BackgroundColor = BuilderCanvasDrawing.KindBadgeBg(node.Kind),
+                        BorderRadius = Px(8),
+                        PaddingLeft = Px(7),
+                        PaddingRight = Px(7),
+                        PaddingTop = Px(1),
+                        PaddingBottom = Px(1),
+                        MarginRight = Px(8),
                       }}
                     />
                     <Label text={node.Title} style={CanvasStyles.CardTitle} />
@@ -231,21 +236,46 @@ export VirtualNode CanvasView(
                       return (
                         <VisualElement>
                           <Label
-                            text={node.Kind == BuilderNodeKind.Component ? "BODY — HOOKS & STATE" : "EXPORTS"}
+                            text={node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook ? "BODY — HOOKS & STATE" : "EXPORTS"}
                             style={CanvasStyles.CardSectionHeader}
                           />
-                          @for (int x = 0; x < node.Body.Count; x++) {
-                            return (
-                              <Label
-                                key={$"body-{x}"}
-                                text={node.Body[x].Text}
-                                style={new Style {
-                                  Color = BuilderCanvasDrawing.LineColor(node.Body[x].Kind),
-                                  FontSize = Px(10),
-                                }}
-                              />
-                            );
-                          }
+                          <VisualElement
+                            style={new Style {
+                              FlexDirection = FlexRow,
+                              FlexWrap = WrapOn,
+                              MarginBottom = Px(2),
+                            }}
+                          >
+                            @for (int x = 0; x < node.Body.Count; x++) {
+                              return (
+                                <Label
+                                  key={$"body-{x}"}
+                                  text={node.Body[x].Kind == BuilderCardLineKind.Hook ? BuilderCanvasDrawing.ChipRichText(node.Body[x].Text) : node.Body[x].Text}
+                                  enableRichText={true}
+                                  style={new Style {
+                                    Color = BuilderCanvasDrawing.LineColor(node.Body[x].Kind),
+                                    FontSize = Px(10),
+                                    BackgroundColor = Hex("#2a2a31"),
+                                    BorderRadius = Px(10),
+                                    BorderTopWidth = 1,
+                                    BorderRightWidth = 1,
+                                    BorderBottomWidth = 1,
+                                    BorderLeftWidth = 1,
+                                    BorderTopColor = Hex("#3a3a44"),
+                                    BorderRightColor = Hex("#3a3a44"),
+                                    BorderBottomColor = Hex("#3a3a44"),
+                                    BorderLeftColor = Hex("#3a3a44"),
+                                    PaddingLeft = Px(9),
+                                    PaddingRight = Px(9),
+                                    PaddingTop = Px(2),
+                                    PaddingBottom = Px(2),
+                                    MarginRight = Px(5),
+                                    MarginBottom = Px(5),
+                                  }}
+                                />
+                              );
+                            }
+                          </VisualElement>
                         </VisualElement>
                       );
                     }

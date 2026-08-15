@@ -46,6 +46,24 @@ namespace Ruitk.Builder
             }
         }
 
+        public static Color KindBadgeBg(BuilderNodeKind kind)
+        {
+            var c = KindColor(kind);
+            c.a = 0.16f;
+            return c;
+        }
+
+        /// <summary>Chip line "useState  →  gold, setGold" → POC coloring:
+        /// hook name green, state names warn-gold.</summary>
+        public static string ChipRichText(string bodyLineText)
+        {
+            int arrow = bodyLineText.IndexOf("  →  ", System.StringComparison.Ordinal);
+            if (arrow < 0)
+                return "<color=#81C784>" + bodyLineText + "</color>";
+            return "<color=#81C784>" + bodyLineText.Substring(0, arrow) + "</color> → <color=#FFB74D>"
+                + bodyLineText.Substring(arrow + 5) + "</color>";
+        }
+
         public static string KindLabel(BuilderNodeKind kind)
         {
             switch (kind)
