@@ -16,7 +16,8 @@ export VirtualNode CanvasView(
   Action<string, int, int> onRowContext = null,
   Action onCanvasContext = null,
   Action<string, int, int, string> onRowDrop = null,
-  Action<string, string, int> onStyleAddEntry = null
+  Action<string, string, int> onStyleAddEntry = null,
+  Action<string, int, string> onRowAttrsEdit = null
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -27,6 +28,8 @@ export VirtualNode CanvasView(
   var (traceStates, setTraceStates) = useState((string)null);
   var (dragRowKey, setDragRowKey) = useState(-1);
   var (dragBand, setDragBand) = useState(1);
+  var (editRowKey, setEditRowKey) = useState(-1);
+  var (editText, setEditText) = useState("");
   var (layoutVersion, setLayoutVersion) = useState(0);
 
   var panning = useRef(false);
@@ -441,12 +444,44 @@ export VirtualNode CanvasView(
                                     />
                                   );
                                 }
-                                @if (lod == 2 && row.AttrsText.Length > 0) {
+                                @if (lod == 2 && editRowKey == rowKey) {
+                                  return (
+                                    <VisualElement style={new Style { FlexDirection = FlexRow, FlexGrow = 1 }}>
+                                      <TextField
+                                        value={editText}
+                                        onChange={ev => { setEditText(ev.newValue); }}
+                                        style={new Style { FlexGrow = 1, MarginLeft = Px(6) }}
+                                      />
+                                      <Label
+                                        text="✓"
+                                        onPointerDown={e => {
+                                          if (onRowAttrsEdit != null) {
+                                            onRowAttrsEdit(node.FilePath, row.SourceLine, editText);
+                                          }
+                                          setEditRowKey(-1);
+                                          e.StopPropagation();
+                                        }}
+                                        style={new Style {
+                                          Color = Hex("#4fc3f7"),
+                                          UnityFontStyle = FontBold,
+                                          PaddingLeft = Px(6),
+                                          PaddingRight = Px(4),
+                                        }}
+                                      />
+                                    </VisualElement>
+                                  );
+                                }
+                                @if (lod == 2 && editRowKey != rowKey && (row.AttrsText.Length > 0 || row.BadgeKind == 0)) {
                                   return (
                                     <Label
-                                      text={row.AttrsText}
+                                      text={row.AttrsText.Length > 0 ? row.AttrsText : "+ attrs"}
+                                      onPointerDown={e => {
+                                        setEditRowKey(rowKey);
+                                        setEditText(row.AttrsText);
+                                        e.StopPropagation();
+                                      }}
                                       style={new Style {
-                                        Color = Hex("#9d9dab"),
+                                        Color = row.AttrsText.Length > 0 ? Hex("#9d9dab") : Hex("#5a5a64"),
                                         FontSize = Px(10),
                                         MarginLeft = Px(6),
                                         FlexShrink = 1,

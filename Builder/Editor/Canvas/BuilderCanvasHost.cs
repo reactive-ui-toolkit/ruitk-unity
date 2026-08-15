@@ -30,6 +30,7 @@ namespace Ruitk.Builder
         public Action<string> OnCreateRequested;
         public Action<string, int, int, string> OnRowDrop;
         public Action<string, string, int> OnStyleAddEntry;
+        public Action<string, int, string> OnRowAttrsEdit;
 
         public async void Mount(
             VisualElement container,
@@ -96,6 +97,8 @@ namespace Ruitk.Builder
                             OnRowDrop?.Invoke(path, rowIdx, band, payload),
                         OnStyleAddEntry = (path, styleName, closeLine) =>
                             OnStyleAddEntry?.Invoke(path, styleName, closeLine),
+                        OnRowAttrsEdit = (path, line, attrs) =>
+                            OnRowAttrsEdit?.Invoke(path, line, attrs),
                     }
                 )
             );

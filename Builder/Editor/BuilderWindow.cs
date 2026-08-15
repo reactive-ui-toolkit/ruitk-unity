@@ -91,6 +91,7 @@ namespace Ruitk.Builder
             toolbar.Add(new Button(SaveAll) { text = "Save" });
             toolbar.Add(new Button(AbortAll) { text = "Abort" });
             toolbar.Add(new Button(NewFile) { text = "New File" });
+            toolbar.Add(new Button(ToggleHelp) { text = "? How to drive it" });
             _statusLabel = new Label { style = { unityTextAlign = TextAnchor.MiddleLeft, marginLeft = 10f } };
             toolbar.Add(_statusLabel);
             toolbar.Add(BuildLegend());
@@ -149,6 +150,7 @@ namespace Ruitk.Builder
             _canvasHost.OnRowContext = OnCanvasRowContext;
             _canvasHost.OnRowDrop = OnCanvasRowDrop;
             _canvasHost.OnStyleAddEntry = OnStyleAddEntry;
+            _canvasHost.OnRowAttrsEdit = OnRowAttrsEdited;
             _canvasHost.OnCreateRequested = kind =>
             {
                 string dir = string.IsNullOrEmpty(_focusFile) ? null : Path.GetDirectoryName(_focusFile);
@@ -428,6 +430,34 @@ namespace Ruitk.Builder
                     _codeField?.InsertAtCaret(name);
                     break;
             }
+        }
+
+        /// <summary>POC 6.3: in-place attrs edit commit — the open-tag line's
+        /// attribute section (between the tag name and its closing) is replaced
+        /// with the edited text; an empty edit removes all attributes.</summary>
+        private void OnRowAttrsEdited(string filePath, int sourceLine, string newAttrs)
+        {
+            EditLineInFile(Path.GetFullPath(filePath), sourceLine, line =>
+            {
+                int open = line.IndexOf('<');
+                if (open < 0)
+                    return line;
+                int tagEnd = open + 1;
+                while (tagEnd < line.Length
+                    && (char.IsLetterOrDigit(line[tagEnd]) || line[tagEnd] == '.'))
+                    tagEnd++;
+                int close = line.LastIndexOf("/>", System.StringComparison.Ordinal);
+                bool selfClose = close >= 0;
+                if (!selfClose)
+                    close = line.LastIndexOf('>');
+                if (close < 0 || close < tagEnd)
+                    return line;
+                string attrs = newAttrs.Trim();
+                string mid = attrs.Length == 0 ? "" : " " + attrs;
+                string tail = selfClose ? " />" : ">";
+                return line.Substring(0, tagEnd) + mid + tail
+                    + line.Substring(close + (selfClose ? 2 : 1));
+            });
         }
 
         /// <summary>POC 6.4 A.1: searchable typed-attribute menu with the
@@ -749,6 +779,70 @@ namespace Ruitk.Builder
                 _previewPane?.ShowError("Preview compile failed — fix the code pane diagnostics (last good preview kept)");
                 Debug.LogWarning("[RUITK Builder] preview compile: " + result.Error);
             }
+        }
+
+        [System.NonSerialized] private VisualElement _helpOverlay;
+
+        private void ToggleHelp()
+        {
+            if (_helpOverlay != null)
+            {
+                _helpOverlay.RemoveFromHierarchy();
+                _helpOverlay = null;
+                return;
+            }
+            var canvas = rootVisualElement?.Q("builder-canvas");
+            if (canvas == null)
+                return;
+            var help = new VisualElement
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 12f, left = 12f, width = 340f,
+                    backgroundColor = new Color(0.137f, 0.137f, 0.16f, 0.97f),
+                    borderTopWidth = 1f, borderBottomWidth = 1f,
+                    borderLeftWidth = 1f, borderRightWidth = 1f,
+                    borderTopColor = new Color(0.23f, 0.23f, 0.27f),
+                    borderBottomColor = new Color(0.23f, 0.23f, 0.27f),
+                    borderLeftColor = new Color(0.23f, 0.23f, 0.27f),
+                    borderRightColor = new Color(0.23f, 0.23f, 0.27f),
+                    borderTopLeftRadius = 8f, borderTopRightRadius = 8f,
+                    borderBottomLeftRadius = 8f, borderBottomRightRadius = 8f,
+                    paddingLeft = 14f, paddingRight = 14f, paddingTop = 12f, paddingBottom = 12f,
+                },
+            };
+            help.Add(new Label("Drive it like this")
+            {
+                style = { color = new Color(0.31f, 0.76f, 0.97f), fontSize = 13f, marginBottom = 6f },
+            });
+            string[] steps =
+            {
+                "1. Wheel zooms (to cursor), drag background pans, drag a card moves it.",
+                "2. Zoom all the way out — L0 is the live architecture diagram.",
+                "3. Click a card — its source and live preview appear on the right.",
+                "4. Hover a hook chip — every row using its state lights up.",
+                "5. Zoom close (L2) — attributes and style entries appear.",
+                "6. Click a row — its source line highlights. Ctrl+Click the preview — same, per component.",
+                "7. At L2 click an attrs string (or '+ attrs') to edit it in place; ✓ commits.",
+                "8. Drag a Library item onto a row — top third before, bottom third after, middle nests inside. Hooks drop as declarations; style/util modules add the import.",
+                "9. Right-click a row — searchable typed attributes, directives, delete. Right-click a card — open/ping/copy. Right-click empty canvas or New File — create.",
+                "10. On a style card, '+ entry' chains a searchable key menu into value helpers.",
+                "11. Edit state under STATE — LIVE HOOK VALUES; the preview re-renders.",
+                "12. The code pane is bidirectional — type or Ctrl+Space; Save writes every dirty buffer in one batch.",
+                "13. Drag the splitters to resize.",
+            };
+            foreach (string step in steps)
+                help.Add(new Label(step)
+                {
+                    style =
+                    {
+                        color = new Color(0.84f, 0.84f, 0.86f), fontSize = 11f,
+                        whiteSpace = WhiteSpace.Normal, marginBottom = 4f,
+                    },
+                });
+            canvas.Add(help);
+            _helpOverlay = help;
         }
 
         private static VisualElement BuildLegend()
