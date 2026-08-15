@@ -354,6 +354,80 @@ namespace Ruitk.Builder
         private static readonly Regex s_exportHeader = new Regex(
             @"^export\s+(?:VirtualNode|\([^)]*\))\s+(\w+)\s*(\([^)]*\))", RegexOptions.Compiled);
 
+        /// <summary>s_exportHeader read over the WHOLE buffer, up to and including
+        /// the opening parenthesis of the parameter list, so a component or hook
+        /// whose head wraps across lines still resolves its body. The return-tuple
+        /// group tolerates ONE nesting level, or a hook exposing a tuple element
+        /// (<c>List&lt;(int x, int y)&gt; snake</c>) closes the group early and the
+        /// declaration goes unrecognised.</summary>
+        private static readonly Regex s_exportHeadWide = new Regex(
+            @"(?:^|\n)[ \t]*export\s+(?:VirtualNode\s+|\((?:[^()]|\([^()]*\))*\)\s*)\w+\s*(?:<[^>\n]*>)?\s*\(",
+            RegexOptions.Compiled);
+
+        /// <summary>Index of the '{' that opens the body of the declaration whose
+        /// head ends at <paramref name="afterOpenParen"/> (the character just past
+        /// its '('), or -1 when the declaration has no braced body.</summary>
+        private static int BodyBraceIndex(string text, int afterOpenParen)
+        {
+            int depth = 1;
+            int i = afterOpenParen;
+            for (; i < text.Length && depth > 0; i++)
+            {
+                char ch = text[i];
+                if (ch == '(')
+                    depth++;
+                else if (ch == ')')
+                    depth--;
+            }
+            if (depth > 0)
+                return -1;
+            for (; i < text.Length; i++)
+            {
+                char ch = text[i];
+                if (ch == '{')
+                    return i;
+                if (!char.IsWhiteSpace(ch))
+                    return -1;
+            }
+            return -1;
+        }
+
+        private static int BraceDelta(string line)
+        {
+            int delta = 0;
+            for (int i = 0; i < line.Length; i++)
+            {
+                if (line[i] == '{')
+                    delta++;
+                else if (line[i] == '}')
+                    delta--;
+            }
+            return delta;
+        }
+
+        private static int NestDelta(string line)
+        {
+            int delta = 0;
+            for (int i = 0; i < line.Length; i++)
+            {
+                char ch = line[i];
+                if (ch == '{' || ch == '(' || ch == '[')
+                    delta++;
+                else if (ch == '}' || ch == ')' || ch == ']')
+                    delta--;
+            }
+            return delta;
+        }
+
+        private static int LineIndexOf(string text, int charIndex)
+        {
+            int line = 0;
+            for (int i = 0; i < charIndex && i < text.Length; i++)
+                if (text[i] == '\n')
+                    line++;
+            return line;
+        }
+
         /// <summary>The same declaration read over the WHOLE buffer, so a hook
         /// module whose return tuple is spread across lines still resolves:
         /// <c>export (\n GameState state,\n … \n) useGalagaGame(\n … \n)</c> never
@@ -440,20 +514,33 @@ namespace Ruitk.Builder
             node.IslandEndLine = 0;
             if (node.Kind != BuilderNodeKind.Component && node.Kind != BuilderNodeKind.Hook)
                 return;
+            // The head is matched over the WHOLE buffer, not per line: every
+            // component or hook whose parameter list wraps
+            // ("export VirtualNode Name(" + params + ") {") never matched the
+            // single-line header, so its body was never entered and the L2 code
+            // island — and the write-back range behind it — stayed empty.
+            var head = s_exportHeadWide.Match(text);
+            if (!head.Success)
+                return;
+            int brace = BodyBraceIndex(text, head.Index + head.Length);
+            if (brace < 0)
+                return;
             string[] rawLines = text.Split('\n');
-            bool inBody = false;
             int pendingBlanks = 0;
-            for (int i = 0; i < rawLines.Length; i++)
+            // Brace depth relative to the body: the declaration's OWN return is the
+            // terminator, so a nested "return () => {" inside a useEffect callback
+            // no longer cuts the island in half, and the closing brace of the
+            // declaration ends it even when there is no return statement at all.
+            int depth = 1;
+            for (int i = LineIndexOf(text, brace) + 1; i < rawLines.Length; i++)
             {
                 string raw = rawLines[i].TrimEnd();
                 string line = raw.Trim();
-                if (!inBody)
-                {
-                    if (s_exportHeader.IsMatch(line))
-                        inBody = true;
-                    continue;
-                }
-                if (line.StartsWith("return (", StringComparison.Ordinal))
+                int outer = depth;
+                depth += BraceDelta(raw);
+                if (outer == 1 && line.StartsWith("return (", StringComparison.Ordinal))
+                    break;
+                if (depth <= 0)
                     break;
                 if (line.Length == 0)
                 {
@@ -465,9 +552,24 @@ namespace Ruitk.Builder
                         pendingBlanks++;
                     continue;
                 }
-                if (s_hookCall.IsMatch(line)
-                    || line.StartsWith("import ", StringComparison.Ordinal))
+                if (line.StartsWith("import ", StringComparison.Ordinal))
                 {
+                    pendingBlanks = 0;
+                    continue;
+                }
+                if (s_hookCall.IsMatch(line))
+                {
+                    // A hook declaration is a CHIP, never an island line — and a
+                    // multi-line one (useEffect(() => { … }, deps)) is skipped as a
+                    // whole statement, or its callback body would be left in the
+                    // island orphaned from the header that opened it.
+                    int nest = NestDelta(raw);
+                    while (nest > 0 && i + 1 < rawLines.Length)
+                    {
+                        i++;
+                        nest += NestDelta(rawLines[i]);
+                    }
+                    depth = outer;
                     pendingBlanks = 0;
                     continue;
                 }
@@ -514,7 +616,9 @@ namespace Ruitk.Builder
                 string line = lines[i].Trim();
                 if (!line.StartsWith("export ", StringComparison.Ordinal))
                     continue;
-                if (line.Contains("=") && !line.Contains("("))
+                int eq = line.IndexOf('=');
+                int par = line.IndexOf('(');
+                if (eq >= 0 && (par < 0 || eq < par))
                 {
                     node.ExportDetail.Add(new BuilderCardLine
                     {
@@ -524,15 +628,66 @@ namespace Ruitk.Builder
                     });
                     continue;
                 }
-                if (!line.Contains("("))
+                if (par < 0)
                     continue;
+                // A wrapped parameter list is collapsed back to the one head line
+                // the POC's ".usig" row shows, and the body starts after the '{'
+                // that closes it. Reading the first line alone rendered
+                // "export int Foo( {" and swallowed the remaining parameter lines
+                // into the body island as if they were statements.
+                int headEnd = i;
+                int headDepth = 0;
+                var headLines = new List<string>();
+                for (int k = i; k < lines.Length; k++)
+                {
+                    headLines.Add(lines[k]);
+                    foreach (char ch in lines[k])
+                    {
+                        if (ch == '(')
+                            headDepth++;
+                        else if (ch == ')')
+                            headDepth--;
+                    }
+                    headEnd = k;
+                    if (headDepth <= 0)
+                        break;
+                }
+                if (headDepth > 0)
+                    continue;
+                string sig = CollapseHead(string.Join("\n", headLines)).TrimEnd('{', ' ');
+                int braceLine = -1;
+                if (lines[headEnd].TrimEnd().EndsWith("{", StringComparison.Ordinal))
+                {
+                    braceLine = headEnd;
+                }
+                else
+                {
+                    int k = headEnd + 1;
+                    while (k < lines.Length && lines[k].Trim().Length == 0)
+                        k++;
+                    if (k < lines.Length && lines[k].Trim() == "{")
+                        braceLine = k;
+                }
+                if (braceLine < 0)
+                {
+                    // POC "u.body === null": an expression-bodied export renders
+                    // as its signature row alone, with no island and no brace.
+                    node.ExportDetail.Add(new BuilderCardLine
+                    {
+                        Text = sig,
+                        Kind = BuilderCardLineKind.Export,
+                        SourceLine = i + 1,
+                    });
+                    i = headEnd;
+                    continue;
+                }
                 node.ExportDetail.Add(new BuilderCardLine
                 {
-                    Text = line.TrimEnd('{', ' ') + " {",
+                    Text = sig + " {",
                     Kind = BuilderCardLineKind.Export,
                     SourceLine = i + 1,
                 });
-                int j = i + 1;
+                int j = braceLine + 1;
                 var body = new List<string>();
                 int bodyStart = 0;
                 int bodyEnd = 0;
@@ -570,18 +725,35 @@ namespace Ruitk.Builder
                 });
                 i = j;
             }
-            if (node.ExportDetail.Count > 0)
-                node.ExportDetail.Add(new BuilderCardLine
-                {
-                    Text = "+ export",
-                    Kind = BuilderCardLineKind.Plain,
-                    BadgeKind = 11,
-                    SourceLine = lines.Length,
-                });
+            // POC cardHtml gates the EXPORTS section on `if (n.utils)` and then
+            // ALWAYS appends "+ export": a util module whose exports did not parse
+            // — or one that is still empty — keeps the affordance that creates its
+            // first one.
+            node.ExportDetail.Add(new BuilderCardLine
+            {
+                Text = "+ export",
+                Kind = BuilderCardLineKind.Plain,
+                BadgeKind = 11,
+                SourceLine = lines.Length,
+            });
         }
 
+        /// <summary>A declaration head spread over several lines, folded back to
+        /// the single line the card row shows.</summary>
+        private static string CollapseHead(string head)
+        {
+            string collapsed = Collapse(head);
+            collapsed = Regex.Replace(collapsed, @"\(\s+", "(");
+            collapsed = Regex.Replace(collapsed, @"\s+([),])", "$1");
+            return collapsed;
+        }
+
+        /// <summary>The opening brace is no longer required on the declaration
+        /// line: a style export written as "= new Style" with the brace on the
+        /// next line used to match nothing, which cost the card its whole EXPORTS
+        /// section.</summary>
         private static readonly Regex s_styleExport = new Regex(
-            @"^export\s+Style\s+(\w+)\s*=\s*new\s+Style\s*\{", RegexOptions.Compiled);
+            @"^export\s+Style\s+(\w+)\s*=\s*new\s+Style\b", RegexOptions.Compiled);
 
         /// <summary>POC style card: per export a "name = new Style {" header,
         /// its entries (L2), a "+ entry" affordance, and the closing brace.</summary>
@@ -594,6 +766,16 @@ namespace Ruitk.Builder
                 if (!match.Success)
                     continue;
                 string styleName = match.Groups[1].Value;
+                int open = i;
+                if (!lines[i].TrimEnd().EndsWith("{", StringComparison.Ordinal))
+                {
+                    int k = i + 1;
+                    while (k < lines.Length && lines[k].Trim().Length == 0)
+                        k++;
+                    if (k >= lines.Length || lines[k].Trim() != "{")
+                        continue;
+                    open = k;
+                }
                 node.ExportDetail.Add(new BuilderCardLine
                 {
                     Text = styleName + " = new Style {",
@@ -602,7 +784,7 @@ namespace Ruitk.Builder
                     AttrsText = styleName,
                     SourceLine = i + 1,
                 });
-                int j = i + 1;
+                int j = open + 1;
                 for (; j < lines.Length; j++)
                 {
                     string entry = lines[j].Trim();
@@ -635,14 +817,16 @@ namespace Ruitk.Builder
                 });
                 i = j;
             }
-            if (node.ExportDetail.Count > 0)
-                node.ExportDetail.Add(new BuilderCardLine
-                {
-                    Text = "+ style",
-                    Kind = BuilderCardLineKind.Plain,
-                    BadgeKind = 10,
-                    SourceLine = lines.Length,
-                });
+            // POC cardHtml appends "+ style" outside the per-export loop, so an
+            // empty (or unparsed) style module still offers the row that creates
+            // its first export.
+            node.ExportDetail.Add(new BuilderCardLine
+            {
+                Text = "+ style",
+                Kind = BuilderCardLineKind.Plain,
+                BadgeKind = 10,
+                SourceLine = lines.Length,
+            });
         }
 
         private static void WalkMarkup(

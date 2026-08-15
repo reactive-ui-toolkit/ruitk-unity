@@ -422,43 +422,39 @@ export VirtualNode CanvasView(
                                   text={imp.Text}
                                   style={CanvasStyles.CardImportLine}
                                 />
-                                @if (imp.BadgeKind != BuilderCanvasDrawing.NamespaceImportBadge) {
-                                  return (
-                                    <VisualElement
-                                      name={$"a-imp-{index}-{x}"}
-                                      style={new Style {
-                                        Width = Px(8),
-                                        Height = Px(8),
-                                        MarginLeft = Px(6),
-                                        FlexShrink = 0,
-                                        Overflow = OverflowVisible,
-                                      }}
-                                    >
-                                      <VisualElement
-                                        style={new Style {
-                                          Position = PosAbsolute,
-                                          Left = Px(-2),
-                                          Top = Px(-2),
-                                          Width = Px(12),
-                                          Height = Px(12),
-                                          BorderRadius = Px(6),
-                                          BackgroundColor = BuilderCanvasDrawing.DotHalo(imp.BadgeKind),
-                                        }}
-                                      />
-                                      <VisualElement
-                                        style={new Style {
-                                          Position = PosAbsolute,
-                                          Left = Px(0),
-                                          Top = Px(0),
-                                          Width = Px(8),
-                                          Height = Px(8),
-                                          BorderRadius = Px(4),
-                                          BackgroundColor = BuilderCanvasDrawing.DotColor(imp.BadgeKind),
-                                        }}
-                                      />
-                                    </VisualElement>
-                                  );
-                                }
+                                <VisualElement
+                                  name={$"a-imp-{index}-{x}"}
+                                  style={new Style {
+                                    Width = Px(8),
+                                    Height = Px(8),
+                                    MarginLeft = Px(6),
+                                    FlexShrink = 0,
+                                    Overflow = OverflowVisible,
+                                  }}
+                                >
+                                  <VisualElement
+                                    style={new Style {
+                                      Position = PosAbsolute,
+                                      Left = Px(-2),
+                                      Top = Px(-2),
+                                      Width = Px(12),
+                                      Height = Px(12),
+                                      BorderRadius = Px(6),
+                                      BackgroundColor = BuilderCanvasDrawing.DotHalo(imp.BadgeKind),
+                                    }}
+                                  />
+                                  <VisualElement
+                                    style={new Style {
+                                      Position = PosAbsolute,
+                                      Left = Px(0),
+                                      Top = Px(0),
+                                      Width = Px(8),
+                                      Height = Px(8),
+                                      BorderRadius = Px(4),
+                                      BackgroundColor = BuilderCanvasDrawing.DotColor(imp.BadgeKind),
+                                    }}
+                                  />
+                                </VisualElement>
                               </VisualElement>
                             );
                           }
