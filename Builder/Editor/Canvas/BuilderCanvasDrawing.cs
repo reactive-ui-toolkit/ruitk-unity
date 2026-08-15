@@ -39,6 +39,75 @@ namespace Ruitk.Builder
         /// anchors track the LOD-dependent card width (POC: 300 / 340 / 430).</summary>
         public static int CurrentLod = 1;
 
+        private static float s_currentZoom = 1f;
+
+        private static int s_anchorRetries;
+
+        /// <summary>POC "#edges" is a SCREEN-space overlay over the transformed
+        /// world: stroke width, the terminal dot and the dash period are constant
+        /// pixels at every LOD. Our layer paints inside the scaled container, so
+        /// the painter divides by the live zoom to get the same result.</summary>
+        public static float CurrentZoom
+        {
+            get => s_currentZoom <= 0f ? 1f : s_currentZoom;
+            set
+            {
+                s_currentZoom = value;
+                s_anchorRetries = 0;
+            }
+        }
+
+        /// <summary>POC "font: 12px Consolas, monospace" — every code-bearing
+        /// surface (card rows, chips, imports, islands, palette) is monospace.
+        /// Resolved once from the OS; a machine without it keeps the editor font.</summary>
+        public static Font MonoFont()
+        {
+            if (s_monoResolved)
+                return s_mono;
+            s_monoResolved = true;
+            try
+            {
+                s_mono = Font.CreateDynamicFontFromOSFont(
+                    new[] { "Consolas", "Menlo", "DejaVu Sans Mono", "Courier New" }, 12);
+            }
+            catch (System.Exception)
+            {
+                s_mono = null;
+            }
+            return s_mono;
+        }
+
+        private static Font s_mono;
+        private static bool s_monoResolved;
+        private static bool s_monoDefResolved;
+        private static FontDefinition s_monoDef;
+
+        /// <summary>The same font as a typed-Style value. Falls back to Unity's
+        /// legacy runtime font so a missing Consolas never blanks the card text.</summary>
+        public static FontDefinition MonoFontDefinition
+        {
+            get
+            {
+                if (s_monoDefResolved)
+                    return s_monoDef;
+                s_monoDefResolved = true;
+                var font = MonoFont();
+                if (font == null)
+                {
+                    try
+                    {
+                        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                    }
+                    catch (System.Exception)
+                    {
+                        font = null;
+                    }
+                }
+                s_monoDef = font != null ? FontDefinition.FromFont(font) : default;
+                return s_monoDef;
+            }
+        }
+
         public static float CardWidthFor(int lod) =>
             lod == 0 ? 300f : lod == 1 ? 340f : 430f;
 
@@ -166,6 +235,15 @@ namespace Ruitk.Builder
             _ => new Color(0.361f, 0.545f, 0.690f),
         };
 
+        /// <summary>POC ".anchor-dot { box-shadow: 0 0 0 2px rgba(...,.25) }" —
+        /// the halo ring around an anchor dot, per import kind.</summary>
+        public static Color DotHalo(int dotKind)
+        {
+            var c = DotColor(dotKind);
+            c.a = 0.25f;
+            return c;
+        }
+
         public static Color BadgeColor(int badgeKind) => badgeKind switch
         {
             1 => new Color(1.00f, 0.72f, 0.30f),
@@ -287,6 +365,41 @@ namespace Ruitk.Builder
                 return;
             var p = ctx.painter2D;
             float width = CardWidthFor(CurrentLod);
+            var layer = ctx.visualElement;
+            var world = layer?.parent;
+            bool estimated = false;
+
+            // POC drawEdges reads getBoundingClientRect() off the anchor DOT, so a
+            // curve leaves exactly from the dot on its import/markup row. The named
+            // dot elements are measured here; the section-stack estimate is only the
+            // pre-layout fallback.
+            Vector2 AnchorOf(string name, Vector2 fallback)
+            {
+                var el = world?.Q(name);
+                if (el == null)
+                {
+                    estimated = true;
+                    return fallback;
+                }
+                var bound = el.worldBound;
+                if (bound.width <= 0f || bound.height <= 0f)
+                {
+                    estimated = true;
+                    return fallback;
+                }
+                return world.WorldToLocal(new Vector2(bound.xMax - 4f, bound.center.y));
+            }
+
+            Vector2 TargetOf(int index, BuilderCanvasNode to)
+            {
+                var card = world?.Q("card-" + index);
+                var rect = card != null && card.layout.width > 0f
+                    ? card.layout
+                    : new Rect(to.X, to.Y, width, PillH);
+                return CurrentLod == 0
+                    ? new Vector2(rect.xMin, rect.yMin + rect.height * 0.5f)
+                    : new Vector2(rect.xMin, rect.yMin + EdgeAnchorY);
+            }
 
             // POC computeEdges: ONE edge per import row, PLUS one per markup row
             // that instantiates a graph node — ShopScreen draws 6 + 3 curves, not 6.
@@ -295,8 +408,25 @@ namespace Ruitk.Builder
                 if (edge.FromIndex < 0 || edge.FromIndex >= graph.Nodes.Count)
                     continue;
                 var from = graph.Nodes[edge.FromIndex];
-                float anchorY = CurrentLod == 0 ? PillH * 0.5f : ImportRowY(from, edge.Specifier);
-                var a = new Vector2(from.X + width, from.Y + anchorY);
+                Vector2 a;
+                if (CurrentLod == 0)
+                {
+                    // POC lod0 branch: the source is the whole card and
+                    // x1 = r1.right - r1.width / 2 — the card's CENTRE.
+                    var card = world?.Q("card-" + edge.FromIndex);
+                    var rect = card != null && card.layout.width > 0f
+                        ? card.layout
+                        : new Rect(from.X, from.Y, width, PillH);
+                    a = new Vector2(rect.center.x, rect.center.y);
+                }
+                else
+                {
+                    int importRow = ImportRowIndex(from, edge.Specifier);
+                    a = AnchorOf(
+                        "a-imp-" + edge.FromIndex + "-" + importRow,
+                        new Vector2(
+                            from.X + width - 16f, from.Y + ImportRowY(from, edge.Specifier)));
+                }
 
                 if (edge.ToIndex >= 0 && edge.ToIndex < graph.Nodes.Count)
                 {
@@ -306,12 +436,12 @@ namespace Ruitk.Builder
                         : UsageEdge;
                     bool dashed = edge.TargetKind == BuilderNodeKind.Style
                         || edge.TargetKind == BuilderNodeKind.Hook;
-                    StrokeEdge(p, a, new Vector2(to.X, to.Y + EdgeAnchorY), color, dashed);
+                    StrokeEdge(p, a, TargetOf(edge.ToIndex, to), color, dashed);
                 }
                 else
                 {
                     p.strokeColor = new Color(0.90f, 0.30f, 0.30f);
-                    p.lineWidth = 2f;
+                    p.lineWidth = 2f / CurrentZoom;
                     p.BeginPath();
                     p.MoveTo(a);
                     p.LineTo(new Vector2(a.x + 48f, a.y));
@@ -320,7 +450,10 @@ namespace Ruitk.Builder
             }
 
             if (CurrentLod == 0)
+            {
+                MaybeRetry(layer, estimated);
                 return;
+            }
             for (int i = 0; i < graph.Nodes.Count; i++)
             {
                 var from = graph.Nodes[i];
@@ -331,10 +464,37 @@ namespace Ruitk.Builder
                     if (target < 0 || target == i)
                         continue;
                     var to = graph.Nodes[target];
-                    var a = new Vector2(from.X + width, from.Y + MarkupRowY(from, r));
-                    StrokeEdge(p, a, new Vector2(to.X, to.Y + EdgeAnchorY), UsageEdge, false);
+                    var a = AnchorOf(
+                        "a-row-" + i + "-" + r,
+                        new Vector2(from.X + width - 16f, from.Y + MarkupRowY(from, r)));
+                    StrokeEdge(p, a, TargetOf(target, to), UsageEdge, false);
                 }
             }
+            MaybeRetry(layer, estimated);
+        }
+
+        /// <summary>An anchor dot that has not laid out yet paints from the
+        /// estimate; ask for one more paint so the measured position lands.</summary>
+        private static void MaybeRetry(VisualElement layer, bool estimated)
+        {
+            if (!estimated)
+            {
+                s_anchorRetries = 0;
+                return;
+            }
+            if (layer == null || s_anchorRetries >= 12)
+                return;
+            s_anchorRetries++;
+            layer.schedule.Execute(layer.MarkDirtyRepaint).ExecuteLater(16);
+        }
+
+        /// <summary>POC: a markup row carries an anchor dot only when its tag
+        /// RESOLVES to a card in the graph (j.ref) — dots and edges are 1:1.</summary>
+        public static bool ResolvesToNode(BuilderGraph graph, string tagText)
+        {
+            if (graph == null || string.IsNullOrEmpty(tagText))
+                return false;
+            return IndexOfTitle(graph, tagText.Trim('<', '>')) >= 0;
         }
 
         private static int IndexOfTitle(BuilderGraph graph, string title)
@@ -359,7 +519,7 @@ namespace Ruitk.Builder
             else
             {
                 p.strokeColor = color;
-                p.lineWidth = 2f;
+                p.lineWidth = 2f / CurrentZoom;
                 p.BeginPath();
                 p.MoveTo(a);
                 p.BezierCurveTo(c1, c2, b);
@@ -367,8 +527,19 @@ namespace Ruitk.Builder
             }
             p.fillColor = color;
             p.BeginPath();
-            p.Arc(b, 4f, 0f, 360f);
+            p.Arc(b, 4f / CurrentZoom, 0f, 360f);
             p.Fill();
+        }
+
+        /// <summary>Which import row (by specifier) an edge leaves from, or -1.</summary>
+        private static int ImportRowIndex(BuilderCanvasNode node, string specifier)
+        {
+            if (node.Imports.Count == 0 || string.IsNullOrEmpty(specifier))
+                return -1;
+            for (int i = 0; i < node.Imports.Count; i++)
+                if (string.Equals(node.Imports[i].AttrsText, specifier, System.StringComparison.Ordinal))
+                    return i;
+            return -1;
         }
 
         /// <summary>Edges leave the importer at ITS import row (matched by
@@ -420,9 +591,13 @@ namespace Ruitk.Builder
         private static void StrokeDashedBezier(
             Painter2D p, Vector2 a, Vector2 c1, Vector2 c2, Vector2 b, Color color)
         {
-            const int segments = 28;
+            // POC stroke-dasharray="6 4" is SCREEN pixels: the dash period must not
+            // change with zoom, so the segment count tracks the curve's on-screen
+            // length rather than a fixed 28.
+            int segments = Mathf.Clamp(
+                Mathf.RoundToInt(Vector2.Distance(a, b) * CurrentZoom / 5f) * 2, 8, 240);
             p.strokeColor = color;
-            p.lineWidth = 2f;
+            p.lineWidth = 2f / CurrentZoom;
             Vector2 Point(float t)
             {
                 float u = 1f - t;

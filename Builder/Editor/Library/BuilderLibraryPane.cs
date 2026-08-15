@@ -44,6 +44,13 @@ namespace Ruitk.Builder
             "VisualElement", "Label", "Button", "ScrollView", "TextField", "Toggle", "Slider",
         };
 
+        /// <summary>POC HOOK_TEMPLATES — the curated four that lead the HOOKS
+        /// section, followed by the tree's own hook modules.</summary>
+        public static readonly string[] HookTemplates =
+        {
+            "useState", "useEffect", "useMemo", "useRef",
+        };
+
         private const string LibraryHint =
             "Drag onto a JSX row: top edge inserts before, bottom edge after, middle nests "
             + "inside. Drag hooks onto BODY; style/util modules onto a card (adds the import). "
@@ -52,12 +59,9 @@ namespace Ruitk.Builder
         private readonly List<Entry> _entries = new List<Entry>();
         private VisualElement _listHost;
         private string _filter = "";
-        private Action<string, string> _insert;
 
-        public async void Attach(
-            VisualElement container, Action<string, string> insertSnippet, Action onNewFile = null)
+        public async void Attach(VisualElement container, Action onNewFile = null)
         {
-            _insert = insertSnippet;
             container.Clear();
 
             container.style.backgroundColor = new Color(0.137f, 0.137f, 0.161f);
@@ -99,7 +103,13 @@ namespace Ruitk.Builder
                         paddingTop = 1f, paddingBottom = 1f,
                     },
                 };
-                newBtn.RegisterCallback<PointerDownEvent>(_ => onNewFile());
+                newBtn.RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    BuilderSearchMenu.RememberPointer(
+                        new Vector2(evt.position.x, evt.position.y),
+                        UnityEditor.EditorWindow.focusedWindow);
+                    onNewFile();
+                });
                 newBtn.RegisterCallback<MouseEnterEvent>(_ =>
                 {
                     newBtn.style.borderTopColor = Accent;
@@ -123,6 +133,7 @@ namespace Ruitk.Builder
                 style = { marginTop = 8f, marginLeft = 8f, marginRight = 8f, marginBottom = 8f },
             };
             search.textEdition.placeholder = "search library…";
+            BuilderPreviewPane.StyleInput(search);
             search.RegisterValueChangedCallback(e =>
             {
                 _filter = e.newValue ?? "";
@@ -283,7 +294,12 @@ namespace Ruitk.Builder
                 return index < 0 ? NativeTagOrder.Length : index;
             }
             if (entry.Section == "Hooks")
-                return entry.Name.EndsWith(" (module)", StringComparison.Ordinal) ? 1 : 0;
+            {
+                if (entry.Name.EndsWith(" (module)", StringComparison.Ordinal))
+                    return 100;
+                int template = Array.IndexOf(HookTemplates, entry.Name);
+                return template < 0 ? 50 : template;
+            }
             return 0;
         }
 
@@ -337,11 +353,17 @@ namespace Ruitk.Builder
                 if (_filter.Length > 0
                     && entry.Name.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
-                // POC NATIVE ELEMENTS is a curated seven; the rest of the live
-                // schema stays behind the search field.
+                // POC NATIVE ELEMENTS is a curated seven and HOOK_TEMPLATES a
+                // curated four (plus the tree's own "(module)" hooks); the rest of
+                // the live schema/registry stays behind the search field.
                 if (_filter.Length == 0
                     && entry.Section == "Native elements"
                     && Array.IndexOf(NativeTagOrder, entry.Name.Trim('<', '>')) < 0)
+                    continue;
+                if (_filter.Length == 0
+                    && entry.Section == "Hooks"
+                    && !entry.Name.EndsWith(" (module)", StringComparison.Ordinal)
+                    && Array.IndexOf(HookTemplates, entry.Name) < 0)
                     continue;
                 if (entry.Section != section)
                 {
@@ -377,14 +399,15 @@ namespace Ruitk.Builder
                     },
                 };
                 var captured = entry;
+                var mono = BuilderCanvasDrawing.MonoFont();
+                if (mono != null)
+                    row.style.unityFont = mono;
+                // POC ".lib-item" is draggable="true" ONLY — there is no click
+                // handler on the library body, so a misjudged click never mutates
+                // the buffer at a position the user did not choose.
                 row.RegisterCallback<PointerDownEvent>(_ =>
                     BuilderDragService.Arm(PayloadFor(captured)));
-                row.RegisterCallback<PointerUpEvent>(_ =>
-                {
-                    if (BuilderDragService.Active && BuilderDragService.IsQuickClick)
-                        _insert?.Invoke(captured.Snippet, captured.Section);
-                    BuilderDragService.Cancel();
-                });
+                row.RegisterCallback<PointerUpEvent>(_ => BuilderDragService.Cancel());
                 row.RegisterCallback<MouseEnterEvent>(_ =>
                 {
                     row.style.borderTopColor = Accent;

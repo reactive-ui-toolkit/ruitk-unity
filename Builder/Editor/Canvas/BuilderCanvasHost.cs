@@ -48,6 +48,7 @@ namespace Ruitk.Builder
         public Action<string, int, int, string> OnIslandEdit;
         public Action<string> OnAddStyleExport;
         public Action<string> OnAddUtilExport;
+        public Action<string> OnTraceStates;
 
         public async void Mount(
             VisualElement container,
@@ -145,6 +146,25 @@ namespace Ruitk.Builder
         private string _beginEditKey = "";
         private string _beginEditText = "";
         private int _beginEditVersion;
+        private string _selectPath = "";
+        private int _selectVersion;
+
+        /// <summary>POC selectNode(): opening a file from any route (row
+        /// double-click, preview click-through, library) moves the gold ring to
+        /// that card, not just the source/preview panes.</summary>
+        public void SelectByPath(string filePath)
+        {
+            if (_container == null || _graph == null || string.IsNullOrEmpty(filePath))
+                return;
+            string full = System.IO.Path.GetFullPath(filePath);
+            if (_graph.IndexOf(full) < 0)
+                return;
+            if (string.Equals(_selectPath, full, StringComparison.OrdinalIgnoreCase))
+                return;
+            _selectPath = full;
+            _selectVersion++;
+            RenderCanvas();
+        }
 
         /// <summary>Canvas row index of a source line, for BeginEdit keys.</summary>
         public int RowIndexOfLine(string filePath, int sourceLine)
@@ -162,7 +182,7 @@ namespace Ruitk.Builder
         /// created, so the new card appears where the user right-clicked.</summary>
         public void PlaceNewCard(string filePath, float x, float y)
         {
-            if (_config == null)
+            if (_config == null || (x == 0f && y == 0f))
                 return;
             _config.SetPosition(filePath, x, y);
             _config.Save();
@@ -191,6 +211,9 @@ namespace Ruitk.Builder
                         BeginEditKey = _beginEditKey,
                         BeginEditText = _beginEditText,
                         BeginEditVersion = _beginEditVersion,
+                        SelectPath = _selectPath,
+                        SelectVersion = _selectVersion,
+                        OnTraceStates = states => OnTraceStates?.Invoke(states),
                         OnOpenFile = onOpenFile,
                         OnLayoutChanged = SaveLayout,
                         OnSelect = index =>
@@ -259,6 +282,15 @@ namespace Ruitk.Builder
                 return null;
             int i = _graph.IndexOf(filePath);
             return i < 0 ? null : _graph.Nodes[i];
+        }
+
+        /// <summary>POC btnLibNew: the Library's "+ new" opens the SAME four-item
+        /// create menu the empty-canvas right-click does.</summary>
+        public void ShowCreateMenuAtPointer()
+        {
+            // 0,0 leaves the new card to the default BFS placement — the
+            // library button has no world position of its own.
+            ShowCreateMenu(0f, 0f);
         }
 
         private void ShowCreateMenu(float worldX, float worldY)

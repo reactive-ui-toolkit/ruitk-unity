@@ -151,8 +151,8 @@ namespace Ruitk.Builder
                 "Wheel: zoom  •  Drag Library items onto rows (top=before, bottom=after, "
                 + "middle=inside) or BODY (hooks); drag rows to reorder  •  Right-click rows / "
                 + "cards / canvas for typed attributes, directives, delete, create  •  L2: click "
-                + "attrs / badges / style entries to edit  •  Source pane: type to edit — "
-                + "re-parses live  •  Drag splitters to resize")
+                + "attrs / badges / style entries to edit  •  Source pane: edit → apply "
+                + "re-parses  •  Drag splitters to resize")
             {
                 style =
                 {
@@ -220,8 +220,19 @@ namespace Ruitk.Builder
                     int w = 0;
                     while (w < old.Length && old[w] == ' ')
                         w++;
-                    return old.Substring(0, w) + text.Trim();
-                });
+                    string rewritten = old.Substring(0, w) + text.Trim();
+                    // A line that DECLARES something can never lose its leading
+                    // keyword to an inline edit — that would silently turn a style
+                    // module into an unparseable file.
+                    string trimmedOld = old.TrimStart();
+                    if (trimmedOld.StartsWith("export ", System.StringComparison.Ordinal)
+                        && !text.TrimStart().StartsWith("export ", System.StringComparison.Ordinal))
+                    {
+                        Toast("An export declaration keeps its 'export' keyword — edit skipped.");
+                        return old;
+                    }
+                    return rewritten;
+                }, "line edit");
             _canvasHost.OnIslandEdit = (path, start, end, text) =>
             {
                 var session = _workspace.TryGet(Path.GetFullPath(path));
@@ -305,16 +316,8 @@ namespace Ruitk.Builder
                 Toast("Deleted " + Path.GetFileName(path));
                 MountCanvas();
             };
-            _canvasHost.OnCreateRequested = (kind, worldX, worldY) =>
-            {
-                string dir = string.IsNullOrEmpty(_focusFile) ? null : Path.GetDirectoryName(_focusFile);
-                if (dir != null)
-                    BuilderNewFileDialog.Show(dir, this, kind, created =>
-                    {
-                        _canvasHost?.PlaceNewCard(created, worldX, worldY);
-                        Toast("Created " + Path.GetFileName(created));
-                    });
-            };
+            _canvasHost.OnCreateRequested = ShowCreatePrompt;
+            _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
             _canvasHost.Mount(
                 container, _focusFile, OpenFileFromCanvas, ReadBufferOrDisk,
                 graph => _libraryPane?.SetWorkspaceEntries(graph));
@@ -332,18 +335,9 @@ namespace Ruitk.Builder
             container.Clear();
             container.style.flexGrow = 1f;
             _libraryPane = new BuilderLibraryPane();
-            _libraryPane.Attach(container, (snippet, section) =>
-            {
-                bool markup = section == "Native elements"
-                    || section == "Custom components";
-                bool body = section == "Hooks";
-                if (markup)
-                    _codeField?.InsertSnippet(snippet, isMarkup: true);
-                else if (body)
-                    _codeField?.InsertSnippet(snippet, isMarkup: false);
-                else
-                    _codeField?.InsertAtCaret(snippet);
-            }, NewFile);
+            // POC btnLibNew → openCreateMenu at the button: "+ new" opens the same
+            // four-item create menu the empty-canvas right-click does.
+            _libraryPane.Attach(container, NewFile);
         }
 
         private void MountPreview()
@@ -355,13 +349,21 @@ namespace Ruitk.Builder
             {
                 container.Clear();
                 container.style.backgroundColor = Panel;
-                var previewSection = new VisualElement { style = { flexGrow = 1f } };
+                // POC "#preview { padding: 12px }".
+                var previewSection = new VisualElement { style = { flexGrow = 1f, paddingTop = 12f, paddingBottom = 12f, paddingLeft = 12f, paddingRight = 12f } };
                 var codeSection = new VisualElement { style = { flexGrow = 1f } };
                 var previewPane = new VisualElement { style = { minHeight = 120f } };
                 previewPane.Add(PaneTitle("LIVE PREVIEW", out _previewName));
                 previewPane.Add(previewSection);
                 var sourcePane = new VisualElement { style = { minHeight = 120f } };
-                sourcePane.Add(PaneTitle("SOURCE — .UITKX", out _sourceName));
+                _editButton = MiniButton(
+                    "edit", "edit the text; apply re-parses it back into the model", BeginSourceEdit);
+                _applyButton = MiniButton("apply (Ctrl+Enter)", "re-parse the edited text", ApplySourceEdit);
+                _cancelButton = MiniButton("cancel (Esc)", "discard the edit", CancelSourceEdit);
+                _applyButton.style.display = DisplayStyle.None;
+                _cancelButton.style.display = DisplayStyle.None;
+                sourcePane.Add(PaneTitle(
+                    "SOURCE — .UITKX", out _sourceName, _editButton, _applyButton, _cancelButton));
                 sourcePane.Add(codeSection);
                 var sideSplit = new TwoPaneSplitView(0, 380f, TwoPaneSplitViewOrientation.Vertical)
                 {
@@ -372,11 +374,15 @@ namespace Ruitk.Builder
                 container.Add(sideSplit);
 
                 _previewPane = new BuilderPreviewPane();
+                _previewPane.UsageProvider = UsageFor;
                 _previewPane.ComponentPicked += OnPreviewComponentPicked;
                 _previewPane.Attach(previewSection);
                 _codeField = new CodeField();
                 _codeField.TextEdited += OnCodeEdited;
                 _codeField.CompletionProvider = RequestCompletions;
+                _codeField.EditRequested += BeginSourceEdit;
+                _codeField.ApplyRequested += ApplySourceEdit;
+                _codeField.CancelRequested += CancelSourceEdit;
                 codeSection.Add(_codeField);
             }
             var session = _workspace.TryGet(_focusFile);
@@ -389,6 +395,86 @@ namespace Ruitk.Builder
             _codeField.SetContent(session?.BufferText ?? "", _focusFile, null);
             _codeField.SetEditable(session != null && !session.IsReadOnly);
             SyncLspBuffer(_focusFile, session?.BufferText, open: true);
+        }
+
+        [System.NonSerialized] private Label _editButton;
+        [System.NonSerialized] private Label _applyButton;
+        [System.NonSerialized] private Label _cancelButton;
+        [System.NonSerialized] private string _sourceSnapshot;
+
+        /// <summary>POC source-pane edit mode: "edit" snapshots the buffer so
+        /// "cancel (Esc)" restores it, and "apply (Ctrl+Enter)" runs the parser —
+        /// a failure toasts "Parse failed: …" and turns the field's border red.
+        /// The live re-parse stays on (that is our real-behaviour divergence from
+        /// the POC's read-only render), so edit/apply is the commit gesture.</summary>
+        private void BeginSourceEdit()
+        {
+            var session = _workspace.TryGet(_focusFile);
+            if (session == null || session.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+            _sourceSnapshot = session.BufferText;
+            SetSourceEditing(true);
+            _codeField?.FocusEditor();
+        }
+
+        private void ApplySourceEdit()
+        {
+            if (_sourceSnapshot == null)
+                return;
+            string text = _codeField?.TextLf ?? "";
+            var parsed = BuilderLanguage.Parse(text, _focusFile);
+            string failure = null;
+            foreach (var diagnostic in parsed.Diagnostics)
+            {
+                if (diagnostic.Severity == Ruitk.Language.ParseSeverity.Error)
+                {
+                    failure = diagnostic.Message;
+                    break;
+                }
+            }
+            if (failure != null)
+            {
+                _codeField?.SetError(true);
+                Toast("Parse failed: " + failure);
+                return;
+            }
+            _codeField?.SetError(false);
+            _sourceSnapshot = null;
+            SetSourceEditing(false);
+            ScheduleCanvasRefresh(_focusFile);
+            NotifyBufferChanged();
+        }
+
+        private void CancelSourceEdit()
+        {
+            if (_sourceSnapshot == null)
+                return;
+            string restore = _sourceSnapshot;
+            _sourceSnapshot = null;
+            _codeField?.SetError(false);
+            SetSourceEditing(false);
+            var session = _workspace.TryGet(_focusFile);
+            if (session != null && !session.IsReadOnly)
+            {
+                session.ApplyEdit(restore);
+                _codeField?.SetContent(restore, _focusFile, null);
+                RefreshChrome();
+                ScheduleCanvasRefresh(_focusFile);
+                NotifyBufferChanged();
+            }
+        }
+
+        private void SetSourceEditing(bool editing)
+        {
+            if (_editButton != null)
+                _editButton.style.display = editing ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_applyButton != null)
+                _applyButton.style.display = editing ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_cancelButton != null)
+                _cancelButton.style.display = editing ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         [System.NonSerialized]
@@ -733,6 +819,19 @@ namespace Ruitk.Builder
                     break;
                 case "move":
                 {
+                    // POC drop with no .jsx-row under the cursor but inside the
+                    // card: index = children.length — the row relocates to the END
+                    // of the ROOT element's children.
+                    bool appendToRoot = false;
+                    if (!hasRow && node.Markup.Count > 0)
+                    {
+                        var rootRow = node.Markup[0];
+                        row = rootRow;
+                        rowIdx = 0;
+                        hasRow = true;
+                        appendToRoot = true;
+                        indent = IndentOf(full, rootRow.SourceLine) + "  ";
+                    }
                     if (!hasRow)
                         break;
                     int split = name.LastIndexOf(':');
@@ -758,14 +857,17 @@ namespace Ruitk.Builder
                         break;
                     }
                     var srcRow = srcNode.Markup[srcRowIdx];
+                    int destination = appendToRoot
+                        ? (row.EndLine > row.SourceLine ? row.EndLine - 1 : row.SourceLine)
+                        : band == 0 ? row.SourceLine - 1
+                            : band == 2 ? (row.EndLine > 0 ? row.EndLine : row.SourceLine)
+                            : row.SourceLine;
                     MoveLineRange(
                         full,
                         srcRow.SourceLine,
                         srcRow.EndLine > 0 ? srcRow.EndLine : srcRow.SourceLine,
-                        band == 0 ? row.SourceLine - 1
-                            : band == 2 ? (row.EndLine > 0 ? row.EndLine : row.SourceLine)
-                            : row.SourceLine,
-                        indent + (band == 1 ? "  " : ""));
+                        destination,
+                        appendToRoot ? indent : indent + (band == 1 ? "  " : ""));
                     break;
                 }
             }
@@ -810,24 +912,24 @@ namespace Ruitk.Builder
         /// the row's open-tag line; an empty value removes the attribute.</summary>
         private void OnAttrValueEdited(string filePath, int sourceLine, int attrIdx, string newValue)
         {
-            EditLineInFile(Path.GetFullPath(filePath), sourceLine, line =>
+            EditOpenTagInFile(Path.GetFullPath(filePath), sourceLine, tag =>
             {
                 var matches = System.Text.RegularExpressions.Regex.Matches(
-                    line, "(\\w+)=(\\{[^}]*\\}|\"[^\"]*\")");
+                    tag, "(\\w+)=(\\{[^}]*\\}|\"[^\"]*\")");
                 if (attrIdx < 0 || attrIdx >= matches.Count)
-                    return line;
+                {
+                    Toast("Couldn't locate that attribute in the source.");
+                    return null;
+                }
                 var m = matches[attrIdx];
                 if (string.IsNullOrWhiteSpace(newValue))
-                {
-                    string removed = line.Remove(m.Index, m.Length);
-                    return removed.Replace("  ", " ");
-                }
+                    return tag.Remove(m.Index, m.Length).Replace("  ", " ");
                 string oldValue = m.Groups[2].Value;
                 bool expr = oldValue.StartsWith("{", System.StringComparison.Ordinal);
                 string wrapped = expr ? "{" + newValue + "}" : "\"" + newValue + "\"";
-                return line.Substring(0, m.Groups[2].Index) + wrapped
-                    + line.Substring(m.Groups[2].Index + m.Groups[2].Length);
-            });
+                return tag.Substring(0, m.Groups[2].Index) + wrapped
+                    + tag.Substring(m.Groups[2].Index + m.Groups[2].Length);
+            }, "attribute value");
         }
 
         /// <summary>POC 6.3 directive commit: rewrite the directive header line
@@ -875,11 +977,18 @@ namespace Ruitk.Builder
                 items.Add(new BuilderSearchMenu.Item
                 {
                     Label = match.Groups[1].Value + " = " + match.Groups[2].Value,
-                    OnPick = () => EditLineInFile(filePath, sourceLine, line =>
-                        line.Replace(" " + full, "").Replace(full, "")),
+                    OnPick = () => EditOpenTagInFile(filePath, sourceLine, tag =>
+                    {
+                        if (tag.IndexOf(full, System.StringComparison.Ordinal) < 0)
+                        {
+                            Toast("Couldn't locate that attribute in the source.");
+                            return null;
+                        }
+                        return tag.Replace(" " + full, "").Replace(full, "");
+                    }, "removed " + match.Groups[1].Value),
                 });
             }
-            BuilderSearchMenu.Show("remove attribute", "search attributes…", items);
+            BuilderSearchMenu.Show("remove attribute", "search…", items);
         }
 
         /// <summary>POC 6.4 A.1: searchable typed-attribute menu with the
@@ -900,16 +1009,23 @@ namespace Ruitk.Builder
             void AddAttr(string name, string type)
             {
                 string value = BuilderSchemaCache.DefaultValueFor(name, type);
-                EditLineInFile(filePath, sourceLine, line =>
+                bool wrote = false;
+                EditOpenTagInFile(filePath, sourceLine, tag =>
                 {
-                    int close = line.LastIndexOf("/>", System.StringComparison.Ordinal);
+                    int close = tag.LastIndexOf("/>", System.StringComparison.Ordinal);
                     if (close < 0)
-                        close = line.LastIndexOf('>');
+                        close = tag.LastIndexOf('>');
                     if (close < 0)
-                        return line;
-                    return line.Substring(0, close).TrimEnd() + " " + name + "=" + value
-                        + (line.Substring(close).StartsWith("/") ? " " : "") + line.Substring(close);
-                });
+                    {
+                        Toast("Couldn't find the open tag's end — attribute not added.");
+                        return null;
+                    }
+                    wrote = true;
+                    return tag.Substring(0, close).TrimEnd() + " " + name + "=" + value
+                        + (tag.Substring(close).StartsWith("/") ? " " : "") + tag.Substring(close);
+                }, "added " + name);
+                if (!wrote)
+                    return;
                 // POC addAttr: commit, jump to L2 if we are below it, then open the
                 // new value's inline editor.
                 if (_canvasHost != null && _canvasHost.Zoom < 1.05f)
@@ -1191,7 +1307,8 @@ namespace Ruitk.Builder
             return line.Substring(0, i);
         }
 
-        private void EditLineInFile(string filePath, int line1, System.Func<string, string> transform)
+        private void EditLineInFile(
+            string filePath, int line1, System.Func<string, string> transform, string what = null)
         {
             var session = _workspace.TryGet(filePath);
             if (session == null || session.IsReadOnly)
@@ -1200,7 +1317,63 @@ namespace Ruitk.Builder
             if (line1 - 1 < 0 || line1 - 1 >= lines.Length)
                 return;
             lines[line1 - 1] = transform(lines[line1 - 1]);
-            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), what);
+        }
+
+        /// <summary>The POC edits the AST, so an open tag whose attributes wrap
+        /// across lines behaves exactly like a single-line one. Here the open
+        /// tag's line SPAN is joined, transformed as one string, and re-split —
+        /// otherwise the per-line regexes silently no-op on wrapped tags.</summary>
+        private void EditOpenTagInFile(
+            string filePath, int line1, System.Func<string, string> transform, string what)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int start = line1 - 1;
+            if (start < 0 || start >= lines.Count)
+                return;
+            int end = OpenTagEnd(lines, start);
+            string joined = string.Join("\n", lines.GetRange(start, end - start + 1));
+            string rewritten = transform(joined);
+            if (rewritten == null || rewritten == joined)
+                return;
+            lines.RemoveRange(start, end - start + 1);
+            lines.InsertRange(start, rewritten.Split('\n'));
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), what);
+        }
+
+        /// <summary>Index of the last line of the open tag that starts on
+        /// <paramref name="start"/> — the first line that closes it outside of a
+        /// string or a braced expression.</summary>
+        private static int OpenTagEnd(System.Collections.Generic.List<string> lines, int start)
+        {
+            int braces = 0;
+            bool inString = false;
+            for (int i = start; i < lines.Count && i < start + 24; i++)
+            {
+                string line = lines[i];
+                for (int c = 0; c < line.Length; c++)
+                {
+                    char ch = line[c];
+                    if (inString)
+                    {
+                        if (ch == '"')
+                            inString = false;
+                        continue;
+                    }
+                    if (ch == '"')
+                        inString = true;
+                    else if (ch == '{')
+                        braces++;
+                    else if (ch == '}')
+                        braces--;
+                    else if (ch == '>' && braces <= 0)
+                        return i;
+                }
+            }
+            return start;
         }
 
         private void InsertLinesInFile(string filePath, int afterLine1, string newLine)
@@ -1370,7 +1543,7 @@ namespace Ruitk.Builder
             return false;
         }
 
-        private void ApplyProgrammaticEdit(string filePath, string newBufferLf)
+        private void ApplyProgrammaticEdit(string filePath, string newBufferLf, string what = null)
         {
             var session = _workspace.TryGet(filePath);
             if (session == null)
@@ -1385,7 +1558,10 @@ namespace Ruitk.Builder
             // POC commitNode(): rebuild ONLY the edited card and redraw the edges —
             // zoom, camera, card selection and row selection survive the commit.
             _canvasHost?.RefreshGraph(filePath, ReadBufferOrDisk);
-            Toast("Edited " + Path.GetFileName(filePath) + " — buffer dirty");
+            // POC commitNode(label): the toast names WHAT changed, not just the file.
+            Toast(string.IsNullOrEmpty(what)
+                ? "Committed edit → " + Path.GetFileName(filePath)
+                : "Committed " + what + " → " + Path.GetFileName(filePath));
         }
 
         private void OnPreviewComponentPicked(string filePath)
@@ -1407,8 +1583,43 @@ namespace Ruitk.Builder
         {
             _workspace.Open(filePath);
             _focusFile = filePath;
+            // POC selectNode(): every route into a file moves the gold ring too.
+            _canvasHost?.SelectByPath(filePath);
             MountPreview();
             RefreshChrome();
+        }
+
+        /// <summary>POC firstUsageProps + collectExprs, read off the live graph:
+        /// the first card that instantiates this component (and that usage's
+        /// attribute pairs), plus the component's own expression blob.</summary>
+        private (string Owner, string UsageAttrs, string Blob) UsageFor(string uitkxPath)
+        {
+            var nodes = _canvasHost?.Nodes;
+            if (nodes == null)
+                return (null, "", "");
+            var self = _canvasHost.FindNode(Path.GetFullPath(uitkxPath));
+            if (self == null)
+                return (null, "", "");
+            var blob = new System.Text.StringBuilder();
+            foreach (var markupRow in self.Markup)
+                blob.Append(markupRow.AttrsText).Append(' ');
+            foreach (string island in self.IslandLines)
+                blob.Append(island).Append(' ');
+            foreach (var bodyRow in self.Body)
+                blob.Append(bodyRow.SourceText).Append(' ');
+            foreach (var candidate in nodes)
+            {
+                if (candidate == self)
+                    continue;
+                foreach (var candidateRow in candidate.Markup)
+                {
+                    if (!string.Equals(
+                            candidateRow.Text.Trim('<', '>'), self.Title, System.StringComparison.Ordinal))
+                        continue;
+                    return (candidate.Title, candidateRow.AttrsText, blob.ToString());
+                }
+            }
+            return (null, "", blob.ToString());
         }
 
         /// <summary>Debounced buffer-edit entry point (CodeField/authoring call
@@ -1584,7 +1795,11 @@ namespace Ruitk.Builder
             };
             help.Add(new Label("Drive it like this")
             {
-                style = { color = new Color(0.31f, 0.76f, 0.97f), fontSize = 13f, marginBottom = 6f },
+                style =
+                {
+                    color = new Color(0.31f, 0.76f, 0.97f), fontSize = 13f, marginBottom = 6f,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                },
             });
             string[] steps =
             {
@@ -1599,8 +1814,8 @@ namespace Ruitk.Builder
                 "9. Drag from the Library (left, searchable) onto a JSX row — top edge inserts before, bottom edge after, middle nests inside. Drag existing rows to reorder. Hooks drop onto BODY, style modules onto a card (adds the import).",
                 "10. Right-click a row — searchable typed attributes (native schema / component props, untyped fallback), remove attribute, directives, delete. Emptying an attribute's value also removes it. Right-click a card — delete it. Right-click empty canvas or + new — create component / style / hook / util module.",
                 "11. Style authoring — on a style card, + entry gives searchable keys then value helpers (Px/Pct/Hex/Rgba/FlexRow…); + style adds another export.",
-                "12. Source pane is bidirectional — type in it (Ctrl+Space completes): it re-parses into the model and the card updates. Save writes every dirty buffer in one batch.",
-                "13. Edit state under STATE — LIVE HOOK VALUES; the live preview repaints. Drag the splitters to resize panes.",
+                "12. Source pane is bidirectional — click edit (or double-click the source), change the text, apply (Ctrl+Enter): it re-parses into the model, the card updates, and the source reformats canonically. Ctrl+Space completes; Save writes every dirty buffer in one batch.",
+                "13. Select ShopScreen, then edit shopStyles → root's BackgroundColor hex (try #2a1a3a) — the live preview repaints. Drag the splitters to resize panes.",
             };
             foreach (string step in steps)
                 help.Add(new Label(step)
@@ -1609,6 +1824,7 @@ namespace Ruitk.Builder
                     {
                         color = Text, fontSize = 12f,
                         whiteSpace = WhiteSpace.Normal, marginBottom = 5f,
+                        paddingLeft = 18f,
                     },
                 });
             canvas.Add(help);
@@ -1673,14 +1889,15 @@ namespace Ruitk.Builder
         }
 
         /// <summary>POC ".pane-title": uppercase 11px dim label on panel2 with a
-        /// line under it, and an accent name pinned right.</summary>
-        private static VisualElement PaneTitle(string left, out Label rightName)
+        /// line under it, optional mini buttons, and an accent name pinned right.</summary>
+        private static VisualElement PaneTitle(string left, out Label rightName, params Label[] buttons)
         {
             var row = new VisualElement
             {
                 style =
                 {
                     flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
                     justifyContent = Justify.SpaceBetween,
                     flexShrink = 0f,
                     backgroundColor = Panel2,
@@ -1691,9 +1908,43 @@ namespace Ruitk.Builder
                 },
             };
             row.Add(new Label(left) { style = { fontSize = 11f, color = Dim } });
-            rightName = new Label { style = { fontSize = 11f, color = Accent } };
-            row.Add(rightName);
+            var right = new VisualElement
+            {
+                style = { flexDirection = FlexDirection.Row, alignItems = Align.Center },
+            };
+            foreach (var button in buttons)
+                right.Add(button);
+            rightName = new Label { style = { fontSize = 11f, color = Accent, marginLeft = 8f } };
+            right.Add(rightName);
+            row.Add(right);
             return row;
+        }
+
+        /// <summary>POC ".pane-title button": a tiny panel2 pill with a line
+        /// border — "edit", "apply (Ctrl+Enter)", "cancel (Esc)".</summary>
+        private static Label MiniButton(string text, string tooltip, System.Action onClick)
+        {
+            var button = new Label(text)
+            {
+                tooltip = tooltip,
+                style =
+                {
+                    fontSize = 10f,
+                    color = Text,
+                    backgroundColor = Panel2,
+                    borderTopWidth = 1f, borderBottomWidth = 1f,
+                    borderLeftWidth = 1f, borderRightWidth = 1f,
+                    borderTopColor = Line, borderBottomColor = Line,
+                    borderLeftColor = Line, borderRightColor = Line,
+                    borderTopLeftRadius = 3f, borderTopRightRadius = 3f,
+                    borderBottomLeftRadius = 3f, borderBottomRightRadius = 3f,
+                    paddingLeft = 7f, paddingRight = 7f,
+                    paddingTop = 1f, paddingBottom = 1f,
+                    marginLeft = 6f,
+                },
+            };
+            button.RegisterCallback<PointerDownEvent>(_ => onClick());
+            return button;
         }
 
         private static VisualElement BuildLegend()
@@ -1783,7 +2034,73 @@ namespace Ruitk.Builder
                 Toast("Open a tree first - new files are created beside it");
                 return;
             }
-            BuilderNewFileDialog.Show(dir, this);
+            if (_canvasHost == null)
+                return;
+            _canvasHost.ShowCreateMenuAtPointer();
+        }
+
+        private static readonly System.Collections.Generic.Dictionary<string, (string Title, string Placeholder)>
+            s_createPrompts = new System.Collections.Generic.Dictionary<string, (string, string)>
+            {
+                ["Component"] = ("new component", "PascalCaseName"),
+                ["Style"] = ("new style module", "camelCaseName"),
+                ["Hooks"] = ("new hook module", "useSomething"),
+                ["Utils"] = ("new util module", "camelCaseName"),
+            };
+
+        /// <summary>POC openCreateMenu → openNameMenu: an at-cursor popup with a
+        /// title, a placeholder-only input, an inline error row and a "Create"
+        /// row. An invalid or duplicate name shows the error IN PLACE.</summary>
+        private void ShowCreatePrompt(string kind, float worldX, float worldY)
+        {
+            string dir = string.IsNullOrEmpty(_focusFile) ? null : Path.GetDirectoryName(_focusFile);
+            if (dir == null)
+            {
+                Toast("Open a tree first - new files are created beside it");
+                return;
+            }
+            var prompt = s_createPrompts.TryGetValue(kind, out var found)
+                ? found
+                : ("new file", "Name");
+            BuilderSearchMenu.ShowNamePrompt(
+                prompt.Item1,
+                prompt.Item2,
+                name => ValidateNewName(kind, name),
+                name =>
+                {
+                    string created = BuilderNewFileDialog.Create(dir, kind, name);
+                    if (created == null)
+                    {
+                        Toast("Could not create " + name);
+                        return;
+                    }
+                    _canvasHost?.PlaceNewCard(created, worldX, worldY);
+                    Toast("Created " + Path.GetFileName(created));
+                    OpenAdditionalFile(created);
+                });
+        }
+
+        private string ValidateNewName(string kind, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return "name required";
+            bool pascal = kind == "Component";
+            bool hook = kind == "Hooks";
+            if (hook && !System.Text.RegularExpressions.Regex.IsMatch(name, "^use[A-Z][A-Za-z0-9]*$"))
+                return "useSomething required";
+            if (!hook && pascal
+                && !System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Z][A-Za-z0-9]*$"))
+                return "PascalCaseName required";
+            if (!hook && !pascal
+                && !System.Text.RegularExpressions.Regex.IsMatch(name, "^[a-z][A-Za-z0-9]*$"))
+                return "camelCaseName required";
+            foreach (var node in _canvasHost?.Nodes
+                ?? new System.Collections.Generic.List<BuilderCanvasNode>())
+            {
+                if (string.Equals(node.Title, name, System.StringComparison.OrdinalIgnoreCase))
+                    return name + " already exists";
+            }
+            return null;
         }
 
         public void OpenAdditionalFile(string filePath)

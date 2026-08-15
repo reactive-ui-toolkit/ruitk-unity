@@ -25,13 +25,16 @@ export VirtualNode CanvasView(
   Action<string, int, int, string> onIslandEdit = null,
   Action<string> onAddStyleExport = null,
   Action<string> onAddUtilExport = null,
+  Action<string> onTraceStates = null,
   float viewZoom = 0f,
   float viewCamX = 0f,
   float viewCamY = 0f,
   int viewVersion = 0,
   string beginEditKey = "",
   string beginEditText = "",
-  int beginEditVersion = 0
+  int beginEditVersion = 0,
+  string selectPath = "",
+  int selectVersion = 0
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -48,6 +51,8 @@ export VirtualNode CanvasView(
   var (editOrig, setEditOrig) = useState("");
   var (traceOwner, setTraceOwner) = useState(-1);
   var (layoutVersion, setLayoutVersion) = useState(0);
+  var (hoverChipKey, setHoverChipKey) = useState("");
+  var (dragCardKey, setDragCardKey) = useState(-1);
 
   var panning = useRef(false);
   var dragCard = useRef(-1);
@@ -55,6 +60,18 @@ export VirtualNode CanvasView(
   var lastY = useRef(0f);
   var appliedView = useRef(viewVersion);
   var appliedEdit = useRef(beginEditVersion);
+  var appliedSelect = useRef(selectVersion);
+
+  // POC selectNode(): opening a file from any route (row double-click, preview
+  // click-through, library) moves the gold selection ring to that card.
+  if (appliedSelect.Current != selectVersion) {
+    appliedSelect.Current = selectVersion;
+    int wanted = graph.IndexOf(selectPath);
+    if (wanted >= 0) {
+      setSelected(wanted);
+      selected = wanted;
+    }
+  }
 
   if (appliedEdit.Current != beginEditVersion) {
     appliedEdit.Current = beginEditVersion;
@@ -79,6 +96,7 @@ export VirtualNode CanvasView(
   int lod = zoom < 0.45f ? 0 : (zoom < 1.05f ? 1 : 2);
   bool lodFull = lod >= 1;
   BuilderCanvasDrawing.CurrentLod = lod;
+  BuilderCanvasDrawing.CurrentZoom = zoom;
   float cardWidth = BuilderCanvasDrawing.CardWidthFor(lod);
 
   return (
@@ -103,6 +121,9 @@ export VirtualNode CanvasView(
         if (dragRowKey >= 0) {
           setDragRowKey(-1);
         }
+        if (dragCardKey >= 0) {
+          setDragCardKey(-1);
+        }
         if (panning.Current && onCameraChanged != null) {
           onCameraChanged(camX, camY, zoom);
         }
@@ -124,6 +145,14 @@ export VirtualNode CanvasView(
         }
       }}
       onPointerMove={e => {
+        if (BuilderCanvasDrawing.DragActive) {
+          if (dragRowKey >= 0) {
+            setDragRowKey(-1);
+          }
+          if (dragCardKey >= 0) {
+            setDragCardKey(-1);
+          }
+        }
         if (dragCard.Current >= 0) {
           var node = graph.Nodes[dragCard.Current];
           node.X = node.X + (e.Position.x - lastX.Current) / zoom;
@@ -176,6 +205,7 @@ export VirtualNode CanvasView(
           return (
             <VisualElement
               key={node.FilePath}
+              name={$"card-{index}"}
               style={new Style {
                 Position = PosAbsolute,
                 Width = Px(cardWidth),
@@ -183,19 +213,31 @@ export VirtualNode CanvasView(
                 Translate = Xlate(Px(node.X), Px(node.Y)),
                 BackgroundColor = Hex("#232329"),
                 BorderRadius = Px(10),
-                BorderTopWidth = isSelected ? 2f : 1.5f,
-                BorderRightWidth = isSelected ? 2f : 1.5f,
-                BorderBottomWidth = isSelected ? 2f : 1.5f,
-                BorderLeftWidth = isSelected ? 2f : 1.5f,
+                BorderTopWidth = 1.5f,
+                BorderRightWidth = 1.5f,
+                BorderBottomWidth = 1.5f,
+                BorderLeftWidth = 1.5f,
                 BorderTopColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
                 BorderRightColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
                 BorderBottomColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
                 BorderLeftColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
               }}
+              onPointerMove={e => {
+                if (BuilderCanvasDrawing.DragActive) {
+                  if (dragCardKey != index) {
+                    setDragCardKey(index);
+                  }
+                  if (dragRowKey >= 0) {
+                    setDragRowKey(-1);
+                  }
+                  e.StopPropagation();
+                }
+              }}
               onPointerUp={e => {
                 if (BuilderCanvasDrawing.DragActive && onRowDrop != null) {
                   onRowDrop(node.FilePath, -1, 1, BuilderDragService.Take());
                   setDragRowKey(-1);
+                  setDragCardKey(-1);
                   e.StopPropagation();
                 }
               }}
@@ -329,15 +371,27 @@ export VirtualNode CanvasView(
                                   style={CanvasStyles.CardImportLine}
                                 />
                                 <VisualElement
+                                  name={$"a-imp-{index}-{x}"}
                                   style={new Style {
-                                    Width = Px(8),
-                                    Height = Px(8),
-                                    BorderRadius = Px(4),
-                                    BackgroundColor = BuilderCanvasDrawing.DotColor(imp.BadgeKind),
+                                    Width = Px(12),
+                                    Height = Px(12),
+                                    BorderRadius = Px(6),
+                                    AlignItems = AlignCenter,
+                                    JustifyContent = JustifyCenter,
+                                    BackgroundColor = BuilderCanvasDrawing.DotHalo(imp.BadgeKind),
                                     MarginLeft = Px(6),
                                     FlexShrink = 0,
                                   }}
-                                />
+                                >
+                                  <VisualElement
+                                    style={new Style {
+                                      Width = Px(8),
+                                      Height = Px(8),
+                                      BorderRadius = Px(4),
+                                      BackgroundColor = BuilderCanvasDrawing.DotColor(imp.BadgeKind),
+                                    }}
+                                  />
+                                </VisualElement>
                               </VisualElement>
                             );
                           }
@@ -380,6 +434,14 @@ export VirtualNode CanvasView(
                                           ev.StopPropagation();
                                         }
                                       }}
+                                      onFocusOut={ev => {
+                                        if (editText != editOrig) {
+                                          if (onLineRewrite != null) {
+                                            onLineRewrite(node.FilePath, node.Body[bx].SourceLine, editText);
+                                          }
+                                        }
+                                        setEditKey("");
+                                      }}
                                       style={CanvasStyles.InlineEdit}
                                     />
                                   );
@@ -389,6 +451,7 @@ export VirtualNode CanvasView(
                                 <Label
                                   text={node.Body[bx].Kind == BuilderCardLineKind.Hook ? BuilderCanvasDrawing.ChipRichText(node.Body[bx].Text) : node.Body[bx].Text}
                                   enableRichText={true}
+                                  tooltip={node.Body[bx].SourceText + " (double-click to edit)"}
                                   onPointerDown={e => {
                                     if (e.ClickCount >= 2 && node.Body[bx].SourceLine > 0) {
                                       setEditKey(chipKey);
@@ -399,22 +462,34 @@ export VirtualNode CanvasView(
                                   }}
                                   onPointerEnter={e => {
                                     setTraceOwner(index);
+                                    setHoverChipKey(chipKey);
                                     setTraceStates(BuilderCanvasDrawing.ChipStates(node.Body[bx].Text));
+                                    if (onTraceStates != null && selected == index) {
+                                      onTraceStates(BuilderCanvasDrawing.ChipStates(node.Body[bx].Text));
+                                    }
                                   }}
-                                  onPointerLeave={e => { setTraceStates((string)null); setTraceOwner(-1); }}
+                                  onPointerLeave={e => {
+                                    setTraceStates((string)null);
+                                    setTraceOwner(-1);
+                                    setHoverChipKey("");
+                                    if (onTraceStates != null) {
+                                      onTraceStates((string)null);
+                                    }
+                                  }}
                                   style={new Style {
                                     Color = BuilderCanvasDrawing.LineColor(node.Body[bx].Kind),
                                     FontSize = Px(11.5f),
+                                    UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                     BackgroundColor = Hex("#2a2a31"),
                                     BorderRadius = Px(10),
                                     BorderTopWidth = 1,
                                     BorderRightWidth = 1,
                                     BorderBottomWidth = 1,
                                     BorderLeftWidth = 1,
-                                    BorderTopColor = Hex("#3a3a44"),
-                                    BorderRightColor = Hex("#3a3a44"),
-                                    BorderBottomColor = Hex("#3a3a44"),
-                                    BorderLeftColor = Hex("#3a3a44"),
+                                    BorderTopColor = hoverChipKey == chipKey ? Hex("#ffb74d") : Hex("#3a3a44"),
+                                    BorderRightColor = hoverChipKey == chipKey ? Hex("#ffb74d") : Hex("#3a3a44"),
+                                    BorderBottomColor = hoverChipKey == chipKey ? Hex("#ffb74d") : Hex("#3a3a44"),
+                                    BorderLeftColor = hoverChipKey == chipKey ? Hex("#ffb74d") : Hex("#3a3a44"),
                                     PaddingLeft = Px(9),
                                     PaddingRight = Px(9),
                                     PaddingTop = Px(2),
@@ -432,6 +507,9 @@ export VirtualNode CanvasView(
                               return (
                                 <Label
                                   text="+ hook"
+                                  tooltip="add a hook"
+                                  onPointerEnter={e => { setHoverChipKey($"addhook:{index}"); }}
+                                  onPointerLeave={e => { setHoverChipKey(""); }}
                                   onPointerDown={e => {
                                     if (onAddHook != null) {
                                       onAddHook(node.FilePath);
@@ -441,15 +519,16 @@ export VirtualNode CanvasView(
                                   style={new Style {
                                     Color = Hex("#8b8b96"),
                                     FontSize = Px(11.5f),
+                                    UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                     BorderRadius = Px(10),
                                     BorderTopWidth = 1,
                                     BorderRightWidth = 1,
                                     BorderBottomWidth = 1,
                                     BorderLeftWidth = 1,
-                                    BorderTopColor = Hex("#3a3a44"),
-                                    BorderRightColor = Hex("#3a3a44"),
-                                    BorderBottomColor = Hex("#3a3a44"),
-                                    BorderLeftColor = Hex("#3a3a44"),
+                                    BorderTopColor = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"),
+                                    BorderRightColor = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"),
+                                    BorderBottomColor = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"),
+                                    BorderLeftColor = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"),
                                     PaddingLeft = Px(9),
                                     PaddingRight = Px(9),
                                     PaddingTop = Px(2),
@@ -479,6 +558,14 @@ export VirtualNode CanvasView(
                                       ev.StopPropagation();
                                     }
                                   }}
+                                  onFocusOut={ev => {
+                                    if (editText != editOrig) {
+                                      if (onIslandEdit != null) {
+                                        onIslandEdit(node.FilePath, node.IslandStartLine, node.IslandEndLine, editText);
+                                      }
+                                    }
+                                    setEditKey("");
+                                  }}
                                   style={CanvasStyles.InlineEditArea}
                                 />
                               </VisualElement>
@@ -487,6 +574,7 @@ export VirtualNode CanvasView(
                           @if (lod == 2 && node.IslandLines.Count > 0 && editKey != $"island:{index}") {
                             return (
                               <VisualElement
+                                tooltip="double-click to edit"
                                 onPointerDown={e => {
                                   if (e.ClickCount >= 2 && node.IslandStartLine > 0) {
                                     setEditKey($"island:{index}");
@@ -495,7 +583,9 @@ export VirtualNode CanvasView(
                                     e.StopPropagation();
                                   }
                                 }}
-                                style={CanvasStyles.CodeIsland}
+                                style={traceOwner == index && BuilderCanvasDrawing.RowMatchesTrace(string.Join(" ", node.IslandLines), traceStates)
+                                  ? CanvasStyles.CodeIslandTrace
+                                  : CanvasStyles.CodeIsland}
                               >
                                 @for (int ci = 0; ci < node.IslandLines.Count; ci++) {
                                   return (
@@ -520,9 +610,23 @@ export VirtualNode CanvasView(
                             var detail = node.ExportDetail[x];
                             bool isAdd = detail.BadgeKind == 9 || detail.BadgeKind == 10 || detail.BadgeKind == 11;
                             bool isIsland = detail.BadgeKind == 12;
+                            bool isUtilSig = detail.Kind == BuilderCardLineKind.Export && detail.BadgeKind == 0;
                             bool editableLine = !isAdd
+                              && !isIsland
                               && detail.Text != "}"
-                              && lod == 2;
+                              && detail.BadgeKind != 13
+                              && (isUtilSig ? lod >= 1 : lod == 2);
+                            string entrySuffix = detail.Text.EndsWith(" {") ? " {"
+                              : detail.Text.EndsWith(",") ? ","
+                              : "";
+                            string entrySeed = entrySuffix.Length > 0
+                              ? detail.Text.Substring(0, detail.Text.Length - entrySuffix.Length)
+                              : detail.Text;
+                            string entryTip = isAdd
+                              ? (detail.BadgeKind == 9 ? "typed key + value helpers"
+                                : detail.BadgeKind == 10 ? "add another style export"
+                                : "add an exported function or value")
+                              : editableLine ? "click to edit" : "";
                             string entryKey = $"entry:{index}:{x}";
                             bool detailVisible = detail.Kind == BuilderCardLineKind.Export
                               || detail.Text == "}"
@@ -553,6 +657,7 @@ export VirtualNode CanvasView(
                                         MarginBottom = Px(6),
                                         MarginLeft = Px(12),
                                       }}
+                                      tooltip="double-click to edit"
                                       onPointerDown={e => {
                                         if (e.ClickCount >= 2) {
                                           setEditKey(entryKey);
@@ -584,13 +689,21 @@ export VirtualNode CanvasView(
                                           ev.StopPropagation();
                                         }
                                       }}
+                                      onFocusOut={ev => {
+                                        if (editText != editOrig) {
+                                          if (onIslandEdit != null) {
+                                            onIslandEdit(node.FilePath, detail.SourceLine, detail.EndLine, editText);
+                                          }
+                                        }
+                                        setEditKey("");
+                                      }}
                                       style={CanvasStyles.InlineEditArea}
                                     />
                                   );
                                 }
                                 @if (detailVisible && !isIsland && editKey == entryKey) {
                                   return (
-                                    <VisualElement style={new Style { FlexDirection = FlexRow, MarginLeft = Px(detail.Depth * 18f) }}>
+                                    <VisualElement style={new Style { FlexDirection = FlexRow, MarginLeft = Px(detail.Depth * 24f) }}>
                                       <TextField
                                         value={editText}
                                         onChange={ev => { setEditText(ev.newValue); }}
@@ -600,7 +713,7 @@ export VirtualNode CanvasView(
                                             ev.StopPropagation();
                                           } else if (ev.KeyCode == KeyCode.Return || ev.KeyCode == KeyCode.KeypadEnter) {
                                             if (onLineRewrite != null) {
-                                              onLineRewrite(node.FilePath, detail.SourceLine, editText);
+                                              onLineRewrite(node.FilePath, detail.SourceLine, editText + entrySuffix);
                                             }
                                             setEditKey("");
                                             ev.StopPropagation();
@@ -609,7 +722,7 @@ export VirtualNode CanvasView(
                                         onFocusOut={ev => {
                                           if (editText != editOrig) {
                                             if (onLineRewrite != null) {
-                                              onLineRewrite(node.FilePath, detail.SourceLine, editText);
+                                              onLineRewrite(node.FilePath, detail.SourceLine, editText + entrySuffix);
                                             }
                                           }
                                           setEditKey("");
@@ -624,10 +737,16 @@ export VirtualNode CanvasView(
                                     <Label
                                       text={detail.BadgeKind == 13 ? BuilderCanvasDrawing.ExportRichText(detail.Text) : detail.Text}
                                       enableRichText={true}
+                                      tooltip={entryTip}
+                                      onPointerEnter={e => { if (isAdd) { setHoverChipKey(entryKey); } }}
+                                      onPointerLeave={e => { if (isAdd) { setHoverChipKey(""); } }}
                                       style={new Style {
-                                        Color = isAdd ? Hex("#8b8b96") : Hex("#cfcfda"),
+                                        Color = isAdd
+                                          ? (hoverChipKey == entryKey ? Hex("#4fc3f7") : Hex("#8b8b96"))
+                                          : Hex("#cfcfda"),
                                         FontSize = Px(12),
-                                        MarginLeft = Px(detail.Depth * 18f),
+                                        UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                                        MarginLeft = Px(detail.Depth * 24f),
                                         PaddingTop = Px(2),
                                         PaddingBottom = Px(2),
                                       }}
@@ -647,8 +766,8 @@ export VirtualNode CanvasView(
                                           }
                                         } else if (editableLine) {
                                           setEditKey(entryKey);
-                                          setEditText(detail.Text);
-                                          setEditOrig(detail.Text);
+                                          setEditText(entrySeed);
+                                          setEditOrig(entrySeed);
                                         } else if (onRowClick != null) {
                                           onRowClick(node.FilePath, detail.SourceLine);
                                         }
@@ -682,9 +801,8 @@ export VirtualNode CanvasView(
                                 key={$"mk-{x}"}
                                 style={new Style {
                                   FlexDirection = FlexRow,
-                                  AlignItems = AlignCenter,
-                                  MarginLeft = Px(row.Depth * 14f),
-                                  PaddingLeft = Px(6),
+                                  AlignItems = lod == 2 ? AlignStart : AlignCenter,
+                                  PaddingLeft = Px(8f + row.Depth * 14f),
                                   PaddingRight = Px(6),
                                   PaddingTop = Px(2.5f),
                                   PaddingBottom = Px(2.5f),
@@ -750,6 +868,7 @@ export VirtualNode CanvasView(
                                   if (rowIdx > 0) {
                                     BuilderDragService.Arm($"move:{node.FilePath}:{rowIdx}");
                                   }
+                                  setSelected(index);
                                   setSelRowNode(index);
                                   setSelRowIdx(rowIdx);
                                   if (onRowClick != null) {
@@ -820,6 +939,7 @@ export VirtualNode CanvasView(
                                         Color = BuilderCanvasDrawing.LineColor(row.Kind),
                                         FontSize = Px(12),
                                         FlexShrink = 0,
+                                        UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                         UnityFontStyle = row.Kind == BuilderCardLineKind.Component ? FontBold : FontNormal,
                                       }}
                                     />
@@ -840,8 +960,12 @@ export VirtualNode CanvasView(
                                         return (
                                           <VisualElement key={attrKey} style={new Style { FlexDirection = FlexRow, MarginLeft = Px(6) }}>
                                             <Label
-                                              text={attrName + "=" + (isExpr ? "{" : "\"")}
-                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(12) }}
+                                              text={attrName + "="}
+                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(12), UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition }}
+                                            />
+                                            <Label
+                                              text={isExpr ? "{" : "\""}
+                                              style={new Style { Color = Hex("#ffb74d"), FontSize = Px(12), UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition }}
                                             />
                                             @if (editKey == attrKey) {
                                               return (
@@ -883,13 +1007,13 @@ export VirtualNode CanvasView(
                                                     setEditOrig(innerValue);
                                                     e.StopPropagation();
                                                   }}
-                                                  style={new Style { Color = Hex("#ffb74d"), FontSize = Px(12) }}
+                                                  style={new Style { Color = Hex("#ffb74d"), FontSize = Px(12), UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition }}
                                                 />
                                               );
                                             }
                                             <Label
                                               text={isExpr ? "}" : "\""}
-                                              style={new Style { Color = Hex("#9d9dab"), FontSize = Px(12) }}
+                                              style={new Style { Color = Hex("#ffb74d"), FontSize = Px(12), UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition }}
                                             />
                                           </VisualElement>
                                         );
@@ -897,18 +1021,31 @@ export VirtualNode CanvasView(
                                     </VisualElement>
                                   );
                                 }
-                                @if (row.Kind == BuilderCardLineKind.Component && editKey != $"badge:{index}:{rowIdx}") {
+                                @if (BuilderCanvasDrawing.ResolvesToNode(graph, row.Text) && editKey != $"badge:{index}:{rowIdx}") {
                                   return (
                                     <VisualElement
+                                      name={$"a-row-{index}-{rowIdx}"}
+                                      tooltip={"usage of " + row.Text.Trim('<', '>')}
                                       style={new Style {
-                                        Width = Px(8),
-                                        Height = Px(8),
-                                        BorderRadius = Px(4),
-                                        BackgroundColor = BuilderCanvasDrawing.DotColor(5),
+                                        Width = Px(12),
+                                        Height = Px(12),
+                                        BorderRadius = Px(6),
+                                        AlignItems = AlignCenter,
+                                        JustifyContent = JustifyCenter,
+                                        BackgroundColor = BuilderCanvasDrawing.DotHalo(5),
                                         MarginLeft = StyleAuto,
                                         FlexShrink = 0,
                                       }}
-                                    />
+                                    >
+                                      <VisualElement
+                                        style={new Style {
+                                          Width = Px(8),
+                                          Height = Px(8),
+                                          BorderRadius = Px(4),
+                                          BackgroundColor = BuilderCanvasDrawing.DotColor(5),
+                                        }}
+                                      />
+                                    </VisualElement>
                                   );
                                 }
                               </VisualElement>
@@ -918,6 +1055,16 @@ export VirtualNode CanvasView(
                       );
                     }
                   </VisualElement>
+                );
+              }
+              @if (isSelected) {
+                return (
+                  <VisualElement style={CanvasStyles.SelectionRing} pickingMode={PickIgnore} />
+                );
+              }
+              @if (dragCardKey == index) {
+                return (
+                  <VisualElement style={CanvasStyles.CardDropHint} pickingMode={PickIgnore} />
                 );
               }
             </VisualElement>

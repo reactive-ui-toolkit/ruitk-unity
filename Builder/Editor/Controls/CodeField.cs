@@ -29,6 +29,60 @@ namespace Ruitk.Builder
 
         public event Action<string> TextEdited;
 
+        /// <summary>POC source pane: double-click enters edit mode, Ctrl+Enter
+        /// applies (re-parse), Esc cancels and restores the snapshot.</summary>
+        public event Action EditRequested;
+
+        public event Action ApplyRequested;
+
+        public event Action CancelRequested;
+
+        private readonly List<string> _traceNames = new List<string>();
+        private string _traceSource = "";
+
+        /// <summary>POC ".srcline.hl": while a hook chip is hovered, every source
+        /// line naming one of its states gets the warn-tinted band.</summary>
+        public void SetTraceNames(string spaceSeparated)
+        {
+            string next = spaceSeparated ?? "";
+            if (next == _traceSource)
+                return;
+            _traceSource = next;
+            _traceNames.Clear();
+            if (!string.IsNullOrEmpty(spaceSeparated))
+            {
+                foreach (string raw in spaceSeparated.Split(' '))
+                {
+                    string name = raw.Trim();
+                    if (name.Length > 0)
+                        _traceNames.Add(name);
+                }
+            }
+            Recolor(TextLf);
+        }
+
+        /// <summary>POC "textarea.err": a failed apply turns the field's border
+        /// red until the next successful parse.</summary>
+        public void SetError(bool error)
+        {
+            var color = error ? new Color(0.94f, 0.38f, 0.38f) : new Color(0f, 0f, 0f, 0f);
+            float width = error ? 1f : 0f;
+            style.borderTopWidth = width;
+            style.borderBottomWidth = width;
+            style.borderLeftWidth = width;
+            style.borderRightWidth = width;
+            style.borderTopColor = color;
+            style.borderBottomColor = color;
+            style.borderLeftColor = color;
+            style.borderRightColor = color;
+        }
+
+        public void FocusEditor()
+        {
+            _input.Focus();
+            _userCaretActive = true;
+        }
+
         /// <summary>Ctrl+Space asks this for completions at (line0, char0);
         /// the window wires it to the shared LSP client.</summary>
         public Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>>
@@ -36,23 +90,7 @@ namespace Ruitk.Builder
 
         /// <summary>POC "#srcpane { font: 12px Consolas, monospace }". The OS font
         /// is resolved once; a machine without it falls back to the editor font.</summary>
-        private static Font MonoFont()
-        {
-            if (s_mono != null)
-                return s_mono;
-            try
-            {
-                s_mono = Font.CreateDynamicFontFromOSFont(
-                    new[] { "Consolas", "Menlo", "DejaVu Sans Mono", "Courier New" }, 12);
-            }
-            catch (Exception)
-            {
-                s_mono = null;
-            }
-            return s_mono;
-        }
-
-        private static Font s_mono;
+        private static Font MonoFont() => BuilderCanvasDrawing.MonoFont();
 
         public CodeField()
         {
@@ -102,7 +140,12 @@ namespace Ruitk.Builder
             _input.style.color = new Color(1f, 1f, 1f, 0f);
             _input.RegisterValueChangedCallback(OnInputChanged);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
-            _input.RegisterCallback<PointerDownEvent>(_ => _userCaretActive = true);
+            _input.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                _userCaretActive = true;
+                if (evt.clickCount >= 2)
+                    EditRequested?.Invoke();
+            });
             host.Add(_input);
 
             _diagnosticsLabel = new Label
@@ -257,6 +300,14 @@ namespace Ruitk.Builder
             if (evt.keyCode == KeyCode.Escape)
             {
                 CloseCompletionPopup();
+                CancelRequested?.Invoke();
+                return;
+            }
+            if (evt.ctrlKey
+                && (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter))
+            {
+                evt.StopPropagation();
+                ApplyRequested?.Invoke();
                 return;
             }
             if (!(evt.ctrlKey && evt.keyCode == KeyCode.Space))
@@ -356,7 +407,7 @@ namespace Ruitk.Builder
             {
                 var parsed = BuilderLanguage.Parse(textLf, _filePath);
                 var tokens = BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
-                _overlay.text = BuildRichText(textLf, tokens, _selectedLine1);
+                _overlay.text = BuildRichText(textLf, tokens, _selectedLine1, _traceNames);
 
                 var diags = BuilderLanguage.Diagnose(parsed, _filePath, _knownElements);
                 if (diags.Count == 0)
@@ -426,8 +477,28 @@ namespace Ruitk.Builder
         /// <summary>Tokens are 0-based line/column over the LF buffer; segments
         /// between tokens escape verbatim, token text escapes inside its color
         /// tag, so rich-text markup never shifts what the user is editing.</summary>
+        private static bool LineNamesAny(string line, List<string> names)
+        {
+            if (names == null || names.Count == 0 || line.Length == 0)
+                return false;
+            foreach (string name in names)
+            {
+                int at = line.IndexOf(name, StringComparison.Ordinal);
+                while (at >= 0)
+                {
+                    bool leftOk = at == 0 || !char.IsLetterOrDigit(line[at - 1]);
+                    int end = at + name.Length;
+                    bool rightOk = end >= line.Length || !char.IsLetterOrDigit(line[end]);
+                    if (leftOk && rightOk)
+                        return true;
+                    at = line.IndexOf(name, at + 1, StringComparison.Ordinal);
+                }
+            }
+            return false;
+        }
+
         private static string BuildRichText(
-            string textLf, SemanticTokenData[] tokens, int selectedLine1)
+            string textLf, SemanticTokenData[] tokens, int selectedLine1, List<string> traceNames)
         {
             string[] lines = textLf.Split('\n');
             var byLine = new Dictionary<int, List<SemanticTokenData>>();
@@ -445,8 +516,15 @@ namespace Ruitk.Builder
                 if (i > 0)
                     sb.Append('\n');
                 bool selected = selectedLine1 == i + 1;
-                if (selected)
+                if (!selected && LineNamesAny(line, traceNames))
+                {
+                    selected = true;
+                    sb.Append("<mark=#FFB74D26>");
+                }
+                else if (selected)
+                {
                     sb.Append("<mark=#FFD54F2E>");
+                }
                 if (!byLine.TryGetValue(i, out var list))
                 {
                     sb.Append(Escape(line));

@@ -264,8 +264,12 @@ namespace Ruitk.Builder
                 ParseStyleDetail(text, node);
             else if (node.Kind == BuilderNodeKind.Util)
                 ParseUtilDetail(text, node);
-            else if (node.Markup.Count == 0 && node.Exports.Count > 0)
+            else if (node.Kind == BuilderNodeKind.Unknown
+                && node.Markup.Count == 0 && node.Exports.Count > 0)
             {
+                // POC: a hook card's BODY holds hook chips and "+ hook" only —
+                // the module's own export name is never a chip. Only an
+                // unclassifiable file falls back to listing its exports.
                 foreach (string export in node.Exports)
                     node.Body.Add(new BuilderCardLine
                     {

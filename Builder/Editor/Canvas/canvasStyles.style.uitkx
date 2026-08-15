@@ -84,6 +84,7 @@ export Style CardSectionLast = new Style {
 export Style CardSignature = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(12),
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 
 export Style CardSectionHeader = new Style {
@@ -96,6 +97,7 @@ export Style CardSectionHeader = new Style {
 export Style CardImportLine = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(11),
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
   FlexGrow = 1,
   FlexShrink = 1,
   Overflow = OverflowHidden,
@@ -123,6 +125,7 @@ export Style InlineEdit = new Style {
   MinWidth = Px(60),
   MaxWidth = Px(240),
   FlexGrow = 1,
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 
 export Style InlineEditArea = new Style {
@@ -143,6 +146,7 @@ export Style InlineEditArea = new Style {
   PaddingTop = Px(2),
   PaddingBottom = Px(2),
   MinHeight = Px(84),
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 
 export Style CodeIsland = new Style {
@@ -166,6 +170,65 @@ export Style CodeIslandLine = new Style {
   Color = Hex("#bdbdc7"),
   FontSize = Px(11.5f),
   WhiteSpace = WsPre,
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+};
+
+// POC ".code-island.hl" — a code island whose text names a traced hook state.
+export Style CodeIslandTrace = new Style {
+  BackgroundColor = Hex("#221d12"),
+  BorderRadius = Px(6),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Rgba(255, 183, 77, 153),
+  BorderRightColor = Rgba(255, 183, 77, 153),
+  BorderBottomColor = Rgba(255, 183, 77, 153),
+  BorderLeftColor = Rgba(255, 183, 77, 153),
+  PaddingLeft = Px(9),
+  PaddingRight = Px(9),
+  PaddingTop = Px(6),
+  PaddingBottom = Px(6),
+};
+
+// POC ".card.selected" adds "0 0 0 2px rgba(255,213,79,.25)" WITHOUT changing
+// the border width — an inset ring overlay, so the card never grows on select.
+export Style SelectionRing = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Right = Px(0),
+  Bottom = Px(0),
+  BorderRadius = Px(9),
+  BorderTopWidth = 2,
+  BorderRightWidth = 2,
+  BorderBottomWidth = 2,
+  BorderLeftWidth = 2,
+  BorderTopColor = Rgba(255, 213, 79, 64),
+  BorderRightColor = Rgba(255, 213, 79, 64),
+  BorderBottomColor = Rgba(255, 213, 79, 64),
+  BorderLeftColor = Rgba(255, 213, 79, 64),
+};
+
+// POC ".drop-hint": 2px dashed accent outline + rgba(79,195,247,.08) fill on
+// the card/section a payload would land on (UITK has no dashed border — the
+// closest equivalent is the solid accent ring with the same tint).
+export Style CardDropHint = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Right = Px(0),
+  Bottom = Px(0),
+  BorderRadius = Px(9),
+  BackgroundColor = Rgba(79, 195, 247, 20),
+  BorderTopWidth = 2,
+  BorderRightWidth = 2,
+  BorderBottomWidth = 2,
+  BorderLeftWidth = 2,
+  BorderTopColor = Hex("#4fc3f7"),
+  BorderRightColor = Hex("#4fc3f7"),
+  BorderBottomColor = Hex("#4fc3f7"),
+  BorderLeftColor = Hex("#4fc3f7"),
 };
 
 export Style CardExport = new Style {

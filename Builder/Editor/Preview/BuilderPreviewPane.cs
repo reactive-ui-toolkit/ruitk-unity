@@ -43,6 +43,61 @@ namespace Ruitk.Builder
 
         public event Action<string> ComponentPicked;
 
+        /// <summary>POC firstUsageProps + collectExprs: the window hands the pane
+        /// (a) the card that first instantiates this component and the attribute
+        /// pairs of that usage, and (b) the component's own expression blob, which
+        /// is what object-prop knobs are mined from.</summary>
+        public Func<string, (string Owner, string UsageAttrs, string Blob)> UsageProvider;
+
+        private string _seededFrom;
+
+        /// <summary>POC ".knobs .krow": a 70px dim label and a #17171b input with
+        /// a --line border, 4px radius, 2px/6px padding — never Unity's grey
+        /// inspector field.</summary>
+        internal static T Field<T>(T field) where T : VisualElement
+        {
+            field.style.marginLeft = 4f;
+            field.style.marginBottom = 2f;
+            if (field is Toggle toggleField)
+                toggleField.labelElement.style.color = new Color(0.545f, 0.545f, 0.588f);
+            var label = field.Q<Label>(className: "unity-base-field__label");
+            if (label != null)
+            {
+                label.style.color = new Color(0.545f, 0.545f, 0.588f);
+                label.style.minWidth = 70f;
+                label.style.width = 70f;
+                label.style.fontSize = 11f;
+            }
+            var input = field.Q(className: "unity-base-field__input");
+            if (input != null)
+                StyleInput(input);
+            return field;
+        }
+
+        /// <summary>POC "#lib-search / .ctx-search / .knobs input" ground.</summary>
+        internal static void StyleInput(VisualElement input)
+        {
+            input.style.backgroundColor = new Color(0.090f, 0.090f, 0.106f);
+            input.style.color = new Color(0.839f, 0.839f, 0.863f);
+            input.style.borderTopWidth = 1f;
+            input.style.borderBottomWidth = 1f;
+            input.style.borderLeftWidth = 1f;
+            input.style.borderRightWidth = 1f;
+            var line = new Color(0.227f, 0.227f, 0.267f);
+            input.style.borderTopColor = line;
+            input.style.borderBottomColor = line;
+            input.style.borderLeftColor = line;
+            input.style.borderRightColor = line;
+            input.style.borderTopLeftRadius = 4f;
+            input.style.borderTopRightRadius = 4f;
+            input.style.borderBottomLeftRadius = 4f;
+            input.style.borderBottomRightRadius = 4f;
+            input.style.paddingTop = 2f;
+            input.style.paddingBottom = 2f;
+            input.style.paddingLeft = 6f;
+            input.style.paddingRight = 6f;
+        }
+
         public BuilderPreviewPane()
         {
             if (!s_refreshProviderRegistered)
@@ -177,13 +232,13 @@ namespace Ruitk.Builder
                         Path.GetFileNameWithoutExtension(_filePath ?? "")
                             .Replace(".style", "").Replace(".hooks", ""),
                         StringComparison.Ordinal);
-                    for (int i = 0; i < states.Count && shown < 12; i++)
+                    // POC stateRows are built from node.hooks of the SELECTED
+                    // component only — a child's internals never surface here.
+                    for (int i = 0; isFocused && i < states.Count && shown < 12; i++)
                     {
                         // POC stateRows: the row is labelled with the hook's own
                         // declared variable name (`gold`), not an index.
-                        string label = isFocused && i < _stateNames.Count
-                            ? _stateNames[i]
-                            : owner + "[" + i + "]";
+                        string label = i < _stateNames.Count ? _stateNames[i] : "state[" + i + "]";
                         var field = BuildStateField(label, states[i]);
                         if (field == null)
                             continue;
@@ -245,28 +300,28 @@ namespace Ruitk.Builder
                     var field = new IntegerField(label) { value = i };
                     field.labelElement.style.color = rowStyle;
                     field.RegisterValueChangedCallback(e => Write(e.newValue));
-                    return field;
+                    return Field(field);
                 }
                 case float f:
                 {
                     var field = new FloatField(label) { value = f };
                     field.labelElement.style.color = rowStyle;
                     field.RegisterValueChangedCallback(e => Write(e.newValue));
-                    return field;
+                    return Field(field);
                 }
                 case bool b:
                 {
                     var field = new Toggle(label) { value = b };
                     field.labelElement.style.color = rowStyle;
                     field.RegisterValueChangedCallback(e => Write(e.newValue));
-                    return field;
+                    return Field(field);
                 }
                 case string s:
                 {
                     var field = new TextField(label) { value = s };
                     field.labelElement.style.color = rowStyle;
                     field.RegisterValueChangedCallback(e => Write(e.newValue));
-                    return field;
+                    return Field(field);
                 }
                 case null:
                     return null;
@@ -299,8 +354,22 @@ namespace Ruitk.Builder
         {
             _filePath = uitkxPath;
             CollectStateNames(bufferText);
-            var type = ResolveComponentType(uitkxPath, assemblyHint);
-            if (type == null)
+
+            // POC ".nopreview": a style / hook / util module never resolves to a
+            // renderable component — classify by file name FIRST, because the
+            // generator stamps [UitkxSource] on their __Exports class too and the
+            // byName fallback would otherwise surface "__Exports".
+            var type = IsModuleFile(uitkxPath) ? null : ResolveComponentType(uitkxPath, assemblyHint);
+            Type owner = type;
+            var render = type == null ? null : type.GetMethod(
+                "Render",
+                BindingFlags.Public | BindingFlags.Static,
+                null,
+                new[] { typeof(IProps), typeof(IReadOnlyList<VirtualNode>) },
+                null);
+            if (owner != null && render != null)
+                RuntimeHelpers.RunModuleConstructor(owner.Module.ModuleHandle);
+            if (type == null || render == null)
             {
                 SetStatus(NoPreviewText(uitkxPath));
                 UnmountPreview();
@@ -311,22 +380,14 @@ namespace Ruitk.Builder
                 return;
             }
 
-            RuntimeHelpers.RunModuleConstructor(type.Module.ModuleHandle);
-
-            var render = type.GetMethod(
-                "Render",
-                BindingFlags.Public | BindingFlags.Static,
-                null,
-                new[] { typeof(IProps), typeof(IReadOnlyList<VirtualNode>) },
-                null);
-            if (render == null)
-            {
-                SetStatus(type.Name + " has no Render entry point");
-                UnmountPreview();
-                return;
-            }
-
-            bool sameComponent = _componentType == type && _renderDelegate != null;
+            // POC pvGeneric's per-component store: a recompile hands back a NEW
+            // type object from the swap assembly, so identity is the source file
+            // plus the props shape — never reference equality, which would wipe
+            // every knob the user typed on each 300 ms recompile.
+            bool sameComponent = _renderDelegate != null
+                && string.Equals(SourceOf(_componentType), SourceOf(type), StringComparison.OrdinalIgnoreCase)
+                && PropsSignature(_componentType) == PropsSignature(type);
+            var previousProps = _knobProps;
             _componentType = type;
             _renderDelegate = (Func<IProps, IReadOnlyList<VirtualNode>, VirtualNode>)
                 Delegate.CreateDelegate(
@@ -335,12 +396,67 @@ namespace Ruitk.Builder
             if (!sameComponent)
             {
                 _knobProps = CreateDefaultProps(type);
+                CarryOver(previousProps, _knobProps);
+                BuildKnobs();
+            }
+            else if (_knobProps == null)
+            {
+                _knobProps = CreateDefaultProps(type);
                 BuildKnobs();
             }
 
-            string badge = bufferText != null && bufferText.Contains("<Portal") ? "  [portals]" : "";
-            SetStatus(type.Name + badge);
+            // POC: the component's identity lives in the pane title's right slot
+            // (<SHOPSCREEN>), never as a line above the render.
+            SetStatus(null);
             Mount();
+        }
+
+        private static bool IsModuleFile(string uitkxPath)
+        {
+            string name = Path.GetFileName(uitkxPath) ?? "";
+            return name.EndsWith(".style.uitkx", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith(".hooks.uitkx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string SourceOf(Type type)
+        {
+            var src = type?.GetCustomAttribute<UitkxSourceAttribute>();
+            return src == null ? type?.FullName ?? "" : Canon(src.SourcePath);
+        }
+
+        private static string PropsSignature(Type componentType)
+        {
+            var propsType = componentType?.GetNestedType(componentType.Name + "Props");
+            if (propsType == null)
+                return "";
+            var names = new List<string>();
+            foreach (var p in propsType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                names.Add(p.Name + ":" + p.PropertyType.Name);
+            names.Sort(StringComparer.Ordinal);
+            return string.Join(",", names);
+        }
+
+        /// <summary>Knob values the user typed survive a recompile: matching
+        /// property names copy across onto the fresh props instance.</summary>
+        private static void CarryOver(IProps from, IProps to)
+        {
+            if (from == null || to == null)
+                return;
+            foreach (var target in to.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!target.CanWrite)
+                    continue;
+                var source = from.GetType().GetProperty(target.Name, BindingFlags.Public | BindingFlags.Instance);
+                if (source == null || !source.CanRead || source.PropertyType != target.PropertyType)
+                    continue;
+                try
+                {
+                    target.SetValue(to, source.GetValue(from));
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         /// <summary>Called after a preview compile of the shown file — re-resolve
@@ -462,8 +578,12 @@ namespace Ruitk.Builder
 
         private void SetStatus(string text)
         {
-            if (_statusLabel != null)
-                _statusLabel.text = text;
+            if (_statusLabel == null)
+                return;
+            _statusLabel.text = text ?? "";
+            _statusLabel.style.display = string.IsNullOrEmpty(text)
+                ? DisplayStyle.None
+                : DisplayStyle.Flex;
         }
 
         private static string Canon(string path)
@@ -550,15 +670,38 @@ namespace Ruitk.Builder
             }
         }
 
+        private static readonly System.Text.RegularExpressions.Regex s_numberish =
+            new System.Text.RegularExpressions.Regex(
+                @"price|count|stock|gold|amount|size|width|height|hp|level|score|id$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                | System.Text.RegularExpressions.RegexOptions.Compiled);
+
         private void BuildKnobs()
         {
             if (_knobsHost == null)
                 return;
             _knobsHost.Clear();
+            _seededFrom = null;
             if (_knobsHeader != null)
                 _knobsHeader.style.display = DisplayStyle.None;
             if (_knobProps == null)
                 return;
+
+            string usageAttrs = "";
+            string blob = "";
+            if (UsageProvider != null && _filePath != null)
+            {
+                try
+                {
+                    var usage = UsageProvider(_filePath);
+                    _seededFrom = usage.Owner;
+                    usageAttrs = usage.UsageAttrs ?? "";
+                    blob = usage.Blob ?? "";
+                }
+                catch (Exception)
+                {
+                }
+            }
 
             foreach (var prop in _knobProps.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
@@ -566,46 +709,184 @@ namespace Ruitk.Builder
                     continue;
                 var p = prop;
                 var t = p.PropertyType;
+                if (typeof(Delegate).IsAssignableFrom(t))
+                    continue;
                 if (t == typeof(string))
                 {
+                    string seeded = SeededLiteral(usageAttrs, p.Name);
+                    if (seeded != null)
+                        p.SetValue(_knobProps, seeded);
                     var field = new TextField(p.Name) { value = (string)p.GetValue(_knobProps) ?? "" };
                     field.RegisterValueChangedCallback(e => { p.SetValue(_knobProps, e.newValue); Mount(); });
-                    _knobsHost.Add(field);
+                    _knobsHost.Add(Field(field));
                 }
                 else if (t == typeof(int))
                 {
+                    string seeded = SeededLiteral(usageAttrs, p.Name);
+                    if (seeded != null && int.TryParse(seeded, out int seededInt))
+                        p.SetValue(_knobProps, seededInt);
                     var field = new IntegerField(p.Name) { value = (int)p.GetValue(_knobProps) };
                     field.RegisterValueChangedCallback(e => { p.SetValue(_knobProps, e.newValue); Mount(); });
-                    _knobsHost.Add(field);
+                    _knobsHost.Add(Field(field));
                 }
                 else if (t == typeof(float))
                 {
+                    string seeded = SeededLiteral(usageAttrs, p.Name);
+                    if (seeded != null && float.TryParse(seeded, out float seededFloat))
+                        p.SetValue(_knobProps, seededFloat);
                     var field = new FloatField(p.Name) { value = (float)p.GetValue(_knobProps) };
                     field.RegisterValueChangedCallback(e => { p.SetValue(_knobProps, e.newValue); Mount(); });
-                    _knobsHost.Add(field);
+                    _knobsHost.Add(Field(field));
                 }
                 else if (t == typeof(bool))
                 {
+                    string seeded = SeededLiteral(usageAttrs, p.Name);
+                    if (seeded != null && bool.TryParse(seeded, out bool seededBool))
+                        p.SetValue(_knobProps, seededBool);
                     var field = new Toggle(p.Name) { value = (bool)p.GetValue(_knobProps) };
                     field.RegisterValueChangedCallback(e => { p.SetValue(_knobProps, e.newValue); Mount(); });
-                    _knobsHost.Add(field);
+                    _knobsHost.Add(Field(field));
+                }
+                else
+                {
+                    BuildMemberKnobs(p, blob);
                 }
             }
 
             if (_knobsHeader != null && _knobsHost.childCount > 0)
                 _knobsHeader.style.display = DisplayStyle.Flex;
-            if (_knobsHost.childCount > 0)
-                _knobsHost.Add(new Label(
-                    "rendered from the real component — every edit re-renders")
+            if (_knobsHost.childCount == 0)
+                return;
+            // POC pvGeneric: the seeded-from line names the card the defaults came
+            // from, then the generic rendering note.
+            if (!string.IsNullOrEmpty(_seededFrom))
+                _knobsHost.Add(Note("knob defaults taken from its usage in " + _seededFrom));
+            _knobsHost.Add(Note("rendered from the real component — every edit re-renders"));
+        }
+
+        private static Label Note(string text) => new Label(text)
+        {
+            style =
+            {
+                color = new Color(0.545f, 0.545f, 0.588f),
+                fontSize = 11f,
+                whiteSpace = WhiteSpace.Normal,
+                marginTop = 4f, marginLeft = 78f,
+            },
+        };
+
+        /// <summary>POC firstUsageProps: a usage attribute whose value is a plain
+        /// literal ("SOLD OUT", 100, true) seeds the matching knob; an expression
+        /// ({item}) is skipped exactly like the POC's <c>typeof v !== "object"</c>
+        /// guard.</summary>
+        private static string SeededLiteral(string usageAttrs, string propName)
+        {
+            if (string.IsNullOrEmpty(usageAttrs))
+                return null;
+            var m = System.Text.RegularExpressions.Regex.Match(
+                usageAttrs, "\\b" + System.Text.RegularExpressions.Regex.Escape(propName)
+                + "=(\\{[^}]*\\}|\"[^\"]*\")");
+            if (!m.Success)
+                return null;
+            string raw = m.Groups[1].Value;
+            if (raw.StartsWith("\"", StringComparison.Ordinal))
+                return raw.Substring(1, raw.Length - 2);
+            string inner = raw.Substring(1, raw.Length - 2).Trim();
+            bool literal = inner.Length > 0
+                && (char.IsDigit(inner[0]) || inner == "true" || inner == "false"
+                    || inner[0] == '-' || inner[0] == '"');
+            return literal ? inner.Trim('"') : null;
+        }
+
+        /// <summary>POC: a non-primitive prop gets ONE knob per member the card's
+        /// expressions actually reach (<c>item.Name</c>, <c>item.Price</c>), typed
+        /// number/text by the POC's name heuristic.</summary>
+        private void BuildMemberKnobs(PropertyInfo prop, string blob)
+        {
+            if (string.IsNullOrEmpty(blob))
+                return;
+            object holder;
+            try
+            {
+                holder = prop.GetValue(_knobProps);
+                if (holder == null)
                 {
-                    style =
+                    holder = Activator.CreateInstance(prop.PropertyType);
+                    prop.SetValue(_knobProps, holder);
+                }
+            }
+            catch (Exception)
+            {
+                return;
+            }
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (System.Text.RegularExpressions.Match m in
+                System.Text.RegularExpressions.Regex.Matches(
+                    blob, "\\b" + System.Text.RegularExpressions.Regex.Escape(prop.Name)
+                    + "\\.([A-Za-z_]\\w*)"))
+            {
+                string member = m.Groups[1].Value;
+                if (!seen.Add(member))
+                    continue;
+                var target = prop.PropertyType.GetProperty(
+                    member, BindingFlags.Public | BindingFlags.Instance);
+                MemberInfo info = target;
+                Type memberType = target?.PropertyType;
+                if (target == null || !target.CanWrite)
+                {
+                    var fieldInfo = prop.PropertyType.GetField(
+                        member, BindingFlags.Public | BindingFlags.Instance);
+                    if (fieldInfo == null)
+                        continue;
+                    info = fieldInfo;
+                    memberType = fieldInfo.FieldType;
+                }
+                string label = prop.Name + "." + member;
+                var owner = holder;
+                void Write(object value)
+                {
+                    try
                     {
-                        color = new Color(0.545f, 0.545f, 0.588f),
-                        fontSize = 11f,
-                        whiteSpace = WhiteSpace.Normal,
-                        marginTop = 4f, marginLeft = 4f,
-                    },
-                });
+                        if (info is PropertyInfo pi)
+                            pi.SetValue(owner, value);
+                        else if (info is FieldInfo fi)
+                            fi.SetValue(owner, value);
+                        Mount();
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+                bool numberish = s_numberish.IsMatch(member);
+                if (memberType == typeof(int))
+                {
+                    Write(1);
+                    var field = new IntegerField(label) { value = 1 };
+                    field.RegisterValueChangedCallback(e => Write(e.newValue));
+                    _knobsHost.Add(Field(field));
+                }
+                else if (memberType == typeof(float))
+                {
+                    Write(1f);
+                    var field = new FloatField(label) { value = 1f };
+                    field.RegisterValueChangedCallback(e => Write(e.newValue));
+                    _knobsHost.Add(Field(field));
+                }
+                else if (memberType == typeof(bool))
+                {
+                    var field = new Toggle(label) { value = false };
+                    field.RegisterValueChangedCallback(e => Write(e.newValue));
+                    _knobsHost.Add(Field(field));
+                }
+                else if (memberType == typeof(string))
+                {
+                    string seed = numberish ? "1" : member;
+                    Write(seed);
+                    var field = new TextField(label) { value = seed };
+                    field.RegisterValueChangedCallback(e => Write(e.newValue));
+                    _knobsHost.Add(Field(field));
+                }
+            }
         }
     }
 }

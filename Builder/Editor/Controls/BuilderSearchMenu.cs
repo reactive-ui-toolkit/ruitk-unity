@@ -53,6 +53,9 @@ namespace Ruitk.Builder
         private bool _searchable = true;
         private TextField _search;
         private ScrollView _list;
+        private Func<string, string> _nameValidate;
+        private Action<string> _nameSubmit;
+        private Label _errorLabel;
 
         /// <summary>POC plain context menu (row / card / create): title header,
         /// no search field, separators and inline section headers, sized to its
@@ -83,6 +86,23 @@ namespace Ruitk.Builder
             Func<string, Item> freeform = null)
             => Open(title, placeholder, items, freeform, true, 260f, 320f);
 
+        /// <summary>POC openNameMenu(): a compact at-cursor popup with a title, a
+        /// placeholder-only input, an inline ".ctx-err" line and a persistent
+        /// "Create" row. Enter submits, Esc closes, and a failed validation writes
+        /// into the error line WITHOUT closing so the name can be corrected.</summary>
+        public static void ShowNamePrompt(
+            string title, string placeholder, Func<string, string> validate, Action<string> onSubmit)
+        {
+            var window = CreateInstance<BuilderSearchMenu>();
+            window._title = title;
+            window._placeholder = placeholder;
+            window._items = new List<Item>();
+            window._searchable = true;
+            window._nameValidate = validate;
+            window._nameSubmit = onSubmit;
+            Place(window, 240f, 104f);
+        }
+
         private static void Open(
             string title,
             string placeholder,
@@ -98,6 +118,11 @@ namespace Ruitk.Builder
             window._items = items;
             window._freeform = freeform;
             window._searchable = searchable;
+            Place(window, width, height);
+        }
+
+        private static void Place(BuilderSearchMenu window, float width, float height)
+        {
             // POC placeMenu(): every menu (and every submenu chained from one)
             // opens AT the click. Event.current is null outside OnGUI — UITK
             // pointer callbacks hand us the panel-space point instead, which the
@@ -111,11 +136,34 @@ namespace Ruitk.Builder
                 anchor = focusedWindow.position.center - new Vector2(130f, 160f);
             else
                 anchor = new Vector2(400f, 300f);
-            anchor.x = Mathf.Max(4f, anchor.x);
-            anchor.y = Mathf.Max(4f, anchor.y);
-            window.position = new Rect(anchor.x, anchor.y + 8f, width, height);
+            // POC placeMenu clamps on BOTH axes against the viewport, so a menu
+            // opened near the right or bottom edge slides back on-screen.
+            var bounds = ScreenBoundsAround(anchor);
+            anchor.x = Mathf.Clamp(anchor.x, bounds.xMin + 4f, Mathf.Max(bounds.xMin + 4f, bounds.xMax - width - 8f));
+            anchor.y = Mathf.Clamp(anchor.y + 8f, bounds.yMin + 4f, Mathf.Max(bounds.yMin + 4f, bounds.yMax - height - 8f));
+            window.position = new Rect(anchor.x, anchor.y, width, height);
             window.ShowPopup();
             window.Focus();
+        }
+
+        private static Rect ScreenBoundsAround(Vector2 point)
+        {
+            try
+            {
+                var main = UnityEditor.EditorGUIUtility.GetMainWindowPosition();
+                if (main.width > 0f && main.height > 0f && main.Contains(point))
+                    return main;
+                if (main.width > 0f && main.height > 0f)
+                    return new Rect(
+                        Mathf.Min(main.xMin, point.x - 200f),
+                        Mathf.Min(main.yMin, point.y - 200f),
+                        Mathf.Max(main.width, 1600f),
+                        Mathf.Max(main.height, 1000f));
+            }
+            catch (Exception)
+            {
+            }
+            return new Rect(0f, 0f, Screen.currentResolution.width, Screen.currentResolution.height);
         }
 
         private void CreateGUI()
@@ -149,7 +197,14 @@ namespace Ruitk.Builder
                     style = { marginLeft = 6f, marginRight = 6f, marginBottom = 4f },
                 };
                 _search.textEdition.placeholder = _placeholder ?? "search…";
-                _search.RegisterValueChangedCallback(_ => Rebuild());
+                BuilderPreviewPane.StyleInput(_search);
+                _search.RegisterValueChangedCallback(_ =>
+                {
+                    if (_nameValidate == null)
+                        Rebuild();
+                    else if (_errorLabel != null)
+                        _errorLabel.text = "";
+                });
                 _search.RegisterCallback<KeyDownEvent>(evt =>
                 {
                     if (evt.keyCode == KeyCode.Escape)
@@ -159,11 +214,29 @@ namespace Ruitk.Builder
                     }
                     else if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
                     {
-                        PickFirst();
+                        if (_nameValidate != null)
+                            SubmitName();
+                        else
+                            PickFirst();
                         evt.StopPropagation();
                     }
                 }, TrickleDown.TrickleDown);
                 root.Add(_search);
+            }
+
+            if (_nameValidate != null)
+            {
+                _errorLabel = new Label
+                {
+                    style =
+                    {
+                        color = new Color(0.94f, 0.38f, 0.38f),
+                        fontSize = 10f,
+                        paddingLeft = 10f,
+                        whiteSpace = WhiteSpace.Normal,
+                    },
+                };
+                root.Add(_errorLabel);
             }
 
             _list = new ScrollView { style = { flexGrow = 1f, maxHeight = 300f } };
@@ -194,9 +267,31 @@ namespace Ruitk.Builder
             }
         }
 
+        private void SubmitName()
+        {
+            string value = (_search?.value ?? "").Trim();
+            string error = _nameValidate(value);
+            if (!string.IsNullOrEmpty(error))
+            {
+                if (_errorLabel != null)
+                    _errorLabel.text = error;
+                return;
+            }
+            Close();
+            _nameSubmit?.Invoke(value);
+        }
+
         private void Rebuild()
         {
             _list.contentContainer.Clear();
+            if (_nameValidate != null)
+            {
+                AddRow(
+                    new Item { Label = "Create", OnPick = null },
+                    new Color(0.839f, 0.839f, 0.863f),
+                    submitsName: true);
+                return;
+            }
             string filter = _search?.value ?? "";
             int shown = 0;
             foreach (var item in _items)
@@ -255,7 +350,7 @@ namespace Ruitk.Builder
             }
         }
 
-        private void AddRow(Item item, Color color)
+        private void AddRow(Item item, Color color, bool submitsName = false)
         {
             var row = new VisualElement
             {
@@ -276,6 +371,11 @@ namespace Ruitk.Builder
             row.RegisterCallback<PointerDownEvent>(evt =>
             {
                 evt.StopPropagation();
+                if (submitsName)
+                {
+                    SubmitName();
+                    return;
+                }
                 Close();
                 item.OnPick?.Invoke();
             });
