@@ -657,8 +657,10 @@ namespace Ruitk.Builder
 
             // POC drawEdges reads getBoundingClientRect() off the anchor DOT, so a
             // curve leaves exactly from the dot on its import/markup row. The named
-            // dot elements are measured here; the section-stack estimate is only the
-            // pre-layout fallback.
+            // marker elements are measured here; the section-stack estimate is only
+            // the pre-layout fallback. §8.2: a marker scrolled out of its capped
+            // section clamps to the section viewport's edge — the curve terminates
+            // visibly instead of diving under the card chrome.
             Vector2 AnchorOf(string name, Vector2 fallback)
             {
                 var el = world?.Q(name);
@@ -673,7 +675,16 @@ namespace Ruitk.Builder
                     estimated = true;
                     return fallback;
                 }
-                return world.WorldToLocal(new Vector2(bound.xMax - 4f, bound.center.y));
+                Vector2 point = bound.center;
+                var scroll = el.GetFirstAncestorOfType<ScrollView>();
+                if (scroll != null && scroll.name == "ruitk-section-scroll"
+                    && scroll.contentViewport != null)
+                {
+                    var viewport = scroll.contentViewport.worldBound;
+                    if (viewport.height > 0f)
+                        point.y = Mathf.Clamp(point.y, viewport.yMin, viewport.yMax);
+                }
+                return world.WorldToLocal(point);
             }
 
             // Cards are placed with Translate, not Left/Top, so layout.x/y are
@@ -711,9 +722,11 @@ namespace Ruitk.Builder
                 Vector2 a;
                 if (CurrentLod == 0)
                 {
-                    // POC lod0 branch: the source is the whole card and
-                    // x1 = r1.right - r1.width / 2 — the card's CENTRE.
-                    a = CardRect(edge.FromIndex, from).center;
+                    // §8.3 (deliberate POC divergence): the L0 source is the
+                    // card's RIGHT edge — the POC's card-centre start drew the
+                    // curve out through the card body.
+                    var pillRect = CardRect(edge.FromIndex, from);
+                    a = new Vector2(pillRect.xMax, pillRect.center.y);
                 }
                 else
                 {
@@ -754,15 +767,66 @@ namespace Ruitk.Builder
                     if (target < 0 || target == i)
                         continue;
                     var to = graph.Nodes[target];
-                    var a = CurrentLod == 0
-                        ? CardRect(i, from).center
-                        : AnchorOf(
+                    Vector2 a;
+                    if (CurrentLod == 0)
+                    {
+                        var pillRect = CardRect(i, from);
+                        a = new Vector2(pillRect.xMax, pillRect.center.y);
+                    }
+                    else
+                    {
+                        a = AnchorOf(
                             "a-row-" + i + "-" + r,
                             new Vector2(from.X + width - 16f, from.Y + MarkupRowY(from, r)));
+                    }
                     StrokeEdge(p, a, TargetOf(target, to), BuilderPalette.UsageEdge, false);
                 }
             }
+
+            // §8.3: anchor-dot glyphs paint HERE, in the overlay, so no card can
+            // occlude them (UB-22). The row elements are invisible measurement
+            // markers; a clamped anchor paints its dot at the section edge.
+            if (CurrentLod > 0)
+            {
+                for (int i = 0; i < graph.Nodes.Count; i++)
+                {
+                    var node = graph.Nodes[i];
+                    for (int r = 0; r < node.Imports.Count; r++)
+                    {
+                        var imp = node.Imports[r];
+                        if (imp.BadgeKind == NamespaceImportBadge)
+                            continue;
+                        PaintAnchorDot(p, AnchorOf(
+                            "a-imp-" + i + "-" + r,
+                            new Vector2(node.X + width - 16f, node.Y + ImportRowY(node, imp.AttrsText))),
+                            imp.BadgeKind);
+                    }
+                    for (int r = 0; r < node.Markup.Count; r++)
+                    {
+                        if (!ResolvesToNode(graph, node.Markup[r].Text))
+                            continue;
+                        PaintAnchorDot(p, AnchorOf(
+                            "a-row-" + i + "-" + r,
+                            new Vector2(node.X + width - 16f, node.Y + MarkupRowY(node, r))), 5);
+                    }
+                }
+            }
             MaybeRetry(layer, estimated);
+        }
+
+        /// <summary>The 8px anchor dot with its 25% halo ring, painted in the
+        /// overlay in world units so it matches the element dots it replaced.</summary>
+        private static void PaintAnchorDot(Painter2D p, Vector2 center, int dotKind)
+        {
+            var halo = DotHalo(dotKind);
+            p.fillColor = halo;
+            p.BeginPath();
+            p.Arc(center, 6f, 0f, 360f);
+            p.Fill();
+            p.fillColor = DotColor(dotKind);
+            p.BeginPath();
+            p.Arc(center, 4f, 0f, 360f);
+            p.Fill();
         }
 
         /// <summary>An anchor dot that has not laid out yet paints from the

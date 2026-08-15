@@ -173,7 +173,9 @@ export VirtualNode CanvasView(
       }}
       onWheel={e => {
         float factor = e.Delta.y < 0f ? 1.12f : 1f / 1.12f;
-        float next = Mathf.Clamp(zoom * factor, 0.18f, 2.2f);
+        // §8.2/UB-24: the floor is the POC's own L0 preset — below 0.30 cards
+        // shrink past anything the reference ever renders.
+        float next = Mathf.Clamp(zoom * factor, 0.30f, 2.2f);
         if (next != zoom) {
           float scale = next / zoom;
           float nx = e.Position.x - (e.Position.x - camX) * scale;
@@ -398,6 +400,10 @@ export VirtualNode CanvasView(
                       return (
                         <VisualElement style={lastSection == 1 ? CanvasStyles.CardSectionLast : CanvasStyles.CardSection}>
                           <Label text="IMPORTS" style={CanvasStyles.CardSectionHeader} />
+                          <ScrollView
+                            name="ruitk-section-scroll"
+                            style={new Style { MaxHeight = Px(140) }}
+                          >
                           @for (int x = 0; x < node.Imports.Count; x++) {
                             var imp = node.Imports[x];
                             return (
@@ -431,33 +437,11 @@ export VirtualNode CanvasView(
                                     FlexShrink = 0,
                                     Overflow = OverflowVisible,
                                   }}
-                                >
-                                  <VisualElement
-                                    style={new Style {
-                                      Position = PosAbsolute,
-                                      Left = Px(-2),
-                                      Top = Px(-2),
-                                      Width = Px(12),
-                                      Height = Px(12),
-                                      BorderRadius = Px(6),
-                                      BackgroundColor = BuilderCanvasDrawing.DotHalo(imp.BadgeKind),
-                                    }}
-                                  />
-                                  <VisualElement
-                                    style={new Style {
-                                      Position = PosAbsolute,
-                                      Left = Px(0),
-                                      Top = Px(0),
-                                      Width = Px(8),
-                                      Height = Px(8),
-                                      BorderRadius = Px(4),
-                                      BackgroundColor = BuilderCanvasDrawing.DotColor(imp.BadgeKind),
-                                    }}
-                                  />
-                                </VisualElement>
+                                />
                               </VisualElement>
                             );
                           }
+                          </ScrollView>
                         </VisualElement>
                       );
                     }
@@ -468,6 +452,10 @@ export VirtualNode CanvasView(
                             text={node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook ? "BODY — HOOKS & STATE" : "EXPORTS"}
                             style={CanvasStyles.CardSectionHeader}
                           />
+                          <ScrollView
+                            name="ruitk-section-scroll"
+                            style={new Style { MaxHeight = Px(260) }}
+                          >
                           <VisualElement
                             style={new Style {
                               FlexDirection = FlexRow,
@@ -718,6 +706,7 @@ export VirtualNode CanvasView(
                               </VisualElement>
                             );
                           }
+                          </ScrollView>
                         </VisualElement>
                       );
                     }
@@ -725,6 +714,10 @@ export VirtualNode CanvasView(
                       return (
                         <VisualElement style={lastSection == 3 ? CanvasStyles.CardSectionLast : CanvasStyles.CardSection}>
                           <Label text="EXPORTS" style={CanvasStyles.CardSectionHeader} />
+                          <ScrollView
+                            name="ruitk-section-scroll"
+                            style={new Style { MaxHeight = Px(280) }}
+                          >
                           @for (int x = 0; x < node.ExportDetail.Count; x++) {
                             var detail = node.ExportDetail[x];
                             bool isAdd = detail.BadgeKind == 9 || detail.BadgeKind == 10 || detail.BadgeKind == 11;
@@ -930,6 +923,7 @@ export VirtualNode CanvasView(
                               </VisualElement>
                             );
                           }
+                          </ScrollView>
                         </VisualElement>
                       );
                     }
@@ -937,6 +931,10 @@ export VirtualNode CanvasView(
                       return (
                         <VisualElement style={lastSection == 4 ? CanvasStyles.CardSectionLast : CanvasStyles.CardSection}>
                           <Label text="RETURN — MARKUP" style={CanvasStyles.CardSectionHeader} />
+                          <ScrollView
+                            name="ruitk-section-scroll"
+                            style={new Style { MaxHeight = Px(340) }}
+                          >
                           @for (int x = 0; x < node.Markup.Count; x++) {
                             var row = node.Markup[x];
                             int rowIdx = x;
@@ -1258,35 +1256,13 @@ export VirtualNode CanvasView(
                                         FlexShrink = 0,
                                         Overflow = OverflowVisible,
                                       }}
-                                    >
-                                      <VisualElement
-                                        style={new Style {
-                                          Position = PosAbsolute,
-                                          Left = Px(-2),
-                                          Top = Px(-2),
-                                          Width = Px(12),
-                                          Height = Px(12),
-                                          BorderRadius = Px(6),
-                                          BackgroundColor = BuilderCanvasDrawing.DotHalo(5),
-                                        }}
-                                      />
-                                      <VisualElement
-                                        style={new Style {
-                                          Position = PosAbsolute,
-                                          Left = Px(0),
-                                          Top = Px(0),
-                                          Width = Px(8),
-                                          Height = Px(8),
-                                          BorderRadius = Px(4),
-                                          BackgroundColor = BuilderCanvasDrawing.DotColor(5),
-                                        }}
-                                      />
-                                    </VisualElement>
+                                    />
                                   );
                                 }
                               </VisualElement>
                             );
                           }
+                          </ScrollView>
                         </VisualElement>
                       );
                     }
@@ -1308,6 +1284,7 @@ export VirtualNode CanvasView(
           );
         }
         <VisualElement
+          name="ruitk-edge-layer"
           style={CanvasStyles.EdgeLayer}
           pickingMode={PickIgnore}
           onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawEdges(ctx, graph)}

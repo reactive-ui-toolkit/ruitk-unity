@@ -273,8 +273,27 @@ namespace Ruitk.Builder
                     if (view.horizontalScroller != null)
                         view.horizontalScroller.style.height = 6f;
                 }
+                // §8.2: capped card sections scroll; their scrollers get the same
+                // dark chrome, and every scroll repaints the edge overlay so the
+                // clamped anchors track live instead of lagging a frame.
+                var edgeLayer = _container.Q("ruitk-edge-layer");
+                foreach (var view in _container.Query<ScrollView>("ruitk-section-scroll").ToList())
+                {
+                    BuilderWindow.StyleScrollers(view);
+                    if (view.verticalScroller != null)
+                    {
+                        view.verticalScroller.style.width = 6f;
+                        if (edgeLayer != null && !ReferenceEquals(view.userData, s_scrollWired))
+                        {
+                            view.userData = s_scrollWired;
+                            view.verticalScroller.valueChanged += _ => edgeLayer.MarkDirtyRepaint();
+                        }
+                    }
+                }
             });
         }
+
+        private static readonly object s_scrollWired = new object();
 
         /// <summary>POC LOD bands: &lt;0.45 = L0, &lt;1.05 = L1, else L2.</summary>
         public static int LodOf(float zoom) => zoom < 0.45f ? 0 : zoom < 1.05f ? 1 : 2;
