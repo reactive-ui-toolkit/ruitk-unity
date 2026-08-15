@@ -216,23 +216,24 @@ export VirtualNode CanvasView(
                 Translate = Xlate(Px(node.X), Px(node.Y)),
               }}
             >
-            <VisualElement style={CanvasStyles.CardShadowFar} pickingMode={PickIgnore} />
-            <VisualElement style={CanvasStyles.CardShadowMid} pickingMode={PickIgnore} />
-            <VisualElement style={CanvasStyles.CardShadowNear} pickingMode={PickIgnore} />
-            <VisualElement style={CanvasStyles.CardShadow} pickingMode={PickIgnore} />
+            <VisualElement
+              style={CanvasStyles.CardShadowLayer}
+              pickingMode={PickIgnore}
+              onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawCardShadow(ctx)}
+            />
             <VisualElement
               style={new Style {
                 Overflow = lod == 0 ? OverflowVisible : OverflowHidden,
                 BackgroundColor = Hex("#232329"),
                 BorderRadius = Px(10),
-                BorderTopWidth = 1.5f,
-                BorderRightWidth = 1.5f,
-                BorderBottomWidth = 1.5f,
-                BorderLeftWidth = 1.5f,
-                BorderTopColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
-                BorderRightColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
-                BorderBottomColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
-                BorderLeftColor = isSelected ? Hex("#ffd54f") : Hex("#3a3a44"),
+                BorderTopWidth = 1,
+                BorderRightWidth = 1,
+                BorderBottomWidth = 1,
+                BorderLeftWidth = 1,
+                BorderTopColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                BorderRightColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                BorderBottomColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                BorderLeftColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
               }}
               onPointerMove={e => {
                 if (BuilderCanvasDrawing.DragActive) {
@@ -509,9 +510,9 @@ export VirtualNode CanvasView(
                                     }
                                   }}
                                   style={new Style {
-                                    Color = BuilderCanvasDrawing.LineColor(node.Body[bx].Kind),
+                                    Color = node.Body[bx].Kind == BuilderCardLineKind.Hook ? Hex("#d6d6dc") : BuilderCanvasDrawing.LineColor(node.Body[bx].Kind),
                                     FontSize = Px(11.5f),
-                                    Height = Px(16.7f),
+                                    Height = Px(22.7f),
                                     TextAlign = TextMiddleLeft,
                                     UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                     BackgroundColor = Hex("#2a2a31"),
@@ -557,7 +558,7 @@ export VirtualNode CanvasView(
                                   style={new Style {
                                     Color = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#8b8b96"),
                                     FontSize = Px(11.5f),
-                                    Height = Px(16.7f),
+                                    Height = Px(22.7f),
                                     TextAlign = TextMiddleLeft,
                                     UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                     BackgroundColor = Hex("#2a2a31"),

@@ -137,7 +137,7 @@ namespace Ruitk.Builder
 
             var search = new TextField
             {
-                style = { marginTop = 8f, marginLeft = 8f, marginRight = 8f, marginBottom = 8f },
+                style = { marginTop = 8f, marginBottom = 8f, flexShrink = 0f },
             };
             search.textEdition.placeholder = "search library…";
             BuilderPreviewPane.StyleInput(search);
@@ -153,10 +153,15 @@ namespace Ruitk.Builder
                 _filter = e.newValue ?? "";
                 Rebuild();
             });
-            container.Add(search);
-
+            // POC buildLibrary writes "#lib-search" as the FIRST CHILD of "#lib-body",
+            // and "#lib-body { overflow-y: auto }" is the scroller — so the search box
+            // scrolls away with the list instead of being pinned above it. The rows go
+            // in a sibling host so a rebuild never removes (and unfocuses) the field.
             var scroll = new ScrollView { style = { flexGrow = 1f, paddingLeft = 8f, paddingRight = 8f } };
-            _listHost = scroll.contentContainer;
+            scroll.contentContainer.Add(search);
+            var rowsHost = new VisualElement();
+            scroll.contentContainer.Add(rowsHost);
+            _listHost = rowsHost;
             container.Add(scroll);
 
             // POC buildLibrary() seeds HOOK_TEMPLATES before it ever looks at the

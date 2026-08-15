@@ -28,9 +28,12 @@ export Style CardHeader = new Style {
   PaddingTop = Px(8),
   PaddingBottom = Px(8),
   BackgroundColor = Hex("#2a2a31"),
-  // A 1px hairline lands on ~1 device px at the L2 zoom and antialiases down to
-  // #2e2e36; 1.5px (the card border's width) survives the world scale intact.
-  BorderBottomWidth = 1.5f,
+  // The POC rule is 1px, scaled by the live zoom like everything else on the
+  // canvas. 1.5px was a compensation for UITK dimming a hairline, but measured
+  // against poc-l2-edit.png it overshoots: the POC lays down ~1.4 device px of
+  // ink at the L2 zoom and 1.5f snapped to 2 solid px. The authored POC width is
+  // the geometrically exact value (1 * zoom == the browser's own coverage).
+  BorderBottomWidth = 1f,
   BorderBottomColor = Hex("#3a3a44"),
   BorderTopLeftRadius = Px(9),
   BorderTopRightRadius = Px(9),
@@ -79,11 +82,10 @@ export Style CardSection = new Style {
   PaddingRight = Px(12),
   PaddingTop = Px(7),
   PaddingBottom = Px(7),
-  // POC "rgba(58,58,68,.6)" over the #232329 card composites to #313139. Left as a
-  // translucent 1px hairline it antialiased down to an effective ~0.43 alpha, so
-  // the already-composited value is painted at full alpha over a width that
-  // survives the world scale.
-  BorderBottomWidth = 1.5f,
+  // POC "rgba(58,58,68,.6)" over the #232329 card composites to #313139, painted
+  // here at full alpha so the width alone carries the weight. 1px is the POC's
+  // own rule width; 1.5f put a second solid device px of ink under every section.
+  BorderBottomWidth = 1f,
   BorderBottomColor = Hex("#313139"),
 };
 
@@ -306,54 +308,21 @@ export Style CardDropHint = new Style {
   BorderLeftColor = Hex("#4fc3f7"),
 };
 
-// POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }" — an 18px BLUR, so the
-// dark spreads ~9px to each side and ~15px below and fades out. UITK has no
-// box-shadow; a single offset rect gave a hard 4px band under the card and
-// nothing at all at its sides. Four concentric rects of growing inset and
-// falling alpha composite to ~.32 at the card edge with a real falloff.
-export Style CardShadowFar = new Style {
+// POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }" — an 18px BLUR around a
+// shadow box offset 6px down, so the dark reaches 18px past that box on every
+// side and fades CONTINUOUSLY (probed on poc-l2-edit.png: 24 monotone rows below
+// the card, no two the same). UITK has no box-shadow, and four stacked opaque
+// rects read as four flat plateaus with visible steps between them. One layer
+// carries the whole falloff now, painted as a Gaussian ramp by
+// BuilderCanvasDrawing.DrawCardShadow. The insets below ARE the blur reach: the
+// element's content rect is the shadow box grown by 18 on all four sides, which
+// is the geometry the painter assumes.
+export Style CardShadowLayer = new Style {
   Position = PosAbsolute,
-  Top = Px(-3),
-  Left = Px(-9),
-  Right = Px(-9),
-  Bottom = Px(-15),
-  BorderRadius = Px(19),
-  // POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }" composites to an
-  // effective alpha of .26 directly under the card and ~.15 at the sides
-  // (probed on poc-l1-cards.png: #141417 below, #17171B beside, over the
-  // #1B1B1F ground). The four layers all overlap under the card, so the old
-  // 26/33/41/56 run composited to .49 — twice the POC's pool of black.
-  BackgroundColor = Rgba(0, 0, 0, 10),
-};
-
-export Style CardShadowMid = new Style {
-  Position = PosAbsolute,
-  Top = Px(0),
-  Left = Px(-6),
-  Right = Px(-6),
-  Bottom = Px(-12),
-  BorderRadius = Px(16),
-  BackgroundColor = Rgba(0, 0, 0, 14),
-};
-
-export Style CardShadowNear = new Style {
-  Position = PosAbsolute,
-  Top = Px(3),
-  Left = Px(-3),
-  Right = Px(-3),
-  Bottom = Px(-9),
-  BorderRadius = Px(13),
-  BackgroundColor = Rgba(0, 0, 0, 17),
-};
-
-export Style CardShadow = new Style {
-  Position = PosAbsolute,
-  Top = Px(6),
-  Left = Px(0),
-  Right = Px(0),
-  Bottom = Px(-6),
-  BorderRadius = Px(10),
-  BackgroundColor = Rgba(0, 0, 0, 31),
+  Top = Px(-12),
+  Left = Px(-18),
+  Right = Px(-18),
+  Bottom = Px(-24),
 };
 
 export Style CardExport = new Style {

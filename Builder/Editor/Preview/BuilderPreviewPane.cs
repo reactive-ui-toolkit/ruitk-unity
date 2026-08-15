@@ -51,33 +51,58 @@ namespace Ruitk.Builder
 
         private string _seededFrom;
 
-        /// <summary>POC ".knobs .krow": a 70px dim label and a #17171b input with
-        /// a --line border, 4px radius, 2px/6px padding — never Unity's grey
-        /// inspector field.</summary>
+        /// <summary>POC ".knobs .krow { gap:8px; margin-bottom:6px; font-size:12px }"
+        /// with ".knobs label { width:70px }" and a fixed 110px value box painted on
+        /// the ".knobs input" ground (var(--panel2) #2a2a31 — NOT the #17171b the
+        /// library/context search boxes use) — never Unity's grey inspector field.</summary>
         internal static T Field<T>(T field) where T : VisualElement
         {
             field.style.marginLeft = 4f;
-            field.style.marginBottom = 2f;
+            field.style.marginBottom = 6f;
             if (field is Toggle toggleField)
+            {
                 toggleField.labelElement.style.color = new Color(0.545f, 0.545f, 0.588f);
+                toggleField.labelElement.style.fontSize = 12f;
+            }
             var label = field.Q<Label>(className: "unity-base-field__label");
             if (label != null)
             {
                 label.style.color = new Color(0.545f, 0.545f, 0.588f);
                 label.style.minWidth = 70f;
                 label.style.width = 70f;
-                label.style.fontSize = 11f;
+                label.style.fontSize = 12f;
             }
             var input = field.Q(className: "unity-base-field__input");
             if (input != null)
-                StyleInput(input);
+            {
+                StyleInput(input, KnobGround);
+                input.style.fontSize = 12f;
+                // POC ".knobs input[type=text|number] { width: 110px }": the value box
+                // is a fixed plate, not a stretch — only input[type=range] is flex:1.
+                if (!(field is Toggle) && !(field is Slider) && !(field is SliderInt))
+                {
+                    input.style.flexGrow = 0f;
+                    input.style.flexShrink = 0f;
+                    input.style.width = 110f;
+                }
+            }
             return field;
         }
 
-        /// <summary>POC "#lib-search / .ctx-search / .knobs input" ground.</summary>
-        internal static void StyleInput(VisualElement input)
+        /// <summary>POC "#lib-search { background: #17171b }" — the search ground.</summary>
+        internal static readonly Color SearchGround = new Color(0.090f, 0.090f, 0.106f);
+
+        /// <summary>POC ".knobs input { background: var(--panel2) }" = #2a2a31.</summary>
+        internal static readonly Color KnobGround = new Color(0.165f, 0.165f, 0.192f);
+
+        /// <summary>POC "#lib-search / .ctx-search / .knobs input" box chrome. The two
+        /// grounds differ (#17171b for the search boxes, var(--panel2) for the knob and
+        /// state fields), so the caller names the one it wants.</summary>
+        internal static void StyleInput(VisualElement input) => StyleInput(input, SearchGround);
+
+        internal static void StyleInput(VisualElement input, Color ground)
         {
-            input.style.backgroundColor = new Color(0.090f, 0.090f, 0.106f);
+            input.style.backgroundColor = ground;
             input.style.color = new Color(0.839f, 0.839f, 0.863f);
             input.style.borderTopWidth = 1f;
             input.style.borderBottomWidth = 1f;
@@ -155,12 +180,17 @@ namespace Ruitk.Builder
             // POC ".gp-root": every render sits inside a framed stage —
             // background #101014, 1px var(--line), 8px radius, 10px padding.
             // "#preview" itself carries no rule of its own.
+            // The stage is CONTENT-sized in the POC (".gp-root" declares no
+            // flex-grow), so the knobs/STATE strip always sits directly under the
+            // render. flexGrow:1 here stretched the stage over the whole 380px
+            // body and pushed the strip off the bottom of the pane entirely.
             _previewHost = new VisualElement
             {
                 name = "builder-preview-host",
                 style =
                 {
-                    flexGrow = 1f,
+                    flexGrow = 0f,
+                    flexShrink = 0f,
                     flexDirection = FlexDirection.Column,
                     backgroundColor = new Color(0.063f, 0.063f, 0.078f),
                     borderTopWidth = 1f, borderBottomWidth = 1f,
@@ -237,7 +267,10 @@ namespace Ruitk.Builder
             _knobsBlock.Add(_stateHeader);
             _stateHost = new VisualElement
             {
-                style = { flexShrink = 0f, maxHeight = 140f, paddingLeft = 8f, paddingBottom = 4f },
+                // 4px here plus Field's own 4px margin lands the rows on the same
+                // 8px gutter the section headers use — the POC's krows sit flush
+                // under "STATE — LIVE HOOK VALUES", not indented past it.
+                style = { flexShrink = 0f, maxHeight = 140f, paddingLeft = 4f, paddingBottom = 4f },
             };
             _knobsBlock.Add(_stateHost);
             _notesHost = new VisualElement { style = { flexShrink = 0f } };
@@ -412,7 +445,8 @@ namespace Ruitk.Builder
                         {
                             flexDirection = FlexDirection.Row,
                             alignItems = Align.Center,
-                            marginBottom = 2f,
+                            marginLeft = 4f,
+                            marginBottom = 6f,
                         },
                     };
                     row.Add(new Label(label)
@@ -420,7 +454,7 @@ namespace Ruitk.Builder
                         style =
                         {
                             color = rowStyle, minWidth = 70f, width = 70f,
-                            flexShrink = 0f, fontSize = 11f,
+                            flexShrink = 0f, fontSize = 12f,
                         },
                     });
                     var box = new Label(value.ToString())
@@ -428,14 +462,14 @@ namespace Ruitk.Builder
                         tooltip = value.ToString(),
                         style =
                         {
-                            flexGrow = 1f, flexShrink = 1f, minWidth = 0f,
-                            fontSize = 11f,
+                            flexGrow = 0f, flexShrink = 0f, width = 110f, minWidth = 0f,
+                            fontSize = 12f,
                             whiteSpace = WhiteSpace.NoWrap,
                             overflow = Overflow.Hidden,
                             textOverflow = TextOverflow.Ellipsis,
                         },
                     };
-                    StyleInput(box);
+                    StyleInput(box, KnobGround);
                     row.Add(box);
                     return row;
                 }

@@ -34,7 +34,7 @@ namespace Ruitk.Builder
 
         private const float MarkupRowH = 22.4f;
 
-        private const float ChipRowH = 28.7f;
+        private const float ChipRowH = 34.7f;
 
         /// <summary>Set by CanvasView each render; the edge painter shares it so
         /// anchors track the LOD-dependent card width (POC: 300 / 340 / 430).</summary>
@@ -363,6 +363,110 @@ namespace Ruitk.Builder
                 }
             }
             p.Fill();
+        }
+
+        /// <summary>POC ".card { border: 1px solid var(--line) }" / ".card.sel
+        /// { border-color: var(--warn) }". The browser renders that 1px at the live
+        /// zoom, so at the L0 zoom (~0.29) the outline all but disappears into the
+        /// #232329 fill (probed #24242a on poc-l0-architecture.png). UI Toolkit
+        /// alpha-modulates a sub-pixel border far less aggressively and painted a
+        /// hard #303038 hairline, which made the L0 pills read as outlined chips
+        /// instead of flat plates — the alpha is folded down at L0 to match.</summary>
+        public static Color CardFrameBorderColor(bool selected, int lod)
+        {
+            if (selected)
+                return new Color(1f, 0.835f, 0.310f);
+            var line = new Color(0.227f, 0.227f, 0.267f);
+            if (lod == 0)
+                line.a = 0.12f;
+            return line;
+        }
+
+        /// <summary>POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }". Four
+        /// stacked opaque rects gave four flat plateaus with visible steps; a real
+        /// Gaussian falloff is painted here instead, as N concentric rounded rects
+        /// whose per-ring alphas composite to 0.35*PHI(d/sigma) at every depth d
+        /// inside the shadow rect (the card box offset down by 6, radius 10).
+        /// The host element is inset -18/-18/-24/+(-12) around the card, so its own
+        /// content rect is exactly the shadow rect grown by the 18px blur reach.</summary>
+        public static void DrawCardShadow(MeshGenerationContext ctx)
+        {
+            if (ctx?.visualElement == null)
+                return;
+            var rect = ctx.visualElement.contentRect;
+            if (rect.width <= ShadowBlur * 2f || rect.height <= ShadowBlur * 2f)
+                return;
+
+            var shadow = new Rect(
+                ShadowBlur, ShadowBlur,
+                rect.width - ShadowBlur * 2f, rect.height - ShadowBlur * 2f);
+            var p = ctx.painter2D;
+            const int steps = 16;
+            const float innerReach = 6f;
+            float span = ShadowBlur + innerReach;
+            float previous = 0f;
+            for (int i = 0; i < steps; i++)
+            {
+                float d = -ShadowBlur + span * (i + 1) / steps;
+                float target = ShadowAlpha * NormalCdf(d / ShadowSigma);
+                float ring = 1f - (1f - target) / (1f - previous);
+                previous = target;
+                if (ring <= 0f)
+                    continue;
+                float inset = d;
+                var box = new Rect(
+                    shadow.x + inset, shadow.y + inset,
+                    shadow.width - inset * 2f, shadow.height - inset * 2f);
+                if (box.width <= 0f || box.height <= 0f)
+                    continue;
+                p.fillColor = new Color(0f, 0f, 0f, ring);
+                p.BeginPath();
+                TraceRoundedRect(p, box, Mathf.Max(0f, 10f - inset));
+                p.ClosePath();
+                p.Fill();
+            }
+        }
+
+        private const float ShadowBlur = 18f;
+
+        private const float ShadowSigma = 9f;
+
+        private const float ShadowAlpha = 0.35f;
+
+        /// <summary>Logistic approximation of the standard normal CDF (max error
+        /// ~0.01) — the shape of a Gaussian blur's edge falloff.</summary>
+        private static float NormalCdf(float x) => 1f / (1f + Mathf.Exp(-1.702f * x));
+
+        private static void TraceRoundedRect(Painter2D p, Rect box, float radius)
+        {
+            radius = Mathf.Min(radius, Mathf.Min(box.width, box.height) * 0.5f);
+            if (radius <= 0.01f)
+            {
+                p.MoveTo(new Vector2(box.xMin, box.yMin));
+                p.LineTo(new Vector2(box.xMax, box.yMin));
+                p.LineTo(new Vector2(box.xMax, box.yMax));
+                p.LineTo(new Vector2(box.xMin, box.yMax));
+                return;
+            }
+            void Corner(Vector2 center, float from, float to)
+            {
+                for (int i = 0; i <= 5; i++)
+                {
+                    float angle = Mathf.Deg2Rad * Mathf.Lerp(from, to, i / 5f);
+                    p.LineTo(new Vector2(
+                        center.x + Mathf.Cos(angle) * radius,
+                        center.y + Mathf.Sin(angle) * radius));
+                }
+            }
+            p.MoveTo(new Vector2(box.xMin + radius, box.yMin));
+            p.LineTo(new Vector2(box.xMax - radius, box.yMin));
+            Corner(new Vector2(box.xMax - radius, box.yMin + radius), -90f, 0f);
+            p.LineTo(new Vector2(box.xMax, box.yMax - radius));
+            Corner(new Vector2(box.xMax - radius, box.yMax - radius), 0f, 90f);
+            p.LineTo(new Vector2(box.xMin + radius, box.yMax));
+            Corner(new Vector2(box.xMin + radius, box.yMax - radius), 90f, 180f);
+            p.LineTo(new Vector2(box.xMin, box.yMin + radius));
+            Corner(new Vector2(box.xMin + radius, box.yMin + radius), 180f, 270f);
         }
 
         /// <summary>POC ".knobs { border-top: 1px dashed var(--line) }" — UI Toolkit
