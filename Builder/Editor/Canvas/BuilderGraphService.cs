@@ -337,9 +337,11 @@ namespace Ruitk.Builder
                 return;
             string[] rawLines = text.Split('\n');
             bool inBody = false;
+            int pendingBlanks = 0;
             for (int i = 0; i < rawLines.Length; i++)
             {
-                string line = rawLines[i].Trim();
+                string raw = rawLines[i].TrimEnd();
+                string line = raw.Trim();
                 if (!inBody)
                 {
                     if (s_exportHeader.IsMatch(line))
@@ -348,15 +350,55 @@ namespace Ruitk.Builder
                 }
                 if (line.StartsWith("return (", StringComparison.Ordinal))
                     break;
-                if (line.Length == 0
-                    || s_hookCall.IsMatch(line)
-                    || line.StartsWith("import ", StringComparison.Ordinal))
+                if (line.Length == 0)
+                {
+                    // POC ".code-island { white-space: pre }" keeps the block
+                    // verbatim, blank separator lines included — but never a
+                    // leading or trailing run, so blanks are held until the next
+                    // kept line proves they are interior.
+                    if (node.IslandLines.Count > 0)
+                        pendingBlanks++;
                     continue;
+                }
+                if (s_hookCall.IsMatch(line)
+                    || line.StartsWith("import ", StringComparison.Ordinal))
+                {
+                    pendingBlanks = 0;
+                    continue;
+                }
                 if (node.IslandStartLine == 0)
                     node.IslandStartLine = i + 1;
+                for (; pendingBlanks > 0; pendingBlanks--)
+                    node.IslandLines.Add("");
                 node.IslandEndLine = i + 1;
-                node.IslandLines.Add(line);
+                node.IslandLines.Add(raw);
             }
+            StripCommonIndent(node.IslandLines);
+        }
+
+        /// <summary>The POC's island bodies carry their own relative indentation
+        /// ("void Buy(Item it) {" then "  if (gold &lt; it.Price) return;"). Trimming every line
+        /// flattened the block; only the indentation the whole block SHARES is
+        /// removed, so nesting survives.</summary>
+        internal static void StripCommonIndent(List<string> lines)
+        {
+            if (lines == null || lines.Count == 0)
+                return;
+            int common = int.MaxValue;
+            foreach (string line in lines)
+            {
+                if (line.Length == 0)
+                    continue;
+                int w = 0;
+                while (w < line.Length && line[w] == ' ')
+                    w++;
+                if (w < common)
+                    common = w;
+            }
+            if (common <= 0 || common == int.MaxValue)
+                return;
+            for (int i = 0; i < lines.Count; i++)
+                lines[i] = lines[i].Length <= common ? "" : lines[i].Substring(common);
         }
 
         /// <summary>POC util card: value exports as-is; function exports as
@@ -393,7 +435,8 @@ namespace Ruitk.Builder
                 int bodyEnd = 0;
                 for (; j < lines.Length; j++)
                 {
-                    string bodyLine = lines[j].Trim();
+                    string bodyRaw = lines[j].TrimEnd();
+                    string bodyLine = bodyRaw.Trim();
                     if (bodyLine.StartsWith("}", StringComparison.Ordinal))
                         break;
                     if (bodyLine.Length == 0)
@@ -401,8 +444,11 @@ namespace Ruitk.Builder
                     if (bodyStart == 0)
                         bodyStart = j + 1;
                     bodyEnd = j + 1;
-                    body.Add(bodyLine);
+                    body.Add(bodyRaw);
                 }
+                // The POC renders a util body as a ".code-island util-body" with
+                // white-space:pre — its nesting is part of the picture.
+                StripCommonIndent(body);
                 if (body.Count > 0)
                     node.ExportDetail.Add(new BuilderCardLine
                     {

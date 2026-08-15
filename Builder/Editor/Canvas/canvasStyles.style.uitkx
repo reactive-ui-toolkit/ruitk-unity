@@ -117,6 +117,10 @@ export Style CardImportLine = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(11.5f),
   Height = Px(16.7f),
+  // A flex item's "min-height: auto" is its min-content height, which for the
+  // mono face is TALLER than the declared 1.45 box — so the auto minimum won and
+  // the row measured ~20.7 instead of 19.7 (measured drift: ~7px over six rows).
+  MinHeight = Px(0),
   TextAlign = TextMiddleLeft,
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
   FlexGrow = 1,
@@ -135,6 +139,7 @@ export Style AttrName = new Style {
   Color = Hex("#9d9dab"),
   FontSize = Px(12),
   Height = Px(17.4f),
+  MinHeight = Px(0),
   TextAlign = TextMiddleLeft,
   MarginLeft = Px(0),
   MarginRight = Px(0),
@@ -147,6 +152,7 @@ export Style AttrBrace = new Style {
   Color = Hex("#ffb74d"),
   FontSize = Px(12),
   Height = Px(17.4f),
+  MinHeight = Px(0),
   TextAlign = TextMiddleLeft,
   MarginLeft = Px(0),
   MarginRight = Px(0),

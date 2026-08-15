@@ -24,7 +24,9 @@ namespace Ruitk.Builder
         /// paddings and the per-row font sizes).</summary>
         private const float HeaderH = 38f;
 
-        private const float PillH = 66f;
+        /// <summary>POC "body.lod0 .pill": 1.5px frame + 16px padding + the 26px
+        /// title in the body's 1.45 line box (37.7) + 16 + 1.5 = 72.7.</summary>
+        private const float PillH = 72.7f;
 
         private const float SignatureSectionH = 33f;
 
@@ -109,8 +111,11 @@ namespace Ruitk.Builder
             }
         }
 
+        /// <summary>POC ".card" widths are CSS content-box (300 / 340 / 430) inside
+        /// a 1.5px frame, so the outer box the browser paints is 3px wider. UITK
+        /// Width is border-box, so the frame is added here.</summary>
         public static float CardWidthFor(int lod) =>
-            lod == 0 ? 300f : lod == 1 ? 340f : 430f;
+            (lod == 0 ? 300f : lod == 1 ? 340f : 430f) + 3f;
 
         private static readonly Color UsageEdge = new Color(0.361f, 0.545f, 0.690f);
         private static readonly Color HookEdge = new Color(0.427f, 0.659f, 0.435f);
@@ -590,11 +595,11 @@ namespace Ruitk.Builder
                 }
             }
 
-            if (CurrentLod == 0)
-            {
-                MaybeRetry(layer, estimated);
-                return;
-            }
+            // POC computeEdges() emits the markup-row edges at EVERY lod — only
+            // drawEdges() branches, swapping the SOURCE end to the card centre at
+            // lod0. Returning early here left L0 with import edges alone: a usage
+            // with no matching import drew nothing, and where the two coincide the
+            // POC's two stacked 0.85 strokes read brighter than our single one.
             for (int i = 0; i < graph.Nodes.Count; i++)
             {
                 var from = graph.Nodes[i];
@@ -605,9 +610,11 @@ namespace Ruitk.Builder
                     if (target < 0 || target == i)
                         continue;
                     var to = graph.Nodes[target];
-                    var a = AnchorOf(
-                        "a-row-" + i + "-" + r,
-                        new Vector2(from.X + width - 16f, from.Y + MarkupRowY(from, r)));
+                    var a = CurrentLod == 0
+                        ? CardRect(i, from).center
+                        : AnchorOf(
+                            "a-row-" + i + "-" + r,
+                            new Vector2(from.X + width - 16f, from.Y + MarkupRowY(from, r)));
                     StrokeEdge(p, a, TargetOf(target, to), UsageEdge, false);
                 }
             }

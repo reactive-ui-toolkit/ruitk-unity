@@ -158,6 +158,10 @@ namespace Ruitk.Builder
             // scrolls away with the list instead of being pinned above it. The rows go
             // in a sibling host so a rebuild never removes (and unfocuses) the field.
             var scroll = new ScrollView { style = { flexGrow = 1f, paddingLeft = 8f, paddingRight = 8f } };
+            // The POC pane shows no editor chrome and its pills keep the full 8px
+            // gutter; Unity's default scroller is a light control laid out INSIDE
+            // the pane, which stole 13px from every row.
+            BuilderWindow.StyleScrollers(scroll);
             scroll.contentContainer.Add(search);
             var rowsHost = new VisualElement();
             scroll.contentContainer.Add(rowsHost);

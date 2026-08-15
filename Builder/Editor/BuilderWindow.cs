@@ -133,9 +133,12 @@ namespace Ruitk.Builder
             toolbar.Add(Separator());
             toolbar.Add(ToolbarButton("Import .uxml…", ImportUxml));
             toolbar.Add(ToolbarButton("? How to drive it", ToggleHelp));
-            // The POC has no Save/Abort (its writes are mock). Ours are real, so
-            // they keep their own separator at the end of the button run rather
-            // than splitting the POC's silhouette.
+            // DOCUMENTED DEVIATION (owner-decided, do not re-flag): the POC has no
+            // Save/Abort because it never writes a file — every "commit" is mock.
+            // Ours are real disk writes, so the two buttons stay, behind their own
+            // separator at the end of the run so the POC's button silhouette up to
+            // "? How to drive it" is unchanged. Ctrl+S mirrors Save; Abort has no
+            // keyboard route, which is why it cannot simply move off the bar.
             toolbar.Add(Separator());
             toolbar.Add(ToolbarButton("Save", SaveAll));
             toolbar.Add(ToolbarButton("Abort", AbortAll));
@@ -174,12 +177,17 @@ namespace Ruitk.Builder
             root.Add(body);
             StyleSplitter(innerSplit, vertical: false);
 
+            // POC "#hint" writes "&nbsp;•&nbsp;" between clauses; UI Toolkit's
+            // whiteSpace:Normal collapses a plain double space back to one, so the
+            // separator carries NO-BREAK SPACE (U+00A0) on each side exactly like
+            // the POC's entity.
+            const string Bullet = " \u00a0•\u00a0 ";
             var footer = new Label(
-                "Wheel: zoom  •  Drag Library items onto rows (top=before, bottom=after, "
-                + "middle=inside) or BODY (hooks); drag rows to reorder  •  Right-click rows / "
-                + "cards / canvas for typed attributes, directives, delete, create  •  L2: click "
-                + "attrs / badges / style entries to edit  •  Source pane: edit → apply "
-                + "re-parses  •  Drag splitters to resize")
+                "Wheel: zoom" + Bullet + "Drag Library items onto rows (top=before, bottom=after, "
+                + "middle=inside) or BODY (hooks); drag rows to reorder" + Bullet + "Right-click rows / "
+                + "cards / canvas for typed attributes, directives, delete, create" + Bullet + "L2: click "
+                + "attrs / badges / style entries to edit" + Bullet + "Source pane: edit → apply "
+                + "re-parses" + Bullet + "Drag splitters to resize")
             {
                 style =
                 {
@@ -191,6 +199,13 @@ namespace Ruitk.Builder
                     paddingRight = 12f,
                     paddingTop = 5f,
                     paddingBottom = 5f,
+                    // POC "#hint { padding: 5px 12px; font-size: 11px }" inside the
+                    // body's 1.45 line box: 11 * 1.45 = 15.95 line box + the 5px
+                    // padding pair + the 1px rule = 26.95. UITK sizes border-box, so
+                    // the whole 26.95 is the declared height; without it the bar laid
+                    // out at UITK's natural ~12px line and came up ~5px short.
+                    minHeight = 26.95f,
+                    unityTextAlign = TextAnchor.MiddleLeft,
                     whiteSpace = WhiteSpace.Normal,
                     borderTopWidth = 1f,
                     borderTopColor = Line,
@@ -269,10 +284,18 @@ namespace Ruitk.Builder
                 int from = Mathf.Clamp(start - 1, 0, lines.Count - 1);
                 int to = Mathf.Clamp(end - 1, from, lines.Count - 1);
                 lines.RemoveRange(from, to - from + 1);
-                var replacement = new System.Collections.Generic.List<string>();
-                foreach (string l in text.Replace("\r\n", "\n").Split('\n'))
-                    if (l.Trim().Length > 0)
-                        replacement.Add("  " + l.Trim());
+                // The island now SHOWS its relative indentation, so committing an
+                // edit must keep it: only the block's common indent is re-based
+                // onto the body's two spaces, never every line flattened.
+                var replacement = new System.Collections.Generic.List<string>(
+                    text.Replace("\r\n", "\n").Split('\n'));
+                while (replacement.Count > 0 && replacement[replacement.Count - 1].Trim().Length == 0)
+                    replacement.RemoveAt(replacement.Count - 1);
+                while (replacement.Count > 0 && replacement[0].Trim().Length == 0)
+                    replacement.RemoveAt(0);
+                BuilderGraphService.StripCommonIndent(replacement);
+                for (int r = 0; r < replacement.Count; r++)
+                    replacement[r] = replacement[r].Length == 0 ? "" : "  " + replacement[r];
                 lines.InsertRange(from, replacement);
                 ApplyProgrammaticEdit(Path.GetFullPath(path), string.Join("\n", lines), "body");
             };
@@ -370,6 +393,7 @@ namespace Ruitk.Builder
                         paddingLeft = 12f, paddingRight = 12f,
                     },
                 };
+                StyleScrollers(previewSection);
                 var codeSection = new VisualElement { style = { flexGrow = 1f } };
                 var previewPane = new VisualElement { style = { minHeight = 120f, minWidth = 0f } };
                 previewPane.Add(PaneTitle("LIVE PREVIEW", out _previewName));
@@ -399,6 +423,7 @@ namespace Ruitk.Builder
 
                 _previewPane = new BuilderPreviewPane();
                 _previewPane.UsageProvider = UsageFor;
+                _previewPane.ModuleInfoProvider = ModuleInfoFor;
                 _previewPane.ComponentPicked += OnPreviewComponentPicked;
                 _previewPane.Attach(previewSection);
                 _codeField = new CodeField();
@@ -418,6 +443,8 @@ namespace Ruitk.Builder
             _previewPane.ShowFile(_focusFile, session?.BufferText, null);
             _codeField.SetContent(session?.BufferText ?? "", _focusFile, null);
             _codeField.SetEditable(session != null && !session.IsReadOnly);
+            // POC selectNode(): opening another file leaves source-edit mode.
+            _codeField.SetEditing(_sourceSnapshot != null);
             SyncLspBuffer(_focusFile, session?.BufferText, open: true);
         }
 
@@ -499,6 +526,9 @@ namespace Ruitk.Builder
                 _applyButton.style.display = editing ? DisplayStyle.Flex : DisplayStyle.None;
             if (_cancelButton != null)
                 _cancelButton.style.display = editing ? DisplayStyle.Flex : DisplayStyle.None;
+            // POC enterSrcEdit/cancelSrcEdit swap the rendered listing for the
+            // plain textarea and back; the pane is read-only until "edit".
+            _codeField?.SetEditing(editing);
         }
 
         [System.NonSerialized]
@@ -1764,6 +1794,34 @@ namespace Ruitk.Builder
             return (null, "", blob.ToString());
         }
 
+        /// <summary>POC ".nopreview" for a hook module names the exported signature
+        /// and the components that import it; both are already parsed onto the
+        /// graph, so the pane never has to fall back to generic phrasing.</summary>
+        private (string Signature, string Consumers) ModuleInfoFor(string uitkxPath)
+        {
+            var host = _canvasHost;
+            if (host?.Nodes == null)
+                return ("", "");
+            int index = host.NodeIndexOf(uitkxPath);
+            if (index < 0 || index >= host.Nodes.Count)
+                return ("", "");
+            var self = host.Nodes[index];
+            var consumers = new System.Collections.Generic.List<string>();
+            var edges = host.Edges;
+            if (edges != null)
+            {
+                foreach (var edge in edges)
+                {
+                    if (edge.ToIndex != index || edge.FromIndex < 0 || edge.FromIndex >= host.Nodes.Count)
+                        continue;
+                    string title = host.Nodes[edge.FromIndex].Title;
+                    if (!consumers.Contains(title))
+                        consumers.Add(title);
+                }
+            }
+            return (self.Signature ?? "", string.Join(", ", consumers));
+        }
+
         /// <summary>Debounced buffer-edit entry point (CodeField/authoring call
         /// this): dirty buffers recompile in import order after 300 ms of quiet,
         /// then the preview re-resolves its delegate from the swap assembly.</summary>
@@ -1997,6 +2055,100 @@ namespace Ruitk.Builder
             element.style.borderBottomColor = color;
             element.style.borderLeftColor = color;
             element.style.borderRightColor = color;
+        }
+
+        /// <summary>The POC's panes are CSS "overflow: auto", so a scrollbar is a
+        /// thin dark overlay that steals no width from the rows. Unity's default
+        /// Scroller is a light editor control WITH arrow buttons laid out INSIDE
+        /// the pane, which both re-coloured the panel and narrowed every row by its
+        /// width. The scrollers are taken out of flow and repainted on the POC
+        /// palette (track transparent, #3a3a44 thumb, #4a4a55 on hover).</summary>
+        internal static void StyleScrollers(ScrollView view)
+        {
+            if (view == null)
+                return;
+            StyleScroller(view.verticalScroller, vertical: true);
+            StyleScroller(view.horizontalScroller, vertical: false);
+        }
+
+        private static void StyleScroller(Scroller scroller, bool vertical)
+        {
+            if (scroller == null)
+                return;
+            scroller.style.position = Position.Absolute;
+            if (vertical)
+            {
+                scroller.style.top = 0f;
+                scroller.style.bottom = 0f;
+                scroller.style.right = 0f;
+                scroller.style.width = 8f;
+            }
+            else
+            {
+                scroller.style.left = 0f;
+                scroller.style.right = 0f;
+                scroller.style.bottom = 0f;
+                scroller.style.height = 8f;
+            }
+            scroller.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+            scroller.style.borderTopWidth = 0f;
+            scroller.style.borderBottomWidth = 0f;
+            scroller.style.borderLeftWidth = 0f;
+            scroller.style.borderRightWidth = 0f;
+            if (scroller.lowButton != null)
+                scroller.lowButton.style.display = DisplayStyle.None;
+            if (scroller.highButton != null)
+                scroller.highButton.style.display = DisplayStyle.None;
+            var slider = scroller.slider;
+            if (slider == null)
+                return;
+            slider.style.marginTop = 0f;
+            slider.style.marginBottom = 0f;
+            slider.style.marginLeft = 0f;
+            slider.style.marginRight = 0f;
+            slider.style.flexGrow = 1f;
+            var tracker = slider.Q("unity-tracker");
+            if (tracker != null)
+            {
+                tracker.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                tracker.style.borderTopWidth = 0f;
+                tracker.style.borderBottomWidth = 0f;
+                tracker.style.borderLeftWidth = 0f;
+                tracker.style.borderRightWidth = 0f;
+                tracker.style.marginTop = 0f;
+                tracker.style.marginBottom = 0f;
+                tracker.style.marginLeft = 0f;
+                tracker.style.marginRight = 0f;
+            }
+            var dragger = slider.Q("unity-dragger");
+            if (dragger == null)
+                return;
+            var thumb = new Color(0.227f, 0.227f, 0.267f);
+            dragger.style.backgroundColor = thumb;
+            dragger.style.borderTopWidth = 0f;
+            dragger.style.borderBottomWidth = 0f;
+            dragger.style.borderLeftWidth = 0f;
+            dragger.style.borderRightWidth = 0f;
+            dragger.style.borderTopLeftRadius = 4f;
+            dragger.style.borderTopRightRadius = 4f;
+            dragger.style.borderBottomLeftRadius = 4f;
+            dragger.style.borderBottomRightRadius = 4f;
+            if (vertical)
+            {
+                dragger.style.width = 8f;
+                dragger.style.marginLeft = 0f;
+                dragger.style.marginRight = 0f;
+            }
+            else
+            {
+                dragger.style.height = 8f;
+                dragger.style.marginTop = 0f;
+                dragger.style.marginBottom = 0f;
+            }
+            dragger.RegisterCallback<MouseEnterEvent>(_ =>
+                dragger.style.backgroundColor = new Color(0.290f, 0.290f, 0.333f));
+            dragger.RegisterCallback<MouseLeaveEvent>(_ =>
+                dragger.style.backgroundColor = thumb);
         }
 
         /// <summary>POC "#toolbar button": panel2 fill, line border, 4px radius,

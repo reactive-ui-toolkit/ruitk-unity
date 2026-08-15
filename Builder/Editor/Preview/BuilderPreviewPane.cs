@@ -49,6 +49,12 @@ namespace Ruitk.Builder
         /// is what object-prop knobs are mined from.</summary>
         public Func<string, (string Owner, string UsageAttrs, string Blob)> UsageProvider;
 
+        /// <summary>POC ".nopreview" for a hook module names the exposed signature
+        /// and the components that consume it ("Exposes <b>useCart(gold, setGold) →
+        /// (Count, Buy)</b>. Consumed by <b>ShopScreen</b>"). Both live on the real
+        /// graph, so the window supplies them per file.</summary>
+        public Func<string, (string Signature, string Consumers)> ModuleInfoProvider;
+
         private string _seededFrom;
 
         /// <summary>POC ".knobs .krow { gap:8px; margin-bottom:6px; font-size:12px }"
@@ -286,7 +292,7 @@ namespace Ruitk.Builder
         private Label _stateHeader;
         private VisualElement _stateHost;
         private double _nextStateRefresh;
-        private readonly List<string> _stateNames = new List<string>();
+        private readonly List<string> _slotNames = new List<string>();
 
         private void TickStatePanel()
         {
@@ -309,87 +315,136 @@ namespace Ruitk.Builder
                     return;
             _stateHost.Clear();
             var root = _renderer?.Fiber?.Root?.Current;
-            if (root == null)
-            {
-                if (_stateHeader != null)
-                    _stateHeader.style.display = DisplayStyle.None;
-                return;
-            }
+            var target = root == null ? null : FindFocusedFiber(root);
+            var states = target?.ComponentState?.HookStates;
             int shown = 0;
-            CollectHookRows(root, ref shown);
+            if (states != null)
+            {
+                // POC stateRows are built from node.hooks of the SELECTED component
+                // only — a child's internals never surface here.
+                for (int i = 0; i < states.Count && i < _slotNames.Count && shown < 12; i++)
+                {
+                    // POC stateRows are built FROM the declared names, so a slot with
+                    // no useState name (a useMemo/useRef cell) simply has no row.
+                    if (string.IsNullOrEmpty(_slotNames[i]))
+                        continue;
+                    var field = BuildStateField(_slotNames[i], states, i);
+                    if (field == null)
+                        continue;
+                    _stateHost.Add(field);
+                    shown++;
+                }
+            }
             if (_stateHeader != null)
                 _stateHeader.style.display = shown > 0 ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
-        private void CollectHookRows(FiberNode fiber, ref int shown)
+        /// <summary>The preview mounts the component through V.Func(delegate,…),
+        /// NOT the Family overload, so every fiber it owns has a null Family and the
+        /// render method is the identity. A tree that somehow reports no match still
+        /// has exactly one top-most stateful fiber — the component this pane
+        /// mounted — so that is the fallback rather than showing nothing.</summary>
+        private FiberNode FindFocusedFiber(FiberNode fiber)
         {
-            while (fiber != null && shown < 12)
+            FiberNode firstStateful = null;
+
+            FiberNode Walk(FiberNode node)
             {
-                var states = fiber.ComponentState?.HookStates;
-                if (states != null && states.Count > 0)
+                while (node != null)
                 {
-                    // The preview mounts the component through V.Func(delegate,…),
-                    // NOT the Family overload, so every fiber it owns has a null
-                    // Family — matching on Family.Id skipped the loop outright and
-                    // the STATE block never showed a row. The render method IS the
-                    // identity: the focused component is the fiber whose typed
-                    // render is the delegate this pane mounted.
-                    bool isFocused = _renderDelegate != null
-                        && fiber.TypedRender != null
-                        && fiber.TypedRender.Method == _renderDelegate.Method;
-                    // POC stateRows are built from node.hooks of the SELECTED
-                    // component only — a child's internals never surface here.
-                    for (int i = 0; isFocused && i < states.Count && shown < 12; i++)
+                    var hookStates = node.ComponentState?.HookStates;
+                    if (hookStates != null && hookStates.Count > 0)
                     {
-                        // POC stateRows are built FROM the declared names, so a cell
-                        // with no name simply has no row — an index placeholder
-                        // like "state[19]" is never a thing the POC can show.
-                        if (i >= _stateNames.Count)
-                            continue;
-                        var field = BuildStateField(_stateNames[i], states[i]);
-                        if (field == null)
-                            continue;
-                        _stateHost.Add(field);
-                        shown++;
+                        if (_renderDelegate != null && node.TypedRender != null
+                            && node.TypedRender.Method == _renderDelegate.Method)
+                            return node;
+                        firstStateful ??= node;
                     }
+                    var found = Walk(node.Child);
+                    if (found != null)
+                        return found;
+                    node = node.Sibling;
                 }
-                if (fiber.Child != null)
-                    CollectHookRows(fiber.Child, ref shown);
-                fiber = fiber.Sibling;
+                return null;
             }
+
+            return Walk(fiber) ?? firstStateful;
         }
 
-        private static readonly System.Text.RegularExpressions.Regex s_useState =
+        private static readonly System.Text.RegularExpressions.Regex s_hookCall =
             new System.Text.RegularExpressions.Regex(
-                @"var\s*(?:\(\s*(?<n>[A-Za-z_]\w*)\s*,[^)]*\)|(?<n>[A-Za-z_]\w*))"
-                + @"\s*=\s*useState\s*(?:<[^>\n]*>)?\s*\(",
+                @"(?:var\s*(?:\(\s*(?<n>[A-Za-z_]\w*)\s*,[^)]*\)|(?<n>[A-Za-z_]\w*))\s*=\s*)?"
+                + @"\b(?<hook>use[A-Z]\w*)\s*(?:<[^>\n]*>)?\s*\(",
                 System.Text.RegularExpressions.RegexOptions.Compiled);
 
-        /// <summary>The useState destructuring names, in declaration order — the
-        /// fiber's HookStates list is indexed positionally by the same order.</summary>
+        /// <summary>Hooks that take one HookStates slot but carry no useState name
+        /// (their row is skipped, their SLOT is not — the list is positional).
+        /// useEffect/useLayoutEffect run off a separate effect index and take no
+        /// slot at all.</summary>
+        private static readonly HashSet<string> s_slotHooks = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "useState", "useReducer", "useMemo", "useCallback", "useRef",
+            "useStableFunc", "useSafeArea",
+        };
+
+        private static readonly HashSet<string> s_noSlotHooks = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "useEffect", "useLayoutEffect",
+        };
+
+        /// <summary>One entry per HookStates slot in declaration order — the
+        /// useState name, or null for a slot-consuming hook that has no state row.
+        /// Indexing the fiber's HookStates by useState ORDINAL was wrong the moment
+        /// a useMemo/useRef sat between two useStates, and the walk stops at the
+        /// first custom hook because its own slot count is unknowable from here.</summary>
         private void CollectStateNames(string bufferText)
         {
-            _stateNames.Clear();
+            _slotNames.Clear();
             if (string.IsNullOrEmpty(bufferText))
                 return;
-            foreach (System.Text.RegularExpressions.Match m in s_useState.Matches(bufferText))
-                _stateNames.Add(m.Groups["n"].Value);
+            foreach (System.Text.RegularExpressions.Match m in s_hookCall.Matches(bufferText))
+            {
+                string hook = m.Groups["hook"].Value;
+                if (s_noSlotHooks.Contains(hook))
+                    continue;
+                if (hook == "useState")
+                {
+                    _slotNames.Add(m.Groups["n"].Success ? m.Groups["n"].Value : null);
+                    continue;
+                }
+                if (s_slotHooks.Contains(hook))
+                {
+                    _slotNames.Add(null);
+                    continue;
+                }
+                return;
+            }
         }
 
         /// <summary>POC §7: state fields are EDITABLE — an int/float/string/bool
         /// hook cell renders as a live input writing straight back into the
-        /// fiber's state store, then re-renders the preview.</summary>
-        private VisualElement BuildStateField(string label, object state)
+        /// fiber's state store, then re-renders the preview.
+        /// A useState slot holds the VALUE ITSELF (Hooks.UseState stores `initial`
+        /// straight into HookStates), not a wrapper with a Value/Current property —
+        /// so the wrapper probe rejected every primitive cell, BuildStateField
+        /// returned null for all of them and the STATE section never appeared. The
+        /// wrapper probe is kept for the cells that really are wrappers
+        /// (useRef's Ref&lt;T&gt;, useReducer's ReducerHookState).</summary>
+        private VisualElement BuildStateField(string label, IList<object> states, int slot)
         {
-            var (holder, member, value) = ResolveStateCell(state);
-            if (holder == null)
+            object cell = states[slot];
+            var (holder, member, wrapped) = ResolveStateCell(cell);
+            object value = holder == null ? cell : wrapped;
+            if (value == null)
                 return null;
 
             void Write(object next)
             {
                 try
                 {
-                    if (member is PropertyInfo prop)
+                    if (holder == null)
+                        states[slot] = next;
+                    else if (member is PropertyInfo prop)
                         prop.SetValue(holder, next);
                     else if (member is FieldInfo field)
                         field.SetValue(holder, next);
@@ -717,12 +772,37 @@ namespace Ruitk.Builder
 
         /// <summary>POC ".nopreview" copy, one per module kind — a style / hook /
         /// util module has no visual of its own.</summary>
-        private static string NoPreviewText(string uitkxPath)
+        private string NoPreviewText(string uitkxPath)
         {
             string name = Path.GetFileName(uitkxPath) ?? "";
             if (name.EndsWith(".hooks.uitkx", StringComparison.OrdinalIgnoreCase))
-                return "Hook module — no visual. It <b>exposes its hooks</b> to the components "
-                    + "that import it (green edge). Double-click its code island to edit the body.";
+            {
+                string signature = "";
+                string consumers = "";
+                if (ModuleInfoProvider != null)
+                {
+                    try
+                    {
+                        var info = ModuleInfoProvider(uitkxPath);
+                        signature = info.Signature ?? "";
+                        consumers = info.Consumers ?? "";
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+                // The graph already carries the parsed export header and the
+                // incoming hook edges; the generic clause is only the fallback for
+                // a module nothing imports yet.
+                string exposes = signature.Length > 0
+                    ? "Exposes <b>" + signature + "</b>. "
+                    : "It <b>exposes its hooks</b> to the components that import it. ";
+                string consumed = consumers.Length > 0
+                    ? "Consumed by <b>" + consumers + "</b> (green edge). "
+                    : "No component imports it yet (green edge). ";
+                return "Hook module — no visual. " + exposes + consumed
+                    + "Double-click its code island to edit the body.";
+            }
             if (name.EndsWith(".style.uitkx", StringComparison.OrdinalIgnoreCase))
                 return "Style module — no visual of its own. Zoom to L2 and click an entry to "
                     + "edit it. Tip: select <b>the component that imports it</b> first, then edit "

@@ -279,6 +279,10 @@ namespace Ruitk.Builder
 
         public List<BuilderCanvasNode> Nodes => _graph?.Nodes;
 
+        /// <summary>The parsed import edges — what the preview pane's hook-module
+        /// copy names its consumers from.</summary>
+        public List<BuilderCanvasEdge> Edges => _graph?.Edges;
+
         public BuilderCanvasNode FindNode(string filePath)
         {
             if (_graph == null)

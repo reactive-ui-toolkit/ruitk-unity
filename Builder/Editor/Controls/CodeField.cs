@@ -10,21 +10,27 @@ using UnityEngine.UIElements;
 namespace Ruitk.Builder
 {
     /// <summary>
-    /// Colored editable .uitkx text (the VE-00 overlay technique): a multiline
-    /// TextField with transparent ink carries editing, caret, selection and IME;
-    /// a picking-ignored rich-text Label behind it carries the colors. Tokens
-    /// come from the local semantic-tokens provider per edit; the label text is
-    /// rebuilt with markup-escaped segments so offsets survive escaping.
+    /// The POC source pane, shape for shape: in READ mode "#srcpane" is a
+    /// scrolling column of ".srcline" divs (one per line, white-space:pre, the
+    /// .hl/.sel bands painted on the row), and "edit" swaps the whole pane for the
+    /// plain "#src-edit" textarea. The single-Label overlay this replaced could
+    /// not carry the POC's 17.4px line pitch (UI Toolkit applies
+    /// unityParagraphSpacing between PARAGRAPHS, and a whiteSpace:Pre label is one
+    /// paragraph) and could not scroll on either axis without the transparent
+    /// input drifting off the glyphs it sits on.
     /// </summary>
     internal sealed class CodeField : VisualElement
     {
         private readonly TextField _input;
-        private readonly Label _overlay;
+        private readonly ScrollView _scroll;
+        private readonly VisualElement _linesHost;
+        private readonly Label _probe;
         private readonly Label _diagnosticsLabel;
         private string _filePath = "";
         private HashSet<string> _knownElements;
         private bool _suppressChange;
         private bool _userCaretActive;
+        private bool _editing;
         private VisualElement _completionPopup;
 
         public event Action<string> TextEdited;
@@ -94,18 +100,25 @@ namespace Ruitk.Builder
         /// ignores the legacy dynamic-Font `unityFont` slot.</summary>
         private static readonly Color Ground = new Color(0.090f, 0.090f, 0.106f);
 
+        private static readonly Color Ink = new Color(0.839f, 0.839f, 0.863f);
+
+        /// <summary>POC "#srcpane .srcline" inherits the body's 13px/1.45 metric at
+        /// font-size 12, so the line pitch is 17.4px (measured on poc-l2-edit.png:
+        /// line tops at 502, 519, 537, 554, 571, 589 at zoom 1).</summary>
+        private const float LineHeight = 17.4f;
+
+        /// <summary>POC ".srcline { padding: 0 14px }".</summary>
+        private const float Gutter = 14f;
+
         /// <summary>Strips Unity's field chrome off one element of the TextField's
-        /// inner hierarchy. The input stack sits ON TOP of the colored overlay, so
-        /// every layer of it must be fully transparent — both its background (which
-        /// otherwise paints Unity's lighter field box over the whole pane) and its
-        /// ink (which otherwise draws neutral-grey glyphs over the colored ones).
-        /// The #17171b ground is painted once by the host behind everything.</summary>
+        /// inner hierarchy so the edit box reads as the POC's "#src-edit": a bare
+        /// #17171b textarea with 12px mono ink and no inset field box.</summary>
         private static void FlattenInput(VisualElement element)
         {
             if (element == null)
                 return;
             element.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
-            element.style.color = new Color(1f, 1f, 1f, 0f);
+            element.style.color = Ink;
             element.style.borderTopWidth = 0f;
             element.style.borderBottomWidth = 0f;
             element.style.borderLeftWidth = 0f;
@@ -123,18 +136,8 @@ namespace Ruitk.Builder
             element.style.marginLeft = 0f;
             element.style.marginRight = 0f;
             element.style.fontSize = 12f;
-            element.style.unityParagraphSpacing = LineLead;
             element.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
         }
-
-        /// <summary>POC "#srcpane .srcline" inherits the body's 13px/1.45 metric at
-        /// font-size 12, so the line pitch is 17.4px (measured on
-        /// poc-l1-cards.png: import rows at y=501, 518, 536, 553, 570, 588). Unity's
-        /// mono face packs the same 12px glyphs at a 12px pitch (measured on
-        /// unity-showcase-l0.png: 527, 539, 551, 563, …), so the leading is added
-        /// back as paragraph spacing — on the overlay AND on the hidden input, or
-        /// the caret stops tracking the glyphs it is meant to sit between.</summary>
-        private const float LineLead = 5.4f;
 
         private void FlattenInputTree()
         {
@@ -155,61 +158,90 @@ namespace Ruitk.Builder
                 {
                     flexGrow = 1f, position = Position.Relative, overflow = Overflow.Hidden,
                     backgroundColor = Ground,
-                    paddingTop = 8f, paddingBottom = 8f,
                 },
             };
             Add(host);
 
-            _overlay = new Label
+            // POC "#srcpane { overflow: auto }" — BOTH axes, so a long line and a
+            // long file are always reachable.
+            _scroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal)
             {
-                enableRichText = true,
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 0f, left = 0f, right = 0f, bottom = 0f,
+                    paddingTop = 8f, paddingBottom = 8f,
+                },
+            };
+            BuilderWindow.StyleScrollers(_scroll);
+            _linesHost = new VisualElement
+            {
+                style = { flexDirection = FlexDirection.Column, flexShrink = 0f },
+            };
+            _scroll.contentContainer.Add(_linesHost);
+            host.Add(_scroll);
+            // POC: srcpane.addEventListener("dblclick", enterSrcEdit).
+            _scroll.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.clickCount >= 2)
+                    EditRequested?.Invoke();
+            });
+            _scroll.contentViewport.RegisterCallback<GeometryChangedEvent>(_ => ApplyLinesWidth());
+
+            _probe = new Label("MMMMMMMMMM")
+            {
                 pickingMode = PickingMode.Ignore,
                 style =
                 {
                     position = Position.Absolute,
-                    top = 8f, left = 14f, right = 0f, bottom = 0f,
-                    color = new Color(0.84f, 0.84f, 0.86f),
-                    whiteSpace = WhiteSpace.Pre,
-                    unityTextAlign = TextAnchor.UpperLeft,
+                    top = 0f, left = 0f,
+                    visibility = Visibility.Hidden,
                     fontSize = 12f,
+                    whiteSpace = WhiteSpace.Pre,
                 },
             };
-            _overlay.style.unityParagraphSpacing = LineLead;
-            _overlay.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
-            host.Add(_overlay);
+            _probe.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+            _probe.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                float width = _probe.layout.width;
+                if (float.IsNaN(width) || width <= 0f)
+                    return;
+                float advance = width / 10f;
+                if (Mathf.Approximately(advance, _charAdvance))
+                    return;
+                _charAdvance = advance;
+                ApplyLinesWidth();
+            });
+            host.Add(_probe);
 
             _input = new TextField { multiline = true };
             _input.style.position = Position.Absolute;
-            _input.style.top = 8f;
-            _input.style.left = 14f;
+            _input.style.top = 0f;
+            _input.style.left = 0f;
             _input.style.right = 0f;
             _input.style.bottom = 0f;
             _input.style.fontSize = 12f;
-            _input.style.unityParagraphSpacing = LineLead;
             _input.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
             _input.style.marginTop = 0f;
             _input.style.marginBottom = 0f;
             _input.style.marginLeft = 0f;
             _input.style.marginRight = 0f;
-            _input.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
-            _input.style.color = new Color(1f, 1f, 1f, 0f);
-            // Unity's own USS paints the inner input element with its field
-            // background AND its own text color, so the ground read as a lighter
-            // inset rectangle and the colored overlay behind it was occluded
-            // entirely. The ink must go transparent on the element that actually
-            // draws the glyphs, and its box must be flattened onto #17171b with
-            // zero padding so the two layers register glyph-for-glyph.
+            // POC "#src-edit { padding: 8px 14px }" on the #17171b ground.
+            _input.style.paddingTop = 8f;
+            _input.style.paddingBottom = 8f;
+            _input.style.paddingLeft = Gutter;
+            _input.style.paddingRight = Gutter;
+            _input.style.backgroundColor = Ground;
+            _input.style.color = Ink;
+            _input.style.display = DisplayStyle.None;
             FlattenInputTree();
             _input.RegisterCallback<AttachToPanelEvent>(_ => FlattenInputTree());
             _input.RegisterValueChangedCallback(OnInputChanged);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
-            _input.RegisterCallback<PointerDownEvent>(evt =>
-            {
-                _userCaretActive = true;
-                if (evt.clickCount >= 2)
-                    EditRequested?.Invoke();
-            });
+            _input.RegisterCallback<PointerDownEvent>(_ => _userCaretActive = true);
             host.Add(_input);
+
+            RegisterCallback<AttachToPanelEvent>(_ => ApplyLinesWidth());
 
             _diagnosticsLabel = new Label
             {
@@ -228,10 +260,33 @@ namespace Ruitk.Builder
 
         public string TextLf => (_input.value ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
 
-        /// <summary>POC row→source sync: place the caret at the given 1-based
-        /// line, select that line, and focus the field.</summary>
+        /// <summary>POC enterSrcEdit/cancelSrcEdit: the pane is a rendered listing
+        /// until "edit", then the plain textarea, then a rendered listing again.
+        /// The two never overlap, so there is no glyph registration to keep.</summary>
+        public void SetEditing(bool editing)
+        {
+            _editing = editing;
+            _input.style.display = editing ? DisplayStyle.Flex : DisplayStyle.None;
+            _scroll.style.display = editing ? DisplayStyle.None : DisplayStyle.Flex;
+            if (!editing)
+            {
+                _userCaretActive = false;
+                Recolor(TextLf);
+            }
+        }
+
+        /// <summary>POC row→source sync: band the line, scroll it into view, and —
+        /// in edit mode — select it.</summary>
         public void FocusLine(int line1)
         {
+            // POC ".srcline.sel": the focused line gets a gold band, not Unity's
+            // selection blue.
+            _selectedLine1 = line1;
+            Recolor(TextLf);
+            if (line1 >= 1 && line1 <= _linesHost.childCount)
+                _scroll.ScrollTo(_linesHost[line1 - 1]);
+            if (!_editing)
+                return;
             string text = _input.value ?? "";
             int line = 1, start = 0;
             for (int i = 0; i < text.Length && line < line1; i++)
@@ -249,10 +304,6 @@ namespace Ruitk.Builder
             _input.selectIndex = end;
             _input.Focus();
             _userCaretActive = true;
-            // POC ".srcline.sel": the focused line gets a gold band, not Unity's
-            // selection blue.
-            _selectedLine1 = line1;
-            Recolor(TextLf);
         }
 
         private int _selectedLine1;
@@ -270,7 +321,8 @@ namespace Ruitk.Builder
             _input.value = text.Substring(0, start) + snippet + text.Substring(end);
             _input.cursorIndex = start + snippet.Length;
             _input.selectIndex = _input.cursorIndex;
-            _input.Focus();
+            if (_editing)
+                _input.Focus();
         }
 
         public void SetContent(string textLf, string filePath, HashSet<string> knownElements)
@@ -464,13 +516,66 @@ namespace Ruitk.Builder
             }
         }
 
+        /// <summary>POC ".srcline.sel" rgba(255,213,79,.18) and ".srcline.hl"
+        /// rgba(255,183,77,.15) — bands on the ROW, which is why the listing is a
+        /// column of rows and not one text block.</summary>
+        private static readonly Color SelBand = new Color(1f, 0.835f, 0.310f, 0.18f);
+
+        private static readonly Color TraceBand = new Color(1f, 0.718f, 0.302f, 0.15f);
+
+        private static readonly Color NoBand = new Color(0f, 0f, 0f, 0f);
+
+        private int _longestLine;
+
+        private float _charAdvance;
+
+        /// <summary>The mono advance is read off a hidden ten-glyph probe once the
+        /// panel has laid it out (Consolas 12px ≈ 6.6px, but the fallback face on a
+        /// machine without it is not the same width).</summary>
+        private float CharAdvance() => _charAdvance > 0f ? _charAdvance : 6.6f;
+
+        /// <summary>The rows carry the .hl/.sel bands, so they must all be as wide
+        /// as the widest line (and never narrower than the viewport) — that width
+        /// is also what gives the ScrollView something to scroll horizontally.</summary>
+        private void ApplyLinesWidth()
+        {
+            float content = Gutter * 2f + _longestLine * CharAdvance();
+            float viewport = _scroll.contentViewport.layout.width;
+            if (float.IsNaN(viewport) || viewport <= 0f)
+                viewport = 0f;
+            _linesHost.style.width = Mathf.Max(content, viewport);
+        }
+
+        private Label NewLine()
+        {
+            var label = new Label
+            {
+                enableRichText = true,
+                style =
+                {
+                    height = LineHeight,
+                    minHeight = 0f,
+                    flexShrink = 0f,
+                    paddingLeft = Gutter,
+                    paddingRight = Gutter,
+                    color = Ink,
+                    fontSize = 12f,
+                    whiteSpace = WhiteSpace.Pre,
+                    unityTextAlign = TextAnchor.MiddleLeft,
+                },
+            };
+            label.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+            return label;
+        }
+
         private void Recolor(string textLf)
         {
+            string[] lines = (textLf ?? "").Split('\n');
+            SemanticTokenData[] tokens;
             try
             {
                 var parsed = BuilderLanguage.Parse(textLf, _filePath);
-                var tokens = BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
-                _overlay.text = BuildRichText(textLf, tokens, _selectedLine1, _traceNames);
+                tokens = BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
 
                 var diags = BuilderLanguage.Diagnose(parsed, _filePath, _knownElements);
                 if (diags.Count == 0)
@@ -496,45 +601,37 @@ namespace Ruitk.Builder
             }
             catch (Exception)
             {
-                _overlay.text = Escape(textLf);
+                tokens = Array.Empty<SemanticTokenData>();
                 _diagnosticsLabel.text = "";
             }
-        }
 
-        private static string Escape(string s) =>
-            s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
-
-        /// <summary>The POC source palette (index.html .k/.t/.s/.e/.cm/.cu):
-        /// keywords #c792ea, tags #4fc3f7, custom tags #7fdbca, strings #c3e88d,
-        /// {expr} #ffb74d, comments #616e7a.</summary>
-        private static string ColorFor(string tokenType)
-        {
-            switch (tokenType)
+            var byLine = new Dictionary<int, List<SemanticTokenData>>();
+            foreach (var token in tokens)
             {
-                case SemanticTokenTypes.Element:
-                    return "#4FC3F7";
-                case SemanticTokenTypes.Type:
-                    return "#7FDBCA";
-                case SemanticTokenTypes.Attribute:
-                case SemanticTokenTypes.Property:
-                    return "#4FC3F7";
-                case SemanticTokenTypes.Directive:
-                case SemanticTokenTypes.DirectiveName:
-                case SemanticTokenTypes.Keyword:
-                    return "#C792EA";
-                case SemanticTokenTypes.String:
-                    return StringColor;
-                case SemanticTokenTypes.Number:
-                case SemanticTokenTypes.Expression:
-                    return ExprColor;
-                case SemanticTokenTypes.Comment:
-                    return "#616E7A";
-                case SemanticTokenTypes.Function:
-                case SemanticTokenTypes.Variable:
-                    return "#CFCFDA";
-                default:
-                    return null;
+                if (!byLine.TryGetValue(token.Line, out var list))
+                    byLine[token.Line] = list = new List<SemanticTokenData>();
+                list.Add(token);
             }
+
+            while (_linesHost.childCount > lines.Length)
+                _linesHost.RemoveAt(_linesHost.childCount - 1);
+            while (_linesHost.childCount < lines.Length)
+                _linesHost.Add(NewLine());
+
+            _longestLine = 0;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (line.Length > _longestLine)
+                    _longestLine = line.Length;
+                var row = (Label)_linesHost[i];
+                byLine.TryGetValue(i, out var list);
+                row.text = BuildLineRichText(line, list);
+                row.style.backgroundColor = _selectedLine1 == i + 1
+                    ? SelBand
+                    : LineNamesAny(line, _traceNames) ? TraceBand : NoBand;
+            }
+            ApplyLinesWidth();
         }
 
         /// <summary>Tokens are 0-based line/column over the LF buffer; segments
@@ -560,10 +657,55 @@ namespace Ruitk.Builder
             return false;
         }
 
+        /// <summary>The POC source palette (index.html .k/.t/.s/.e/.cm/.cu):
+        /// keywords #c792ea, tags #4fc3f7, custom tags #7fdbca, strings #c3e88d,
+        /// {expr} #ffb74d, comments #616e7a.</summary>
+        private static string ColorFor(string tokenType)
+        {
+            switch (tokenType)
+            {
+                case SemanticTokenTypes.Element:
+                    return "#4FC3F7";
+                case SemanticTokenTypes.Type:
+                    return "#7FDBCA";
+                case SemanticTokenTypes.Attribute:
+                case SemanticTokenTypes.Property:
+                    return "#4FC3F7";
+                case SemanticTokenTypes.Directive:
+                case SemanticTokenTypes.DirectiveName:
+                case SemanticTokenTypes.Keyword:
+                    return KeywordColor;
+                case SemanticTokenTypes.String:
+                    return StringColor;
+                case SemanticTokenTypes.Number:
+                case SemanticTokenTypes.Expression:
+                    return ExprColor;
+                case SemanticTokenTypes.Comment:
+                    return "#616E7A";
+                case SemanticTokenTypes.Function:
+                case SemanticTokenTypes.Variable:
+                    return "#CFCFDA";
+                default:
+                    return null;
+            }
+        }
+
         private const string StringColor = "#C3E88D";
         private const string ExprColor = "#FFB74D";
+        private const string KeywordColor = "#C792EA";
+
+        /// <summary>POC tokenize() line 1273: the keyword pass runs LAST, over
+        /// everything the earlier passes left alone. The LSP only classifies
+        /// markup-side words as Keyword, so `VirtualNode`, `var`, `return`, `new`,
+        /// `Style` and `as` in a C# body reached the pane as plain ink.</summary>
+        private static readonly System.Text.RegularExpressions.Regex s_keywords =
+            new System.Text.RegularExpressions.Regex(
+                @"\b(export|VirtualNode|Style|var|return|import|from|as|new)\b|(@if|@else|@foreach)",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
 
         private static bool[] s_inBrace = new bool[512];
+
+        private static string[] s_colors = new string[512];
 
         /// <summary>POC tokenize(): after strings are painted, EVERY <c>{…}</c> run
         /// on the line becomes class .e (var(--warn) #ffb74d) — which is why
@@ -591,80 +733,75 @@ namespace Ruitk.Builder
             }
         }
 
-        private static string EffectiveColor(int column, string color) =>
-            color == StringColor || !s_inBrace[column] ? color : ExprColor;
-
-        private static void AppendColored(
-            StringBuilder sb, string line, int start, int end, string color)
+        /// <summary>UI Toolkit's rich-text parser strips tags but does NOT decode
+        /// character entities, so "&amp;lt;" reached the glyph run verbatim and
+        /// every markup line in the pane read "&amp;lt;VisualElement&amp;gt;". A run
+        /// containing '&lt;' is wrapped in &lt;noparse&gt; instead — the glyphs
+        /// round-trip exactly, which they must, because the edit box above holds
+        /// the same characters.</summary>
+        private static void AppendSegment(StringBuilder sb, string text, string color)
         {
-            int i = start;
-            while (i < end)
-            {
-                string effective = EffectiveColor(i, color);
-                int j = i + 1;
-                while (j < end && EffectiveColor(j, color) == effective)
-                    j++;
-                string text = Escape(line.Substring(i, j - i));
-                if (effective != null)
-                    sb.Append("<color=").Append(effective).Append('>').Append(text).Append("</color>");
-                else
-                    sb.Append(text);
-                i = j;
-            }
+            if (text.Length == 0)
+                return;
+            bool needsNoParse = text.IndexOf('<') >= 0;
+            if (color != null)
+                sb.Append("<color=").Append(color).Append('>');
+            if (needsNoParse)
+                sb.Append("<noparse>").Append(text).Append("</noparse>");
+            else
+                sb.Append(text);
+            if (color != null)
+                sb.Append("</color>");
         }
 
-        private static string BuildRichText(
-            string textLf, SemanticTokenData[] tokens, int selectedLine1, List<string> traceNames)
+        private static string BuildLineRichText(string line, List<SemanticTokenData> tokens)
         {
-            string[] lines = textLf.Split('\n');
-            var byLine = new Dictionary<int, List<SemanticTokenData>>();
-            foreach (var token in tokens)
-            {
-                if (!byLine.TryGetValue(token.Line, out var list))
-                    byLine[token.Line] = list = new List<SemanticTokenData>();
-                list.Add(token);
-            }
+            if (line.Length == 0)
+                return "";
+            if (s_colors.Length < line.Length)
+                s_colors = new string[Mathf.NextPowerOfTwo(line.Length + 1)];
+            for (int i = 0; i < line.Length; i++)
+                s_colors[i] = null;
 
-            var sb = new StringBuilder(textLf.Length + tokens.Length * 24);
-            for (int i = 0; i < lines.Length; i++)
+            if (tokens != null)
             {
-                string line = lines[i];
-                MarkBraces(line);
-                if (i > 0)
-                    sb.Append('\n');
-                bool selected = selectedLine1 == i + 1;
-                if (!selected && LineNamesAny(line, traceNames))
-                {
-                    selected = true;
-                    sb.Append("<mark=#FFB74D26>");
-                }
-                else if (selected)
-                {
-                    sb.Append("<mark=#FFD54F2E>");
-                }
-                if (!byLine.TryGetValue(i, out var list))
-                {
-                    AppendColored(sb, line, 0, line.Length, null);
-                    if (selected)
-                        sb.Append("</mark>");
-                    continue;
-                }
-                list.Sort((a, b) => a.Column.CompareTo(b.Column));
-                int cursor = 0;
-                foreach (var token in list)
+                tokens.Sort((a, b) => a.Column.CompareTo(b.Column));
+                foreach (var token in tokens)
                 {
                     int start = Mathf.Clamp(token.Column, 0, line.Length);
                     int end = Mathf.Clamp(token.Column + token.Length, start, line.Length);
-                    if (start < cursor)
-                        continue;
-                    AppendColored(sb, line, cursor, start, null);
-                    AppendColored(sb, line, start, end, ColorFor(token.TokenType));
-                    cursor = end;
+                    string color = ColorFor(token.TokenType);
+                    for (int i = start; i < end; i++)
+                        s_colors[i] = color;
                 }
-                if (cursor < line.Length)
-                    AppendColored(sb, line, cursor, line.Length, null);
-                if (selected)
-                    sb.Append("</mark>");
+            }
+
+            MarkBraces(line);
+            for (int i = 0; i < line.Length; i++)
+                if (s_inBrace[i] && s_colors[i] != StringColor)
+                    s_colors[i] = ExprColor;
+
+            foreach (System.Text.RegularExpressions.Match m in s_keywords.Matches(line))
+            {
+                bool free = true;
+                for (int i = m.Index; free && i < m.Index + m.Length; i++)
+                    free = s_colors[i] == null;
+                if (!free)
+                    continue;
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    s_colors[i] = KeywordColor;
+            }
+
+            var sb = new StringBuilder(line.Length + 32);
+            int cursor = 0;
+            while (cursor < line.Length)
+            {
+                string color = s_colors[cursor];
+                int run = cursor + 1;
+                while (run < line.Length && s_colors[run] == color)
+                    run++;
+                AppendSegment(sb, line.Substring(cursor, run - cursor), color);
+                cursor = run;
             }
             return sb.ToString();
         }

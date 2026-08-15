@@ -226,10 +226,14 @@ export VirtualNode CanvasView(
                 Overflow = lod == 0 ? OverflowVisible : OverflowHidden,
                 BackgroundColor = Hex("#232329"),
                 BorderRadius = Px(10),
-                BorderTopWidth = 1,
-                BorderRightWidth = 1,
-                BorderBottomWidth = 1,
-                BorderLeftWidth = 1,
+                // POC .card is a 1.5px solid --line frame - a DIFFERENT rule from
+                // .card-title border-bottom 1px, which stays at 1f in canvasStyles.
+                // UITK Width is border-box, so CardWidthFor carries the POC content
+                // width plus this frame.
+                BorderTopWidth = 1.5f,
+                BorderRightWidth = 1.5f,
+                BorderBottomWidth = 1.5f,
+                BorderLeftWidth = 1.5f,
                 BorderTopColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
                 BorderRightColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
                 BorderBottomColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
@@ -314,6 +318,12 @@ export VirtualNode CanvasView(
                         FontSize = Px(26),
                         UnityFontStyle = FontBold,
                         Color = Hex("#d6d6dc"),
+                        // POC body.lod0 .pill is font-size 26 inside the body 1.45
+                        // line box: 26 * 1.45 = 37.7px. Every sibling row on the card
+                        // carries its line box explicitly; this one laid out at the
+                        // UITK natural ~32px box, ~6px short of the POC 72.7 pill.
+                        Height = Px(37.7f),
+                        TextAlign = TextMiddleLeft,
                         FlexGrow = 1,
                         // Neither ".card" nor ".pill" sets overflow:hidden in the
                         // POC, so a name wider than the 300px pill renders PAST it
@@ -392,6 +402,12 @@ export VirtualNode CanvasView(
                                   PaddingBottom = Px(1.5f),
                                   PaddingLeft = Px(6),
                                   PaddingRight = Px(6),
+                                  // POC .imp-row: 11.5 * 1.45 line box + the 1.5px
+                                  // padding pair = 19.7. Pinned on the ROW so the auto
+                                  // flex minimum of the mono Label cannot push the
+                                  // pitch past the POC one.
+                                  Height = Px(19.7f),
+                                  MinHeight = Px(0),
                                 }}
                               >
                                 <Label
@@ -401,18 +417,29 @@ export VirtualNode CanvasView(
                                 <VisualElement
                                   name={$"a-imp-{index}-{x}"}
                                   style={new Style {
-                                    Width = Px(12),
-                                    Height = Px(12),
-                                    BorderRadius = Px(6),
-                                    AlignItems = AlignCenter,
-                                    JustifyContent = JustifyCenter,
-                                    BackgroundColor = BuilderCanvasDrawing.DotHalo(imp.BadgeKind),
+                                    Width = Px(8),
+                                    Height = Px(8),
                                     MarginLeft = Px(6),
                                     FlexShrink = 0,
+                                    Overflow = OverflowVisible,
                                   }}
                                 >
                                   <VisualElement
                                     style={new Style {
+                                      Position = PosAbsolute,
+                                      Left = Px(-2),
+                                      Top = Px(-2),
+                                      Width = Px(12),
+                                      Height = Px(12),
+                                      BorderRadius = Px(6),
+                                      BackgroundColor = BuilderCanvasDrawing.DotHalo(imp.BadgeKind),
+                                    }}
+                                  />
+                                  <VisualElement
+                                    style={new Style {
+                                      Position = PosAbsolute,
+                                      Left = Px(0),
+                                      Top = Px(0),
                                       Width = Px(8),
                                       Height = Px(8),
                                       BorderRadius = Px(4),
@@ -444,7 +471,13 @@ export VirtualNode CanvasView(
                               int bx = x;
                               string chipKey = $"hook:{index}:{x}";
                               return (
-                                <VisualElement key={$"body-{x}"}>
+                                <VisualElement
+                                  key={$"body-{x}"}
+                                  style={new Style {
+                                    FlexShrink = 0,
+                                    MaxWidth = Px(cardWidth - 30f),
+                                  }}
+                                >
                                 @if (editKey == chipKey) {
                                   return (
                                     <TextField
@@ -512,15 +545,24 @@ export VirtualNode CanvasView(
                                   style={new Style {
                                     Color = node.Body[bx].Kind == BuilderCardLineKind.Hook ? Hex("#d6d6dc") : BuilderCanvasDrawing.LineColor(node.Body[bx].Kind),
                                     FontSize = Px(11.5f),
-                                    Height = Px(22.7f),
+                                    // POC .chip sets no white-space rule, so a chip
+                                    // wider than the card WRAPS inside its own pill and
+                                    // the pill stays whole. A fixed Height plus the
+                                    // default no-wrap sliced the last chip off at the
+                                    // card border — no right cap, no ellipsis.
+                                    MinHeight = Px(22.7f),
+                                    WhiteSpace = WsNormal,
+                                    MaxWidth = Px(cardWidth - 30f),
                                     TextAlign = TextMiddleLeft,
                                     UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                                     BackgroundColor = Hex("#2a2a31"),
                                     BorderRadius = Px(10),
-                                    BorderTopWidth = 1.5f,
-                                    BorderRightWidth = 1.5f,
-                                    BorderBottomWidth = 1.5f,
-                                    BorderLeftWidth = 1.5f,
+                                    // POC .chip is a 1px solid --line border - the
+                                    // 1.5px rule belongs to .card, not here.
+                                    BorderTopWidth = 1f,
+                                    BorderRightWidth = 1f,
+                                    BorderBottomWidth = 1f,
+                                    BorderLeftWidth = 1f,
                                     BorderTopColor = hoverChipKey == chipKey ? Hex("#ffb74d") : Hex("#3a3a44"),
                                     BorderRightColor = hoverChipKey == chipKey ? Hex("#ffb74d") : Hex("#3a3a44"),
                                     BorderBottomColor = hoverChipKey == chipKey ? Hex("#ffb74d") : Hex("#3a3a44"),
@@ -798,14 +840,18 @@ export VirtualNode CanvasView(
                                           : Hex("#cfcfda"),
                                         FontSize = Px(12),
                                         UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
-                                        MarginLeft = Px(detail.Depth * 24f),
+                                        // POC cardHtml gives an entry row an inline
+                                        // padding-left of 24px which REPLACES the
+                                        // .style-entry 6px — an 18px step from the
+                                        // export name, not 24 stacked on top of 6.
+                                        MarginLeft = Px(0),
                                         // POC .style-entry is padding 2px 6px at
                                         // font-size 12 — a 17.4px line box plus the
                                         // 2px pair, measured as a 16 screen px pitch
                                         // at zoom 0.75 on poc-l1-cards.png.
                                         PaddingTop = Px(2),
                                         PaddingBottom = Px(2),
-                                        PaddingLeft = Px(6),
+                                        PaddingLeft = Px(detail.Depth > 0 ? detail.Depth * 24f : 6f),
                                         PaddingRight = Px(6),
                                         Height = Px(21.4f),
                                         TextAlign = TextMiddleLeft,
@@ -878,6 +924,10 @@ export VirtualNode CanvasView(
                                   PaddingRight = Px(6),
                                   PaddingTop = Px(2.5f),
                                   PaddingBottom = Px(2.5f),
+                                  // Same auto-minimum trap as the import row; the row
+                                  // still GROWS for wrapped L2 attributes because no
+                                  // Height is pinned here.
+                                  MinHeight = Px(0),
                                   BorderRadius = Px(5),
                                   BackgroundColor = dropHere && dragBand == 1
                                     ? Rgba(79, 195, 247, 30)
@@ -1025,6 +1075,13 @@ export VirtualNode CanvasView(
                                         Color = BuilderCanvasDrawing.LineColor(row.Kind),
                                         FontSize = Px(12),
                                         Height = Px(17.4f),
+                                        // A flex item min-height of auto resolves to
+                                        // its own min-content height, and the mono face
+                                        // line box is TALLER than the declared 1.45
+                                        // box — so the auto minimum, not Height, sized
+                                        // every row (~1px over per row, ~7px over a
+                                        // six-import section).
+                                        MinHeight = Px(0),
                                         TextAlign = TextMiddleLeft,
                                         FlexShrink = 0,
                                         UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
@@ -1139,18 +1196,29 @@ export VirtualNode CanvasView(
                                       name={$"a-row-{index}-{rowIdx}"}
                                       tooltip={"usage of " + row.Text.Trim('<', '>')}
                                       style={new Style {
-                                        Width = Px(12),
-                                        Height = Px(12),
-                                        BorderRadius = Px(6),
-                                        AlignItems = AlignCenter,
-                                        JustifyContent = JustifyCenter,
-                                        BackgroundColor = BuilderCanvasDrawing.DotHalo(5),
+                                        Width = Px(8),
+                                        Height = Px(8),
                                         MarginLeft = StyleAuto,
                                         FlexShrink = 0,
+                                        Overflow = OverflowVisible,
                                       }}
                                     >
                                       <VisualElement
                                         style={new Style {
+                                          Position = PosAbsolute,
+                                          Left = Px(-2),
+                                          Top = Px(-2),
+                                          Width = Px(12),
+                                          Height = Px(12),
+                                          BorderRadius = Px(6),
+                                          BackgroundColor = BuilderCanvasDrawing.DotHalo(5),
+                                        }}
+                                      />
+                                      <VisualElement
+                                        style={new Style {
+                                          Position = PosAbsolute,
+                                          Left = Px(0),
+                                          Top = Px(0),
                                           Width = Px(8),
                                           Height = Px(8),
                                           BorderRadius = Px(4),
