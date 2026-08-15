@@ -40,8 +40,17 @@ namespace Ruitk.Builder
             window._placeholder = placeholder;
             window._items = items;
             window._freeform = freeform;
-            var mouse = GUIUtility.GUIToScreenPoint(Event.current?.mousePosition ?? Vector2.zero);
-            window.position = new Rect(mouse.x, mouse.y + 8f, 260f, 320f);
+            // Event.current is null outside OnGUI (GenericMenu callbacks, UITK
+            // pointer events) — fall back to the focused window's center so the
+            // popup never lands at the screen origin.
+            Vector2 anchor;
+            if (Event.current != null)
+                anchor = GUIUtility.GUIToScreenPoint(Event.current.mousePosition);
+            else if (focusedWindow != null)
+                anchor = focusedWindow.position.center - new Vector2(130f, 160f);
+            else
+                anchor = new Vector2(400f, 300f);
+            window.position = new Rect(anchor.x, anchor.y + 8f, 260f, 320f);
             window.ShowPopup();
             window.Focus();
         }
