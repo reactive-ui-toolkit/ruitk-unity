@@ -17,6 +17,12 @@ namespace Ruitk.Builder
         private static BuilderLspClient _client;
         private static Task<BuilderLspClient> _starting;
 
+        /// <summary>UB-06: service-level relay of textDocument/publishDiagnostics.
+        /// Subscribers attach HERE, once — a crash-restart creates a fresh
+        /// client, and subscriptions taken on the dead instance would die
+        /// silently with it.</summary>
+        public static event System.Action<string, Newtonsoft.Json.Linq.JToken> DiagnosticsPublished;
+
         public static Task<BuilderLspClient> GetOrStartAsync()
         {
             if (_client != null && _client.IsRunning)
@@ -34,6 +40,8 @@ namespace Ruitk.Builder
                 var client = BuilderLspClient.StartOrThrow();
                 string projectRoot = Path.GetDirectoryName(Application.dataPath);
                 await client.InitializeAsync(projectRoot);
+                client.DiagnosticsPublished +=
+                    (path, diagnostics) => DiagnosticsPublished?.Invoke(path, diagnostics);
                 _client = client;
                 BuilderAssetEvents.ActiveClient = client;
                 return client;

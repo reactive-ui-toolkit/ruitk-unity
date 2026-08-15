@@ -31,7 +31,13 @@ namespace Ruitk.Builder
         private bool _suppressChange;
         private bool _userCaretActive;
         private bool _editing;
+        private bool _coloredEdit;
+        private bool _innerScrollWired;
+        private float _editPitch;
+        private readonly Label _pitchProbe;
         private VisualElement _completionPopup;
+        private List<(string Code, int Line1, string Message)> _overlayDiagnostics;
+        private string _localDiagnosticsText = "";
 
         public event Action<string> TextEdited;
 
@@ -206,7 +212,32 @@ namespace Ruitk.Builder
             });
             host.Add(_probe);
 
+            // UB-25: two stacked M's measure the text engine's NATURAL line
+            // pitch — in coloured edit mode the listing rows adopt it so the
+            // glyphs sit exactly under the transparent input's own lines.
+            _pitchProbe = new Label("M\nM")
+            {
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 0f, left = 0f,
+                    visibility = Visibility.Hidden,
+                    fontSize = 12f,
+                    whiteSpace = WhiteSpace.Pre,
+                },
+            };
+            _pitchProbe.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+            _pitchProbe.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                float height = _pitchProbe.layout.height;
+                if (!float.IsNaN(height) && height > 0f)
+                    _editPitch = height / 2f;
+            });
+            host.Add(_pitchProbe);
+
             _input = new TextField { multiline = true };
+            _input.verticalScrollerVisibility = ScrollerVisibility.Auto;
             _input.style.position = Position.Absolute;
             _input.style.top = 0f;
             _input.style.left = 0f;
@@ -252,19 +283,77 @@ namespace Ruitk.Builder
 
         public string TextLf => (_input.value ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
 
-        /// <summary>POC enterSrcEdit/cancelSrcEdit: the pane is a rendered listing
-        /// until "edit", then the plain textarea, then a rendered listing again.
-        /// The two never overlap, so there is no glyph registration to keep.</summary>
+        /// <summary>UB-25 (deliberate POC divergence — the POC drops to a plain
+        /// textarea): edit mode keeps the COLOURED listing visible under a
+        /// transparent-ink input whose caret and selection stay visible. The
+        /// registration contract: rows adopt the text engine's measured natural
+        /// pitch and the input's internal scroller drives the listing's offset.
+        /// If either the pitch or the internal scroller is unavailable the pane
+        /// degrades to the opaque textarea — never a misregistered overlay.</summary>
         public void SetEditing(bool editing)
         {
             _editing = editing;
             _input.style.display = editing ? DisplayStyle.Flex : DisplayStyle.None;
-            _scroll.style.display = editing ? DisplayStyle.None : DisplayStyle.Flex;
+            _coloredEdit = editing && TryBeginColoredEdit();
+            _scroll.style.display = !editing || _coloredEdit
+                ? DisplayStyle.Flex
+                : DisplayStyle.None;
             if (!editing)
             {
+                EndColoredEdit();
                 _userCaretActive = false;
                 Recolor(TextLf);
             }
+            else if (_coloredEdit)
+            {
+                Recolor(TextLf);
+            }
+        }
+
+        private bool TryBeginColoredEdit()
+        {
+            if (_editPitch <= 0f)
+                return false;
+            var inner = _input.Q<ScrollView>();
+            if (inner == null)
+                return false;
+            if (!_innerScrollWired)
+            {
+                _innerScrollWired = true;
+                if (inner.verticalScroller != null)
+                    inner.verticalScroller.valueChanged += _ => SyncListingScroll(inner);
+                if (inner.horizontalScroller != null)
+                    inner.horizontalScroller.valueChanged += _ => SyncListingScroll(inner);
+            }
+            _input.style.backgroundColor = BuilderPalette.Transparent;
+            foreach (var text in _input.Query<TextElement>().ToList())
+                text.style.color = BuilderPalette.Transparent;
+            var selection = _input.textSelection;
+            selection.cursorColor = BuilderPalette.Text;
+            var band = BuilderPalette.Accent;
+            band.a = 0.3f;
+            selection.selectionColor = band;
+            SyncListingScroll(inner);
+            return true;
+        }
+
+        private void EndColoredEdit()
+        {
+            if (!_coloredEdit)
+                return;
+            _coloredEdit = false;
+            _input.style.backgroundColor = BuilderPalette.Ground;
+            foreach (var text in _input.Query<TextElement>().ToList())
+                text.style.color = BuilderPalette.Text;
+        }
+
+        private void SyncListingScroll(ScrollView inner)
+        {
+            if (!_coloredEdit || inner == null)
+                return;
+            _scroll.scrollOffset = new Vector2(
+                inner.horizontalScroller?.value ?? 0f,
+                inner.verticalScroller?.value ?? 0f);
         }
 
         /// <summary>POC row→source sync: band the line, scroll it into view, and —
@@ -521,31 +610,18 @@ namespace Ruitk.Builder
                 tokens = BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
 
                 var diags = BuilderLanguage.Diagnose(parsed, _filePath, _knownElements);
-                if (diags.Count == 0)
-                {
-                    _diagnosticsLabel.text = "";
-                }
-                else
-                {
-                    var sb = new StringBuilder();
-                    int shown = 0;
-                    foreach (var d in diags)
-                    {
-                        if (shown++ == 4)
-                        {
-                            sb.Append("… +").Append(diags.Count - 4).Append(" more");
-                            break;
-                        }
-                        sb.Append(d.Code).Append(" L").Append(d.SourceLine)
-                            .Append(": ").Append(d.Message).Append('\n');
-                    }
-                    _diagnosticsLabel.text = sb.ToString().TrimEnd('\n');
-                }
+                var sb = new StringBuilder();
+                foreach (var d in diags)
+                    sb.Append(d.Code).Append(" L").Append(d.SourceLine)
+                        .Append(": ").Append(d.Message).Append('\n');
+                _localDiagnosticsText = sb.ToString();
+                RenderDiagnosticsLabel();
             }
             catch (Exception)
             {
                 tokens = Array.Empty<SemanticTokenData>();
-                _diagnosticsLabel.text = "";
+                _localDiagnosticsText = "";
+                RenderDiagnosticsLabel();
             }
 
             var byLine = new Dictionary<int, List<SemanticTokenData>>();
@@ -570,11 +646,52 @@ namespace Ruitk.Builder
                 var row = (Label)_linesHost[i];
                 byLine.TryGetValue(i, out var list);
                 row.text = BuildLineRichText(line, list);
+                // UB-25: coloured edit mode re-pitches every row to the text
+                // engine's natural line height so the listing registers with the
+                // transparent input's glyphs.
+                row.style.height = _coloredEdit && _editPitch > 0f ? _editPitch : LineHeight;
                 row.style.backgroundColor = _selectedLine1 == i + 1
                     ? SelBand
                     : LineNamesAny(line, _traceNames) ? TraceBand : BuilderPalette.Transparent;
             }
             ApplyLinesWidth();
+        }
+
+        /// <summary>UB-06: the label merges the local T1+T2 list with the LSP's
+        /// published diagnostics — only the Roslyn tier (CS####) is taken from
+        /// the server, the UITKX tiers are already computed locally. Cap 4.</summary>
+        public void SetOverlayDiagnostics(List<(string Code, int Line1, string Message)> overlay)
+        {
+            _overlayDiagnostics = overlay;
+            RenderDiagnosticsLabel();
+        }
+
+        private void RenderDiagnosticsLabel()
+        {
+            var lines = new List<string>();
+            foreach (string line in _localDiagnosticsText.Split('\n'))
+                if (line.Length > 0)
+                    lines.Add(line);
+            if (_overlayDiagnostics != null)
+                foreach (var (code, line1, message) in _overlayDiagnostics)
+                    if (code != null && code.StartsWith("CS", StringComparison.Ordinal))
+                        lines.Add(code + " L" + line1 + ": " + message);
+            if (lines.Count == 0)
+            {
+                _diagnosticsLabel.text = "";
+                return;
+            }
+            var sb = new StringBuilder();
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (i == 4)
+                {
+                    sb.Append("… +").Append(lines.Count - 4).Append(" more");
+                    break;
+                }
+                sb.Append(lines[i]).Append('\n');
+            }
+            _diagnosticsLabel.text = sb.ToString().TrimEnd('\n');
         }
 
         /// <summary>Tokens are 0-based line/column over the LF buffer; segments
@@ -648,7 +765,8 @@ namespace Ruitk.Builder
         /// `Style` and `as` in a C# body reached the pane as plain ink.</summary>
         private static readonly System.Text.RegularExpressions.Regex s_keywords =
             new System.Text.RegularExpressions.Regex(
-                @"\b(export|VirtualNode|Style|var|return|import|from|as|new)\b|(@if|@else|@foreach)",
+                @"\b(export|VirtualNode|Style|var|return|import|from|as|new)\b"
+                + @"|(@if|@else if|@else|@foreach|@for|@while|@switch|@case|@default)",
                 System.Text.RegularExpressions.RegexOptions.Compiled);
 
         /// <summary>POC tokenize() pass 1:
@@ -726,6 +844,18 @@ namespace Ruitk.Builder
                     int start = Mathf.Clamp(token.Column, 0, line.Length);
                     int end = Mathf.Clamp(token.Column + token.Length, start, line.Length);
                     string color = ColorFor(token.TokenType);
+                    // POC ".cu": a tag that is NOT a schema element renders in
+                    // the custom-component teal. The semantic provider emits one
+                    // Element type for every tag, so the split happens here,
+                    // where the tag text and the schema are both in hand.
+                    if (token.TokenType == SemanticTokenTypes.Element
+                        && BuilderSchemaCache.HasSchema && end > start)
+                    {
+                        string tag = line.Substring(start, end - start);
+                        if (tag.Length > 0 && char.IsUpper(tag[0])
+                            && !BuilderSchemaCache.HasElement(tag))
+                            color = "#7FDBCA";
+                    }
                     for (int i = start; i < end; i++)
                         s_colors[i] = color;
                 }

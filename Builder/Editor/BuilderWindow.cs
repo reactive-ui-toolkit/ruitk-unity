@@ -65,18 +65,45 @@ namespace Ruitk.Builder
         {
             _workspace.Changed -= OnWorkspaceChanged;
             _workspace.Changed += OnWorkspaceChanged;
+            BuilderLspService.DiagnosticsPublished -= OnLspDiagnosticsPublished;
+            BuilderLspService.DiagnosticsPublished += OnLspDiagnosticsPublished;
             saveChangesMessage = "The RUITK Builder has unsaved component edits.";
         }
 
         private void OnDisable()
         {
             _workspace.Changed -= OnWorkspaceChanged;
+            BuilderLspService.DiagnosticsPublished -= OnLspDiagnosticsPublished;
             _canvasHost?.Unmount();
             _canvasHost = null;
             _previewPane?.Dispose();
             _previewPane = null;
             _previewCompiler?.Dispose();
             _previewCompiler = null;
+        }
+
+        /// <summary>UB-06: the server's published diagnostics reach the source
+        /// pane. Only the focus file's list is shown; the CodeField keeps the
+        /// Roslyn (CS####) entries and drops the UITKX tiers it already
+        /// computes locally.</summary>
+        private void OnLspDiagnosticsPublished(string path, Newtonsoft.Json.Linq.JToken diagnostics)
+        {
+            if (_codeField == null || string.IsNullOrEmpty(_focusFile)
+                || !string.Equals(Path.GetFullPath(path), Path.GetFullPath(_focusFile),
+                    System.StringComparison.OrdinalIgnoreCase))
+                return;
+            var overlay = new System.Collections.Generic.List<(string, int, string)>();
+            if (diagnostics is Newtonsoft.Json.Linq.JArray items)
+            {
+                foreach (var item in items)
+                {
+                    string code = item.Value<string>("code") ?? "";
+                    string message = item.Value<string>("message") ?? "";
+                    int line0 = item["range"]?["start"]?.Value<int>("line") ?? 0;
+                    overlay.Add((code, line0 + 1, message));
+                }
+            }
+            _codeField.SetOverlayDiagnostics(overlay);
         }
 
         private void CreateGUI()
