@@ -18,14 +18,16 @@ export VirtualNode CanvasView(
   var (zoom, setZoom) = useState(initialZoom);
   var (selected, setSelected) = useState(-1);
   var (layoutVersion, setLayoutVersion) = useState(0);
-  var (detailMode, setDetailMode) = useState(1);
 
   var panning = useRef(false);
   var dragCard = useRef(-1);
   var lastX = useRef(0f);
   var lastY = useRef(0f);
 
-  bool lodFull = detailMode >= 1 && (detailMode == 2 || zoom >= 0.45f);
+  int lod = zoom < 0.45f ? 0 : (zoom < 1.05f ? 1 : 2);
+  bool lodFull = lod >= 1;
+  BuilderCanvasDrawing.CurrentLod = lod;
+  float cardWidth = BuilderCanvasDrawing.CardWidthFor(lod);
 
   return (
     <VisualElement
@@ -74,8 +76,8 @@ export VirtualNode CanvasView(
         }
       }}
       onWheel={e => {
-        float factor = e.Delta.y < 0f ? 1.1f : 0.9f;
-        float next = Mathf.Clamp(zoom * factor, 0.15f, 3f);
+        float factor = e.Delta.y < 0f ? 1.12f : 1f / 1.12f;
+        float next = Mathf.Clamp(zoom * factor, 0.18f, 2.2f);
         if (next != zoom) {
           float scale = next / zoom;
           float nx = e.Position.x - (e.Position.x - camX) * scale;
@@ -102,7 +104,7 @@ export VirtualNode CanvasView(
           style={CanvasStyles.EdgeLayer}
           pickingMode={PickIgnore}
           onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawEdges(ctx, graph)}
-          redrawKey={layoutVersion}
+          redrawKey={layoutVersion * 8 + lod}
         />
         @for (int i = 0; i < graph.Nodes.Count; i++) {
           var node = graph.Nodes[i];
@@ -113,7 +115,7 @@ export VirtualNode CanvasView(
               key={node.FilePath}
               style={new Style {
                 Position = PosAbsolute,
-                Width = Px(BuilderCanvasDrawing.CardWidth),
+                Width = Px(cardWidth),
                 Translate = Xlate(Px(node.X), Px(node.Y)),
                 BackgroundColor = Hex("#232329"),
                 BorderRadius = Px(8),
@@ -151,27 +153,57 @@ export VirtualNode CanvasView(
                 e.StopPropagation();
               }}
             >
-              <VisualElement style={CanvasStyles.CardHeader}>
-                <Label
-                  text={BuilderCanvasDrawing.KindLabel(node.Kind)}
-                  style={new Style {
-                    FontSize = Px(8),
-                    Color = Hex("#17171b"),
-                    BackgroundColor = BuilderCanvasDrawing.KindColor(node.Kind),
-                    BorderRadius = Px(3),
-                    PaddingLeft = Px(4),
-                    PaddingRight = Px(4),
-                    MarginRight = Px(6),
-                  }}
-                />
-                <Label text={node.Title} style={CanvasStyles.CardTitle} />
-                @if (node.IsReadOnly) {
-                  return (
-                    <Label text="read-only" style={CanvasStyles.CardLock} />
-                  );
-                }
-              </VisualElement>
-              @if (node.Signature != null && node.Signature.Length > 0) {
+              @if (lod == 0) {
+                return (
+                  <VisualElement style={CanvasStyles.CardHeader}>
+                    <Label
+                      text={node.Title}
+                      style={new Style {
+                        FontSize = Px(20),
+                        UnityFontStyle = FontBold,
+                        Color = Hex("#e4e4ea"),
+                        FlexGrow = 1,
+                      }}
+                    />
+                    <Label
+                      text={BuilderCanvasDrawing.KindLabel(node.Kind)}
+                      style={new Style {
+                        FontSize = Px(12),
+                        Color = Hex("#17171b"),
+                        BackgroundColor = BuilderCanvasDrawing.KindColor(node.Kind),
+                        BorderRadius = Px(4),
+                        PaddingLeft = Px(6),
+                        PaddingRight = Px(6),
+                      }}
+                    />
+                  </VisualElement>
+                );
+              }
+              @if (lod >= 1) {
+                return (
+                  <VisualElement style={CanvasStyles.CardHeader}>
+                    <Label
+                      text={BuilderCanvasDrawing.KindLabel(node.Kind)}
+                      style={new Style {
+                        FontSize = Px(8),
+                        Color = Hex("#17171b"),
+                        BackgroundColor = BuilderCanvasDrawing.KindColor(node.Kind),
+                        BorderRadius = Px(3),
+                        PaddingLeft = Px(4),
+                        PaddingRight = Px(4),
+                        MarginRight = Px(6),
+                      }}
+                    />
+                    <Label text={node.Title} style={CanvasStyles.CardTitle} />
+                    @if (node.IsReadOnly) {
+                      return (
+                        <Label text="read-only" style={CanvasStyles.CardLock} />
+                      );
+                    }
+                  </VisualElement>
+                );
+              }
+              @if (lod >= 1 && node.Signature != null && node.Signature.Length > 0) {
                 return (
                   <Label text={node.Signature} style={CanvasStyles.CardSignature} />
                 );
@@ -253,20 +285,26 @@ export VirtualNode CanvasView(
         }}
       >
         @for (int m = 0; m < 3; m++) {
-          int modeIndex = m;
-          string modeLabel = m == 0 ? "L0 Architecture" : m == 1 ? "L1 Cards" : "L2 Detail";
+          int presetIndex = m;
+          float presetZoom = m == 0 ? 0.30f : m == 1 ? 0.75f : 1.25f;
+          string modeLabel = m == 0 ? "L0 Architecture" : m == 1 ? "L1 Cards" : "L2 Edit";
           return (
             <Label
               key={modeLabel}
               text={modeLabel}
               onPointerDown={e => {
-                setDetailMode(modeIndex);
+                setZoom(presetZoom);
+                setCamX(60f);
+                setCamY(30f);
+                if (onCameraChanged != null) {
+                  onCameraChanged(60f, 30f, presetZoom);
+                }
                 e.StopPropagation();
               }}
               style={new Style {
                 FontSize = Px(10),
-                Color = detailMode == modeIndex ? Hex("#17171b") : Hex("#9a9aa6"),
-                BackgroundColor = detailMode == modeIndex ? Hex("#4fc3f7") : Hex("#232329"),
+                Color = lod == presetIndex ? Hex("#17171b") : Hex("#9a9aa6"),
+                BackgroundColor = lod == presetIndex ? Hex("#4fc3f7") : Hex("#232329"),
                 BorderRadius = Px(4),
                 PaddingLeft = Px(8),
                 PaddingRight = Px(8),

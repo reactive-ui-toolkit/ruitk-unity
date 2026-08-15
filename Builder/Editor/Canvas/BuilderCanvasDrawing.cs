@@ -14,9 +14,20 @@ namespace Ruitk.Builder
     /// </summary>
     public static class BuilderCanvasDrawing
     {
-        public const float CardWidth = 260f;
+        public const float CardWidth = 340f;
 
-        public const float EdgeAnchorY = 19f;
+        public const float EdgeAnchorY = 18f;
+
+        /// <summary>Set by CanvasView each render; the edge painter shares it so
+        /// anchors track the LOD-dependent card width (POC: 300 / 340 / 430).</summary>
+        public static int CurrentLod = 1;
+
+        public static float CardWidthFor(int lod) =>
+            lod == 0 ? 300f : lod == 1 ? 340f : 430f;
+
+        private static readonly Color UsageEdge = new Color(0.361f, 0.545f, 0.690f);
+        private static readonly Color HookEdge = new Color(0.427f, 0.659f, 0.435f);
+        private static readonly Color StyleEdge = new Color(0.647f, 0.467f, 0.702f);
 
         public static Color KindColor(BuilderNodeKind kind)
         {
@@ -78,23 +89,27 @@ namespace Ruitk.Builder
             if (ctx == null || graph == null)
                 return;
             var p = ctx.painter2D;
+            float width = CardWidthFor(CurrentLod);
             foreach (var edge in graph.Edges)
             {
                 if (edge.FromIndex < 0 || edge.FromIndex >= graph.Nodes.Count)
                     continue;
                 var from = graph.Nodes[edge.FromIndex];
-                var a = new Vector2(from.X + CardWidth, from.Y + ImportRowY(from, edge.Specifier));
+                var a = CurrentLod == 0
+                    ? new Vector2(from.X + width, from.Y + 24f)
+                    : new Vector2(from.X + width, from.Y + ImportRowY(from, edge.Specifier));
 
                 if (edge.ToIndex >= 0 && edge.ToIndex < graph.Nodes.Count)
                 {
                     var to = graph.Nodes[edge.ToIndex];
                     var b = new Vector2(to.X, to.Y + EdgeAnchorY);
-                    var color = KindColor(edge.TargetKind);
+                    Color color = edge.TargetKind == BuilderNodeKind.Hook ? HookEdge
+                        : edge.TargetKind == BuilderNodeKind.Style ? StyleEdge
+                        : UsageEdge;
                     color.a = 0.85f;
                     bool dashed = edge.TargetKind == BuilderNodeKind.Style
-                        || edge.TargetKind == BuilderNodeKind.Hook
-                        || edge.TargetKind == BuilderNodeKind.Util;
-                    float dx = Mathf.Max(40f, Mathf.Abs(b.x - a.x) * 0.5f);
+                        || edge.TargetKind == BuilderNodeKind.Hook;
+                    float dx = Mathf.Max(40f, Mathf.Abs(b.x - a.x) * 0.45f);
                     var c1 = new Vector2(a.x + dx, a.y);
                     var c2 = new Vector2(b.x - dx, b.y);
                     if (dashed)
@@ -102,17 +117,21 @@ namespace Ruitk.Builder
                     else
                     {
                         p.strokeColor = color;
-                        p.lineWidth = 1.5f;
+                        p.lineWidth = 2f;
                         p.BeginPath();
                         p.MoveTo(a);
                         p.BezierCurveTo(c1, c2, b);
                         p.Stroke();
                     }
+                    p.fillColor = color;
+                    p.BeginPath();
+                    p.Arc(b, 4f, 0f, 360f);
+                    p.Fill();
                 }
                 else
                 {
                     p.strokeColor = new Color(0.90f, 0.30f, 0.30f);
-                    p.lineWidth = 1.5f;
+                    p.lineWidth = 2f;
                     p.BeginPath();
                     p.MoveTo(a);
                     p.LineTo(new Vector2(a.x + 48f, a.y));
@@ -150,7 +169,7 @@ namespace Ruitk.Builder
         {
             const int segments = 28;
             p.strokeColor = color;
-            p.lineWidth = 1.5f;
+            p.lineWidth = 2f;
             Vector2 Point(float t)
             {
                 float u = 1f - t;
