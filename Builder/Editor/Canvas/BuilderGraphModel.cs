@@ -33,6 +33,18 @@ namespace Ruitk.Builder
         public string Text;
         public int Depth;
         public BuilderCardLineKind Kind;
+
+        /// <summary>Attribute display text ("text=\"hi\" style={S.x}"), L2 only.</summary>
+        public string AttrsText = "";
+
+        /// <summary>1-based line in the source file (row→source-line sync).</summary>
+        public int SourceLine;
+
+        /// <summary>1-based inclusive end line (element rows; 0 = single line).</summary>
+        public int EndLine;
+
+        /// <summary>0 none, 1 @if, 2 @foreach, 3 @else, 4 other control flow.</summary>
+        public int BadgeKind;
     }
 
     /// <summary>One file card on the canvas.</summary>

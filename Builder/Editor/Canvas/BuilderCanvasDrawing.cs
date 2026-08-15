@@ -64,6 +64,56 @@ namespace Ruitk.Builder
                 + bodyLineText.Substring(arrow + 5) + "</color>";
         }
 
+        public static Color BadgeColor(int badgeKind) => badgeKind switch
+        {
+            1 => new Color(1.00f, 0.72f, 0.30f),
+            2 => new Color(0.51f, 0.78f, 0.52f),
+            3 => new Color(0.94f, 0.38f, 0.57f),
+            _ => new Color(0.77f, 0.53f, 0.75f),
+        };
+
+        public static Color BadgeBg(int badgeKind)
+        {
+            var c = BadgeColor(badgeKind);
+            c.a = 0.2f;
+            return c;
+        }
+
+        /// <summary>State names carried by a hook chip line ("useState  →  gold, setGold"
+        /// → ["gold","setGold"]), null when the chip has no states.</summary>
+        public static string ChipStates(string bodyLineText)
+        {
+            int arrow = bodyLineText.IndexOf("  →  ", System.StringComparison.Ordinal);
+            if (arrow < 0)
+                return null;
+            return bodyLineText.Substring(arrow + 5).Replace(",", " ");
+        }
+
+        /// <summary>POC hover-trace: does this row's attribute text reference any
+        /// of the hovered chip's state names (word boundaries)?</summary>
+        public static bool RowMatchesTrace(string attrsText, string traceStates)
+        {
+            if (string.IsNullOrEmpty(traceStates) || string.IsNullOrEmpty(attrsText))
+                return false;
+            foreach (string name in traceStates.Split(' '))
+            {
+                string n = name.Trim();
+                if (n.Length == 0)
+                    continue;
+                int at = attrsText.IndexOf(n, System.StringComparison.Ordinal);
+                while (at >= 0)
+                {
+                    bool leftOk = at == 0 || !char.IsLetterOrDigit(attrsText[at - 1]);
+                    int end = at + n.Length;
+                    bool rightOk = end >= attrsText.Length || !char.IsLetterOrDigit(attrsText[end]);
+                    if (leftOk && rightOk)
+                        return true;
+                    at = attrsText.IndexOf(n, at + 1, System.StringComparison.Ordinal);
+                }
+            }
+            return false;
+        }
+
         public static string KindLabel(BuilderNodeKind kind)
         {
             switch (kind)

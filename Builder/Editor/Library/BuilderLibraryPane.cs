@@ -66,6 +66,15 @@ namespace Ruitk.Builder
                     foreach (var prop in elements.Properties())
                     {
                         var body = prop.Value as JObject;
+                        if (body?["attributes"] is JArray schemaAttrs)
+                        {
+                            var infos = new List<BuilderSchemaCache.AttrInfo>();
+                            foreach (var a in schemaAttrs)
+                                infos.Add(new BuilderSchemaCache.AttrInfo(
+                                    a.Value<string>("name") ?? "",
+                                    a.Value<string>("type") ?? ""));
+                            BuilderSchemaCache.Register(prop.Name, infos);
+                        }
                         _entries.Add(new Entry
                         {
                             Name = "<" + prop.Name + ">",

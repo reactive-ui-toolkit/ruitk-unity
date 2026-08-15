@@ -251,43 +251,90 @@ namespace Ruitk.Builder
                         Kind = registered.Contains(element.TagName)
                             ? BuilderCardLineKind.Element
                             : BuilderCardLineKind.Component,
+                        AttrsText = AttrsDisplay(element),
+                        SourceLine = element.SourceLine,
+                        EndLine = Math.Max(element.SourceLine,
+                            Math.Max(element.CloseTagLine, element.EndLine)),
                     });
                     foreach (var child in element.Children)
                         WalkMarkup(child, depth + 1, lines, registered, ref budget);
                     break;
                 case IfNode ifNode:
                     budget--;
-                    lines.Add(new BuilderCardLine { Text = "@if", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    lines.Add(new BuilderCardLine
+                    {
+                        Text = "@if", Depth = depth, Kind = BuilderCardLineKind.Directive,
+                        BadgeKind = 1, SourceLine = ifNode.SourceLine,
+                    });
                     foreach (var branch in ifNode.Branches)
                         foreach (var child in branch.Payload.Body)
                             WalkMarkup(child, depth + 1, lines, registered, ref budget);
                     break;
                 case ForeachNode fe:
                     budget--;
-                    lines.Add(new BuilderCardLine { Text = "@foreach", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    lines.Add(new BuilderCardLine
+                    {
+                        Text = "@foreach", Depth = depth, Kind = BuilderCardLineKind.Directive,
+                        BadgeKind = 2, SourceLine = fe.SourceLine,
+                    });
                     foreach (var child in fe.Payload.Body)
                         WalkMarkup(child, depth + 1, lines, registered, ref budget);
                     break;
                 case ForNode f:
                     budget--;
-                    lines.Add(new BuilderCardLine { Text = "@for", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    lines.Add(new BuilderCardLine
+                    {
+                        Text = "@for", Depth = depth, Kind = BuilderCardLineKind.Directive,
+                        BadgeKind = 4, SourceLine = f.SourceLine,
+                    });
                     foreach (var child in f.Payload.Body)
                         WalkMarkup(child, depth + 1, lines, registered, ref budget);
                     break;
                 case WhileNode w:
                     budget--;
-                    lines.Add(new BuilderCardLine { Text = "@while", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    lines.Add(new BuilderCardLine
+                    {
+                        Text = "@while", Depth = depth, Kind = BuilderCardLineKind.Directive,
+                        BadgeKind = 4, SourceLine = w.SourceLine,
+                    });
                     foreach (var child in w.Payload.Body)
                         WalkMarkup(child, depth + 1, lines, registered, ref budget);
                     break;
                 case SwitchNode s:
                     budget--;
-                    lines.Add(new BuilderCardLine { Text = "@switch", Depth = depth, Kind = BuilderCardLineKind.Directive });
+                    lines.Add(new BuilderCardLine
+                    {
+                        Text = "@switch", Depth = depth, Kind = BuilderCardLineKind.Directive,
+                        BadgeKind = 4, SourceLine = s.SourceLine,
+                    });
                     foreach (var c in s.Cases)
                         foreach (var child in c.Payload.Body)
                             WalkMarkup(child, depth + 1, lines, registered, ref budget);
                     break;
             }
+        }
+
+        private static string AttrsDisplay(ElementNode element)
+        {
+            if (element.Attributes.IsDefaultOrEmpty)
+                return "";
+            var sb = new System.Text.StringBuilder();
+            foreach (var attr in element.Attributes)
+            {
+                if (sb.Length > 0)
+                    sb.Append(' ');
+                sb.Append(attr.Name).Append('=');
+                switch (attr.Value)
+                {
+                    case StringLiteralValue s:
+                        sb.Append('"').Append(s.Value).Append('"');
+                        break;
+                    case CSharpExpressionValue e:
+                        sb.Append('{').Append(e.Expression).Append('}');
+                        break;
+                }
+            }
+            return sb.ToString();
         }
 
         private static void Link(Dictionary<string, HashSet<string>> map, string key, string value)

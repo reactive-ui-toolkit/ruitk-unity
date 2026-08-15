@@ -122,6 +122,8 @@ namespace Ruitk.Builder
                 return;
             _canvasHost?.Unmount();
             _canvasHost = new BuilderCanvasHost();
+            _canvasHost.OnRowClick = OnCanvasRowClicked;
+            _canvasHost.OnRowContext = OnCanvasRowContext;
             _canvasHost.Mount(
                 container, _focusFile, OpenFileFromCanvas, ReadBufferOrDisk,
                 graph => _libraryPane?.SetWorkspaceEntries(graph));
@@ -287,6 +289,146 @@ namespace Ruitk.Builder
             SyncLspBuffer(_focusFile, bufferLf, open: false);
             RefreshChrome();
             NotifyBufferChanged();
+        }
+
+        /// <summary>POC 6.2: clicking a JSX row focuses its file and scrolls the
+        /// source pane to that line (selected).</summary>
+        private void OnCanvasRowClicked(string filePath, int sourceLine)
+        {
+            string full = Path.GetFullPath(filePath);
+            if (!string.Equals(full, Path.GetFullPath(_focusFile), System.StringComparison.OrdinalIgnoreCase))
+                OpenFileFromCanvas(full);
+            _codeField?.FocusLine(sourceLine);
+        }
+
+        /// <summary>POC 6.4A: the row context menu — typed attributes from the
+        /// schema, directive wraps, add child, delete — all landing as text
+        /// edits on the row's source lines through the session pipeline.</summary>
+        private void OnCanvasRowContext(string filePath, int sourceLine, int rowIdx)
+        {
+            string full = Path.GetFullPath(filePath);
+            var node = _canvasHost?.FindNode(full);
+            if (node == null || rowIdx < 0 || rowIdx >= node.Markup.Count)
+                return;
+            var row = node.Markup[rowIdx];
+            string tag = row.Text.Trim('<', '>');
+
+            var menu = new UnityEditor.GenericMenu();
+            foreach (var attr in BuilderSchemaCache.AttributesFor(tag))
+            {
+                string captured = attr.Name;
+                string display = attr.Name + "  :  " + attr.Type;
+                menu.AddItem(new GUIContent("Add attribute (typed)/" + display), false, () =>
+                    EditLineInFile(full, sourceLine, line =>
+                    {
+                        int close = line.LastIndexOf("/>", System.StringComparison.Ordinal);
+                        if (close < 0)
+                            close = line.LastIndexOf('>');
+                        if (close < 0)
+                            return line;
+                        string value = BuilderSchemaCache.DefaultValueFor(captured, attr.Type);
+                        return line.Substring(0, close).TrimEnd() + " " + captured + "=" + value
+                            + (line.Substring(close).StartsWith("/") ? " " : "") + line.Substring(close);
+                    }));
+            }
+            menu.AddItem(new GUIContent("Add child element…"), false, () =>
+                InsertLinesInFile(full, sourceLine, IndentOf(full, sourceLine) + "  <VisualElement />"));
+            menu.AddSeparator("");
+            if (row.BadgeKind == 0)
+            {
+                menu.AddItem(new GUIContent("Wrap in @if"), false, () =>
+                    WrapRowInDirective(full, row, "@if (condition) {"));
+                menu.AddItem(new GUIContent("Wrap in @foreach"), false, () =>
+                    WrapRowInDirective(full, row, "@foreach (var item in items) {"));
+            }
+            menu.AddSeparator("");
+            menu.AddItem(new GUIContent("Delete element"), false, () =>
+                DeleteLinesInFile(full, row.SourceLine, row.EndLine > 0 ? row.EndLine : row.SourceLine));
+            menu.ShowAsContext();
+        }
+
+        private string IndentOf(string filePath, int line1)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null)
+                return "";
+            string[] lines = session.BufferText.Split('\n');
+            if (line1 - 1 < 0 || line1 - 1 >= lines.Length)
+                return "";
+            string line = lines[line1 - 1];
+            int i = 0;
+            while (i < line.Length && line[i] == ' ')
+                i++;
+            return line.Substring(0, i);
+        }
+
+        private void EditLineInFile(string filePath, int line1, System.Func<string, string> transform)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            string[] lines = session.BufferText.Split('\n');
+            if (line1 - 1 < 0 || line1 - 1 >= lines.Length)
+                return;
+            lines[line1 - 1] = transform(lines[line1 - 1]);
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+        }
+
+        private void InsertLinesInFile(string filePath, int afterLine1, string newLine)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int at = Mathf.Clamp(afterLine1, 0, lines.Count);
+            lines.Insert(at, newLine);
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+        }
+
+        private void DeleteLinesInFile(string filePath, int fromLine1, int toLine1)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int from = Mathf.Clamp(fromLine1 - 1, 0, lines.Count - 1);
+            int to = Mathf.Clamp(toLine1 - 1, from, lines.Count - 1);
+            lines.RemoveRange(from, to - from + 1);
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+        }
+
+        private void WrapRowInDirective(string filePath, BuilderCardLine row, string header)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null || session.IsReadOnly)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int from = Mathf.Clamp(row.SourceLine - 1, 0, lines.Count - 1);
+            int to = Mathf.Clamp((row.EndLine > 0 ? row.EndLine : row.SourceLine) - 1, from, lines.Count - 1);
+            string indent = IndentOf(filePath, row.SourceLine);
+            for (int i = from; i <= to; i++)
+                lines[i] = "    " + lines[i];
+            lines.Insert(to + 1, indent + "    );");
+            lines.Insert(to + 1 + 1, indent + "}");
+            lines.Insert(from, indent + "  return (");
+            lines.Insert(from, indent + header);
+            ApplyProgrammaticEdit(filePath, string.Join("\n", lines));
+        }
+
+        private void ApplyProgrammaticEdit(string filePath, string newBufferLf)
+        {
+            var session = _workspace.TryGet(filePath);
+            if (session == null)
+                return;
+            session.ApplyEdit(newBufferLf);
+            if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(_focusFile),
+                    System.StringComparison.OrdinalIgnoreCase))
+                _codeField?.SetContent(newBufferLf, _focusFile, null);
+            _outlinePane?.Rebuild();
+            SyncLspBuffer(filePath, newBufferLf, open: false);
+            RefreshChrome();
+            NotifyBufferChanged();
+            MountCanvas();
         }
 
         private void OnPreviewComponentPicked(string filePath)

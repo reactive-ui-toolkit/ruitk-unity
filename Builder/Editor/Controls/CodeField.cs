@@ -88,6 +88,29 @@ namespace Ruitk.Builder
 
         public string TextLf => (_input.value ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
 
+        /// <summary>POC row→source sync: place the caret at the given 1-based
+        /// line, select that line, and focus the field.</summary>
+        public void FocusLine(int line1)
+        {
+            string text = _input.value ?? "";
+            int line = 1, start = 0;
+            for (int i = 0; i < text.Length && line < line1; i++)
+            {
+                if (text[i] == '\n')
+                {
+                    line++;
+                    start = i + 1;
+                }
+            }
+            int end = text.IndexOf('\n', start);
+            if (end < 0)
+                end = text.Length;
+            _input.cursorIndex = start;
+            _input.selectIndex = end;
+            _input.Focus();
+            _userCaretActive = true;
+        }
+
         /// <summary>Inserts at the caret (or replaces the selection) and fires
         /// the normal edited path — palette clicks author through the same
         /// session/undo/recompile pipeline as typing.</summary>

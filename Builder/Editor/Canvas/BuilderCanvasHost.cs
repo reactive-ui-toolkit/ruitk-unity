@@ -25,6 +25,9 @@ namespace Ruitk.Builder
         private float _camY;
         private float _zoom = 1f;
 
+        public Action<string, int> OnRowClick;
+        public Action<string, int, int> OnRowContext;
+
         public async void Mount(
             VisualElement container,
             string focusFile,
@@ -83,9 +86,19 @@ namespace Ruitk.Builder
                             SaveLayout();
                         },
                         OnCardContext = index => ShowCardMenu(index, onOpenFile),
+                        OnRowClick = (path, line) => OnRowClick?.Invoke(path, line),
+                        OnRowContext = (path, line, rowIdx) => OnRowContext?.Invoke(path, line, rowIdx),
                     }
                 )
             );
+        }
+
+        public BuilderCanvasNode FindNode(string filePath)
+        {
+            if (_graph == null)
+                return null;
+            int i = _graph.IndexOf(filePath);
+            return i < 0 ? null : _graph.Nodes[i];
         }
 
         private void ShowCardMenu(int index, Action<string> onOpenFile)

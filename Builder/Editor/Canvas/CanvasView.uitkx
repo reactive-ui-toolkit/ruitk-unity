@@ -11,12 +11,17 @@ export VirtualNode CanvasView(
   Action onLayoutChanged = null,
   Action<int> onSelect = null,
   Action<float, float, float> onCameraChanged = null,
-  Action<int> onCardContext = null
+  Action<int> onCardContext = null,
+  Action<string, int> onRowClick = null,
+  Action<string, int, int> onRowContext = null
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
   var (zoom, setZoom) = useState(initialZoom);
   var (selected, setSelected) = useState(-1);
+  var (selRowNode, setSelRowNode) = useState(-1);
+  var (selRowIdx, setSelRowIdx) = useState(-1);
+  var (traceStates, setTraceStates) = useState((string)null);
   var (layoutVersion, setLayoutVersion) = useState(0);
 
   var panning = useRef(false);
@@ -247,11 +252,14 @@ export VirtualNode CanvasView(
                             }}
                           >
                             @for (int x = 0; x < node.Body.Count; x++) {
+                              int bx = x;
                               return (
                                 <Label
                                   key={$"body-{x}"}
                                   text={node.Body[x].Kind == BuilderCardLineKind.Hook ? BuilderCanvasDrawing.ChipRichText(node.Body[x].Text) : node.Body[x].Text}
                                   enableRichText={true}
+                                  onPointerEnter={e => { setTraceStates(BuilderCanvasDrawing.ChipStates(node.Body[bx].Text)); }}
+                                  onPointerLeave={e => { setTraceStates((string)null); }}
                                   style={new Style {
                                     Color = BuilderCanvasDrawing.LineColor(node.Body[x].Kind),
                                     FontSize = Px(10),
@@ -284,16 +292,87 @@ export VirtualNode CanvasView(
                         <VisualElement>
                           <Label text="RETURN — MARKUP" style={CanvasStyles.CardSectionHeader} />
                           @for (int x = 0; x < node.Markup.Count; x++) {
+                            var row = node.Markup[x];
+                            int rowIdx = x;
+                            bool rowSel = selRowNode == index && selRowIdx == rowIdx;
+                            bool rowHl = BuilderCanvasDrawing.RowMatchesTrace(row.AttrsText, traceStates);
                             return (
-                              <Label
+                              <VisualElement
                                 key={$"mk-{x}"}
-                                text={node.Markup[x].Text}
                                 style={new Style {
-                                  Color = BuilderCanvasDrawing.LineColor(node.Markup[x].Kind),
-                                  FontSize = Px(10),
-                                  MarginLeft = Px(node.Markup[x].Depth * 10f),
+                                  FlexDirection = FlexRow,
+                                  AlignItems = AlignCenter,
+                                  MarginLeft = Px(row.Depth * 14f),
+                                  PaddingLeft = Px(6),
+                                  PaddingRight = Px(6),
+                                  PaddingTop = Px(1),
+                                  PaddingBottom = Px(1),
+                                  BorderRadius = Px(5),
+                                  BackgroundColor = rowSel
+                                    ? Rgba(255, 213, 79, 38)
+                                    : rowHl
+                                      ? Rgba(255, 183, 77, 46)
+                                      : Rgba(0, 0, 0, 0),
                                 }}
-                              />
+                                onPointerDown={e => {
+                                  if (e.Button == 1) {
+                                    if (onRowContext != null) {
+                                      onRowContext(node.FilePath, row.SourceLine, rowIdx);
+                                    }
+                                    e.StopPropagation();
+                                    return;
+                                  }
+                                  setSelRowNode(index);
+                                  setSelRowIdx(rowIdx);
+                                  if (onRowClick != null) {
+                                    onRowClick(node.FilePath, row.SourceLine);
+                                  }
+                                  e.StopPropagation();
+                                }}
+                              >
+                                @if (row.BadgeKind > 0) {
+                                  return (
+                                    <Label
+                                      text={row.Text}
+                                      style={new Style {
+                                        FontSize = Px(9),
+                                        UnityFontStyle = FontBold,
+                                        Color = BuilderCanvasDrawing.BadgeColor(row.BadgeKind),
+                                        BackgroundColor = BuilderCanvasDrawing.BadgeBg(row.BadgeKind),
+                                        BorderRadius = Px(7),
+                                        PaddingLeft = Px(6),
+                                        PaddingRight = Px(6),
+                                        MarginRight = Px(6),
+                                      }}
+                                    />
+                                  );
+                                }
+                                @if (row.BadgeKind == 0) {
+                                  return (
+                                    <Label
+                                      text={row.Text}
+                                      style={new Style {
+                                        Color = BuilderCanvasDrawing.LineColor(row.Kind),
+                                        FontSize = Px(11),
+                                        UnityFontStyle = row.Kind == BuilderCardLineKind.Component ? FontBold : FontNormal,
+                                      }}
+                                    />
+                                  );
+                                }
+                                @if (lod == 2 && row.AttrsText.Length > 0) {
+                                  return (
+                                    <Label
+                                      text={row.AttrsText}
+                                      style={new Style {
+                                        Color = Hex("#9d9dab"),
+                                        FontSize = Px(10),
+                                        MarginLeft = Px(6),
+                                        FlexShrink = 1,
+                                      }}
+                                    />
+                                  );
+                                }
+                              </VisualElement>
                             );
                           }
                         </VisualElement>
