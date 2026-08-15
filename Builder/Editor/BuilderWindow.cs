@@ -139,21 +139,35 @@ namespace Ruitk.Builder
             root.Add(toolbar);
             SetActiveMode(1);
 
-            var outerSplit = new TwoPaneSplitView(0, 205f, TwoPaneSplitViewOrientation.Horizontal)
+            // POC "#library { flex: 0 0 205px; border-right: 1px solid var(--line) }"
+            // and initSplitters(), which wires exactly TWO handles: canvas|right and
+            // preview|source. A third draggable handle at the library boundary is a
+            // pane the POC does not have, so the library is a fixed column.
+            var body = new VisualElement
             {
                 name = "builder-body",
+                style = { flexGrow = 1f, flexDirection = FlexDirection.Row, minHeight = 0f },
+            };
+            body.Add(new VisualElement
+            {
+                name = "builder-library",
+                style =
+                {
+                    flexGrow = 0f, flexShrink = 0f, width = 205f, minHeight = 0f,
+                    borderRightWidth = 1f, borderRightColor = Line,
+                },
+            });
+            var innerSplit = new TwoPaneSplitView(1, 440f, TwoPaneSplitViewOrientation.Horizontal)
+            {
                 style = { flexGrow = 1f },
             };
-            outerSplit.Add(new VisualElement { name = "builder-library", style = { minWidth = 160f } });
-            var innerSplit = new TwoPaneSplitView(1, 440f, TwoPaneSplitViewOrientation.Horizontal);
             var canvasPane = new VisualElement { name = "builder-canvas", style = { minWidth = 300f } };
             // POC "#canvasWrap { cursor: grab }".
             BuilderCursor.Set(canvasPane, MouseCursor.Pan);
             innerSplit.Add(canvasPane);
             innerSplit.Add(new VisualElement { name = "builder-side", style = { minWidth = 280f } });
-            outerSplit.Add(innerSplit);
-            root.Add(outerSplit);
-            StyleSplitter(outerSplit, vertical: false);
+            body.Add(innerSplit);
+            root.Add(body);
             StyleSplitter(innerSplit, vertical: false);
 
             var footer = new Label(
@@ -2009,12 +2023,19 @@ namespace Ruitk.Builder
         /// hover — not Unity's stock hairline drag handle.</summary>
         private static void StyleSplitter(TwoPaneSplitView split, bool vertical)
         {
-            split.schedule.Execute(() =>
+            // TwoPaneSplitView rebuilds its resizer whenever it re-inits (first
+            // geometry pass, child changes), so a one-shot pass at frame 0 styled an
+            // anchor that Unity then threw away — leaving the stock hairline. The
+            // pass is idempotent and re-runs on every geometry change.
+            void Apply()
             {
                 var anchor = split.Q(null, "unity-two-pane-split-view__dragline-anchor");
                 if (anchor == null)
                     return;
                 anchor.style.backgroundColor = Panel;
+                // The visible band is the ANCHOR, but the dragline child is sized by
+                // Unity's USS and paints over it; both carry the 6px gutter.
+                var dragline = split.Q(null, "unity-two-pane-split-view__dragline");
                 if (vertical)
                 {
                     anchor.style.height = 6f;
@@ -2022,6 +2043,11 @@ namespace Ruitk.Builder
                     anchor.style.borderBottomWidth = 1f;
                     anchor.style.borderTopColor = Line;
                     anchor.style.borderBottomColor = Line;
+                    if (dragline != null)
+                    {
+                        dragline.style.height = 6f;
+                        dragline.style.top = 0f;
+                    }
                     BuilderCursor.Set(anchor, MouseCursor.ResizeVertical);
                 }
                 else
@@ -2031,11 +2057,24 @@ namespace Ruitk.Builder
                     anchor.style.borderRightWidth = 1f;
                     anchor.style.borderLeftColor = Line;
                     anchor.style.borderRightColor = Line;
+                    if (dragline != null)
+                    {
+                        dragline.style.width = 6f;
+                        dragline.style.left = 0f;
+                    }
                     BuilderCursor.Set(anchor, MouseCursor.ResizeHorizontal);
                 }
+                if (dragline != null)
+                    dragline.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                if (anchor.userData is string tag && tag == "ruitk-gutter")
+                    return;
+                anchor.userData = "ruitk-gutter";
                 anchor.RegisterCallback<MouseEnterEvent>(_ => anchor.style.backgroundColor = Accent);
                 anchor.RegisterCallback<MouseLeaveEvent>(_ => anchor.style.backgroundColor = Panel);
-            }).ExecuteLater(0);
+            }
+
+            split.schedule.Execute(Apply).ExecuteLater(0);
+            split.RegisterCallback<GeometryChangedEvent>(_ => Apply());
         }
 
         private static VisualElement Separator() => new VisualElement

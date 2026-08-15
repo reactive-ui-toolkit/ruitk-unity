@@ -28,7 +28,9 @@ export Style CardHeader = new Style {
   PaddingTop = Px(8),
   PaddingBottom = Px(8),
   BackgroundColor = Hex("#2a2a31"),
-  BorderBottomWidth = 1,
+  // A 1px hairline lands on ~1 device px at the L2 zoom and antialiases down to
+  // #2e2e36; 1.5px (the card border's width) survives the world scale intact.
+  BorderBottomWidth = 1.5f,
   BorderBottomColor = Hex("#3a3a44"),
   BorderTopLeftRadius = Px(9),
   BorderTopRightRadius = Px(9),
@@ -43,9 +45,16 @@ export Style CardPill = new Style {
   PaddingBottom = Px(16),
 };
 
+// POC "font: 13px/1.45" cascades a 1.45 LINE BOX onto every card row. UI Toolkit
+// Labels have no line-height property and lay out at the font's own line box, so
+// every row came out 15-20% short and the cards read tighter than the POC's.
+// Each single-line row carries its 1.45x box as an explicit height with the text
+// centred in it, which is what a CSS line box does.
 export Style CardTitle = new Style {
   Color = Hex("#d6d6dc"),
   FontSize = Px(14),
+  Height = Px(20.3f),
+  TextAlign = TextMiddleLeft,
   UnityFontStyle = FontBold,
   FlexGrow = 1,
 };
@@ -70,8 +79,12 @@ export Style CardSection = new Style {
   PaddingRight = Px(12),
   PaddingTop = Px(7),
   PaddingBottom = Px(7),
-  BorderBottomWidth = 1,
-  BorderBottomColor = Rgba(58, 58, 68, 153),
+  // POC "rgba(58,58,68,.6)" over the #232329 card composites to #313139. Left as a
+  // translucent 1px hairline it antialiased down to an effective ~0.43 alpha, so
+  // the already-composited value is painted at full alpha over a width that
+  // survives the world scale.
+  BorderBottomWidth = 1.5f,
+  BorderBottomColor = Hex("#313139"),
 };
 
 export Style CardSectionLast = new Style {
@@ -84,12 +97,16 @@ export Style CardSectionLast = new Style {
 export Style CardSignature = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(12),
+  Height = Px(17.4f),
+  TextAlign = TextMiddleLeft,
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 
 export Style CardSectionHeader = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(10),
+  Height = Px(14.5f),
+  TextAlign = TextMiddleLeft,
   LetterSpacing = Px(1),
   MarginBottom = Px(5),
 };
@@ -97,12 +114,43 @@ export Style CardSectionHeader = new Style {
 export Style CardImportLine = new Style {
   Color = Hex("#8b8b96"),
   FontSize = Px(11.5f),
+  Height = Px(16.7f),
+  TextAlign = TextMiddleLeft,
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
   FlexGrow = 1,
   FlexShrink = 1,
   Overflow = OverflowHidden,
   WhiteSpace = WsNowrap,
   TextOverflow = TextEllipsis,
+};
+
+// POC jsxRowHtml concatenates the attribute name, the '=' and the expr span with
+// NOTHING between them. Composed out of sibling Labels the inherited box spacing
+// showed up as a space after every '=' and inside every brace pair, so the four
+// pieces of an attribute carry no margin or padding of their own; only the
+// per-attribute wrapper keeps the POC's ".attr" 6px right margin.
+export Style AttrName = new Style {
+  Color = Hex("#9d9dab"),
+  FontSize = Px(12),
+  Height = Px(17.4f),
+  TextAlign = TextMiddleLeft,
+  MarginLeft = Px(0),
+  MarginRight = Px(0),
+  PaddingLeft = Px(0),
+  PaddingRight = Px(0),
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+};
+
+export Style AttrBrace = new Style {
+  Color = Hex("#ffb74d"),
+  FontSize = Px(12),
+  Height = Px(17.4f),
+  TextAlign = TextMiddleLeft,
+  MarginLeft = Px(0),
+  MarginRight = Px(0),
+  PaddingLeft = Px(0),
+  PaddingRight = Px(0),
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 
 export Style InlineEdit = new Style {
@@ -210,15 +258,17 @@ export Style CodeIslandTrace = new Style {
   PaddingBottom = Px(6),
 };
 
-// POC ".card.selected" adds "0 0 0 2px rgba(255,213,79,.25)" WITHOUT changing
-// the border width — an inset ring overlay, so the card never grows on select.
+// POC ".card.selected" adds "0 0 0 2px rgba(255,213,79,.25)" WITHOUT changing the
+// border width — a spread shadow, which sits OUTSIDE the border. Painted inset it
+// landed under the solid gold border and was invisible, so the ring is offset by
+// its own 2px and lives outside the card frame (which clips its children).
 export Style SelectionRing = new Style {
   Position = PosAbsolute,
-  Top = Px(0),
-  Left = Px(0),
-  Right = Px(0),
-  Bottom = Px(0),
-  BorderRadius = Px(9),
+  Top = Px(-2),
+  Left = Px(-2),
+  Right = Px(-2),
+  Bottom = Px(-2),
+  BorderRadius = Px(11),
   BorderTopWidth = 2,
   BorderRightWidth = 2,
   BorderBottomWidth = 2,
@@ -250,17 +300,49 @@ export Style CardDropHint = new Style {
   BorderLeftColor = Hex("#4fc3f7"),
 };
 
-// POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }" — cards float above the
-// dotted ground. UITK has no box-shadow, so an offset dark rounded rect painted
-// behind the card carries the same depth cue.
+// POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }" — an 18px BLUR, so the
+// dark spreads ~9px to each side and ~15px below and fades out. UITK has no
+// box-shadow; a single offset rect gave a hard 4px band under the card and
+// nothing at all at its sides. Four concentric rects of growing inset and
+// falling alpha composite to ~.32 at the card edge with a real falloff.
+export Style CardShadowFar = new Style {
+  Position = PosAbsolute,
+  Top = Px(-3),
+  Left = Px(-9),
+  Right = Px(-9),
+  Bottom = Px(-15),
+  BorderRadius = Px(19),
+  BackgroundColor = Rgba(0, 0, 0, 26),
+};
+
+export Style CardShadowMid = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(-6),
+  Right = Px(-6),
+  Bottom = Px(-12),
+  BorderRadius = Px(16),
+  BackgroundColor = Rgba(0, 0, 0, 33),
+};
+
+export Style CardShadowNear = new Style {
+  Position = PosAbsolute,
+  Top = Px(3),
+  Left = Px(-3),
+  Right = Px(-3),
+  Bottom = Px(-9),
+  BorderRadius = Px(13),
+  BackgroundColor = Rgba(0, 0, 0, 41),
+};
+
 export Style CardShadow = new Style {
   Position = PosAbsolute,
   Top = Px(6),
-  Left = Px(3),
-  Right = Px(3),
+  Left = Px(0),
+  Right = Px(0),
   Bottom = Px(-6),
   BorderRadius = Px(10),
-  BackgroundColor = Rgba(0, 0, 0, 89),
+  BackgroundColor = Rgba(0, 0, 0, 56),
 };
 
 export Style CardExport = new Style {

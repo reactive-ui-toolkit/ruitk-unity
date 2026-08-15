@@ -96,6 +96,27 @@ namespace Ruitk.Builder
             input.style.paddingBottom = 2f;
             input.style.paddingLeft = 6f;
             input.style.paddingRight = 6f;
+            // Styling only the outer element leaves Unity's own inner input box
+            // painted on top of it, so the field read as two nested outlines. When
+            // the outer element owns the chrome the inner one must be flat.
+            var inner = input.Q(className: "unity-base-text-field__input");
+            if (inner != null && inner != input)
+            {
+                inner.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                inner.style.color = new Color(0.839f, 0.839f, 0.863f);
+                inner.style.borderTopWidth = 0f;
+                inner.style.borderBottomWidth = 0f;
+                inner.style.borderLeftWidth = 0f;
+                inner.style.borderRightWidth = 0f;
+                inner.style.paddingTop = 0f;
+                inner.style.paddingBottom = 0f;
+                inner.style.paddingLeft = 0f;
+                inner.style.paddingRight = 0f;
+                inner.style.marginTop = 0f;
+                inner.style.marginBottom = 0f;
+                inner.style.marginLeft = 0f;
+                inner.style.marginRight = 0f;
+            }
             // POC "#lib-search:focus / .ctx-search:focus { border-color: accent }".
             var accent = new Color(0.310f, 0.765f, 0.969f);
             input.RegisterCallback<FocusInEvent>(_ => BuilderWindow.SetBorderColor(input, accent));
@@ -165,13 +186,21 @@ namespace Ruitk.Builder
                 {
                     flexShrink = 0f,
                     marginTop = 10f,
-                    paddingTop = 8f,
-                    borderTopWidth = 1f,
-                    borderTopColor = Line,
                     display = DisplayStyle.None,
                 },
             };
             container.Add(_knobsBlock);
+
+            // POC ".knobs { border-top: 1px DASHED var(--line) }". UI Toolkit has no
+            // dashed border style at all, so a solid rule was standing in; the rule
+            // is painted as a dash run on its own 1px strip instead.
+            var dashRule = new VisualElement
+            {
+                pickingMode = PickingMode.Ignore,
+                style = { height = 1f, flexShrink = 0f, marginBottom = 8f },
+            };
+            dashRule.generateVisualContent += BuilderCanvasDrawing.DrawDashedRule;
+            _knobsBlock.Add(dashRule);
 
             // POC: the section headers are emitted only `if (rows.length)` /
             // `if (stateRows.length)` — a style/hook/util module shows neither.
@@ -279,10 +308,12 @@ namespace Ruitk.Builder
                     // component only — a child's internals never surface here.
                     for (int i = 0; isFocused && i < states.Count && shown < 12; i++)
                     {
-                        // POC stateRows: the row is labelled with the hook's own
-                        // declared variable name (`gold`), not an index.
-                        string label = i < _stateNames.Count ? _stateNames[i] : "state[" + i + "]";
-                        var field = BuildStateField(label, states[i]);
+                        // POC stateRows are built FROM the declared names, so a cell
+                        // with no name simply has no row — an index placeholder
+                        // like "state[19]" is never a thing the POC can show.
+                        if (i >= _stateNames.Count)
+                            continue;
+                        var field = BuildStateField(_stateNames[i], states[i]);
                         if (field == null)
                             continue;
                         _stateHost.Add(field);
@@ -297,7 +328,8 @@ namespace Ruitk.Builder
 
         private static readonly System.Text.RegularExpressions.Regex s_useState =
             new System.Text.RegularExpressions.Regex(
-                @"var\s*\(\s*([A-Za-z_]\w*)\s*,[^)]*\)\s*=\s*useState\s*(?:<[^>\n]*>)?\s*\(",
+                @"var\s*(?:\(\s*(?<n>[A-Za-z_]\w*)\s*,[^)]*\)|(?<n>[A-Za-z_]\w*))"
+                + @"\s*=\s*useState\s*(?:<[^>\n]*>)?\s*\(",
                 System.Text.RegularExpressions.RegexOptions.Compiled);
 
         /// <summary>The useState destructuring names, in declaration order — the
@@ -308,7 +340,7 @@ namespace Ruitk.Builder
             if (string.IsNullOrEmpty(bufferText))
                 return;
             foreach (System.Text.RegularExpressions.Match m in s_useState.Matches(bufferText))
-                _stateNames.Add(m.Groups[1].Value);
+                _stateNames.Add(m.Groups["n"].Value);
         }
 
         /// <summary>POC §7: state fields are EDITABLE — an int/float/string/bool
@@ -369,10 +401,44 @@ namespace Ruitk.Builder
                 case null:
                     return null;
                 default:
-                    return new Label(label + " = " + value)
+                {
+                    // A non-primitive cell used to render as one bare full-width
+                    // Label carrying "name = <ToString()>", which ran straight off
+                    // the pane. It goes through the same 70px-label + boxed-value
+                    // shape as every other row, read-only and ellipsised.
+                    var row = new VisualElement
                     {
-                        style = { color = rowStyle, fontSize = 10f },
+                        style =
+                        {
+                            flexDirection = FlexDirection.Row,
+                            alignItems = Align.Center,
+                            marginBottom = 2f,
+                        },
                     };
+                    row.Add(new Label(label)
+                    {
+                        style =
+                        {
+                            color = rowStyle, minWidth = 70f, width = 70f,
+                            flexShrink = 0f, fontSize = 11f,
+                        },
+                    });
+                    var box = new Label(value.ToString())
+                    {
+                        tooltip = value.ToString(),
+                        style =
+                        {
+                            flexGrow = 1f, flexShrink = 1f, minWidth = 0f,
+                            fontSize = 11f,
+                            whiteSpace = WhiteSpace.NoWrap,
+                            overflow = Overflow.Hidden,
+                            textOverflow = TextOverflow.Ellipsis,
+                        },
+                    };
+                    StyleInput(box);
+                    row.Add(box);
+                    return row;
+                }
             }
         }
 

@@ -21,19 +21,19 @@ namespace Ruitk.Builder
         /// <summary>Card geometry the edge painter estimates anchors from — kept
         /// in lockstep with canvasStyles (POC .card-title / .card-section
         /// paddings and the per-row font sizes).</summary>
-        private const float HeaderH = 35f;
+        private const float HeaderH = 38f;
 
         private const float PillH = 66f;
 
-        private const float SignatureSectionH = 30f;
+        private const float SignatureSectionH = 33f;
 
-        private const float SectionOverheadH = 33f;
+        private const float SectionOverheadH = 34f;
 
-        private const float ImportRowH = 17f;
+        private const float ImportRowH = 19.7f;
 
-        private const float MarkupRowH = 21f;
+        private const float MarkupRowH = 22.4f;
 
-        private const float ChipRowH = 26f;
+        private const float ChipRowH = 28.7f;
 
         /// <summary>Set by CanvasView each render; the edge painter shares it so
         /// anchors track the LOD-dependent card width (POC: 300 / 340 / 430).</summary>
@@ -345,16 +345,46 @@ namespace Ruitk.Builder
             var p = ctx.painter2D;
             p.fillColor = new Color(0.173f, 0.173f, 0.200f);
             p.BeginPath();
+            // The gradient's "circle at 1px 1px, #2c2c33 1px" covers a 2x2 box;
+            // integer coordinates keep every dot fully opaque instead of letting
+            // a fractional quad antialias half its ink away.
             for (float y = 1f; y < rect.height; y += 26f)
             {
+                float y0 = Mathf.Floor(y);
                 for (float x = 1f; x < rect.width; x += 26f)
                 {
-                    p.MoveTo(new Vector2(x, y));
-                    p.LineTo(new Vector2(x + 1.5f, y));
-                    p.LineTo(new Vector2(x + 1.5f, y + 1.5f));
-                    p.LineTo(new Vector2(x, y + 1.5f));
+                    float x0 = Mathf.Floor(x);
+                    p.MoveTo(new Vector2(x0, y0));
+                    p.LineTo(new Vector2(x0 + 2f, y0));
+                    p.LineTo(new Vector2(x0 + 2f, y0 + 2f));
+                    p.LineTo(new Vector2(x0, y0 + 2f));
                     p.ClosePath();
                 }
+            }
+            p.Fill();
+        }
+
+        /// <summary>POC ".knobs { border-top: 1px dashed var(--line) }" — UI Toolkit
+        /// has no dashed border, so the rule is painted as a 3-on / 3-off run on a
+        /// 1px-high strip.</summary>
+        public static void DrawDashedRule(MeshGenerationContext ctx)
+        {
+            if (ctx?.visualElement == null)
+                return;
+            var rect = ctx.visualElement.contentRect;
+            if (rect.width <= 0f)
+                return;
+            var p = ctx.painter2D;
+            p.fillColor = new Color(0.227f, 0.227f, 0.267f);
+            p.BeginPath();
+            for (float x = 0f; x < rect.width; x += 6f)
+            {
+                float w = Mathf.Min(3f, rect.width - x);
+                p.MoveTo(new Vector2(x, 0f));
+                p.LineTo(new Vector2(x + w, 0f));
+                p.LineTo(new Vector2(x + w, 1f));
+                p.LineTo(new Vector2(x, 1f));
+                p.ClosePath();
             }
             p.Fill();
         }
@@ -390,12 +420,22 @@ namespace Ruitk.Builder
                 return world.WorldToLocal(new Vector2(bound.xMax - 4f, bound.center.y));
             }
 
-            Vector2 TargetOf(int index, BuilderCanvasNode to)
+            // Cards are placed with Translate, not Left/Top, so layout.x/y are
+            // always 0 — only the MODEL coordinates carry position. The measured
+            // element still supplies the true size.
+            Rect CardRect(int index, BuilderCanvasNode node)
             {
                 var card = world?.Q("card-" + index);
-                var rect = card != null && card.layout.width > 0f
-                    ? card.layout
-                    : new Rect(to.X, to.Y, width, PillH);
+                float w = card != null && card.layout.width > 0f ? card.layout.width : width;
+                float h = card != null && card.layout.height > 0f ? card.layout.height : PillH;
+                if (card == null || card.layout.width <= 0f)
+                    estimated = true;
+                return new Rect(node.X, node.Y, w, h);
+            }
+
+            Vector2 TargetOf(int index, BuilderCanvasNode to)
+            {
+                var rect = CardRect(index, to);
                 return CurrentLod == 0
                     ? new Vector2(rect.xMin, rect.yMin + rect.height * 0.5f)
                     : new Vector2(rect.xMin, rect.yMin + EdgeAnchorY);
@@ -413,11 +453,7 @@ namespace Ruitk.Builder
                 {
                     // POC lod0 branch: the source is the whole card and
                     // x1 = r1.right - r1.width / 2 — the card's CENTRE.
-                    var card = world?.Q("card-" + edge.FromIndex);
-                    var rect = card != null && card.layout.width > 0f
-                        ? card.layout
-                        : new Rect(from.X, from.Y, width, PillH);
-                    a = new Vector2(rect.center.x, rect.center.y);
+                    a = CardRect(edge.FromIndex, from).center;
                 }
                 else
                 {
@@ -588,16 +624,17 @@ namespace Ruitk.Builder
             return y;
         }
 
+        private static readonly Vector2[] s_dashSamples = new Vector2[401];
+
         private static void StrokeDashedBezier(
             Painter2D p, Vector2 a, Vector2 c1, Vector2 c2, Vector2 b, Color color)
         {
-            // POC stroke-dasharray="6 4" is SCREEN pixels: the dash period must not
-            // change with zoom, so the segment count tracks the curve's on-screen
-            // length rather than a fixed 28.
-            int segments = Mathf.Clamp(
-                Mathf.RoundToInt(Vector2.Distance(a, b) * CurrentZoom / 5f) * 2, 8, 240);
-            p.strokeColor = color;
-            p.lineWidth = 2f / CurrentZoom;
+            // SVG stroke-dasharray="6 4" is measured along ARC LENGTH, so the 6-on
+            // / 4-off period is uniform however tight the curve gets. Splitting in
+            // parameter t instead makes dash length track curve speed — long dashes
+            // on the straight run, a dotted crumble through the bend. The curve is
+            // flattened into a polyline and the pattern walked by distance; the
+            // period is divided by the zoom so it stays 6px/4px on screen.
             Vector2 Point(float t)
             {
                 float u = 1f - t;
@@ -606,13 +643,54 @@ namespace Ruitk.Builder
                     + 3f * u * t * t * c2
                     + t * t * t * b;
             }
-            for (int i = 0; i < segments; i += 2)
+
+            int samples = Mathf.Clamp(
+                Mathf.RoundToInt(Vector2.Distance(a, b) * CurrentZoom / 4f), 32, 400);
+            for (int i = 0; i <= samples; i++)
+                s_dashSamples[i] = Point((float)i / samples);
+
+            p.strokeColor = color;
+            p.lineWidth = 2f / CurrentZoom;
+            float on = 6f / CurrentZoom;
+            float off = 4f / CurrentZoom;
+            bool pen = true;
+            float left = on;
+            var cursor = s_dashSamples[0];
+            p.BeginPath();
+            p.MoveTo(cursor);
+            for (int i = 1; i <= samples; i++)
             {
-                p.BeginPath();
-                p.MoveTo(Point((float)i / segments));
-                p.LineTo(Point((float)(i + 1) / segments));
-                p.Stroke();
+                var next = s_dashSamples[i];
+                float remaining = Vector2.Distance(cursor, next);
+                while (remaining > 0f)
+                {
+                    if (remaining < left)
+                    {
+                        left -= remaining;
+                        if (pen)
+                            p.LineTo(next);
+                        cursor = next;
+                        break;
+                    }
+                    var split = Vector2.Lerp(cursor, next, left / remaining);
+                    if (pen)
+                    {
+                        p.LineTo(split);
+                        p.Stroke();
+                    }
+                    remaining -= left;
+                    cursor = split;
+                    pen = !pen;
+                    left = pen ? on : off;
+                    if (pen)
+                    {
+                        p.BeginPath();
+                        p.MoveTo(cursor);
+                    }
+                }
             }
+            if (pen)
+                p.Stroke();
         }
     }
 }

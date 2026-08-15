@@ -89,22 +89,62 @@ namespace Ruitk.Builder
             CompletionProvider { get; set; }
 
         /// <summary>POC "#srcpane { font: 12px Consolas, monospace }". The OS font
-        /// is resolved once; a machine without it falls back to the editor font.</summary>
-        private static Font MonoFont() => BuilderCanvasDrawing.MonoFont();
+        /// is resolved once; a machine without it falls back to the editor font.
+        /// It must be applied as a FontDefinition — UI Toolkit's text engine
+        /// ignores the legacy dynamic-Font `unityFont` slot.</summary>
+        private static readonly Color Ground = new Color(0.090f, 0.090f, 0.106f);
+
+        /// <summary>Strips Unity's field chrome off one element of the TextField's
+        /// inner hierarchy. The input stack sits ON TOP of the colored overlay, so
+        /// every layer of it must be fully transparent — both its background (which
+        /// otherwise paints Unity's lighter field box over the whole pane) and its
+        /// ink (which otherwise draws neutral-grey glyphs over the colored ones).
+        /// The #17171b ground is painted once by the host behind everything.</summary>
+        private static void FlattenInput(VisualElement element)
+        {
+            if (element == null)
+                return;
+            element.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
+            element.style.color = new Color(1f, 1f, 1f, 0f);
+            element.style.borderTopWidth = 0f;
+            element.style.borderBottomWidth = 0f;
+            element.style.borderLeftWidth = 0f;
+            element.style.borderRightWidth = 0f;
+            element.style.borderTopLeftRadius = 0f;
+            element.style.borderTopRightRadius = 0f;
+            element.style.borderBottomLeftRadius = 0f;
+            element.style.borderBottomRightRadius = 0f;
+            element.style.paddingTop = 0f;
+            element.style.paddingBottom = 0f;
+            element.style.paddingLeft = 0f;
+            element.style.paddingRight = 0f;
+            element.style.marginTop = 0f;
+            element.style.marginBottom = 0f;
+            element.style.marginLeft = 0f;
+            element.style.marginRight = 0f;
+            element.style.fontSize = 12f;
+            element.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+        }
+
+        private void FlattenInputTree()
+        {
+            FlattenInput(_input.Q(TextField.textInputUssName));
+            foreach (var text in _input.Query<TextElement>().ToList())
+                FlattenInput(text);
+        }
 
         public CodeField()
         {
             style.flexGrow = 1f;
             // POC "#srcpane": #17171b ground, 12px monospace, 8px 0 padding.
-            style.backgroundColor = new Color(0.090f, 0.090f, 0.106f);
-            var mono = MonoFont();
+            style.backgroundColor = Ground;
 
             var host = new VisualElement
             {
                 style =
                 {
                     flexGrow = 1f, position = Position.Relative, overflow = Overflow.Hidden,
-                    backgroundColor = new Color(0.090f, 0.090f, 0.106f),
+                    backgroundColor = Ground,
                     paddingTop = 8f, paddingBottom = 8f,
                 },
             };
@@ -124,8 +164,7 @@ namespace Ruitk.Builder
                     fontSize = 12f,
                 },
             };
-            if (mono != null)
-                _overlay.style.unityFont = mono;
+            _overlay.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
             host.Add(_overlay);
 
             _input = new TextField { multiline = true };
@@ -135,9 +174,21 @@ namespace Ruitk.Builder
             _input.style.right = 0f;
             _input.style.bottom = 0f;
             _input.style.fontSize = 12f;
-            if (mono != null)
-                _input.style.unityFont = mono;
+            _input.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+            _input.style.marginTop = 0f;
+            _input.style.marginBottom = 0f;
+            _input.style.marginLeft = 0f;
+            _input.style.marginRight = 0f;
+            _input.style.backgroundColor = new Color(0f, 0f, 0f, 0f);
             _input.style.color = new Color(1f, 1f, 1f, 0f);
+            // Unity's own USS paints the inner input element with its field
+            // background AND its own text color, so the ground read as a lighter
+            // inset rectangle and the colored overlay behind it was occluded
+            // entirely. The ink must go transparent on the element that actually
+            // draws the glyphs, and its box must be flattened onto #17171b with
+            // zero padding so the two layers register glyph-for-glyph.
+            FlattenInputTree();
+            _input.RegisterCallback<AttachToPanelEvent>(_ => FlattenInputTree());
             _input.RegisterValueChangedCallback(OnInputChanged);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
             _input.RegisterCallback<PointerDownEvent>(evt =>

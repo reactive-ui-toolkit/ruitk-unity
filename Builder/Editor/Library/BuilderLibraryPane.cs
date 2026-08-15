@@ -136,6 +136,13 @@ namespace Ruitk.Builder
             };
             search.textEdition.placeholder = "search library…";
             BuilderPreviewPane.StyleInput(search);
+            // POC "#lib-search { padding: 4px 8px; font-size: 12px }" — the knobs
+            // ground is shared, the box metrics are not.
+            search.style.paddingTop = 4f;
+            search.style.paddingBottom = 4f;
+            search.style.paddingLeft = 8f;
+            search.style.paddingRight = 8f;
+            search.style.fontSize = 12f;
             search.RegisterValueChangedCallback(e =>
             {
                 _filter = e.newValue ?? "";
@@ -146,6 +153,22 @@ namespace Ruitk.Builder
             var scroll = new ScrollView { style = { flexGrow = 1f, paddingLeft = 8f, paddingRight = 8f } };
             _listHost = scroll.contentContainer;
             container.Add(scroll);
+
+            // POC buildLibrary() seeds HOOK_TEMPLATES before it ever looks at the
+            // tree, so the HOOKS section exists whatever the language server says.
+            // Sourcing them from RequestHooks() alone made the whole section vanish
+            // whenever the LSP answered with nothing.
+            foreach (string hook in HookTemplates)
+                _entries.Add(new Entry
+                {
+                    Name = hook,
+                    Description = "hook template",
+                    Snippet = hook + "()",
+                    Section = "Hooks",
+                    Tint = HookTint,
+                });
+            SortSections();
+            Rebuild();
 
             try
             {
@@ -182,6 +205,9 @@ namespace Ruitk.Builder
                 if ((hooks?["hooks"] ?? hooks?["Hooks"]) is JArray hookArr)
                 {
                     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var entry in _entries)
+                        if (entry.Section == "Hooks")
+                            seen.Add(entry.Name);
                     foreach (var h in hookArr)
                     {
                         string name = h.Value<string>("name") ?? h.Value<string>("Name") ?? h.ToString();
@@ -344,12 +370,29 @@ namespace Ruitk.Builder
             }
         }
 
+        private static Label SectionHeader(string section) =>
+            new Label(section.ToUpperInvariant())
+            {
+                style =
+                {
+                    marginTop = 10f, marginBottom = 5f,
+                    color = Dim,
+                    fontSize = 10f,
+                    letterSpacing = 1f,
+                },
+            };
+
         private void Rebuild()
         {
             if (_listHost == null)
                 return;
             _listHost.Clear();
             string section = null;
+            // POC buildLibrary() emits all five headers unconditionally, in order,
+            // whether or not the tree contributes a row to any of them — an empty
+            // section still tells you the drawer exists. Filtering hides headers.
+            if (_filter.Length == 0)
+                section = "";
             foreach (var entry in _entries)
             {
                 if (_filter.Length > 0
@@ -369,17 +412,15 @@ namespace Ruitk.Builder
                     continue;
                 if (entry.Section != section)
                 {
-                    section = entry.Section;
-                    _listHost.Add(new Label(section.ToUpperInvariant())
+                    if (_filter.Length == 0)
                     {
-                        style =
-                        {
-                            marginTop = 10f, marginBottom = 5f,
-                            color = Dim,
-                            fontSize = 10f,
-                            letterSpacing = 1f,
-                        },
-                    });
+                        int from = Array.IndexOf(s_sectionOrder, section) + 1;
+                        int upto = Array.IndexOf(s_sectionOrder, entry.Section);
+                        for (int s = Math.Max(from, 0); s < upto; s++)
+                            _listHost.Add(SectionHeader(s_sectionOrder[s]));
+                    }
+                    section = entry.Section;
+                    _listHost.Add(SectionHeader(section));
                 }
                 var row = new Label(entry.Name)
                 {
@@ -398,12 +439,18 @@ namespace Ruitk.Builder
                         paddingLeft = 9f, paddingRight = 9f,
                         paddingTop = 4f, paddingBottom = 4f,
                         marginBottom = 4f,
+                        // POC ".lib-item" inherits body's 1.45 line box: 12px text
+                        // becomes a 17.4px line, so the box is 28px tall, not the
+                        // 25px UI Toolkit's line-height-less Label produces.
+                        height = 28f,
+                        unityTextAlign = TextAnchor.MiddleLeft,
+                        flexShrink = 0f,
+                        // The legacy dynamic-Font `unityFont` slot is ignored by
+                        // UI Toolkit's text engine — only a FontDefinition takes.
+                        unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
                     },
                 };
                 var captured = entry;
-                var mono = BuilderCanvasDrawing.MonoFont();
-                if (mono != null)
-                    row.style.unityFont = mono;
                 // POC ".lib-item" is draggable="true" ONLY — there is no click
                 // handler on the library body, so a misjudged click never mutates
                 // the buffer at a position the user did not choose.
@@ -427,6 +474,14 @@ namespace Ruitk.Builder
                     row.style.borderRightColor = Line;
                 });
                 _listHost.Add(row);
+            }
+
+            if (_filter.Length == 0)
+            {
+                for (int s = Array.IndexOf(s_sectionOrder, section) + 1;
+                    s < s_sectionOrder.Length;
+                    s++)
+                    _listHost.Add(SectionHeader(s_sectionOrder[s]));
             }
 
             _listHost.Add(new Label(LibraryHint)
