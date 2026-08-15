@@ -96,12 +96,10 @@ namespace Ruitk.Language.Diagnostics
         /// </summary>
         public const string UnknownAttribute = "UITKX0109";
 
-        /// <summary>
-        /// A markup node appears after an unconditional <c>@break</c> or
-        /// <c>@continue</c> statement in the same sibling list and is unreachable.
-        /// Severity: Hint (with Unnecessary tag in LSP layer).
-        /// </summary>
-        public const string UnreachableAfterBreakOrContinue = "UITKX0110";
+        // UITKX0110 (UnreachableAfterBreakOrContinue) was removed: it was never
+        // emitted and CANNOT be — @break has no AST node and @continue never
+        // parses, so "markup after @break/@continue" is unrepresentable. The
+        // code number stays retired.
 
         /// <summary>
         /// A component parameter is declared in the function-style header but

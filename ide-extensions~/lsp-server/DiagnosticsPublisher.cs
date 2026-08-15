@@ -531,10 +531,7 @@ public sealed class DiagnosticsPublisher
         // (e.g. UITKX2103 'Multiple top-level returns' when the second return
         // is unreachable after the first).
         var unreachableT2 = t2Diags
-            .Where(d =>
-                d.Code == DiagnosticCodes.UnreachableAfterReturn
-                || d.Code == DiagnosticCodes.UnreachableAfterBreakOrContinue
-            )
+            .Where(d => d.Code == DiagnosticCodes.UnreachableAfterReturn)
             .ToList();
 
         IEnumerable<ParseDiagnostic> filteredT1 = parseResult.Diagnostics;
@@ -571,7 +568,6 @@ public sealed class DiagnosticsPublisher
             var nonUnreachable = cachedT3.Where(d =>
                 d.Code != "CS0162"
                 && d.Code != DiagnosticCodes.UnreachableAfterReturn
-                && d.Code != DiagnosticCodes.UnreachableAfterBreakOrContinue
             );
             combined = t1t2.Concat(nonUnreachable);
         }
@@ -625,15 +621,12 @@ public sealed class DiagnosticsPublisher
             _lastT1T2.TryGetValue(uitkxFilePath, out var t1t2);
 
             // Suppress Roslyn warnings/errors that fall within unreachable
-            // regions (UITKX0107/UITKX0110).  Those diagnostics (CS8321
+            // regions (UITKX0107).  Those diagnostics (CS8321
             // "local function never used", CS0219 "variable never used", etc.)
             // are false‐positives caused by dead code after return — the
             // unreachable hint and fade are sufficient.
             var unreachableRanges = (t1t2 ?? Array.Empty<ParseDiagnostic>())
-                .Where(d =>
-                    d.Code == DiagnosticCodes.UnreachableAfterReturn
-                    || d.Code == DiagnosticCodes.UnreachableAfterBreakOrContinue
-                )
+                .Where(d => d.Code == DiagnosticCodes.UnreachableAfterReturn)
                 .ToList();
 
             IEnumerable<ParseDiagnostic> filteredT3 = t3;
@@ -820,7 +813,6 @@ public sealed class DiagnosticsPublisher
             Message = d.Message,
             Tags =
                 d.Code == DiagnosticCodes.UnreachableAfterReturn
-                || d.Code == DiagnosticCodes.UnreachableAfterBreakOrContinue
                 || d.Code == "CS0162" // Roslyn: Unreachable code detected
                 || d.Code == DiagnosticCodes.UnusedParameter // UITKX0111
                 || d.Code == DiagnosticCodes.UnusedUsing // UITKX2317 redundant using

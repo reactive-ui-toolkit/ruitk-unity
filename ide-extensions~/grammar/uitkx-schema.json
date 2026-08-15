@@ -336,35 +336,35 @@
   "controlFlow": [
     {
       "name": "if",
-      "description": "Conditional rendering — generates a ternary."
+      "description": "Conditional rendering — compiles to an immediately-invoked function whose if/else branches run the clause bodies' return(...) statements; yields one VirtualNode or null."
     },
     {
       "name": "else",
-      "description": "Else branch of @if."
+      "description": "Else (or else-if) clause of @if."
     },
     {
       "name": "foreach",
-      "description": "Loop rendering — generates .Select().ToArray()."
+      "description": "Loop rendering — compiles to an immediately-invoked function running a real C# foreach; each return(...) appends a node, yielding a VirtualNode[]."
     },
     {
       "name": "switch",
-      "description": "Switch expression — generates a C# switch expression."
+      "description": "Switch rendering — compiles to an immediately-invoked function containing a real C# switch statement; each case body runs in its own scope; yields one VirtualNode or null. Case labels end with ':'."
     },
     {
       "name": "case",
-      "description": "Case arm inside @switch."
+      "description": "Case arm inside @switch — '@case value:'; the label ends at a single ':' ('::' is kept for global:: qualifiers)."
     },
     {
       "name": "default",
-      "description": "Default arm inside @switch."
+      "description": "Default arm inside @switch — '@default:'."
     },
     {
       "name": "for",
-      "description": "C-style for loop — generates a standard for loop."
+      "description": "C-style loop rendering — compiles to an immediately-invoked function running a real C# for loop; each return(...) appends a node, yielding a VirtualNode[]."
     },
     {
       "name": "while",
-      "description": "While loop — generates a while loop."
+      "description": "While-loop rendering — compiles to an immediately-invoked function running a real C# while loop; each return(...) appends a node, yielding a VirtualNode[]."
     }
   ],
   "elements": {
