@@ -83,22 +83,38 @@ preserve that construct through a move.
 
 Blocked on the model question in §8.1.
 
-### UB-02 — The card model cannot represent a multi-clause directive `OPEN` `HIGH`
+### UB-02 — One badge slot per row: nested directives display WRONG today `OPEN` `HIGH`
 
-`BuilderCardLine` (`Canvas/BuilderGraphModel.cs:58-70`) carries a directive as
-three scalar fields on **one row**: `BadgeText`, `DirectiveText`,
-`DirectiveLine`. One directive, one owning row, one header line.
+Better news and worse news than first assessed. The graph service is **not**
+regex-guessing markup — `WalkMarkup` (`BuilderGraphService.cs:832-919`) walks
+the real AST and already visits all five constructs, including every
+`@else if` branch and every `@case`. The bottleneck is purely the
+representation: a directive is stamped onto the **first element row its clause
+produced** via `Attach` (`:963-974`), and `BuilderCardLine` has **one badge
+slot** (`BadgeText`/`DirectiveText`/`DirectiveLine`).
 
-That shape cannot express:
-- `@if {…} @else if {…} @else {…}` — one construct, N blocks
-- `@switch` with N `@case` arms plus `@default`
-- any directive wrapping **several sibling rows** — the wrap targets exactly
-  the one row that was right-clicked
-- `@foreach`'s bound loop variable as a thing the markup underneath can use
+Confirmed consequences, each traceable to a line:
 
-`@if`/`@foreach` fit only because the fixture uses them one-row-deep. This is
-the root cause behind UB-01 and UB-03: **UB-01 is a model change, not a menu
-change.** See §8.1.
+- **Nested directives show the wrong badge.** `Attach` bails on collision
+  (`:969-970` — `if (row.BadgeKind != 0) return`). When a clause's first child
+  is itself a directive, the inner one attaches first and the **outer construct
+  silently vanishes from the card**. `Samples/.../NestedSection.uitkx`
+  (`@if` inside `@foreach`) renders as a bare `@if` — the loop is invisible.
+- **Empty clauses vanish.** `:966-967` — a branch whose body produced no rows
+  (an empty `@else {}`) has nothing to attach to and disappears entirely.
+- **Clause membership is invisible.** Directive bodies are walked at the SAME
+  depth (`:874` passes `depth`, not `depth + 1`), so rows 2..N of a clause are
+  indistinguishable from rows outside it.
+- **An `@else` clause can be dragged away from its `@if`.** Every row with
+  `rowIdx > 0` arms a move payload (`CanvasView.uitkx:1027-1028`), and a
+  badge row's move carries `DirectiveLine..MatchingCloseLine`
+  (`BuilderWindow.cs:991-995`) — for an `@else` badge that is the clause alone.
+  Dropping it elsewhere strands an orphan `@else` and the file stops parsing.
+- **`@for`, `@while`, `@case` and `@default` share BadgeKind 4**
+  (`:895, :903, :913-914`) — the model cannot tell them apart except by
+  display string.
+
+Resolution designed and adopted — see §8.1.
 
 ### UB-03 — `Wrap in @foreach` emits code that cannot compile `OPEN` `HIGH`
 
@@ -143,6 +159,12 @@ one of these. Found while establishing the ground truth above:
   `UnknownDirective` descriptor whose message still lists a valid `code`
   directive and whose severity is `Warning` against the parser's `Error`.
   Nothing in `SourceGenerator~` references it.
+- `uitkx-schema.json -> controlFlow` descriptions are **stale**: they claim
+  `@if` "generates a ternary", `@foreach` "generates .Select().ToArray()", and
+  `@switch` "generates a C# switch expression". The emitter generates IIFEs
+  for all five (`CSharpEmitter.cs:1983-2128`). The builder's directive menu
+  (§8.1) must consume the NAMES, never these descriptions, until the schema is
+  fixed.
 
 ### UB-05 — Editable surfaces have no colouring, no completion, no diagnostics `OPEN` `HIGH`
 
@@ -594,89 +616,117 @@ reading, not an observation.
 
 ---
 
-## 8. Open design questions
+## 8. Design decisions (resolved 2026-08-16 with the owner)
 
-Three items are blocked on a decision rather than on code. Options below;
-record the choice inline when it is made.
+All three questions are now decided. This section is the implementation spec;
+the POC is explicitly NOT the reference for any of it (its directive knowledge
+was two keywords, its edge geometry is what UB-20 exists to replace).
 
-### 8.1 Directive model — blocks UB-01, UB-02, UB-03
+### 8.1 Directive model — DECIDED: clause head rows, schema-named menu
 
-The card model holds a directive as three scalars on one row. The language has
-five constructs, two of which are multi-clause (`@if`/`@else if`/`@else`,
-`@switch`/`@case`/`@default`) and three of which are array-valued (`@for`,
-`@foreach`, `@while`).
+**A directive clause becomes a card row of its own** (`BuilderCardLineKind.
+Directive` — the enum member already exists), replacing the `Attach`
+badge-stamping. Nesting falls out for free because `WalkMarkup` already
+recurses over the real AST; the samples' nested forms (`NestedSection.uitkx`)
+become representable exactly, where today they display wrongly (UB-02).
 
-**Option A — flat, one badge per row.** Keep `BadgeText`/`DirectiveText`. Add
-`@for` / `@while` as more single-header wraps. Cheap; cannot ever show
-`@else` or `@case` as anything but an opaque line; a card containing a
-`@switch` stays a lie.
+**Model** (`BuilderGraphModel.cs`): head rows reuse `BadgeText` (keyword),
+`DirectiveText` (full header — `FillDirectiveText` unchanged), `DirectiveLine`
+(clause head line). Add two ints: `CloseLine` (clause close brace) and
+`ClauseIndex` (0 = construct head; >0 = structurally bound continuation:
+`@else if`, `@else`, `@case`, `@default`). `CloseLine` is computed builder-side
+from `ControlBlockPayload.BodyCodeLine` + the newline count of `BodyCode`
+(verified: the AST carries per-clause `SourceLine` but no end line — no
+language-lib change, no DLL rebuild, no parity ripple).
 
-**Option B — a directive is a card row of its own, with children.** Introduce
-`BuilderCardLine.Kind = DirectiveBlock` plus a clause list, so `@if`/`@else`
-render as a header row, an indented child range, an `@else` header row, and its
-range. `@switch` becomes a header plus N `@case` headers. Moves and drops
-already understand "carry the whole block" (`BuilderWindow.cs:988-995`), so the
-move payload survives. This is the model that matches the AST
-(`IfNode(ImmutableArray<IfBranch>)`, `SwitchNode(cases)`).
+**Walker** (`BuilderGraphService.WalkMarkup`): each clause emits its head row,
+then walks its body at `depth + 1` (switch: `@switch` head, `@case` heads at
+`depth + 1`, bodies at `depth + 2`). `Attach` and its collision/empty-clause
+bugs are deleted. A clause with setup code before its `return` renders that as
+a code island under the head, same as the L2 body island.
 
-**Option C — B, plus a directive palette section.** As B, and the directive set
-comes from `uitkx-schema.json -> controlFlow` (8 entries, already downloaded and
-currently ignored) rather than a hardcoded menu, so the builder cannot drift
-from the language again.
+**Renderer** (`CanvasView.uitkx`): a Directive row renders as a badge-chip
+row. Click = the existing inline header editor (`OnDirectiveEdit` path is
+line-based and survives unchanged). Directive rows carry no anchor dot.
 
-Secondary decisions regardless of option:
-- **Loop wraps need a collection.** UB-03: offer in-scope enumerables and bind
-  the loop variable, rather than emitting `var item in items`.
-- **Array-valued directives are illegal as a single root** (UITKX0025). The
-  wrap menu must know that `@for`/`@foreach`/`@while` are only offered where an
-  array is legal, and say why when they are not.
-- **`@break` / `@continue` must not be offered at all** — `@break` has no AST
-  node and `@continue` is always an error (and UB-04 says the LSP currently
-  offers both).
+**Move/drag rules** (`BuilderWindow`): a `ClauseIndex == 0` head drags the
+WHOLE construct — first clause's `DirectiveLine` through the last clause's
+`CloseLine`. A `ClauseIndex > 0` head is **not draggable** (an `@else` cannot
+live anywhere else — today it can be dragged into garbage, UB-02); its menu
+offers edit-condition / delete-clause instead. Element rows inside a clause
+drag themselves, as today. Drop band "inside" on a head row inserts at the top
+of that clause's body.
 
-### 8.2 Card section height limits — blocks UB-23, interacts with UB-22
+**Menu** (`BuilderWindow`): the wrap list is built from
+`uitkx-schema.json -> controlFlow` **names** (never the descriptions — they are
+stale, UB-04), intersected with a builder-side capability table keyed by name:
 
-Capping a section's height and scrolling inside it fixes overlap (UB-23) and
-therefore most of UB-22 and UB-26. The cost: `DrawEdges` measures each anchor
-dot's `worldBound` (`BuilderCanvasDrawing.cs:646-661`), and a dot scrolled out
-of its section still reports a bound — so a curve would terminate at a point
-that is not on screen, or be clipped mid-air.
+| name | role | wrap? | yields |
+|---|---|---|---|
+| `if` | construct | yes | node |
+| `foreach`, `for`, `while` | construct | where an array is legal | array |
+| `switch` | construct | yes | node |
+| `else`, `case`, `default` | clause-add (head-row menu) | no | — |
 
-**Option A — clamp the anchor to the section edge.** When a dot's row is
-scrolled out, attach the curve to the top or bottom edge of the scroll
-viewport, in the dot's colour. The edge stays connected and the direction tells
-you which way to scroll.
+A `CheckSchemaDrift`-style startup check warns when the schema names a
+directive the table does not cover — the builder can never silently trail the
+language again. `break`/`continue` are never offered (no AST node / always an
+error).
 
-**Option B — collapse out-of-view edges to a card-level anchor.** Rows that are
-scrolled away share one anchor on the card's edge, as at L0. Fewer, calmer
-lines; loses per-row precision.
+**Clause adds**: `@if` head menu — "Add @else if" / "Add @else" (disabled when
+an `@else` exists); `@switch` head — "Add @case…" / "Add @default" (disabled
+when one exists). Each is a small text edit at the clause boundary
+(`} @else {`) through `ApplyProgrammaticEdit`.
 
-**Option C — do not scroll; cap by summarising.** Show the first N rows and a
-`+ 12 more` affordance that expands the card. No hidden anchors, because
-nothing is hidden — it is either shown or explicitly folded.
+**Loop wraps bind their collection** (UB-03): the `@foreach` wrap opens a
+searchable menu of in-scope enumerables — component props with
+collection-shaped types (via `ruitk/componentProps`, which UB-13 wires up —
+dependency), hook lhs vars from the card's BODY rows, then the warn-orange
+freeform fallback. The loop variable is singularised from the collection name
+and collision-checked. Loop wraps are disabled (with a tooltip citing
+UITKX0025) where a single node is required.
 
-Option C avoids the whole class of problem and matches how the card already
-handles long content elsewhere; A is the most faithful to "everything is
-connected".
+### 8.2 Card section heights — DECIDED: max-height + scroll, clamped anchors
 
-### 8.3 Edge anchor geometry — blocks UB-20
+Sections cap their height and scroll (owner's original preference; the fold
+alternative is dropped). The anchor problem the owner spotted is real but
+cheap to solve — three mechanics, all riding existing machinery:
 
-Today: source = the measured anchor dot at L1/L2 but the **card centre** at L0;
-target = the card's **left** edge, with no terminal marker. Both are POC ports.
+1. **Position is already live.** `DrawEdges` re-measures every dot's
+   `worldBound` per repaint (`AnchorOf`, `BuilderCanvasDrawing.cs:646-661`).
+   A dot inside a scrolled `ScrollView` keeps reporting its true, moved
+   worldBound (clipping does not affect bounds), so "where is the row now"
+   costs nothing new.
+2. **Visibility is one rect test.** Compare the dot's centre against the
+   section viewport's `worldBound` y-range. Outside → the row is scrolled out.
+3. **Scrolled-out anchors clamp to the viewport edge.** The curve terminates
+   at the section's top or bottom edge, in the dot's own colour — never at the
+   true-but-clipped position (without the clamp the curve would dive under the
+   card chrome, the exact "stick to the hidden part" failure). The clamp edge
+   also tells you which way to scroll, and multiple hidden rows bundle there
+   naturally. Since dots are painted in the overlay (8.3), the clamped dot is
+   painted at the clamp point in the same pass.
 
-Wanted (owner): every curve ends in a visible point, and attaches at the
-**right-most** edge of the component, at every layer.
+   (Variant, owner's suggestion: collapse to a section-header dot instead.
+   Equally cheap, but sections have no header dot today, so it adds an
+   element; edge-clamp adds none. Either is a one-enum swap later.)
 
-To settle:
-1. Does "right-most" apply to the **target** end only, or to both ends? If both
-   ends attach on the right, curves leave right and re-enter right, which needs
-   a routing style that loops back (and reads well only if cards are
-   column-ordered).
-2. Is the terminal point the same glyph as the source anchor dot (same colour
-   per import kind, same halo), or a distinct arrow-style cap?
-3. At L0, does the source move from card-centre to the card's right edge? That
-   removes the "curve starts inside the card" artefact.
+Plus one wire: each section `ScrollView`'s scroller `valueChanged` →
+`edgeLayer.MarkDirtyRepaint()`, so edges track the scroll live instead of
+lagging to the next repaint.
 
-Whatever is chosen, the dots must move into the edge overlay layer (UB-22) so
-they cannot be occluded, which also makes drawing a terminal cap trivial —
-it is painted in the same pass as the curve.
+### 8.3 Edge anchors — DECIDED: dots into the overlay; right-edge source, terminal point
+
+- **Anchor dots move into the edge overlay layer** (owner-approved). The row
+  elements stay as invisible measurement markers; the visible glyphs are
+  painted by `DrawEdges` in the overlay, so no card can ever occlude them
+  (UB-22) and the terminal cap is painted in the same pass.
+- **Source attaches at the card's right edge at every layer** — including L0,
+  which today uses the card centre and draws curves out of the card's body.
+- **Every curve ends in a visible terminal point** at the target end, matching
+  the source dot's colour per edge kind.
+
+Default interpretation of "always to the right most": source side. If the
+owner instead wants BOTH ends on the right (rail-diagram routing, curves loop
+back into the target's right edge), that is a routing change on top of this —
+say so and it becomes its own item.
