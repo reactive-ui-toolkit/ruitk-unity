@@ -27,6 +27,39 @@ these in commits, never the line numbers, which move.
 | `CLOSED` | Seen working on screen. |
 | `ACCEPTED` | Deliberate divergence, do not re-flag. |
 
+## Campaign ledger — 2026-08-16 execution run
+
+The whole register was implemented in seven waves on `feat/ruitk-builder`:
+W1 `bf12c1d2` data truth · W2 `412392c1` directive head rows · W3 `7f591852`
+canvas visuals · W4 `fa96ce16` drag machine · W5 `0a261394` editor
+intelligence · W6 `777a9c3d` hook truth + loud preview · W7 `2ce57600` IDE
+directive drift. Gates on every wave: validate-uitkx, SG-backed csc smoke,
+machine-path; W6/W7 also SG 1879/1879 + LSP 180/180 and committed-DLL
+rebuilds. The item texts below describe the defects AS FOUND; current state
+lives here.
+
+| Item | State | Note |
+|---|---|---|
+| UB-01/02/03 | `UNVERIFIED` | head-row model + full wrap/clause menus shipped; directive rendering awaits an on-screen pass over a directive-bearing file |
+| UB-04 | `CLOSED` | suites pin the behavior; grammar/VSIX halves are presentation-only and ride the owner's next F5 |
+| UB-05 | `PARTIAL` | source pane fully treated; the six inline canvas editors are deferred as REMAINING_WORK UB-05a |
+| UB-06 | `UNVERIFIED` | T3 relay wired; needs a CS error seen in the pane |
+| UB-07 | `CLOSED` | knownElements live — custom tags classify, UITKX0105 armed (round-2 capture) |
+| UB-08/09/10/11/13/14 | `UNVERIFIED` | menu/insertion content — popup menus are not capturable; verify by driving |
+| UB-12 | `UNVERIFIED` | registry arity + truncation note |
+| UB-15 | `UNVERIFIED` | loud preview failures |
+| UB-20 | `CLOSED` | round-2: L0 leaves the pill's right edge, terminal dots on targets |
+| UB-21 | `CLOSED`* | premise corrected — palette already matched the POC; the custom-tag teal (the real gap) shipped in W5, seen in round 3 |
+| UB-22 | `CLOSED` | round-2: dots paint in the overlay, no occlusion |
+| UB-23 | `UNVERIFIED` | section caps + clamped anchors; needs a long card seen scrolled |
+| UB-24 | `UNVERIFIED` | typography was already POC-correct; the real fix was the 0.18→0.30 zoom floor |
+| UB-25 | `UNVERIFIED` | coloured edit overlay with auto-degrade; interactive check |
+| UB-26 | `OPEN` | layout crowding remains; expected to shrink with UB-23 on screen — re-judge then |
+| UB-30/31/32 | `UNVERIFIED` | drag machine is gesture-driven; owner drive-through |
+| UB-40 | `CLOSED` | layer dropdown seen in round 2 |
+| UB-50/51 | `UNVERIFIED` | carried from round 1 |
+| UB-60..66 | `UNVERIFIED` | interactive surfaces, review-only as before |
+
 ---
 
 ## 1. Coherence — is what the builder shows actually real?
