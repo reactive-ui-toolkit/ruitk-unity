@@ -843,7 +843,7 @@ namespace Ruitk.Builder
                 }
                 string label = prop.Name + "." + member;
                 var owner = holder;
-                void Write(object value)
+                void Seed(object value)
                 {
                     try
                     {
@@ -851,23 +851,27 @@ namespace Ruitk.Builder
                             pi.SetValue(owner, value);
                         else if (info is FieldInfo fi)
                             fi.SetValue(owner, value);
-                        Mount();
                     }
                     catch (Exception)
                     {
                     }
                 }
+                void Write(object value)
+                {
+                    Seed(value);
+                    Mount();
+                }
                 bool numberish = s_numberish.IsMatch(member);
                 if (memberType == typeof(int))
                 {
-                    Write(1);
+                    Seed(1);
                     var field = new IntegerField(label) { value = 1 };
                     field.RegisterValueChangedCallback(e => Write(e.newValue));
                     _knobsHost.Add(Field(field));
                 }
                 else if (memberType == typeof(float))
                 {
-                    Write(1f);
+                    Seed(1f);
                     var field = new FloatField(label) { value = 1f };
                     field.RegisterValueChangedCallback(e => Write(e.newValue));
                     _knobsHost.Add(Field(field));
@@ -880,8 +884,10 @@ namespace Ruitk.Builder
                 }
                 else if (memberType == typeof(string))
                 {
+                    // POC getKnobDefault: a number-ish member seeds 1, everything
+                    // else seeds its own member name ("Name").
                     string seed = numberish ? "1" : member;
-                    Write(seed);
+                    Seed(seed);
                     var field = new TextField(label) { value = seed };
                     field.RegisterValueChangedCallback(e => Write(e.newValue));
                     _knobsHost.Add(Field(field));
