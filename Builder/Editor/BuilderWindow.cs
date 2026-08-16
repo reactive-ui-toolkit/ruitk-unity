@@ -69,6 +69,15 @@ namespace Ruitk.Builder
             BuilderLspService.DiagnosticsPublished += OnLspDiagnosticsPublished;
             BuilderAssetEvents.UitkxImported -= OnUitkxImported;
             BuilderAssetEvents.UitkxImported += OnUitkxImported;
+            // Sessions just deserialized across the domain reload; any file
+            // that changed externally WHILE the old domain was alive missed its
+            // import event, so sweep once — the panes mount after this and
+            // read the adopted buffers.
+            var openPaths = new System.Collections.Generic.List<string>();
+            foreach (var session in _workspace.Sessions)
+                openPaths.Add(session.FilePath);
+            if (openPaths.Count > 0)
+                _workspace.ReloadCleanFromDisk(openPaths);
             saveChangesMessage = "The RUITK Builder has unsaved component edits.";
         }
 
