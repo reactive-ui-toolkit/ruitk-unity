@@ -845,7 +845,16 @@ truth for what renders) so real elements are never errors; (b) root — add the
 7 elements to `uitkx-schema.json` with real attribute lists so the palette
 and completion offer them (add-unity-version-style work).
 
-### UB-76 — inline-editor intellisense, UN-DEFERRED `OPEN` `HIGH`
+### UB-76 — inline-editor intellisense, UN-DEFERRED `UNVERIFIED` `HIGH`
+
+IMPLEMENTED 2026-08-16 (`158813e0`), awaiting the owner's drive-through: one
+floating inline editor (fragment-mode CodeField at the window root) replaces
+all six in-card TextFields — shared colouring, coloured-edit overlay and
+Ctrl+Space completion at the exact mapped file position for every surface
+(line-splice for headers/chips/entries, tag-span mapping for attribute values,
+re-indented range for islands), with the real buffer re-synced on close. The
+overlay owns focus from the frame it opens, so UB-70's stray-Enter race is
+structurally gone — verify both together. Original plan text follows.
 
 The owner rejected the UB-05a deferral ("we have many tests that should all be
 intellisensed/colored"). Active plan, superseding the REMAINING_WORK entry:
