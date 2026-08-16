@@ -901,3 +901,49 @@ a "tidy layout" action running depth-column + barycenter over the graph
 (persisted like manual drags), plus hover-highlight of a card's edges with
 the rest dimmed. Routing AROUND cards (libavoid-style orthogonal routing) is
 the heavyweight option none of the mainstream node editors actually use.
+
+## 10. Field reports — owner drive-through, 2026-08-17
+
+Filed only, not started — the queue ahead of them is UB-71/72/73/74/75.
+
+### UB-77 — diagnostics console is not copyable `OPEN` `MED`
+
+The error console/window (UITKX0105 storm in the capture) renders as plain
+Labels: no selection, no Ctrl+A, no copy. Owner ask: make the whole console
+selectable/copyable so all diagnostics can be selected and pasted elsewhere.
+Likely shape: selectable text (UI Toolkit `selection`-enabled text element or
+a read-only multiline field) plus an explicit "Copy all" affordance; Ctrl+A
+inside the console must select console text only, not trigger canvas-wide
+selection.
+
+### UB-78 — component signature lines are not coloured `OPEN` `MED`
+
+The card's signature block (name + full props signature under the title) is
+one flat-grey Label while everything around it now colours. Route the
+signature text through `CodeField.BuildLineRichText(line, null)` like islands
+and detail entries already do — the UB-76-round-3 lexical pass then gives
+types teal, parameter names blue, defaults (null/false/numbers) their real
+colours for free. Watch rich-text vs. the signature's wrapping/ellipsis.
+
+### UB-79 — raise the max zoom-OUT level `OPEN` `LOW`
+
+Owner ask: allow zooming further out to see a bigger stretch of canvas. Pure
+clamp change on the zoom range (plus verifying grid/edge/text rendering stays
+sane at the new minimum scale); explicitly NOT a layout change.
+
+### UB-80 — component list: double-click to focus a card `OPEN` `MED`
+
+The palette's "custom components" section already lists every component on
+the canvas. Owner ask: double-clicking a list entry focuses/centres that
+card in the viewport (pan + sensible zoom, maybe a brief highlight pulse).
+Note the double-click-navigation precedent: canvas rows already double-click
+to navigate to a component's file — keep the two gestures consistent.
+
+### UB-81 — max zoom-IN gets slow, cause unknown `OPEN` `MED`
+
+Owner report: at high zoom the canvas becomes sluggish. Diagnose before
+fixing — candidate causes: every card/edge still rendered + hit-tested when
+mostly off-screen (no viewport culling), rich-text label re-layout at scale,
+edge bezier tessellation in generateVisualContent, dot-grid painting the full
+element at fine pitch. Profile first (Editor profiler on the builder window),
+name the dominant cost in the register, then fix at that layer.
