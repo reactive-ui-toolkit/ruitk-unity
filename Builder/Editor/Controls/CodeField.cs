@@ -818,24 +818,24 @@ namespace Ruitk.Builder
             return false;
         }
 
-        /// <summary>The POC source palette (index.html .k/.t/.s/.e/.cm/.cu):
-        /// keywords #c792ea, tags #4fc3f7, custom tags #7fdbca, strings #c3e88d,
-        /// {expr} #ffb74d, comments #616e7a.</summary>
+        /// <summary>POC palette (index.html .k/.t/.s/.e/.cm/.cu) for the markup
+        /// classes, VS-dark palette for the C#-side classes. Owner bar 2026-08-17
+        /// ("the real gap in coloring still remains — look at all that white"):
+        /// Function/Variable used to paint #CFCFDA, indistinguishable from plain
+        /// ink #D6D6DC, and Attribute/Property painted nothing — every identifier
+        /// read as white. Identifier classes now carry real editor colours.</summary>
         private static string ColorFor(string tokenType)
         {
             switch (tokenType)
             {
                 case SemanticTokenTypes.Element:
-                    return "#4FC3F7";
+                    return TagColor;
                 case SemanticTokenTypes.Type:
-                    return "#7FDBCA";
-                // POC tokenize() (index.html:1266-1275) has FOUR passes — strings,
-                // {…}, <Tag and the nine keywords. Attribute names are classified
-                // by none of them, so they keep ".srcline" ink #d6d6dc; painting
-                // them accent blue made `text=` read as loud as `<Label`.
+                    return TypeColor;
                 case SemanticTokenTypes.Attribute:
                 case SemanticTokenTypes.Property:
-                    return null;
+                case SemanticTokenTypes.Variable:
+                    return MemberColor;
                 case SemanticTokenTypes.Directive:
                 case SemanticTokenTypes.DirectiveName:
                 case SemanticTokenTypes.Keyword:
@@ -843,13 +843,13 @@ namespace Ruitk.Builder
                 case SemanticTokenTypes.String:
                     return StringColor;
                 case SemanticTokenTypes.Number:
+                    return NumberColor;
                 case SemanticTokenTypes.Expression:
                     return ExprColor;
                 case SemanticTokenTypes.Comment:
-                    return "#616E7A";
+                    return CommentColor;
                 case SemanticTokenTypes.Function:
-                case SemanticTokenTypes.Variable:
-                    return "#CFCFDA";
+                    return FunctionColor;
                 default:
                     return null;
             }
@@ -858,6 +858,13 @@ namespace Ruitk.Builder
         private const string StringColor = "#C3E88D";
         private const string ExprColor = "#FFB74D";
         private const string KeywordColor = "#C792EA";
+        private const string CommentColor = "#616E7A";
+        private const string TagColor = "#4FC3F7";
+        private const string CustomTagColor = "#7FDBCA";
+        private const string FunctionColor = "#DCDCAA";
+        private const string MemberColor = "#9CDCFE";
+        private const string TypeColor = "#4EC9B0";
+        private const string NumberColor = "#B5CEA8";
 
         /// <summary>POC tokenize() line 1273: the keyword pass runs LAST, over the
         /// HTML the earlier passes already emitted, and its nested span WINS — so
@@ -884,6 +891,61 @@ namespace Ruitk.Builder
             new System.Text.RegularExpressions.Regex(
                 "\"[^\"\n]*\"",
                 System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static readonly System.Text.RegularExpressions.Regex s_identifiers =
+            new System.Text.RegularExpressions.Regex(
+                @"[A-Za-z_][A-Za-z0-9_]*",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static readonly System.Text.RegularExpressions.Regex s_numbers =
+            new System.Text.RegularExpressions.Regex(
+                @"\b(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*(?:\.\d+)?)[fFdDmMuUlL]{0,2}\b",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>Lexical fallback for identifier cells no semantic token
+        /// reached: fragments never get server tokens, and the Roslyn merge drops
+        /// "property name" and unresolved "identifier" spans entirely — before
+        /// this pass those all rendered plain ink (owner bar 2026-08-17, "look at
+        /// all that white"). Call sites go function gold, tag-position names use
+        /// the schema split, dotted members and everything camelCase go member
+        /// blue, PascalCase goes type teal; the keyword and comment passes still
+        /// run later and win.</summary>
+        private static string ClassifyIdentifier(string line, int start, int length)
+        {
+            char before = start > 0 ? line[start - 1] : '\0';
+            if (before == '<'
+                || (before == '/' && start > 1 && line[start - 2] == '<'))
+            {
+                string tag = line.Substring(start, length);
+                if (char.IsUpper(tag[0]) && BuilderSchemaCache.HasSchema
+                    && !BuilderSchemaCache.HasElement(tag))
+                    return CustomTagColor;
+                return TagColor;
+            }
+            int next = start + length;
+            while (next < line.Length && line[next] == ' ')
+                next++;
+            char after = next < line.Length ? line[next] : '\0';
+            if (after == '(')
+                return FunctionColor;
+            if (after == '<' && next == start + length)
+            {
+                int close = line.IndexOf('>', next + 1);
+                if (close > 0 && close - next < 64)
+                {
+                    int paren = close + 1;
+                    while (paren < line.Length && line[paren] == ' ')
+                        paren++;
+                    if (paren < line.Length && line[paren] == '(')
+                        return FunctionColor;
+                }
+            }
+            if (before == '.')
+                return MemberColor;
+            if (char.IsUpper(line[start]))
+                return TypeColor;
+            return MemberColor;
+        }
 
         private static bool[] s_inBrace = new bool[512];
 
@@ -965,7 +1027,7 @@ namespace Ruitk.Builder
                         string tag = line.Substring(start, end - start);
                         if (tag.Length > 0 && char.IsUpper(tag[0])
                             && !BuilderSchemaCache.HasElement(tag))
-                            color = "#7FDBCA";
+                            color = CustomTagColor;
                     }
                     for (int i = start; i < end; i++)
                         s_colors[i] = color;
@@ -984,6 +1046,34 @@ namespace Ruitk.Builder
             for (int i = 0; i < line.Length; i++)
                 if (s_inBrace[i] && s_colors[i] != StringColor)
                     s_colors[i] = ExprColor;
+
+            // Numbers before identifiers, so 0x1F is one green run and never a
+            // "0" plus an identifier "x1F". Both passes claim only cells every
+            // earlier pass (tokens, strings, {…} runs) left uncoloured.
+            foreach (System.Text.RegularExpressions.Match m in s_numbers.Matches(line))
+            {
+                bool free = true;
+                for (int i = m.Index; free && i < m.Index + m.Length; i++)
+                    if (s_colors[i] != null)
+                        free = false;
+                if (!free)
+                    continue;
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    s_colors[i] = NumberColor;
+            }
+
+            foreach (System.Text.RegularExpressions.Match m in s_identifiers.Matches(line))
+            {
+                bool free = true;
+                for (int i = m.Index; free && i < m.Index + m.Length; i++)
+                    if (s_colors[i] != null)
+                        free = false;
+                if (!free)
+                    continue;
+                string idColor = ClassifyIdentifier(line, m.Index, m.Length);
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    s_colors[i] = idColor;
+            }
 
             // Keywords win over expression runs (POC: `new` stays purple inside
             // an orange {…}) but never repaint STRING content — the widened C#
@@ -1014,7 +1104,7 @@ namespace Ruitk.Builder
                 if (c == '/' && line[i + 1] == '/')
                 {
                     for (int k = i; k < line.Length; k++)
-                        s_colors[k] = "#616E7A";
+                        s_colors[k] = CommentColor;
                     break;
                 }
             }

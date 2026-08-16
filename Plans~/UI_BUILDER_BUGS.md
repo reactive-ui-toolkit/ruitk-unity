@@ -866,6 +866,28 @@ intellisensed/colored"). Active plan, superseding the REMAINING_WORK entry:
   existing CodeField control, inheriting its colouring, completion, overlay
   diagnostics and coloured-edit machinery instead of duplicating any of it.
 
+Owner drive-through rounds (2026-08-16/17), both fixed same-day:
+- Round 2 (`ecec78a0`): coloured-edit showed two scrollbars (listing scrollers
+  now hidden while the input's inner ScrollView drives, styled dark); common
+  C# keywords (void/int/bool/true/null/…) were plain outside Roslyn coverage
+  (keyword regex widened, string cells protected); islands scrolled both axes
+  with a stale horizontal offset clipping line heads (vertical-only + wrapping
+  lines + MaxHeight 220 — deliberate POC divergence).
+- Round 3, "the real gap in coloring still remains — look at all that white":
+  identifiers/methods/types rendered plain ink in BOTH the source pane and
+  every fragment. Root cause was two-layer: `ColorFor` painted
+  Function/Variable #CFCFDA (indistinguishable from ink #D6D6DC) and
+  Attribute/Property nothing, and the Roslyn merge drops "property name" +
+  unresolved "identifier" spans while fragments get no tokens at all, so most
+  identifiers had no colour source. Fix (CodeField only, no LSP change):
+  real VS-dark palette in `ColorFor` (function gold #DCDCAA, member/variable
+  blue #9CDCFE, type teal #4EC9B0, number green #B5CEA8) plus a lexical
+  identifier/number pass in `BuildLineRichText` that claims only cells no
+  token/string/{expr} run coloured — call sites gold, tag-position names via
+  the schema split, dotted members + camelCase blue, PascalCase teal —
+  keyword/comment passes still win. Covers pane, islands and all fragment
+  editors deterministically; server tokens refine on top. `UNVERIFIED`.
+
 ### UB-26 follow-up — edge routing, how the field does it (owner question)
 
 Node editors (Unreal Blueprints, Unity Shader Graph, Blender, dagre/ELK-based
