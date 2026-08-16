@@ -775,3 +775,98 @@ Default interpretation of "always to the right most": source side. If the
 owner instead wants BOTH ends on the right (rail-diagram routing, curves loop
 back into the target's right edge), that is a routing change on top of this —
 say so and it becomes its own item.
+
+---
+
+## 9. Field reports — owner drive-through, 2026-08-16
+
+The create menu and drag-and-drop passed the owner's hands-on. These are the
+defects and feature asks from that session, plus one the screenshots caught
+that the owner did not name. All `OPEN` unless marked.
+
+### UB-70 — Enter in a freshly added @case badge editor opens the file in VS2022 `OPEN` `HIGH`
+
+Only on NEW cases (Add @case…), never on existing badges. Hypothesis: the
+new-clause editor is pushed via `BeginEditOnDirectiveLine` AFTER the graph
+refresh, and the TextField does not have keyboard focus yet when the user
+presses Enter — the keystroke lands on the last-focused Unity pane (Project
+window with the .uitkx selected → `OpenAsset` → the OS default app, VS2022).
+Existing badges open their editor synchronously from the click, so focus is in
+the field. Fix direction: the host-pushed inline editors must grab focus when
+they materialise, and the badge editor's Enter/Esc must consume the event.
+
+### UB-71 — @switch clause ordering: @default seeds first, @case appends after it `OPEN` `HIGH`
+
+Confirmed in the drive-through screenshots: `Wrap in @switch` seeds `@default:`
+as the FIRST arm, and every "Add @case…" inserts above the switch's closing
+brace — i.e. after @default, with no way to put a case above it. Fix: the wrap
+seeds `@case value:` first (with the wrapped row) and `@default:` last;
+"Add @case…" inserts BEFORE the @default arm when one exists, after the last
+@case otherwise.
+
+### UB-72 — seeded directive headers do not compile until edited `OPEN` `MED`
+
+`@case value:` and `@if (condition)` reference identifiers that do not exist;
+since the preview now reports compile failures loudly (UB-15), every wrap
+immediately shows "Preview compile failed … CS1525" until the header is
+edited. The owner's report began "when i create a directive and" and cut off —
+this is the likely subject; OWNER: please finish that sentence if it was
+something else. Options: seed compilable placeholders where a type can be
+guessed, or hold the programmatic commit until the header editor closes with
+real content (the edit-first flow the badge editor already implies).
+
+### UB-73 — action ledger with global undo/redo `OPEN` `FEATURE`
+
+Owner ask: a visible ledger of every builder action, "down to the smallest
+action", with undo/redo across it. Today undo is per-file session buffers
+(Ctrl+Z on the focus file); moves, drops, clause surgery, deletes and
+cross-file effects (auto-added imports) are only reachable by undoing whole
+buffer states file by file. Design: one action log (description + the set of
+(file, before, after) buffer pairs per action), a history panel, Ctrl+Z/Y
+walking it atomically across files.
+
+### UB-74 — selection-driven keyboard model: Delete removes, Esc cancels `OPEN` `FEATURE`
+
+Owner ask: Delete deletes whatever is selected — element row, directive
+clause/block, card, attribute — not just via the context menu; Esc cancels the
+active edit anywhere. Needs a real selection model (exactly one selected THING
+with a kind, visible focus) rather than today's per-surface selection bits.
+
+### UB-75 — false UITKX0105 on Vector2Field/Vector3Field/… `OPEN` `HIGH`
+
+Caught in the drive-through screenshots (not owner-named): the source pane
+flags `<Vector2Field>` etc. as unknown elements. UB-07 wired the check to the
+SCHEMA element set, and the schema is missing 7 REGISTERED elements
+(Vector2Field, Vector3Field, Vector4Field, Vector2IntField, Vector3IntField,
+Hash128Field, UguiHost — the drift warning has said so all along). Two-part
+fix: (a) builder-side now — `KnownElementsOrNull` unions the RUNTIME registry
+(`ElementRegistryProvider.GetDefaultRegistry().RegisteredNames`, the actual
+truth for what renders) so real elements are never errors; (b) root — add the
+7 elements to `uitkx-schema.json` with real attribute lists so the palette
+and completion offer them (add-unity-version-style work).
+
+### UB-76 — inline-editor intellisense, UN-DEFERRED `OPEN` `HIGH`
+
+The owner rejected the UB-05a deferral ("we have many tests that should all be
+intellisensed/colored"). Active plan, superseding the REMAINING_WORK entry:
+- The four SINGLE-LINE editors (attr value, directive header, hook chip,
+  style entry) have exact `(file, line, col)` maps — they get LSP completion
+  at the mapped position (buffer synthesized with the in-progress line) and
+  the same colouring treatment.
+- The two MULTILINE island editors stop being bare TextFields: they embed the
+  existing CodeField control, inheriting its colouring, completion, overlay
+  diagnostics and coloured-edit machinery instead of duplicating any of it.
+
+### UB-26 follow-up — edge routing, how the field does it (owner question)
+
+Node editors (Unreal Blueprints, Unity Shader Graph, Blender, dagre/ELK-based
+web tools) mostly do NOT route around nodes — they make crossings rare and
+cheap instead: (1) fixed ports (out-right, in-left) with horizontal-tangent
+beziers — we already match; (2) LAYERED AUTO-LAYOUT: columns by dependency
+depth with barycenter ordering to minimise crossings (dagre/ELK/Sugiyama —
+our import graph is a DAG, ideal for it); (3) hover highlighting/dimming so
+remaining crossings stop mattering; (4) optional user reroute pins. Proposal:
+a "tidy layout" action running depth-column + barycenter over the graph
+(persisted like manual drags), plus hover-highlight of a card's edges with
+the rest dimmed. Routing AROUND cards (libavoid-style orthogonal routing) is
+the heavyweight option none of the mainstream node editors actually use.
