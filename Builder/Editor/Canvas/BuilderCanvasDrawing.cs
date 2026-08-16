@@ -58,6 +58,32 @@ namespace Ruitk.Builder
 
         public const float ZoomMax = 2.2f;
 
+        /// <summary>UB-81: is this card close enough to the visible rect to be
+        /// worth building in full? The screen rect is world * zoom + camera —
+        /// the same model the wheel handler anchors on — inflated by one whole
+        /// viewport on each side so a pan never pops a card in at its edge.
+        /// A viewport that has not measured yet returns TRUE: a missing
+        /// measurement must never hide content.</summary>
+        public static bool IsNearViewport(
+            BuilderCanvasNode node, float cardWidth,
+            float camX, float camY, float zoom, float viewportW, float viewportH)
+        {
+            if (node == null || viewportW <= 0f || viewportH <= 0f || zoom <= 0f)
+                return true;
+            float left = node.X * zoom + camX;
+            float top = node.Y * zoom + camY;
+            float right = left + cardWidth * zoom;
+            float bottom = top + EstimatedCardHeight(node) * zoom;
+            return right >= -viewportW && left <= viewportW * 2f
+                && bottom >= -viewportH && top <= viewportH * 2f;
+        }
+
+        /// <summary>The graph layout's own card-height model, exposed so the
+        /// canvas can size a culled card's placeholder box to what the real card
+        /// would have occupied.</summary>
+        public static float EstimatedCardHeight(BuilderCanvasNode node) =>
+            node == null ? PillH : BuilderGraphService.CardHeightOf(node);
+
         private static float s_currentZoom = 1f;
 
         private static int s_anchorRetries;

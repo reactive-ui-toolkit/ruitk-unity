@@ -13,6 +13,7 @@ export VirtualNode CanvasView(
   Action<float, float, float> onCameraChanged = null,
   Action<int> onCardContext = null,
   Action<string, int> onRowClick = null,
+  Action<string, int, int> onRowSelect = null,
   Action<string, int, int> onRowContext = null,
   Action<float, float> onCanvasContext = null,
   Action<string, string, int> onStyleAddEntry = null,
@@ -30,7 +31,9 @@ export VirtualNode CanvasView(
   float viewCamY = 0f,
   int viewVersion = 0,
   string selectPath = "",
-  int selectVersion = 0
+  int selectVersion = 0,
+  float viewportW = 0f,
+  float viewportH = 0f
 ) {
   var (camX, setCamX) = useState(initialCamX);
   var (camY, setCamY) = useState(initialCamY);
@@ -168,6 +171,15 @@ export VirtualNode CanvasView(
           int index = i;
           bool isSelected = selected == index;
           int lastSection = BuilderCanvasDrawing.LastSectionOf(node);
+          // UB-81: every card built its FULL subtree regardless of where it sat,
+          // and L2 is where that explodes - each markup row adds a wrapper plus
+          // three labels per attribute, for every card in the tree at once. Only
+          // cards within one viewport of the visible rect build their sections;
+          // the rest render as a sized empty box. The box stays because the edge
+          // painter measures "card-{index}" and falls back to a guess (and a
+          // 12-repaint retry burst) when it cannot find one.
+          bool nearView = BuilderCanvasDrawing.IsNearViewport(
+            node, cardWidth, camX, camY, zoom, viewportW, viewportH);
           return (
             <VisualElement
               key={node.FilePath}
@@ -178,11 +190,36 @@ export VirtualNode CanvasView(
                 Translate = Xlate(Px(node.X), Px(node.Y)),
               }}
             >
-            <VisualElement
-              style={CanvasStyles.CardShadowLayer}
-              pickingMode={PickIgnore}
-              onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawCardShadow(ctx)}
-            />
+            @if (!nearView) {
+              return (
+                <VisualElement
+                  style={new Style {
+                    Height = Px(BuilderCanvasDrawing.EstimatedCardHeight(node)),
+                    BackgroundColor = Hex("#232329"),
+                    BorderRadius = Px(10),
+                    BorderTopWidth = 1.15f,
+                    BorderRightWidth = 1.15f,
+                    BorderBottomWidth = 1.15f,
+                    BorderLeftWidth = 1.15f,
+                    BorderTopColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                    BorderRightColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                    BorderBottomColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                    BorderLeftColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                  }}
+                />
+              );
+            }
+            @if (nearView) {
+              return (
+                <VisualElement
+                  style={CanvasStyles.CardShadowLayer}
+                  pickingMode={PickIgnore}
+                  onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawCardShadow(ctx)}
+                />
+              );
+            }
+            @if (nearView) {
+              return (
             <VisualElement
               style={new Style {
                 Overflow = lod == 0 ? OverflowVisible : OverflowHidden,
@@ -841,6 +878,13 @@ export VirtualNode CanvasView(
                                   setSelected(index);
                                   setSelRowNode(index);
                                   setSelRowIdx(rowIdx);
+                                  // UB-74: the selection has to leave the fiber
+                                  // for the Delete key to have a subject — the
+                                  // host mirrors it the way it already mirrors
+                                  // the card ring.
+                                  if (onRowSelect != null) {
+                                    onRowSelect(node.FilePath, rowIdx, row.SourceLine);
+                                  }
                                   if (onRowClick != null) {
                                     onRowClick(node.FilePath, row.SourceLine);
                                   }
@@ -1002,6 +1046,8 @@ export VirtualNode CanvasView(
                 );
               }
             </VisualElement>
+              );
+            }
             @if (isSelected) {
               return (
                 <VisualElement style={CanvasStyles.SelectionRing} pickingMode={PickIgnore} />

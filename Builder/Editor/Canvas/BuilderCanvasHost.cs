@@ -106,9 +106,28 @@ namespace Ruitk.Builder
             BuilderDragService.RepaintHints =
                 () => _container?.Q("ruitk-edge-layer")?.MarkDirtyRepaint();
             BuilderDragService.OnBlockedDrop = message => OnToast?.Invoke(message);
+            // UB-81: the cull window is measured from the container, and pans and
+            // zooms recompute it inside the fiber from its own camera state. A
+            // RESIZE changes nothing the fiber can see, so it is pushed here —
+            // guarded on an actual size change so layout churn cannot loop.
+            _container.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                float w = _container?.resolvedStyle.width ?? 0f;
+                float h = _container?.resolvedStyle.height ?? 0f;
+                if (_graph == null
+                    || (Mathf.Approximately(w, _viewportW) && Mathf.Approximately(h, _viewportH)))
+                    return;
+                _viewportW = w;
+                _viewportH = h;
+                _viewVersion++;
+                RenderCanvas();
+            });
             ZoomChanged?.Invoke(_zoom);
             RenderCanvas();
         }
+
+        private float _viewportW;
+        private float _viewportH;
 
         /// <summary>Panel point → drop target: pick, walk up to the first
         /// "row-{card}-{row}" (else "card-{index}") name, band from the row's
@@ -268,6 +287,28 @@ namespace Ruitk.Builder
         private string _selectPath = "";
         private int _selectVersion;
 
+        private string _selRowPath = "";
+        private int _selRowIdx = -1;
+        private int _selRowLine;
+
+        /// <summary>UB-74: the fiber's row selection, mirrored out so the window
+        /// can answer "what is selected right now" when Delete is pressed. The
+        /// card ring already had this shape; rows did not.</summary>
+        public string SelectedRowPath => _selRowPath;
+
+        public int SelectedRowIndex => _selRowIdx;
+
+        public int SelectedRowLine => _selRowLine;
+
+        public string SelectedCardPath => _selectPath;
+
+        public void ClearRowSelection()
+        {
+            _selRowPath = "";
+            _selRowIdx = -1;
+            _selRowLine = 0;
+        }
+
         /// <summary>POC selectNode(): opening a file from any route (row
         /// double-click, preview click-through, library) moves the gold ring to
         /// that card, not just the source/preview panes.</summary>
@@ -353,6 +394,8 @@ namespace Ruitk.Builder
                         ViewVersion = _viewVersion,
                         SelectPath = _selectPath,
                         SelectVersion = _selectVersion,
+                        ViewportW = _container?.resolvedStyle.width ?? 0f,
+                        ViewportH = _container?.resolvedStyle.height ?? 0f,
                         OnTraceStates = states => OnTraceStates?.Invoke(states),
                         OnOpenFile = onOpenFile,
                         OnLayoutChanged = SaveLayout,
@@ -373,6 +416,12 @@ namespace Ruitk.Builder
                         },
                         OnCardContext = ShowCardMenu,
                         OnRowClick = (path, line) => OnRowClick?.Invoke(path, line),
+                        OnRowSelect = (path, rowIdx, line) =>
+                        {
+                            _selRowPath = path;
+                            _selRowIdx = rowIdx;
+                            _selRowLine = line;
+                        },
                         OnRowContext = (path, line, rowIdx) => OnRowContext?.Invoke(path, line, rowIdx),
                         OnCanvasContext = (wx, wy) => ShowCreateMenu(wx, wy),
                         OnStyleAddEntry = (path, styleName, closeLine) =>
@@ -541,25 +590,32 @@ namespace Ruitk.Builder
                 new BuilderSearchMenu.Item
                 {
                     Label = "Delete " + System.IO.Path.GetFileName(node.FilePath),
-                    OnPick = () =>
-                    {
-                        var referencedBy = new List<string>();
-                        foreach (var edge in _graph.Edges)
-                            if (edge.ToIndex == index && edge.FromIndex >= 0
-                                && !referencedBy.Contains(_graph.Nodes[edge.FromIndex].Title))
-                                referencedBy.Add(_graph.Nodes[edge.FromIndex].Title);
-                        if (referencedBy.Count > 0)
-                        {
-                            OnToast?.Invoke(
-                                "Can't delete: still referenced by "
-                                + string.Join(", ", referencedBy) + ".");
-                            return;
-                        }
-                        OnDeleteFile?.Invoke(node.FilePath);
-                    },
+                    OnPick = () => RequestDeleteCard(index),
                 },
             };
             BuilderSearchMenu.ShowSimple(node.Title, items);
+        }
+
+        /// <summary>The card delete plus its referenced-by guard, in one place so
+        /// the keyboard path (UB-74) cannot drift from the menu's rules.</summary>
+        public bool RequestDeleteCard(int index)
+        {
+            if (_graph == null || index < 0 || index >= _graph.Nodes.Count)
+                return false;
+            var node = _graph.Nodes[index];
+            var referencedBy = new List<string>();
+            foreach (var edge in _graph.Edges)
+                if (edge.ToIndex == index && edge.FromIndex >= 0
+                    && !referencedBy.Contains(_graph.Nodes[edge.FromIndex].Title))
+                    referencedBy.Add(_graph.Nodes[edge.FromIndex].Title);
+            if (referencedBy.Count > 0)
+            {
+                OnToast?.Invoke(
+                    "Can't delete: still referenced by " + string.Join(", ", referencedBy) + ".");
+                return false;
+            }
+            OnDeleteFile?.Invoke(node.FilePath);
+            return true;
         }
 
         public void Unmount()

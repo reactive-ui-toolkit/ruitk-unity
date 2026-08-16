@@ -213,6 +213,7 @@ namespace Ruitk.Builder
             node.Body.Clear();
             node.Markup.Clear();
             node.IslandLines.Clear();
+            node.CachedHeight = 0f;
             FillExportsFromSource(node, text);
             node.Signature = ExtractSignature(text, node);
             node.ExposedSignature = ExtractExposedSignature(text, node);
@@ -1321,6 +1322,18 @@ namespace Ruitk.Builder
         /// every zoom: L1 (340) is the narrowest box that still draws every
         /// section, and L2 (430) is the only one that rides the attribute run on
         /// the markup rows.</summary>
+        /// <summary>Cached because the canvas now consults it for every node on
+        /// every render to decide culling (UB-81), and the inputs only change
+        /// when the node is re-parsed. Invalidated by clearing the field.</summary>
+        internal static float CardHeightOf(BuilderCanvasNode node)
+        {
+            if (node == null)
+                return 0f;
+            if (node.CachedHeight <= 0f)
+                node.CachedHeight = EstimateCardHeight(node);
+            return node.CachedHeight;
+        }
+
         internal static float EstimateCardHeight(BuilderCanvasNode node)
         {
             const float cardWidth = 340f;

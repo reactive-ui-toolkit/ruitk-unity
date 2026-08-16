@@ -222,6 +222,7 @@ namespace Ruitk.Builder
             toolbar.Add(_layerSelect);
             toolbar.Add(Separator());
             toolbar.Add(ToolbarButton("Import .uxml…", ImportUxml));
+            toolbar.Add(ToolbarButton("History", ToggleHistory));
             toolbar.Add(ToolbarButton("? How to drive it", ToggleHelp));
             // DOCUMENTED DEVIATION (owner-decided, do not re-flag): the POC has no
             // Save/Abort because it never writes a file — every "commit" is mock.
@@ -623,7 +624,9 @@ namespace Ruitk.Builder
             var session = _workspace.TryGet(_focusFile);
             if (session != null && !session.IsReadOnly)
             {
+                string before = session.BufferText;
                 session.ApplyEdit(restore);
+                _ledger.Record(_focusFile, before, restore);
                 _codeField?.SetContent(restore, _focusFile, KnownElementsOrNull());
                 RefreshChrome();
                 ScheduleCanvasRefresh(_focusFile);
@@ -746,6 +749,69 @@ namespace Ruitk.Builder
             }
         }
 
+        [System.NonSerialized] private readonly BuilderActionLedger _ledger = new BuilderActionLedger();
+
+        private void UndoAction()
+        {
+            var entry = _ledger.Undo();
+            if (entry == null)
+            {
+                Toast("Nothing to undo");
+                return;
+            }
+            // Reverse order: a gesture that inserted then re-indented the same
+            // region unwinds in the order it was written.
+            var writes = new System.Collections.Generic.List<(string, string)>();
+            for (int i = entry.Changes.Count - 1; i >= 0; i--)
+                writes.Add((entry.Changes[i].FilePath, entry.Changes[i].Before));
+            ApplyLedgerWrites(writes, "Undo " + entry.Description);
+        }
+
+        private void RedoAction()
+        {
+            var entry = _ledger.Redo();
+            if (entry == null)
+            {
+                Toast("Nothing to redo");
+                return;
+            }
+            var writes = new System.Collections.Generic.List<(string, string)>();
+            foreach (var change in entry.Changes)
+                writes.Add((change.FilePath, change.After));
+            ApplyLedgerWrites(writes, "Redo " + entry.Description);
+        }
+
+        /// <summary>Writes a ledger step's buffers back with recording OFF, then
+        /// re-syncs every surface the edit path normally touches. Read-only
+        /// sessions are skipped rather than throwing — a package file cannot be
+        /// in the ledger, but the guard is the same last line of defense the
+        /// edit path uses.</summary>
+        private void ApplyLedgerWrites(
+            System.Collections.Generic.List<(string FilePath, string Text)> writes, string label)
+        {
+            if (writes.Count == 0)
+                return;
+            using (_ledger.Suppress())
+            {
+                foreach (var (filePath, text) in writes)
+                {
+                    var session = _workspace.TryGet(filePath);
+                    if (session == null || session.IsReadOnly)
+                        continue;
+                    session.ApplyEdit(text);
+                    SyncLspBuffer(filePath, text, open: false);
+                    _canvasHost?.RefreshGraph(filePath, ReadBufferOrDisk);
+                    if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(_focusFile),
+                            System.StringComparison.OrdinalIgnoreCase))
+                        _codeField?.SetContent(text, _focusFile, KnownElementsOrNull());
+                }
+            }
+            RefreshChrome();
+            NotifyBufferChanged();
+            RefreshHistoryPanel();
+            Toast(label);
+        }
+
         private void RefreshEditedBuffer(BuilderDocumentSession session)
         {
             _codeField?.SetContent(session.BufferText, session.FilePath, KnownElementsOrNull());
@@ -758,7 +824,9 @@ namespace Ruitk.Builder
             var session = _workspace.TryGet(_focusFile);
             if (session == null || session.IsReadOnly)
                 return;
+            string before = session.BufferText;
             session.ApplyEdit(bufferLf);
+            _ledger.Record(_focusFile, before, bufferLf);
             SyncLspBuffer(_focusFile, bufferLf, open: false);
             RefreshChrome();
             NotifyBufferChanged();
@@ -2795,7 +2863,14 @@ namespace Ruitk.Builder
             var session = _workspace.TryGet(filePath);
             if (session == null)
                 return;
+            string before = session.BufferText;
             session.ApplyEdit(newBufferLf);
+            // UB-73: the ledger names the gesture. Nested scopes collapse, so a
+            // compound gesture calling this twice still reads as one action.
+            _ledger.Begin(string.IsNullOrEmpty(what) ? "edit" : what);
+            _ledger.Record(filePath, before, newBufferLf);
+            _ledger.End();
+            RefreshHistoryPanel();
             if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(_focusFile),
                     System.StringComparison.OrdinalIgnoreCase))
                 _codeField?.SetContent(newBufferLf, _focusFile, KnownElementsOrNull());
@@ -3156,6 +3231,120 @@ namespace Ruitk.Builder
             }
             canvas.Add(help);
             _helpOverlay = help;
+        }
+
+        [System.NonSerialized] private VisualElement _historyOverlay;
+        [System.NonSerialized] private VisualElement _historyList;
+
+        /// <summary>UB-73: the ledger made visible. Every action, newest last,
+        /// with the cursor drawn as the live position — entries past it are the
+        /// redo tail and render dimmed. Clicking any row walks the buffers to
+        /// that point in one atomic step, which is the same operation Ctrl+Z
+        /// performs one entry at a time.</summary>
+        private void ToggleHistory()
+        {
+            if (_historyOverlay != null)
+            {
+                _historyOverlay.RemoveFromHierarchy();
+                _historyOverlay = null;
+                _historyList = null;
+                return;
+            }
+            var canvas = rootVisualElement?.Q("builder-canvas");
+            if (canvas == null)
+                return;
+            var panel = new VisualElement
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 12f, right = 12f, width = 300f, maxHeight = 420f,
+                    backgroundColor = new Color(0.137f, 0.137f, 0.161f, 0.97f),
+                    borderTopWidth = 1f, borderBottomWidth = 1f,
+                    borderLeftWidth = 1f, borderRightWidth = 1f,
+                    borderTopLeftRadius = 8f, borderTopRightRadius = 8f,
+                    borderBottomLeftRadius = 8f, borderBottomRightRadius = 8f,
+                    paddingLeft = 12f, paddingRight = 12f, paddingTop = 10f, paddingBottom = 10f,
+                },
+            };
+            SetBorderColor(panel, new Color(0.23f, 0.23f, 0.27f));
+            panel.Add(new Label("History")
+            {
+                style =
+                {
+                    color = new Color(0.31f, 0.76f, 0.97f), fontSize = 13f, marginBottom = 2f,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                },
+            });
+            panel.Add(new Label("Ctrl+Z undo · Ctrl+Shift+Z / Ctrl+Y redo · click a row to jump")
+            {
+                style =
+                {
+                    color = BuilderPalette.Dim, fontSize = 10f, marginBottom = 8f,
+                    whiteSpace = WhiteSpace.Normal,
+                },
+            });
+            var list = new ScrollView(ScrollViewMode.Vertical) { style = { flexGrow = 1f } };
+            StyleScrollers(list);
+            panel.Add(list);
+            canvas.Add(panel);
+            _historyOverlay = panel;
+            _historyList = list;
+            RefreshHistoryPanel();
+        }
+
+        private void RefreshHistoryPanel()
+        {
+            if (_historyList == null)
+                return;
+            _historyList.Clear();
+            var entries = _ledger.Entries;
+            if (entries.Count == 0)
+            {
+                _historyList.Add(new Label("no actions yet")
+                {
+                    style = { color = BuilderPalette.Dim, fontSize = 11f },
+                });
+                return;
+            }
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                bool undone = i >= _ledger.Cursor;
+                bool current = i == _ledger.Cursor - 1;
+                int target = i + 1;
+                var row = new VisualElement
+                {
+                    style =
+                    {
+                        flexDirection = FlexDirection.Row,
+                        justifyContent = Justify.SpaceBetween,
+                        paddingLeft = 6f, paddingRight = 6f, paddingTop = 2f, paddingBottom = 2f,
+                        marginBottom = 1f,
+                        borderTopLeftRadius = 3f, borderTopRightRadius = 3f,
+                        borderBottomLeftRadius = 3f, borderBottomRightRadius = 3f,
+                        backgroundColor = current
+                            ? new Color(0.31f, 0.76f, 0.97f, 0.16f)
+                            : new Color(0f, 0f, 0f, 0f),
+                    },
+                };
+                row.Add(new Label(entry.Description)
+                {
+                    style =
+                    {
+                        color = undone ? BuilderPalette.Dim : BuilderPalette.Text,
+                        fontSize = 11f, flexShrink = 1f, overflow = Overflow.Hidden,
+                    },
+                });
+                row.Add(new Label(entry.FileSummary)
+                {
+                    style = { color = BuilderPalette.Dim, fontSize = 10f, flexShrink = 0f },
+                });
+                BuilderCursor.Set(row, UnityEditor.MouseCursor.Link);
+                row.RegisterCallback<PointerDownEvent>(_ =>
+                    ApplyLedgerWrites(_ledger.WalkTo(target), "History → " + entry.Description));
+                _historyList.Add(row);
+            }
         }
 
         internal static void SetBorderColor(VisualElement element, Color color)
@@ -3564,7 +3753,24 @@ namespace Ruitk.Builder
         private void OnKeyDown(KeyDownEvent evt)
         {
             if (!evt.ctrlKey && !evt.commandKey)
+            {
+                // UB-74: unmodified Delete/Escape used to reach nothing at all.
+                // Both are ignored while a text surface owns the keyboard, so
+                // Delete still deletes CHARACTERS inside an editor.
+                if (TypingTargetFocused())
+                    return;
+                if (evt.keyCode == KeyCode.Delete)
+                {
+                    DeleteSelection();
+                    evt.StopPropagation();
+                }
+                else if (evt.keyCode == KeyCode.Escape)
+                {
+                    CancelActiveEdit();
+                    evt.StopPropagation();
+                }
                 return;
+            }
 
             switch (evt.keyCode)
             {
@@ -3572,25 +3778,108 @@ namespace Ruitk.Builder
                     SaveAll();
                     evt.StopPropagation();
                     break;
+                // UB-73: undo walks the ACTION ledger, not the focus file's own
+                // stack — a gesture that touched two files reverts as one step
+                // and from whichever file happens to be in focus.
                 case KeyCode.Z:
-                    var focused = _workspace.TryGet(_focusFile);
-                    if (focused != null && focused.CanUndo)
-                    {
-                        focused.Undo();
-                        RefreshEditedBuffer(focused);
-                    }
+                    if (evt.shiftKey)
+                        RedoAction();
+                    else
+                        UndoAction();
                     evt.StopPropagation();
                     break;
                 case KeyCode.Y:
-                    var f = _workspace.TryGet(_focusFile);
-                    if (f != null && f.CanRedo)
-                    {
-                        f.Redo();
-                        RefreshEditedBuffer(f);
-                    }
+                    RedoAction();
                     evt.StopPropagation();
                     break;
             }
+        }
+
+        /// <summary>True while a text-editing surface holds focus. The canvas
+        /// keyboard model must never fire under one — Delete there means "delete
+        /// a character", and Escape is already the field's own cancel.</summary>
+        private bool TypingTargetFocused()
+        {
+            if (_inlineEditor != null && _inlineEditor.IsOpen)
+                return true;
+            var focused = rootVisualElement?.focusController?.focusedElement as VisualElement;
+            while (focused != null)
+            {
+                if (focused is TextField || focused is TextElement && focused.focusable)
+                    return true;
+                focused = focused.parent;
+            }
+            return false;
+        }
+
+        /// <summary>UB-74: Delete removes whatever is selected. The ROW selection
+        /// wins over the card selection — it is the finer-grained of the two and
+        /// the one the user set most recently. Every guard the context menus
+        /// enforce is enforced here too, by routing to the same methods: the
+        /// return root is never deletable, a continuation clause deletes as a
+        /// clause, a construct head deletes its whole block, and a card still
+        /// has to pass the referenced-by check.</summary>
+        private void DeleteSelection()
+        {
+            string rowPath = _canvasHost?.SelectedRowPath;
+            int rowIdx = _canvasHost?.SelectedRowIndex ?? -1;
+            if (!string.IsNullOrEmpty(rowPath) && rowIdx >= 0)
+            {
+                var node = _canvasHost.FindNode(Path.GetFullPath(rowPath));
+                if (node != null && node.Markup != null && rowIdx < node.Markup.Count)
+                {
+                    var row = node.Markup[rowIdx];
+                    if (row.Kind == BuilderCardLineKind.Directive)
+                    {
+                        if (row.ClauseIndex > 0)
+                            DeleteClause(rowPath, row);
+                        else
+                            DeleteLinesInFile(
+                                rowPath, row.DirectiveLine,
+                                System.Math.Max(row.DirectiveLine, row.CloseLine),
+                                "delete " + row.BadgeText + " block");
+                        _canvasHost.ClearRowSelection();
+                        return;
+                    }
+                    if (rowIdx == BuilderCanvasDrawing.FirstElementRow(node))
+                    {
+                        Toast("The return root can't be deleted — a component must return one node.");
+                        return;
+                    }
+                    DeleteElementRow(rowPath, row);
+                    _canvasHost.ClearRowSelection();
+                    return;
+                }
+            }
+            string cardPath = _canvasHost?.SelectedCardPath;
+            if (!string.IsNullOrEmpty(cardPath))
+            {
+                int index = _canvasHost.NodeIndexOf(cardPath);
+                if (index >= 0)
+                {
+                    _canvasHost.RequestDeleteCard(index);
+                    return;
+                }
+            }
+            Toast("Nothing selected to delete");
+        }
+
+        /// <summary>Escape cancels the innermost active edit: the floating inline
+        /// editor first, then a source-pane edit session, then the selection
+        /// itself.</summary>
+        private void CancelActiveEdit()
+        {
+            if (_inlineEditor != null && _inlineEditor.IsOpen)
+            {
+                _inlineEditor.Close(commitIfChanged: false);
+                return;
+            }
+            if (_sourceSnapshot != null)
+            {
+                CancelSourceEdit();
+                return;
+            }
+            _canvasHost?.ClearRowSelection();
         }
 
         private void SaveAll()

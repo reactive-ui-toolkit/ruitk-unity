@@ -795,7 +795,7 @@ Existing badges open their editor synchronously from the click, so focus is in
 the field. Fix direction: the host-pushed inline editors must grab focus when
 they materialise, and the badge editor's Enter/Esc must consume the event.
 
-### UB-71 — @switch clause ordering: @default seeds first, @case appends after it `OPEN` `HIGH`
+### UB-71 — @switch clause ordering: @default seeds first, @case appends after it `UNVERIFIED` `HIGH`
 
 Confirmed in the drive-through screenshots: `Wrap in @switch` seeds `@default:`
 as the FIRST arm, and every "Add @case…" inserts above the switch's closing
@@ -804,7 +804,16 @@ seeds `@case value:` first (with the wrapped row) and `@default:` last;
 "Add @case…" inserts BEFORE the @default arm when one exists, after the last
 @case otherwise.
 
-### UB-72 — seeded directive headers do not compile until edited `OPEN` `MED`
+SHIPPED: `WrapRowInSwitch` now seeds `@switch (0) { @case 0: … }` holding the
+wrapped row and seeds NO @default at all — "Add @default" stays on the menu and
+appends at the closing brace, which is where C# wants it. `AddSwitchClause`
+takes the node + row index and inserts a new @case at the @default arm's line
+when one exists (`ConstructClause`, the row-returning form of the old
+`ConstructHasClause`), else at the closing brace. Also fixed: the wrap emitted
+its `);` one indent level too deep in BOTH wrappers — the house form every
+sample uses aligns it with its own `return (`.
+
+### UB-72 — seeded directive headers do not compile until edited `UNVERIFIED` `MED`
 
 `@case value:` and `@if (condition)` reference identifiers that do not exist;
 since the preview now reports compile failures loudly (UB-15), every wrap
@@ -815,7 +824,16 @@ something else. Options: seed compilable placeholders where a type can be
 guessed, or hold the programmatic commit until the header editor closes with
 real content (the edit-first flow the badge editor already implies).
 
-### UB-73 — action ledger with global undo/redo `OPEN` `FEATURE`
+SHIPPED (option 1, compilable placeholders — option 2 would have had the header
+editor anchor to a canvas row that does not exist until the commit):
+`@if (true)`, `@for (int i = 0; i < 1; i++)`, `@while (false)`, `@switch (0)`
++ `@case 0:`. @while seeds FALSE deliberately — a true-seeded render loop would
+not terminate. Added @case arms seed the next unused integer (`NextCaseLabel`),
+so they compile against the seeded subject and cannot collide (CS0152). The
+header editor still opens on the seed, so the prompt to replace it is
+unchanged; what is gone is the buffer being committed broken.
+
+### UB-73 — action ledger with global undo/redo `UNVERIFIED` `FEATURE`
 
 Owner ask: a visible ledger of every builder action, "down to the smallest
 action", with undo/redo across it. Today undo is per-file session buffers
@@ -825,14 +843,39 @@ buffer states file by file. Design: one action log (description + the set of
 (file, before, after) buffer pairs per action), a history panel, Ctrl+Z/Y
 walking it atomically across files.
 
-### UB-74 — selection-driven keyboard model: Delete removes, Esc cancels `OPEN` `FEATURE`
+SHIPPED exactly that shape: `Builder/Editor/Document/BuilderActionLedger.cs` —
+entries of (Description, At, List<(FilePath, Before, After)>), Begin/Record/End
+with COLLAPSING nesting (a compound gesture reusing a single-file primitive
+stays one entry), a redo tail truncated on new work, a 400-entry cap, and a
+`Suppress()` scope so replaying is never itself recorded. `ApplyProgrammaticEdit`
+(the funnel all nine delete/edit operations already went through), source-pane
+typing and the source-edit cancel all record. Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y now
+walk the LEDGER, not the focus file's own stack, so a gesture that touched two
+files reverts as one step from whichever file is in focus. A "History" toolbar
+button opens a panel listing every action with the cursor drawn live; clicking
+any row walks the buffers to that point in one atomic step (`WalkTo`).
+
+### UB-74 — selection-driven keyboard model: Delete removes, Esc cancels `UNVERIFIED` `FEATURE`
 
 Owner ask: Delete deletes whatever is selected — element row, directive
 clause/block, card, attribute — not just via the context menu; Esc cancels the
 active edit anywhere. Needs a real selection model (exactly one selected THING
 with a kind, visible focus) rather than today's per-surface selection bits.
 
-### UB-75 — false UITKX0105 on Vector2Field/Vector3Field/… `OPEN` `HIGH`
+SHIPPED: the fiber's row selection now leaves the component — a new
+`onRowSelect(path, rowIdx, line)` prop mirrors into `BuilderCanvasHost`
+(`SelectedRowPath/Index/Line`, matching the `_selectPath` pattern the card ring
+already used). `BuilderWindow.OnKeyDown` no longer early-returns on unmodified
+keys: Delete runs `DeleteSelection` (row selection beats card selection), Escape
+runs `CancelActiveEdit` (inline editor, then source-pane edit, then clear the
+selection). Both are suppressed while a text surface holds focus, so Delete
+still deletes CHARACTERS inside an editor. Every menu guard is honoured by
+routing to the same methods — return root refuses with a toast, a continuation
+clause deletes as a clause, a construct head deletes its block, and the card
+delete goes through `RequestDeleteCard`, which is the referenced-by guard
+EXTRACTED out of `ShowCardMenu` so the two paths cannot drift.
+
+### UB-75 — false UITKX0105 on Vector2Field/Vector3Field/… `UNVERIFIED` `HIGH`
 
 Caught in the drive-through screenshots (not owner-named): the source pane
 flags `<Vector2Field>` etc. as unknown elements. UB-07 wired the check to the
@@ -844,6 +887,15 @@ fix: (a) builder-side now — `KnownElementsOrNull` unions the RUNTIME registry
 truth for what renders) so real elements are never errors; (b) root — add the
 7 elements to `uitkx-schema.json` with real attribute lists so the palette
 and completion offer them (add-unity-version-style work).
+
+SHIPPED both halves. (a) `KnownElementsOrNull` unions
+`ElementRegistryProvider.GetDefaultRegistry().RegisteredNames`, so schema drift
+can cost completion but can never manufacture a UITKX0105 for a tag that
+actually renders. (b) All 7 (Vector2/3/4Field, Vector2Int/Vector3IntField,
+Hash128Field, UguiHost) added to `uitkx-schema.json` with their real attributes
+read off the Props classes. NOTE: the schema is an EMBEDDED LSP resource — the
+builder reads it over `RequestSchema`, so the palette/completion half only
+lands once the LSP server is rebuilt and the extensions re-published.
 
 ### UB-76 — inline-editor intellisense, UN-DEFERRED `UNVERIFIED` `HIGH`
 
@@ -904,9 +956,13 @@ the heavyweight option none of the mainstream node editors actually use.
 
 ## 10. Field reports — owner drive-through, 2026-08-17
 
-Filed only, not started — the queue ahead of them is UB-71/72/73/74/75.
+ALL IMPLEMENTED 2026-08-17 in one execution wave together with the UB-71..75
+tail (owner: "execute everything that's remaining in the plan, the whole thing,
+defer nothing"). Every item below is `UNVERIFIED` — gates green
+(validate-uitkx 0, SG-backed csc smoke EXIT=0, machine-path clean), none of it
+driven on screen yet. Notes per item record what shipped.
 
-### UB-77 — diagnostics console is not copyable `OPEN` `MED`
+### UB-77 — diagnostics console is not copyable `UNVERIFIED` `MED`
 
 The error console/window (UITKX0105 storm in the capture) renders as plain
 Labels: no selection, no Ctrl+A, no copy. Owner ask: make the whole console
@@ -916,7 +972,17 @@ a read-only multiline field) plus an explicit "Copy all" affordance; Ctrl+A
 inside the console must select console text only, not trigger canvas-wide
 selection.
 
-### UB-78 — component signature lines are not coloured `OPEN` `MED`
+SHIPPED: the console is a vertical ScrollView holding a SELECTABLE Label with
+the window's dark scroller chrome. The hard 4-line cap is gone — every
+diagnostic line is in the text, so a copy cannot silently drop the tail.
+Ctrl+A selects all and Ctrl+C copies, both scoped to the console element so
+they never race the canvas or the source editor; right-click adds "Copy all
+diagnostics" (disabled when empty). Also fixed en route: fragment mode set
+`display = None` on the label and never restored it, so any CodeField instance
+that had run a fragment recolor kept its console hidden forever — display is
+now driven explicitly in both directions off the scroll container.
+
+### UB-78 — component signature lines are not coloured `UNVERIFIED` `MED`
 
 The card's signature block (name + full props signature under the title) is
 one flat-grey Label while everything around it now colours. Route the
@@ -925,13 +991,30 @@ and detail entries already do — the UB-76-round-3 lexical pass then gives
 types teal, parameter names blue, defaults (null/false/numbers) their real
 colours for free. Watch rich-text vs. the signature's wrapping/ellipsis.
 
-### UB-79 — raise the max zoom-OUT level `OPEN` `LOW`
+SHIPPED: `BuilderCanvasDrawing.SignatureRichText` now calls
+`CodeField.BuildLineRichText(signature, null, boldPrefix)` instead of emitting
+the parameter list RAW. The name keeps its bold via a new `boldPrefix` run
+break (splitting at `(` BEFORE colouring would have robbed the name of the
+paren that classifies it as a call, so the whole line is coloured once and the
+run is broken at the paren). Required a classifier fix that helps everywhere:
+`List<T>` was being read as markup because the identifier after `<` looked like
+a tag — a `<` only opens a tag when the character before it is not an
+identifier character, which is exactly what separates `<Label` from `List<`.
+
+### UB-79 — raise the max zoom-OUT level `UNVERIFIED` `LOW`
 
 Owner ask: allow zooming further out to see a bigger stretch of canvas. Pure
 clamp change on the zoom range (plus verifying grid/edge/text rendering stays
 sane at the new minimum scale); explicitly NOT a layout change.
 
-### UB-80 — component list: double-click to focus a card `OPEN` `MED`
+SHIPPED: floor 0.30 -> `BuilderCanvasDrawing.ZoomMin` = 0.10 (a ~9x larger
+visible area), ceiling unchanged as `ZoomMax` = 2.2. The range had been THREE
+duplicated literal pairs (the canvas wheel handler, the host ctrl-wheel
+handler, the persisted-layout clamp) that had to agree; they now share the one
+pair. Card LOD already collapses to pills below 0.45, so nothing new renders at
+the new floor.
+
+### UB-80 — component list: double-click to focus a card `UNVERIFIED` `MED`
 
 The palette's "custom components" section already lists every component on
 the canvas. Owner ask: double-clicking a list entry focuses/centres that
@@ -939,7 +1022,18 @@ card in the viewport (pan + sensible zoom, maybe a brief highlight pulse).
 Note the double-click-navigation precedent: canvas rows already double-click
 to navigate to a component's file — keep the two gestures consistent.
 
-### UB-81 — max zoom-IN gets slow, cause unknown `OPEN` `MED`
+SHIPPED: `BuilderCanvasHost.FocusNode(path)` centres the camera on the card
+(cam = viewportCentre - cardCentre * zoom, the same screen = world*zoom + cam
+model the wheel handler anchors on) and moves the gold selection ring to it; a
+card taller than the viewport pins near its top instead of centring, which
+would otherwise scroll its title off-screen. `BuilderLibraryPane` entries carry
+their node's FilePath and a double-click fires `FocusComponent` INSTEAD of
+arming the drag, so the focused card is not also dropped somewhere on release.
+All four workspace sections get it (components, style, hook and util modules),
+not only components; schema natives have no file path and fall through to the
+drag-arm unchanged.
+
+### UB-81 — max zoom-IN gets slow, cause DIAGNOSED `UNVERIFIED` `MED`
 
 Owner report: at high zoom the canvas becomes sluggish. Diagnose before
 fixing — candidate causes: every card/edge still rendered + hit-tested when
@@ -947,3 +1041,31 @@ mostly off-screen (no viewport culling), rich-text label re-layout at scale,
 edge bezier tessellation in generateVisualContent, dot-grid painting the full
 element at fine pitch. Profile first (Editor profiler on the builder window),
 name the dominant cost in the register, then fix at that layer.
+
+DIAGNOSIS — read from the code, NOT from a profiler run (the Unity profiler
+could not be driven from the implementing session; the owner should confirm the
+win on screen). Dominant cost: **there was no viewport culling at all**.
+`CanvasView` looped `graph.Nodes` unconditionally and built every card's full
+subtree wherever it sat, and L2 is precisely where that explodes — each markup
+row adds a flex wrapper plus THREE labels per attribute, each with pointer
+callbacks, so the element count is roughly 4 x cards x rows x attributes and
+none of it was bounded by what was on screen. That is why the slowdown tracks
+zoom-IN (the L2 band, `zoom >= 1.05`) rather than the number of visible cards.
+Ruled out on inspection: the dot grid is screen-space, fixed 26px pitch and
+capped at 16000 quads, so it is zoom-invariant.
+
+SHIPPED: cards more than one viewport outside the visible rect render as a
+sized empty box instead of their sections (`BuilderCanvasDrawing.IsNearViewport`,
+screen rect = world * zoom + camera, inflated one viewport on each side so a
+pan never pops a card in at its edge). The box is deliberately KEPT rather than
+dropping the element: the edge painter measures `card-{index}` and, when it
+cannot find one, both guesses the geometry and schedules a 12-repaint retry
+burst — and `CurrentZoom`'s setter resets that counter, so a dropped element
+would have restarted the burst on every zoom step. Viewport size arrives as
+`viewportW/H` props (pans and zooms recompute the cull inside the fiber from its
+own camera state; only a RESIZE needs a push, wired on GeometryChangedEvent and
+guarded on an actual size change). Card height for the placeholder and the cull
+test comes from the graph layout's own `EstimateCardHeight`, now memoised per
+node (`CachedHeight`, reset on re-parse) because the cull consults it for every
+node on every render. A viewport that has not measured yet returns "near" —
+a missing measurement must never hide content.

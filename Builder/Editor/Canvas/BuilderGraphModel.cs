@@ -103,6 +103,10 @@ namespace Ruitk.Builder
         public float X;
         public float Y;
         public bool IsReadOnly;
+
+        /// <summary>Memoised card height for the viewport cull (UB-81). Zero
+        /// means "not computed"; a re-parse of this node must reset it.</summary>
+        public float CachedHeight;
         public List<string> Exports = new List<string>();
         public List<BuilderCardLine> Imports = new List<BuilderCardLine>();
         public List<BuilderCardLine> Body = new List<BuilderCardLine>();
