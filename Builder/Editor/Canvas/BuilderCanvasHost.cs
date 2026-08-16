@@ -568,11 +568,22 @@ namespace Ruitk.Builder
                     missingFromSchema.Add(name);
 
             if (missingFromSchema.Count > 0)
-                UnityEngine.Debug.LogWarning(
-                    "[RUITK Builder] schema/runtime drift: registered elements missing from the "
-                    + "editor schema (palette and completion will not offer them): "
-                    + string.Join(", ", missingFromSchema));
+            {
+                // Once per drift SET, not once per mount — the same seven names
+                // repeated eleven times buried real console output.
+                string drift = string.Join(", ", missingFromSchema);
+                if (!string.Equals(drift, UnityEditor.SessionState.GetString(DriftWarnedKey, ""),
+                        StringComparison.Ordinal))
+                {
+                    UnityEditor.SessionState.SetString(DriftWarnedKey, drift);
+                    UnityEngine.Debug.LogWarning(
+                        "[RUITK Builder] schema/runtime drift: registered elements missing from the "
+                        + "editor schema (palette and completion will not offer them): " + drift);
+                }
+            }
         }
+
+        private const string DriftWarnedKey = "Ruitk.Builder.SchemaDriftWarned";
 
         private void ShowMessage(string text)
         {

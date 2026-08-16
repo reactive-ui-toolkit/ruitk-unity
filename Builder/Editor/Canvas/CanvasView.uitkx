@@ -660,7 +660,7 @@ export VirtualNode CanvasView(
                                     return (
                                       <Label
                                         key={$"isl-{ci}"}
-                                        text={node.IslandLines[ci]}
+                                        text={CodeField.BuildLineRichText(node.IslandLines[ci], null)}
                                         style={CanvasStyles.CodeIslandLine}
                                       />
                                     );
@@ -747,7 +747,10 @@ export VirtualNode CanvasView(
                                         }
                                       }}
                                     >
-                                      <Label text={detail.Text} style={CanvasStyles.CodeIslandLine} />
+                                      <Label
+                                        text={CodeField.BuildLineRichText(detail.Text, null)}
+                                        style={CanvasStyles.CodeIslandLine}
+                                      />
                                     </VisualElement>
                                   );
                                 }

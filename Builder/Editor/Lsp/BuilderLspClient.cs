@@ -308,6 +308,12 @@ namespace Ruitk.Builder
                     DispatchIncoming(message);
                 }
             }
+            catch (System.Threading.ThreadAbortException)
+            {
+                // Normal teardown: Unity aborts background threads on every
+                // domain reload. Warning on it spammed the console once per
+                // recompile without carrying information.
+            }
             catch (Exception ex)
             {
                 if (!_disposed)

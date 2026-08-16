@@ -875,6 +875,11 @@ namespace Ruitk.Builder
         {
             if (_renderer != null)
             {
+                // Flush any PENDING render slice before abandoning the root —
+                // pumping it afterwards ran reconciler work against the
+                // destroyed tree (NullReferenceException in AppendToEffectList
+                // on window close, owner report 2026-08-16).
+                _scheduler.PumpNow();
                 _renderer.Unmount();
                 _scheduler.PumpNow();
                 _renderer = null;

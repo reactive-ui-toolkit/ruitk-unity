@@ -29,7 +29,6 @@ namespace Ruitk.Builder
         private string _filePath = "";
         private HashSet<string> _knownElements;
         private bool _suppressChange;
-        private bool _userCaretActive;
         private bool _editing;
         private bool _coloredEdit;
         private bool _innerScrollWired;
@@ -92,7 +91,6 @@ namespace Ruitk.Builder
         public void FocusEditor()
         {
             _input.Focus();
-            _userCaretActive = true;
         }
 
         /// <summary>Ctrl+Space asks this for completions at (line0, char0);
@@ -266,7 +264,6 @@ namespace Ruitk.Builder
             });
             _input.RegisterValueChangedCallback(OnInputChanged);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
-            _input.RegisterCallback<PointerDownEvent>(_ => _userCaretActive = true);
             host.Add(_input);
 
             RegisterCallback<AttachToPanelEvent>(_ => ApplyLinesWidth());
@@ -307,14 +304,31 @@ namespace Ruitk.Builder
                 // coloured edit (review finding, 2026-08-16).
                 EndColoredEdit();
                 _scroll.style.display = DisplayStyle.Flex;
-                _userCaretActive = false;
                 Recolor(TextLf);
                 return;
             }
             _coloredEdit = TryBeginColoredEdit();
             _scroll.style.display = _coloredEdit ? DisplayStyle.Flex : DisplayStyle.None;
             if (_coloredEdit)
+            {
                 Recolor(TextLf);
+                return;
+            }
+            // The input was display:none until this frame — its internal
+            // ScrollView may not exist yet. One deferred retry upgrades to the
+            // coloured overlay once the field has built itself; if it still
+            // cannot, the opaque textarea stands.
+            schedule.Execute(() =>
+            {
+                if (!_editing || _coloredEdit)
+                    return;
+                _coloredEdit = TryBeginColoredEdit();
+                if (_coloredEdit)
+                {
+                    _scroll.style.display = DisplayStyle.Flex;
+                    Recolor(TextLf);
+                }
+            }).ExecuteLater(60);
         }
 
         private bool TryBeginColoredEdit()
@@ -343,10 +357,16 @@ namespace Ruitk.Builder
             foreach (var text in _input.Query<TextElement>().ToList())
                 text.style.color = BuilderPalette.Transparent;
             var selection = _input.textSelection;
+            // The replacement USS custom properties (--unity-cursor-color /
+            // --unity-selection-color) have no C# setter — a runtime-built
+            // control with per-state colors has only this API until Unity
+            // exposes one.
+#pragma warning disable CS0618
             selection.cursorColor = BuilderPalette.Text;
             var band = BuilderPalette.Accent;
             band.a = 0.3f;
             selection.selectionColor = band;
+#pragma warning restore CS0618
         }
 
         private void EndColoredEdit()
@@ -397,7 +417,6 @@ namespace Ruitk.Builder
             _input.cursorIndex = start;
             _input.selectIndex = end;
             _input.Focus();
-            _userCaretActive = true;
         }
 
         private int _selectedLine1;
@@ -429,7 +448,6 @@ namespace Ruitk.Builder
             _suppressChange = true;
             _input.value = textLf ?? "";
             _suppressChange = false;
-            _userCaretActive = false;
             Recolor(textLf ?? "");
         }
 
@@ -442,6 +460,23 @@ namespace Ruitk.Builder
                 return;
             _knownElements = knownElements;
             Recolor(_input.value ?? "");
+        }
+
+        private SemanticTokenData[] _serverTokens;
+        private string _serverTokensText;
+
+        /// <summary>The LSP's semanticTokens/full — UITKX structural tokens
+        /// merged with Roslyn's C# classification, which is what colours the
+        /// setup-code body like a real editor (the local T1/T2 tokens cover
+        /// markup only). Tagged with the buffer text they were computed for:
+        /// between an edit and the next server response the pane falls back to
+        /// the local tokens instead of painting with stale offsets.</summary>
+        public void SetServerTokens(SemanticTokenData[] tokens, string forTextLf)
+        {
+            _serverTokens = tokens;
+            _serverTokensText = forTextLf;
+            if (string.Equals(TextLf, forTextLf, StringComparison.Ordinal))
+                Recolor(forTextLf);
         }
 
         public void SetEditable(bool editable)
@@ -623,7 +658,13 @@ namespace Ruitk.Builder
             try
             {
                 var parsed = BuilderLanguage.Parse(textLf, _filePath);
-                tokens = BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
+                // Server tokens (UITKX + Roslyn C#) win when they were computed
+                // for exactly this text; otherwise the local structural tokens
+                // carry the frame until the next server response lands.
+                tokens = _serverTokens != null
+                    && string.Equals(_serverTokensText, textLf, StringComparison.Ordinal)
+                    ? _serverTokens
+                    : BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
 
                 var diags = BuilderLanguage.Diagnose(parsed, _filePath, _knownElements);
                 var sb = new StringBuilder();
@@ -843,7 +884,9 @@ namespace Ruitk.Builder
                 sb.Append("</color>");
         }
 
-        private static string BuildLineRichText(string line, List<SemanticTokenData> tokens)
+        /// <summary>Internal so the canvas code islands share the exact same
+        /// colouring passes (tokens null = regex passes only).</summary>
+        internal static string BuildLineRichText(string line, List<SemanticTokenData> tokens)
         {
             if (line.Length == 0)
                 return "";
@@ -893,6 +936,32 @@ namespace Ruitk.Builder
             foreach (System.Text.RegularExpressions.Match m in s_keywords.Matches(line))
                 for (int i = m.Index; i < m.Index + m.Length; i++)
                     s_colors[i] = KeywordColor;
+
+            // POC ".cm": a // comment greys the rest of the line and WINS over
+            // every earlier pass. Islands have no LSP Comment tokens, so this
+            // is their only comment colouring.
+            bool inStr = false;
+            for (int i = 0; i + 1 < line.Length; i++)
+            {
+                char c = line[i];
+                if (inStr)
+                {
+                    if (c == '"')
+                        inStr = false;
+                    continue;
+                }
+                if (c == '"')
+                {
+                    inStr = true;
+                    continue;
+                }
+                if (c == '/' && line[i + 1] == '/')
+                {
+                    for (int k = i; k < line.Length; k++)
+                        s_colors[k] = "#616E7A";
+                    break;
+                }
+            }
 
             var sb = new StringBuilder(line.Length + 32);
             int cursor = 0;

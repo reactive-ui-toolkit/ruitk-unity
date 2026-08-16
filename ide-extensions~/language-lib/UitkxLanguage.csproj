@@ -30,6 +30,16 @@
       editor / LSP contexts, so this constant is unconditionally true here.
     -->
     <DefineConstants>$(DefineConstants);UNITY_EDITOR</DefineConstants>
+    <!--
+      The Builder asmdef compile-references BOTH Ruitk.Language.Editor.dll and
+      the Ruitk.Shared assembly, which compiles the same linked HookRegistry.cs.
+      Two PUBLIC HookRegistry types are CS0433 at every Builder call site (this
+      killed the Builder assembly on 2026-08-16), so the editor variant keeps
+      its copy internal - its in-assembly consumers (DiagnosticsAnalyzer,
+      VirtualDocumentGenerator) are unaffected, and the Builder resolves the
+      single public type from Ruitk.Shared.
+    -->
+    <DefineConstants Condition="'$(RuitkEditorVariant)' == 'true'">$(DefineConstants);RUITK_EDITOR_VARIANT</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <!--

@@ -81,7 +81,15 @@ namespace Ruitk.Core
     /// <c>SourceGenerator~/Tests/Golden/HookRegistry/</c>.
     /// </para>
     /// </summary>
+#if RUITK_EDITOR_VARIANT
+    // Ruitk.Language.Editor only: the Builder compile-references both this DLL
+    // and Ruitk.Shared (which compiles this same linked file), and two public
+    // HookRegistry types are CS0433 at every Builder call site. Internal here;
+    // the in-assembly analyzer/virtual-doc consumers are unaffected.
+    internal static class HookRegistry
+#else
     public static class HookRegistry
+#endif
     {
         // ── Canonical hook lists ─────────────────────────────────────────────
         //

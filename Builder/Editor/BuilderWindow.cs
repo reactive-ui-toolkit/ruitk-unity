@@ -540,6 +540,7 @@ namespace Ruitk.Builder
             // POC selectNode(): opening another file leaves source-edit mode.
             _codeField.SetEditing(_sourceSnapshot != null);
             SyncLspBuffer(_focusFile, session?.BufferText, open: true);
+            ScheduleServerTokens();
         }
 
         [System.NonSerialized] private Label _editButton;
@@ -673,6 +674,72 @@ namespace Ruitk.Builder
                 results.Add((label, insert));
             }
             return results;
+        }
+
+        [System.NonSerialized] private double _serverTokensDue;
+        [System.NonSerialized] private bool _serverTokensScheduled;
+
+        /// <summary>The source pane's C# body colouring comes from the LSP's
+        /// semanticTokens/full (UITKX structural + Roslyn), requested quietly
+        /// ~400 ms after the buffer settles. The legend is SemanticTokenTypes
+        /// .All — the same table this process links, so indices decode locally.</summary>
+        private void ScheduleServerTokens()
+        {
+            _serverTokensDue = EditorApplication.timeSinceStartup + 0.4;
+            if (_serverTokensScheduled)
+                return;
+            _serverTokensScheduled = true;
+            EditorApplication.update += RequestServerTokensWhenQuiet;
+        }
+
+        private async void RequestServerTokensWhenQuiet()
+        {
+            if (EditorApplication.timeSinceStartup < _serverTokensDue)
+                return;
+            EditorApplication.update -= RequestServerTokensWhenQuiet;
+            _serverTokensScheduled = false;
+            var session = _workspace.TryGet(_focusFile);
+            if (session == null || _codeField == null)
+                return;
+            string text = session.BufferText;
+            try
+            {
+                var client = await BuilderLspService.GetOrStartAsync();
+                client.SendDidChangeNow(_focusFile, text);
+                var response = await client.RequestSemanticTokens(_focusFile);
+                var data = response?["data"] as Newtonsoft.Json.Linq.JArray
+                    ?? response?["Data"] as Newtonsoft.Json.Linq.JArray;
+                if (data == null)
+                    return;
+                var legend = Ruitk.Language.SemanticTokens.SemanticTokenTypes.All;
+                var decoded = new System.Collections.Generic.List<
+                    Ruitk.Language.SemanticTokens.SemanticTokenData>(data.Count / 5);
+                int line = 0, column = 0;
+                for (int i = 0; i + 4 < data.Count; i += 5)
+                {
+                    int deltaLine = (int)data[i];
+                    int deltaStart = (int)data[i + 1];
+                    int length = (int)data[i + 2];
+                    int typeIndex = (int)data[i + 3];
+                    line += deltaLine;
+                    column = deltaLine > 0 ? deltaStart : column + deltaStart;
+                    if (typeIndex < 0 || typeIndex >= legend.Length)
+                        continue;
+                    decoded.Add(new Ruitk.Language.SemanticTokens.SemanticTokenData
+                    {
+                        Line = line,
+                        Column = column,
+                        Length = length,
+                        TokenType = legend[typeIndex],
+                        Modifiers = System.Array.Empty<string>(),
+                    });
+                }
+                _codeField.SetServerTokens(decoded.ToArray(), text);
+            }
+            catch (System.Exception)
+            {
+                // LSP-less sessions keep the local structural colouring.
+            }
         }
 
         private void RefreshEditedBuffer(BuilderDocumentSession session)
@@ -2488,6 +2555,7 @@ namespace Ruitk.Builder
         /// then the preview re-resolves its delegate from the swap assembly.</summary>
         public void NotifyBufferChanged()
         {
+            ScheduleServerTokens();
             _recompileDue = EditorApplication.timeSinceStartup + 0.3;
             if (_recompileScheduled)
                 return;
