@@ -241,20 +241,15 @@ export Style CodeIsland = new Style {
   PaddingBottom = Px(6),
 };
 
+// Owner decision 2026-08-16 (deliberate POC divergence): islands scroll
+// VERTICALLY only inside the card — a long statement WRAPS instead of hiding
+// behind a horizontal scroll, so the fixed 16.7 line box becomes a minimum.
 export Style CodeIslandLine = new Style {
   Color = Hex("#bdbdc7"),
   FontSize = Px(11.5f),
-  // POC ".code-island" inherits the body's 1.45 line box at font-size 11.5 →
-  // 16.7px rows (poc-l2-edit.png: 18 CSS px between island lines at zoom 1.25).
-  // Every other code-bearing row style already carries its line box; this one
-  // did not, so the island read ~30% tighter than the POC's.
-  Height = Px(16.7f),
-  // The island ScrollView pins its own height to IslandLines.Count * 16.7, so a
-  // mono face whose min-content box beats the declared one would clip the last
-  // line instead of merely loosening the pitch.
-  MinHeight = Px(0),
+  MinHeight = Px(16.7f),
   TextAlign = TextMiddleLeft,
-  WhiteSpace = WsPre,
+  WhiteSpace = WsNormal,
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 

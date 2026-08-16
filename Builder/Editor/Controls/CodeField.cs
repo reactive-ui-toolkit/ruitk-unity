@@ -358,11 +358,21 @@ namespace Ruitk.Builder
             if (!_innerScrollWired)
             {
                 _innerScrollWired = true;
+                // The INPUT's scroller drives; it also gets the window's dark
+                // chrome instead of the stock control.
+                BuilderWindow.StyleScrollers(inner);
                 if (inner.verticalScroller != null)
+                {
+                    inner.verticalScroller.style.width = 8f;
                     inner.verticalScroller.valueChanged += _ => SyncListingScroll(inner);
+                }
                 if (inner.horizontalScroller != null)
                     inner.horizontalScroller.valueChanged += _ => SyncListingScroll(inner);
             }
+            // One scrollbar, not two: the listing mirrors the input's offset,
+            // so its own scrollers hide while the overlay is active.
+            _scroll.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            _scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             ApplyColoredEditInk();
             SyncListingScroll(inner);
             return true;
@@ -392,6 +402,8 @@ namespace Ruitk.Builder
             _input.style.backgroundColor = BuilderPalette.Ground;
             foreach (var text in _input.Query<TextElement>().ToList())
                 text.style.color = BuilderPalette.Text;
+            _scroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            _scroll.horizontalScrollerVisibility = ScrollerVisibility.Auto;
         }
 
         private void SyncListingScroll(ScrollView inner)
@@ -852,9 +864,17 @@ namespace Ruitk.Builder
         /// `new` is purple even inside an orange `{…}` run. The LSP only classifies
         /// markup-side words as Keyword, so `VirtualNode`, `var`, `return`, `new`,
         /// `Style` and `as` in a C# body reached the pane as plain ink.</summary>
+        // Owner bar 2026-08-16 ("not all coloring is done correctly"): the POC's
+        // nine keywords left void/int/bool/true/null plain wherever no Roslyn
+        // token covers them (fragments have none) — the pass now knows the
+        // common C# keyword set.
         private static readonly System.Text.RegularExpressions.Regex s_keywords =
             new System.Text.RegularExpressions.Regex(
-                @"\b(export|VirtualNode|Style|var|return|import|from|as|new)\b"
+                @"\b(export|VirtualNode|Style|var|return|import|from|as|new"
+                + @"|void|int|uint|long|ulong|float|double|bool|string|char|object|byte|short"
+                + @"|true|false|null|if|else|for|foreach|while|do|switch|case|default"
+                + @"|break|continue|try|catch|finally|throw|using|static|public|private"
+                + @"|internal|out|ref|in|is|not|and|or|async|await|this|typeof|nameof)\b"
                 + @"|(@if|@else if|@else|@foreach|@for|@while|@switch|@case|@default)",
                 System.Text.RegularExpressions.RegexOptions.Compiled);
 
@@ -965,9 +985,13 @@ namespace Ruitk.Builder
                 if (s_inBrace[i] && s_colors[i] != StringColor)
                     s_colors[i] = ExprColor;
 
+            // Keywords win over expression runs (POC: `new` stays purple inside
+            // an orange {…}) but never repaint STRING content — the widened C#
+            // set would otherwise purple every "if"/"or"/"not" in user text.
             foreach (System.Text.RegularExpressions.Match m in s_keywords.Matches(line))
                 for (int i = m.Index; i < m.Index + m.Length; i++)
-                    s_colors[i] = KeywordColor;
+                    if (s_colors[i] != StringColor)
+                        s_colors[i] = KeywordColor;
 
             // POC ".cm": a // comment greys the rest of the line and WINS over
             // every earlier pass. Islands have no LSP Comment tokens, so this
