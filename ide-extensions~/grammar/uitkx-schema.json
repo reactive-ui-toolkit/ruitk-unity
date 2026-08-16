@@ -2914,6 +2914,185 @@
           "description": "Visual input sub-element props."
         }
       ]
+    },
+    "Vector2Field": {
+      "propsType": "Vector2FieldProps",
+      "description": "Two-component float vector field (x, y).",
+      "acceptsChildren": false,
+      "attributes": [
+        {
+          "name": "value",
+          "type": "Vector2",
+          "description": "Current value."
+        },
+        {
+          "name": "onChange",
+          "type": "Action",
+          "description": "Callback on value change."
+        },
+        {
+          "name": "label",
+          "type": "object",
+          "description": "Label sub-element props."
+        },
+        {
+          "name": "visualInput",
+          "type": "object",
+          "description": "Visual input sub-element props."
+        }
+      ]
+    },
+    "Vector3Field": {
+      "propsType": "Vector3FieldProps",
+      "description": "Three-component float vector field (x, y, z).",
+      "acceptsChildren": false,
+      "attributes": [
+        {
+          "name": "value",
+          "type": "Vector3",
+          "description": "Current value."
+        },
+        {
+          "name": "onChange",
+          "type": "Action",
+          "description": "Callback on value change."
+        },
+        {
+          "name": "label",
+          "type": "object",
+          "description": "Label sub-element props."
+        },
+        {
+          "name": "visualInput",
+          "type": "object",
+          "description": "Visual input sub-element props."
+        }
+      ]
+    },
+    "Vector4Field": {
+      "propsType": "Vector4FieldProps",
+      "description": "Four-component float vector field (x, y, z, w).",
+      "acceptsChildren": false,
+      "attributes": [
+        {
+          "name": "value",
+          "type": "Vector4",
+          "description": "Current value."
+        },
+        {
+          "name": "onChange",
+          "type": "Action",
+          "description": "Callback on value change."
+        },
+        {
+          "name": "label",
+          "type": "object",
+          "description": "Label sub-element props."
+        },
+        {
+          "name": "visualInput",
+          "type": "object",
+          "description": "Visual input sub-element props."
+        }
+      ]
+    },
+    "Vector2IntField": {
+      "propsType": "Vector2IntFieldProps",
+      "description": "Two-component integer vector field (x, y).",
+      "acceptsChildren": false,
+      "attributes": [
+        {
+          "name": "value",
+          "type": "Vector2Int",
+          "description": "Current value."
+        },
+        {
+          "name": "onChange",
+          "type": "Action",
+          "description": "Callback on value change."
+        },
+        {
+          "name": "label",
+          "type": "object",
+          "description": "Label sub-element props."
+        },
+        {
+          "name": "visualInput",
+          "type": "object",
+          "description": "Visual input sub-element props."
+        }
+      ]
+    },
+    "Vector3IntField": {
+      "propsType": "Vector3IntFieldProps",
+      "description": "Three-component integer vector field (x, y, z).",
+      "acceptsChildren": false,
+      "attributes": [
+        {
+          "name": "value",
+          "type": "Vector3Int",
+          "description": "Current value."
+        },
+        {
+          "name": "onChange",
+          "type": "Action",
+          "description": "Callback on value change."
+        },
+        {
+          "name": "label",
+          "type": "object",
+          "description": "Label sub-element props."
+        },
+        {
+          "name": "visualInput",
+          "type": "object",
+          "description": "Visual input sub-element props."
+        }
+      ]
+    },
+    "Hash128Field": {
+      "propsType": "Hash128FieldProps",
+      "description": "Text field for a UnityEngine.Hash128 value.",
+      "acceptsChildren": false,
+      "attributes": [
+        {
+          "name": "value",
+          "type": "Hash128",
+          "description": "Current value."
+        },
+        {
+          "name": "onChange",
+          "type": "Action",
+          "description": "Callback on value change."
+        },
+        {
+          "name": "label",
+          "type": "object",
+          "description": "Label sub-element props."
+        },
+        {
+          "name": "visualInput",
+          "type": "object",
+          "description": "Visual input sub-element props."
+        }
+      ]
+    },
+    "UguiHost": {
+      "propsType": "UguiHostProps",
+      "description": "Island element hosting a nested uGUI tree inside a UI Toolkit tree. Content is a factory so the nested mount renders fresh vnodes in its own cycle.",
+      "acceptsChildren": false,
+      "attributes": [
+        {
+          "name": "content",
+          "type": "Func<VirtualNode>",
+          "description": "Factory returning the nested uGUI tree root."
+        },
+        {
+          "name": "sortingOrder",
+          "type": "int",
+          "description": "Sorting order of the hosted uGUI canvas."
+        }
+      ]
     }
   },
   "uguiIntrinsicAttributes": [

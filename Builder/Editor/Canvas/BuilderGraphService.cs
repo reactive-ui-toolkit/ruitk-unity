@@ -1321,7 +1321,7 @@ namespace Ruitk.Builder
         /// every zoom: L1 (340) is the narrowest box that still draws every
         /// section, and L2 (430) is the only one that rides the attribute run on
         /// the markup rows.</summary>
-        private static float EstimateCardHeight(BuilderCanvasNode node)
+        internal static float EstimateCardHeight(BuilderCanvasNode node)
         {
             const float cardWidth = 340f;
             const float sectionInner = cardWidth - 24f;

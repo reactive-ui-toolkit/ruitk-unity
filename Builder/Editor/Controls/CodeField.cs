@@ -26,6 +26,8 @@ namespace Ruitk.Builder
         private readonly VisualElement _linesHost;
         private readonly Label _probe;
         private readonly Label _diagnosticsLabel;
+
+        private readonly ScrollView _diagnosticsScroll;
         private string _filePath = "";
         private HashSet<string> _knownElements;
         private bool _suppressChange;
@@ -285,19 +287,69 @@ namespace Ruitk.Builder
 
             RegisterCallback<AttachToPanelEvent>(_ => ApplyLinesWidth());
 
+            // UB-77: the console was a bare Label with a hard 4-line cap, so the
+            // rest of a diagnostic storm existed nowhere the user could reach and
+            // nothing in it could be selected. It is now a scrolling, selectable
+            // surface holding EVERY line, with Ctrl+A/Ctrl+C and a context menu
+            // that copy the whole set (not just what is on screen).
+            _diagnosticsScroll = new ScrollView(ScrollViewMode.Vertical)
+            {
+                style = { flexShrink = 0f, maxHeight = 90f, display = DisplayStyle.None },
+            };
+            _diagnosticsScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            BuilderWindow.StyleScrollers(_diagnosticsScroll);
             _diagnosticsLabel = new Label
             {
                 style =
                 {
                     flexShrink = 0f,
-                    maxHeight = 90f,
                     color = new Color(0.94f, 0.55f, 0.45f),
                     fontSize = 10f,
                     marginLeft = 4f,
                     whiteSpace = WhiteSpace.Normal,
                 },
             };
-            Add(_diagnosticsLabel);
+            _diagnosticsLabel.selection.isSelectable = true;
+            _diagnosticsLabel.selection.doubleClickSelectsWord = true;
+            _diagnosticsLabel.selection.tripleClickSelectsLine = true;
+            _diagnosticsLabel.focusable = true;
+            _diagnosticsLabel.RegisterCallback<KeyDownEvent>(OnDiagnosticsKeyDown);
+            _diagnosticsLabel.AddManipulator(new ContextualMenuManipulator(evt =>
+                evt.menu.AppendAction(
+                    "Copy all diagnostics",
+                    _ => CopyAllDiagnostics(),
+                    _ => string.IsNullOrEmpty(_diagnosticsLabel.text)
+                        ? DropdownMenuAction.Status.Disabled
+                        : DropdownMenuAction.Status.Normal)));
+            _diagnosticsScroll.Add(_diagnosticsLabel);
+            Add(_diagnosticsScroll);
+        }
+
+        /// <summary>Ctrl+A selects the whole console and Ctrl+C copies it. Both
+        /// are scoped to the console element, so they never race the canvas or
+        /// the source editor for the same chord.</summary>
+        private void OnDiagnosticsKeyDown(KeyDownEvent evt)
+        {
+            if (!evt.ctrlKey && !evt.commandKey)
+                return;
+            if (evt.keyCode == KeyCode.A)
+            {
+                _diagnosticsLabel.selection.SelectAll();
+                evt.StopPropagation();
+                return;
+            }
+            if (evt.keyCode == KeyCode.C)
+            {
+                CopyAllDiagnostics();
+                evt.StopPropagation();
+            }
+        }
+
+        private void CopyAllDiagnostics()
+        {
+            string all = _diagnosticsLabel.text ?? "";
+            if (all.Length > 0)
+                UnityEditor.EditorGUIUtility.systemCopyBuffer = all;
         }
 
         public string TextLf => (_input.value ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
@@ -690,7 +742,7 @@ namespace Ruitk.Builder
                 // A fragment is not a parseable unit — regex passes only, no
                 // diagnostics, no server tokens.
                 tokens = Array.Empty<SemanticTokenData>();
-                _diagnosticsLabel.style.display = DisplayStyle.None;
+                _diagnosticsScroll.style.display = DisplayStyle.None;
                 RecolorRows(lines, tokens);
                 return;
             }
@@ -770,7 +822,7 @@ namespace Ruitk.Builder
         private void RenderDiagnosticsLabel()
         {
             var lines = new List<string>();
-            foreach (string line in _localDiagnosticsText.Split('\n'))
+            foreach (string line in (_localDiagnosticsText ?? "").Split('\n'))
                 if (line.Length > 0)
                     lines.Add(line);
             if (_overlayDiagnostics != null)
@@ -780,19 +832,21 @@ namespace Ruitk.Builder
             if (lines.Count == 0)
             {
                 _diagnosticsLabel.text = "";
+                _diagnosticsScroll.style.display = DisplayStyle.None;
                 return;
             }
+            // Every line, not the first four: the console scrolls, and a copy
+            // that silently dropped the tail would be worse than no copy at all.
             var sb = new StringBuilder();
             for (int i = 0; i < lines.Count; i++)
             {
-                if (i == 4)
-                {
-                    sb.Append("… +").Append(lines.Count - 4).Append(" more");
-                    break;
-                }
-                sb.Append(lines[i]).Append('\n');
+                if (i > 0)
+                    sb.Append('\n');
+                sb.Append(lines[i]);
             }
-            _diagnosticsLabel.text = sb.ToString().TrimEnd('\n');
+            _diagnosticsLabel.text = sb.ToString();
+            if (!FragmentMode)
+                _diagnosticsScroll.style.display = DisplayStyle.Flex;
         }
 
         /// <summary>Tokens are 0-based line/column over the LF buffer; segments
@@ -910,11 +964,21 @@ namespace Ruitk.Builder
         /// the schema split, dotted members and everything camelCase go member
         /// blue, PascalCase goes type teal; the keyword and comment passes still
         /// run later and win.</summary>
+        private static bool IsIdentifierChar(char c)
+        {
+            return c == '_' || char.IsLetterOrDigit(c);
+        }
+
         private static string ClassifyIdentifier(string line, int start, int length)
         {
             char before = start > 0 ? line[start - 1] : '\0';
-            if (before == '<'
-                || (before == '/' && start > 1 && line[start - 2] == '<'))
+            int lt = before == '<' ? start - 1
+                : (before == '/' && start > 1 && line[start - 2] == '<') ? start - 2
+                : -1;
+            // `List<T>` is not a tag: a markup '<' opens at line start or after
+            // whitespace/'>' , while a generic argument list opens straight off
+            // an identifier. Signature lines are full of the latter (UB-78).
+            if (lt >= 0 && (lt == 0 || !IsIdentifierChar(line[lt - 1])))
             {
                 string tag = line.Substring(start, length);
                 if (char.IsUpper(tag[0]) && BuilderSchemaCache.HasSchema
@@ -983,11 +1047,13 @@ namespace Ruitk.Builder
         /// containing '&lt;' is wrapped in &lt;noparse&gt; instead — the glyphs
         /// round-trip exactly, which they must, because the edit box above holds
         /// the same characters.</summary>
-        private static void AppendSegment(StringBuilder sb, string text, string color)
+        private static void AppendSegment(StringBuilder sb, string text, string color, bool bold)
         {
             if (text.Length == 0)
                 return;
             bool needsNoParse = text.IndexOf('<') >= 0;
+            if (bold)
+                sb.Append("<b>");
             if (color != null)
                 sb.Append("<color=").Append(color).Append('>');
             if (needsNoParse)
@@ -996,11 +1062,24 @@ namespace Ruitk.Builder
                 sb.Append(text);
             if (color != null)
                 sb.Append("</color>");
+            if (bold)
+                sb.Append("</b>");
         }
 
         /// <summary>Internal so the canvas code islands share the exact same
         /// colouring passes (tokens null = regex passes only).</summary>
         internal static string BuildLineRichText(string line, List<SemanticTokenData> tokens)
+        {
+            return BuildLineRichText(line, tokens, 0);
+        }
+
+        /// <summary>UB-78: the card signature wants the declaring name bold and
+        /// everything after it plain, which the POC did by splitting at '(' and
+        /// bolding the head. Splitting before colouring would rob the name of
+        /// the '(' that classifies it as a call, so the whole line is coloured
+        /// once and <paramref name="boldPrefix"/> forces a run break there.</summary>
+        internal static string BuildLineRichText(
+            string line, List<SemanticTokenData> tokens, int boldPrefix)
         {
             if (line.Length == 0)
                 return "";
@@ -1117,7 +1196,9 @@ namespace Ruitk.Builder
                 int run = cursor + 1;
                 while (run < line.Length && s_colors[run] == color)
                     run++;
-                AppendSegment(sb, line.Substring(cursor, run - cursor), color);
+                if (boldPrefix > cursor && boldPrefix < run)
+                    run = boldPrefix;
+                AppendSegment(sb, line.Substring(cursor, run - cursor), color, cursor < boldPrefix);
                 cursor = run;
             }
             return sb.ToString();

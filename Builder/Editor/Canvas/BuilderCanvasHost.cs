@@ -85,10 +85,12 @@ namespace Ruitk.Builder
             _config.ApplyTo(_graph);
             _camX = _config.CameraX;
             _camY = _config.CameraY;
-            // Layouts persisted before the wheel floor rose to the POC's 0.30
-            // preset load below it and invert the first zoom-out gesture; clamp
-            // on load so the stored camera is always inside the live range.
-            _zoom = _config.Zoom <= 0f ? 1f : Mathf.Max(0.30f, _config.Zoom);
+            // A layout persisted under a different range loads outside the live
+            // one and inverts the first zoom gesture; clamp on load so the
+            // stored camera is always inside it.
+            _zoom = _config.Zoom <= 0f
+                ? 1f
+                : Mathf.Clamp(_config.Zoom, BuilderCanvasDrawing.ZoomMin, BuilderCanvasDrawing.ZoomMax);
 
             _onOpenFile = onOpenFile;
             _container.Clear();
@@ -190,7 +192,8 @@ namespace Ruitk.Builder
             if (_container == null || _graph == null)
                 return;
             float factor = deltaY < 0f ? 1.12f : 1f / 1.12f;
-            float next = UnityEngine.Mathf.Clamp(_zoom * factor, 0.30f, 2.2f);
+            float next = UnityEngine.Mathf.Clamp(
+                _zoom * factor, BuilderCanvasDrawing.ZoomMin, BuilderCanvasDrawing.ZoomMax);
             if (UnityEngine.Mathf.Approximately(next, _zoom))
                 return;
             var local = _container.WorldToLocal(panelPos);
@@ -280,6 +283,42 @@ namespace Ruitk.Builder
             _selectPath = full;
             _selectVersion++;
             RenderCanvas();
+        }
+
+        /// <summary>UB-80: bring a card into view and select it — the palette's
+        /// custom-component list, which already knows every component on the
+        /// canvas, becomes a way to GET to one. The camera model is the same
+        /// screen = world * zoom + cam the wheel handler anchors on, so
+        /// centring is cam = viewportCentre - cardCentre * zoom. A card taller
+        /// than the viewport is pinned near its top instead of centred, which
+        /// would otherwise scroll its title off-screen.</summary>
+        public bool FocusNode(string filePath)
+        {
+            if (_container == null || _graph == null || string.IsNullOrEmpty(filePath))
+                return false;
+            string full = System.IO.Path.GetFullPath(filePath);
+            int index = _graph.IndexOf(full);
+            if (index < 0)
+                return false;
+            var node = _graph.Nodes[index];
+            float width = _container.resolvedStyle.width;
+            float height = _container.resolvedStyle.height;
+            if (width <= 0f || height <= 0f)
+                return false;
+            float zoom = _zoom <= 0f ? 1f : _zoom;
+            float cardW = BuilderCanvasDrawing.CardWidthFor(LodOf(zoom));
+            float cardH = BuilderGraphService.EstimateCardHeight(node);
+            _camX = width * 0.5f - (node.X + cardW * 0.5f) * zoom;
+            float scaledH = cardH * zoom;
+            _camY = scaledH > height
+                ? height * 0.12f - node.Y * zoom
+                : height * 0.5f - (node.Y + cardH * 0.5f) * zoom;
+            _selectPath = full;
+            _selectVersion++;
+            _viewVersion++;
+            RenderCanvas();
+            SaveLayout();
+            return true;
         }
 
         /// <summary>Seeds the persisted layout slot for a file about to be

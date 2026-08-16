@@ -23,6 +23,7 @@ namespace Ruitk.Builder
             public string Snippet;
             public string Section;
             public string Payload;
+            public string FilePath;
             public Color Tint = new Color(0.80f, 0.80f, 0.84f);
         }
 
@@ -58,6 +59,11 @@ namespace Ruitk.Builder
         /// <summary>Fires once the LSP schema has been parsed into
         /// BuilderSchemaCache — the window re-pushes knownElements then.</summary>
         public Action SchemaLoaded;
+
+        /// <summary>UB-80: double-clicking a workspace entry focuses its card on
+        /// the canvas. Only the workspace sections carry a file path, so schema
+        /// natives fall through to the drag-arm as before.</summary>
+        public Action<string> FocusComponent;
 
         /// <summary>Width every row occupies — the viewport, so a pill is exactly as
         /// wide as the pane like the POC's block-level ".lib-item", and the search
@@ -348,6 +354,7 @@ namespace Ruitk.Builder
                             {
                                 Name = "<" + export + ">",
                                 Description = node.FilePath,
+                                FilePath = node.FilePath,
                                 Snippet = "<" + export + " />",
                                 Section = "Custom components",
                                 Tint = BuilderPalette.ComponentTint,
@@ -358,6 +365,7 @@ namespace Ruitk.Builder
                         {
                             Name = node.Title,
                             Description = node.FilePath,
+                            FilePath = node.FilePath,
                             Snippet = node.Title + ".",
                             Section = "Style modules",
                             Tint = BuilderPalette.StyleTint,
@@ -369,6 +377,7 @@ namespace Ruitk.Builder
                             {
                                 Name = export + " (module)",
                                 Description = node.FilePath,
+                                FilePath = node.FilePath,
                                 Snippet = export + "()",
                                 Section = "Hooks",
                                 Payload = "hook:" + export,
@@ -380,6 +389,7 @@ namespace Ruitk.Builder
                         {
                             Name = node.Title,
                             Description = node.FilePath,
+                            FilePath = node.FilePath,
                             Snippet = node.Title,
                             Section = "Util modules",
                             Tint = BuilderPalette.UtilTint,
@@ -562,6 +572,18 @@ namespace Ruitk.Builder
                 {
                     if (evt.button != 0)
                         return;
+                    // UB-80: a workspace entry knows the file its export came
+                    // from, so double-click brings that card into view — the
+                    // same gesture canvas rows already use to navigate. It runs
+                    // INSTEAD of arming a drag, so the focused card is not also
+                    // dropped somewhere on the way back up.
+                    if (evt.clickCount >= 2 && FocusComponent != null
+                        && !string.IsNullOrEmpty(captured.FilePath))
+                    {
+                        FocusComponent(captured.FilePath);
+                        evt.StopPropagation();
+                        return;
+                    }
                     BuilderDragService.Begin(
                         PayloadFor(captured), captured.Name, row, evt.pointerId,
                         new Vector2(evt.position.x, evt.position.y));

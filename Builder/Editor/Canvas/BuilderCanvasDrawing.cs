@@ -47,6 +47,17 @@ namespace Ruitk.Builder
         /// anchors track the LOD-dependent card width (POC: 300 / 340 / 430).</summary>
         public static int CurrentLod = 1;
 
+        /// <summary>UB-79: the wheel handler, the ctrl-wheel handler and the
+        /// layout loader each carried their own copy of this range — three
+        /// literals that had to agree. The floor was the POC's L0 preset (0.30);
+        /// the owner asked for a wider view, so it drops to 0.10 (a ~9x larger
+        /// visible area) with the card LOD already collapsing to pills below
+        /// 0.45. Zoom is a VIEW property only: nothing about the graph, the
+        /// layout or the buffers changes with it.</summary>
+        public const float ZoomMin = 0.10f;
+
+        public const float ZoomMax = 2.2f;
+
         private static float s_currentZoom = 1f;
 
         private static int s_anchorRetries;
@@ -193,17 +204,19 @@ namespace Ruitk.Builder
             return c;
         }
 
-        /// <summary>POC props-row: the export name in bold text-color, the
-        /// parameter signature dimmed ("<b>Header</b>(string title, int gold)").</summary>
+        /// <summary>POC props-row: the export name bold, the parameter list after
+        /// it. UB-78 — the parameter list used to be emitted RAW, so every type
+        /// and parameter name in it inherited the section's flat grey while the
+        /// islands beside it were fully coloured. It now runs through the same
+        /// CodeField passes the islands use (name gold from its own '(' , types
+        /// teal, parameters blue, null/false purple, numbers green) with the
+        /// name kept bold via the boldPrefix run break.</summary>
         public static string SignatureRichText(string signature)
         {
             if (string.IsNullOrEmpty(signature))
                 return "";
             int paren = signature.IndexOf('(');
-            if (paren < 0)
-                return "<b><color=#D6D6DC>" + signature + "</color></b>";
-            return "<b><color=#D6D6DC>" + signature.Substring(0, paren) + "</color></b>"
-                + signature.Substring(paren);
+            return CodeField.BuildLineRichText(signature, null, paren < 0 ? signature.Length : paren);
         }
 
         /// <summary>Chip line "useState  →  gold, setGold" → POC coloring:

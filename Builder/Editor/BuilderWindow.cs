@@ -442,6 +442,13 @@ namespace Ruitk.Builder
             var set = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
             foreach (string element in BuilderSchemaCache.ElementNames)
                 set.Add(element);
+            // UB-75: the schema is the tooling's view, the registry is what
+            // actually renders. Any element the runtime can mount is legal
+            // markup, so schema drift may cost completion but must never
+            // manufacture a UITKX0105 for a tag that works.
+            foreach (string element in Ruitk.Elements.ElementRegistryProvider
+                .GetDefaultRegistry().RegisteredNames)
+                set.Add(element);
             // Only COMPONENT exports are legal tags — feeding style/util export
             // names in would make <BgDeep /> pass the unknown-element check.
             foreach (var node in nodes)
@@ -467,6 +474,11 @@ namespace Ruitk.Builder
             _libraryPane = new BuilderLibraryPane();
             _libraryPane.SchemaLoaded =
                 () => _codeField?.SetKnownElements(KnownElementsOrNull());
+            _libraryPane.FocusComponent = path =>
+            {
+                if (_canvasHost != null && !_canvasHost.FocusNode(path))
+                    Toast("That module has no card on this canvas.");
+            };
             // POC btnLibNew → openCreateMenu at the button: "+ new" opens the same
             // four-item create menu the empty-canvas right-click does.
             _libraryPane.Attach(container, NewFile);
@@ -873,7 +885,13 @@ namespace Ruitk.Builder
         /// <summary>Wrap offers on an element row. Loops are array-valued
         /// (Func&lt;VirtualNode[]&gt;) and illegal where a single node is required
         /// (UITKX0025), so the return ROOT row only offers the node-valued
-        /// constructs.</summary>
+        /// constructs.
+        /// <para>UB-72: every header is seeded with a COMPILABLE literal rather
+        /// than a placeholder identifier ("condition", "count"), which the
+        /// compiler could only ever reject — the loud preview then reported
+        /// CS1525 on a wrap the user had not finished typing. @while seeds
+        /// FALSE deliberately: a true-seeded render loop would not
+        /// terminate.</para></summary>
         private void AddWrapItems(
             System.Collections.Generic.List<BuilderSearchMenu.Item> items,
             string full, BuilderCanvasNode node, BuilderCardLine row, int cardIndex, int rowIdx)
@@ -883,7 +901,7 @@ namespace Ruitk.Builder
             items.Add(new BuilderSearchMenu.Item
             {
                 Label = "Wrap in @if",
-                OnPick = () => WrapRowInDirective(full, row, "@if (condition)", cardIndex, rowIdx),
+                OnPick = () => WrapRowInDirective(full, row, "@if (true)", cardIndex, rowIdx),
             });
             items.Add(new BuilderSearchMenu.Item
             {
@@ -905,12 +923,12 @@ namespace Ruitk.Builder
             {
                 Label = "Wrap in @for",
                 OnPick = () => WrapRowInDirective(
-                    full, row, "@for (int i = 0; i < count; i++)", cardIndex, rowIdx),
+                    full, row, "@for (int i = 0; i < 1; i++)", cardIndex, rowIdx),
             });
             items.Add(new BuilderSearchMenu.Item
             {
                 Label = "Wrap in @while",
-                OnPick = () => WrapRowInDirective(full, row, "@while (condition)", cardIndex, rowIdx),
+                OnPick = () => WrapRowInDirective(full, row, "@while (false)", cardIndex, rowIdx),
             });
         }
 
@@ -965,13 +983,13 @@ namespace Ruitk.Builder
                 items.Add(new BuilderSearchMenu.Item
                 {
                     Label = "Add @case…",
-                    OnPick = () => AddSwitchClause(full, row, cardIndex, isDefault: false),
+                    OnPick = () => AddSwitchClause(full, node, rowIdx, cardIndex, isDefault: false),
                 });
                 if (!ConstructHasClause(node, rowIdx, "@default"))
                     items.Add(new BuilderSearchMenu.Item
                     {
                         Label = "Add @default",
-                        OnPick = () => AddSwitchClause(full, row, cardIndex, isDefault: true),
+                        OnPick = () => AddSwitchClause(full, node, rowIdx, cardIndex, isDefault: true),
                     });
             }
             items.Add(BuilderSearchMenu.Separator);
@@ -994,7 +1012,15 @@ namespace Ruitk.Builder
         /// follows the construct head at <paramref name="headIdx"/>. Clause rows
         /// of an @if sit at the head's depth; @switch cases sit one deeper.
         /// Nested constructs live deeper still and are skipped.</summary>
-        private static bool ConstructHasClause(BuilderCanvasNode node, int headIdx, string keyword)
+        private static bool ConstructHasClause(BuilderCanvasNode node, int headIdx, string keyword) =>
+            ConstructClause(node, headIdx, keyword) != null;
+
+        /// <summary>The construct's continuation clause carrying the given
+        /// keyword, or null. UB-71 needs the clause ROW (for its source line),
+        /// not just its existence, so the walk lives here and the boolean is a
+        /// thin wrapper over it.</summary>
+        private static BuilderCardLine ConstructClause(
+            BuilderCanvasNode node, int headIdx, string keyword)
         {
             var head = node.Markup[headIdx];
             int clauseDepth = head.BadgeKind == 14 ? head.Depth + 1 : head.Depth;
@@ -1007,12 +1033,45 @@ namespace Ruitk.Builder
                     && r.Kind == BuilderCardLineKind.Directive && r.ClauseIndex > 0)
                 {
                     if (r.BadgeText == keyword)
-                        return true;
+                        return r;
                     continue;
                 }
                 break;
             }
-            return false;
+            return null;
+        }
+
+        /// <summary>The lowest non-negative integer no @case arm of this switch
+        /// already uses, so a seeded arm is always a legal distinct label. Arms
+        /// the user has retyped to non-integer labels simply do not constrain
+        /// it — a duplicate is impossible either way.</summary>
+        private static int NextCaseLabel(BuilderCanvasNode node, int headIdx)
+        {
+            var head = node.Markup[headIdx];
+            int clauseDepth = head.BadgeKind == 14 ? head.Depth + 1 : head.Depth;
+            var used = new System.Collections.Generic.HashSet<int>();
+            for (int i = headIdx + 1; i < node.Markup.Count; i++)
+            {
+                var r = node.Markup[i];
+                if (r.Depth > clauseDepth)
+                    continue;
+                if (r.Depth == clauseDepth
+                    && r.Kind == BuilderCardLineKind.Directive && r.ClauseIndex > 0)
+                {
+                    // A @case row carries its keyword in BadgeText and its label
+                    // (with the trailing colon) in Text — "@case 0:" arrives as
+                    // BadgeText "@case" + Text "0:".
+                    if (r.BadgeText == "@case"
+                        && int.TryParse((r.Text ?? "").Trim().TrimEnd(':').Trim(), out int n))
+                        used.Add(n);
+                    continue;
+                }
+                break;
+            }
+            int next = 0;
+            while (used.Contains(next))
+                next++;
+            return next;
         }
 
         private static bool IsSingleClauseConstruct(BuilderCanvasNode node, int headIdx)
@@ -1060,10 +1119,16 @@ namespace Ruitk.Builder
                 BeginEditOnDirectiveLine(filePath, cardIndex, head.CloseLine);
         }
 
-        /// <summary>Adds a @case/@default arm just above the switch's closing
-        /// brace, indented one level in.</summary>
-        private void AddSwitchClause(string filePath, BuilderCardLine head, int cardIndex, bool isDefault)
+        /// <summary>Adds a @case/@default arm, indented one level in. UB-71: a
+        /// new @case lands ABOVE an existing @default, never after it —
+        /// appending at the closing brace put every case the user added below
+        /// the catch-all, which reads wrong and leaves no way to author a case
+        /// above it. @default itself still goes last, which is where it
+        /// belongs.</summary>
+        private void AddSwitchClause(
+            string filePath, BuilderCanvasNode node, int rowIdx, int cardIndex, bool isDefault)
         {
+            var head = node.Markup[rowIdx];
             var session = _workspace.TryGet(filePath);
             if (session == null || session.IsReadOnly || head.CloseLine <= 0)
                 return;
@@ -1071,12 +1136,26 @@ namespace Ruitk.Builder
             int closeIdx = head.CloseLine - 1;
             if (closeIdx < 0 || closeIdx >= lines.Count)
                 return;
+            int insertIdx = closeIdx;
+            if (!isDefault)
+            {
+                var fallback = ConstructClause(node, rowIdx, "@default");
+                if (fallback != null && fallback.DirectiveLine > 0
+                    && fallback.DirectiveLine - 1 > head.DirectiveLine - 1
+                    && fallback.DirectiveLine - 1 <= closeIdx)
+                    insertIdx = fallback.DirectiveLine - 1;
+            }
             string indent = BuilderText.LeadingIndent(lines[closeIdx]) + "  ";
-            lines.Insert(closeIdx, indent + (isDefault ? "@default:" : "@case value:"));
+            // UB-72: "@case value:" never compiled — an undefined identifier in
+            // a case label. The seed is the next unused integer constant, which
+            // compiles against the seeded "@switch (0)" subject and cannot
+            // collide with an arm already in the construct (CS0152).
+            lines.Insert(insertIdx, indent
+                + (isDefault ? "@default:" : "@case " + NextCaseLabel(node, rowIdx) + ":"));
             ApplyProgrammaticEdit(
                 filePath, string.Join("\n", lines), isDefault ? "@default" : "@case");
             if (!isDefault)
-                BeginEditOnDirectiveLine(filePath, cardIndex, head.CloseLine);
+                BeginEditOnDirectiveLine(filePath, cardIndex, insertIdx + 1);
         }
 
         /// <summary>Deletes a continuation clause. Colon arms (@case/@default)
@@ -1251,9 +1330,15 @@ namespace Ruitk.Builder
             return candidate;
         }
 
-        /// <summary>Wrap in @switch seeds the colon form the parser accepts —
-        /// the row lands inside a @default arm's return so the construct
-        /// compiles immediately; the header editor opens on "value".</summary>
+        /// <summary>Wrap in @switch seeds the colon form the parser accepts. The
+        /// row lands in a @case arm, NOT a @default one (UB-71: seeding @default
+        /// first put every case the user went on to add below the catch-all, and
+        /// left no way to author one above it) — "Add @default" stays on the menu
+        /// and appends last, where C# wants it. The subject and the case label
+        /// are seeded as the constant 0 rather than the identifier "value", so
+        /// the wrap compiles the instant it is written (UB-72) and the arm always
+        /// matches, which keeps the wrapped row on screen while the user edits
+        /// the header.</summary>
         private void WrapRowInSwitch(string filePath, BuilderCardLine row, int cardIndex)
         {
             var session = _workspace.TryGet(filePath);
@@ -1266,11 +1351,11 @@ namespace Ruitk.Builder
             string indent = IndentOf(filePath, row.SourceLine);
             for (int i = from; i <= to; i++)
                 lines[i] = "      " + lines[i];
-            lines.Insert(to + 1, indent + "      );");
+            lines.Insert(to + 1, indent + "    );");
             lines.Insert(to + 2, indent + "}");
             lines.Insert(from, indent + "    return (");
-            lines.Insert(from, indent + "  @default:");
-            lines.Insert(from, indent + "@switch (value) {");
+            lines.Insert(from, indent + "  @case 0:");
+            lines.Insert(from, indent + "@switch (0) {");
             ApplyProgrammaticEdit(filePath, string.Join("\n", lines), "@switch");
             BeginEditOnDirectiveLine(filePath, cardIndex, row.SourceLine);
         }
@@ -2575,7 +2660,9 @@ namespace Ruitk.Builder
             string indent = IndentOf(filePath, row.SourceLine);
             for (int i = from; i <= to; i++)
                 lines[i] = "    " + lines[i];
-            lines.Insert(to + 1, indent + "    );");
+            // The closer aligns with its own "return (", not with the body —
+            // the house form every sample uses. It was emitted a level deeper.
+            lines.Insert(to + 1, indent + "  );");
             lines.Insert(to + 1 + 1, indent + "}");
             lines.Insert(from, indent + "  return (");
             lines.Insert(from, indent + header + " {");

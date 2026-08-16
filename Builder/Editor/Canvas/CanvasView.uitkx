@@ -134,9 +134,8 @@ export VirtualNode CanvasView(
       }}
       onWheel={e => {
         float factor = e.Delta.y < 0f ? 1.12f : 1f / 1.12f;
-        // §8.2/UB-24: the floor is the POC's own L0 preset — below 0.30 cards
-        // shrink past anything the reference ever renders.
-        float next = Mathf.Clamp(zoom * factor, 0.30f, 2.2f);
+        float next = Mathf.Clamp(zoom * factor,
+          BuilderCanvasDrawing.ZoomMin, BuilderCanvasDrawing.ZoomMax);
         if (next != zoom) {
           float scale = next / zoom;
           float nx = e.Position.x - (e.Position.x - camX) * scale;
