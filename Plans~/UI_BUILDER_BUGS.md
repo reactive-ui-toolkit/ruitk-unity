@@ -959,8 +959,28 @@ the heavyweight option none of the mainstream node editors actually use.
 ALL IMPLEMENTED 2026-08-17 in one execution wave together with the UB-71..75
 tail (owner: "execute everything that's remaining in the plan, the whole thing,
 defer nothing"). Every item below is `UNVERIFIED` — gates green
-(validate-uitkx 0, SG-backed csc smoke EXIT=0, machine-path clean), none of it
+(validate-uitkx 0, SG-backed csc smoke EXIT=0, machine-path clean, SG 1879/1879,
+LSP 180/180, committed generator + language DLLs rebuilt Release), none of it
 driven on screen yet. Notes per item record what shipped.
+
+ONE MANUAL STEP OUTSTANDING (UB-75 palette half only): the embedded schema
+reaches the builder through the LSP server, and the clone's builder resolves
+`Server~/UitkxLanguageServer.dll` first (`RuitkDotnetLocator`). That file was
+locked by the live server process of the running Unity session, so it still
+carries the pre-UB-75 schema. With Unity closed, run:
+
+```
+dotnet publish ide-extensions~/lsp-server -c Release --self-contained false `
+  -o "<embedded-clone-package-root>/Server~"
+```
+
+(the clone root is the one the embedded-clone sync procedure already uses —
+never write it into a tracked file).
+
+Nothing else waits on it — the repo copy under `ide-extensions~/vscode/server`
+is already rebuilt and verified to embed all seven new elements, and the
+false-UITKX0105 half of UB-75 is fixed builder-side by the registry union,
+which needs no server at all.
 
 ### UB-77 — diagnostics console is not copyable `UNVERIFIED` `MED`
 
