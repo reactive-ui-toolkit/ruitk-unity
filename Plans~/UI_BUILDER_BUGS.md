@@ -34,7 +34,16 @@ W1 `bf12c1d2` data truth · W2 `412392c1` directive head rows · W3 `7f591852`
 canvas visuals · W4 `fa96ce16` drag machine · W5 `0a261394` editor
 intelligence · W6 `777a9c3d` hook truth + loud preview · W7 `2ce57600` IDE
 directive drift · W8 `580c32d9` the 41-agent adversarial review's 18 confirmed
-fixes (its deferred tail is REMAINING_WORK UB-REV). Gates on every wave:
+fixes (its deferred tail is REMAINING_WORK UB-REV) · W9 `91182808` the owner's
+field report: the Builder assembly had been CS0433-dead in Unity since W6 (the
+editor-variant language DLL exported a second public HookRegistry — variant
+now internal; the rsp smoke gate is blind to this class because it compiles
+Shared from source, noted), five samples carried committed cp1252 mojibake
+since the samples flatten (repaired), the source pane's C# body colours via
+the LSP's Roslyn-merged semanticTokens/full with the local tokens as the
+between-edits fallback, code islands share the same colouring passes, plus
+the window-close NullReferenceException and the reload/mount log spam.
+Gates on every wave:
 validate-uitkx, SG-backed csc smoke, machine-path; W6/W7/W8 also SG 1879/1879
 + LSP 180/180 and committed-DLL rebuilds. Round-2 and round-3 captures
 verified the visible surface on screen (round 3's style-card/panel-l2 frames
