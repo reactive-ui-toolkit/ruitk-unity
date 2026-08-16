@@ -154,6 +154,9 @@ namespace Ruitk.Builder
             // UB-30: the drag ghost chip lives on the window root so it can
             // travel from the library across every pane.
             BuilderDragService.GhostRoot = root;
+            // UB-76: the floating inline editor anchors on canvas elements but
+            // lives at the window root, above every pane.
+            _inlineEditor.Attach(root);
             // "-unity-font-definition" is an inherited property, so the POC's
             // proportional face is pinned ONCE here and cascades to the toolbar,
             // the library, the preview strip, the legend and the footer hint.
@@ -343,54 +346,16 @@ namespace Ruitk.Builder
                 int cardIndex = _canvasHost?.NodeIndexOf(full) ?? -1;
                 InsertBeforeLastReturn(full, "  var (value, setValue) = useState(0);", "new hook");
                 if (cardIndex >= 0)
-                    _canvasHost?.BeginEdit(
-                        $"hook:{cardIndex}:{chipIndex}", "var (value, setValue) = useState(0);");
+                    _canvasHost?.WithCanvasElement(
+                        $"chip-{cardIndex}-{chipIndex}",
+                        anchor => ShowLineEditor(
+                            full, LineOfNewHook(full, chipIndex),
+                            "var (value, setValue) = useState(0);", "", anchor));
             };
-            _canvasHost.OnAttrValueEdit = OnAttrValueEdited;
-            _canvasHost.OnDirectiveEdit = OnDirectiveEdited;
-            _canvasHost.OnLineRewrite = (path, line, text) =>
-                EditLineInFile(Path.GetFullPath(path), line, old =>
-                {
-                    int w = 0;
-                    while (w < old.Length && old[w] == ' ')
-                        w++;
-                    string rewritten = old.Substring(0, w) + text.Trim();
-                    // A line that DECLARES something can never lose its leading
-                    // keyword to an inline edit — that would silently turn a style
-                    // module into an unparseable file.
-                    string trimmedOld = old.TrimStart();
-                    if (trimmedOld.StartsWith("export ", System.StringComparison.Ordinal)
-                        && !text.TrimStart().StartsWith("export ", System.StringComparison.Ordinal))
-                    {
-                        Toast("An export declaration keeps its 'export' keyword — edit skipped.");
-                        return old;
-                    }
-                    return rewritten;
-                }, "line edit");
-            _canvasHost.OnIslandEdit = (path, start, end, text) =>
-            {
-                var session = _workspace.TryGet(Path.GetFullPath(path));
-                if (session == null || session.IsReadOnly || start <= 0)
-                    return;
-                var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
-                int from = Mathf.Clamp(start - 1, 0, lines.Count - 1);
-                int to = Mathf.Clamp(end - 1, from, lines.Count - 1);
-                lines.RemoveRange(from, to - from + 1);
-                // The island now SHOWS its relative indentation, so committing an
-                // edit must keep it: only the block's common indent is re-based
-                // onto the body's two spaces, never every line flattened.
-                var replacement = new System.Collections.Generic.List<string>(
-                    text.Replace("\r\n", "\n").Split('\n'));
-                while (replacement.Count > 0 && replacement[replacement.Count - 1].Trim().Length == 0)
-                    replacement.RemoveAt(replacement.Count - 1);
-                while (replacement.Count > 0 && replacement[0].Trim().Length == 0)
-                    replacement.RemoveAt(0);
-                BuilderGraphService.StripCommonIndent(replacement);
-                for (int r = 0; r < replacement.Count; r++)
-                    replacement[r] = replacement[r].Length == 0 ? "" : "  " + replacement[r];
-                lines.InsertRange(from, replacement);
-                ApplyProgrammaticEdit(Path.GetFullPath(path), string.Join("\n", lines), "body");
-            };
+            _canvasHost.OnEditAttrValue = ShowAttrValueEditor;
+            _canvasHost.OnEditDirective = ShowDirectiveEditor;
+            _canvasHost.OnEditLine = ShowLineEditor;
+            _canvasHost.OnEditIsland = ShowIslandEditor;
             // POC openNameMenu: a name entry is a title + placeholder-only input +
             // an inline error LINE + a persistent "Create" row — an invalid name
             // writes into the error line and the menu STAYS OPEN.
@@ -699,21 +664,7 @@ namespace Ruitk.Builder
             var client = await BuilderLspService.GetOrStartAsync();
             client.SendDidChangeNow(_focusFile, session.BufferText);
             var response = await client.RequestCompletion(_focusFile, line0, char0);
-
-            var items = response as Newtonsoft.Json.Linq.JArray
-                ?? (response?["items"] ?? response?["Items"]) as Newtonsoft.Json.Linq.JArray;
-            if (items == null)
-                return results;
-            foreach (var item in items)
-            {
-                string label = item.Value<string>("label") ?? item.Value<string>("Label");
-                if (string.IsNullOrEmpty(label))
-                    continue;
-                string insert = item.Value<string>("insertText")
-                    ?? item.Value<string>("InsertText")
-                    ?? label;
-                results.Add((label, insert));
-            }
+            ParseCompletionItems(response, results);
             return results;
         }
 
@@ -978,7 +929,10 @@ namespace Ruitk.Builder
                     OnPick = () =>
                     {
                         if (cardIndex >= 0)
-                            _canvasHost?.BeginEdit($"badge:{cardIndex}:{rowIdx}", row.DirectiveText);
+                            _canvasHost?.WithCanvasElement(
+                                $"row-{cardIndex}-{rowIdx}",
+                                anchor => ShowDirectiveEditor(
+                                    full, row.DirectiveLine, row.DirectiveText, anchor));
                     },
                 });
 
@@ -1177,14 +1131,15 @@ namespace Ruitk.Builder
                 filePath, string.Join("\n", lines), "delete " + row.BadgeText + " clause");
         }
 
-        /// <summary>Opens the badge editor on whichever refreshed row now owns
+        /// <summary>Opens the header editor on whichever refreshed row now owns
         /// the given directive-header line — clause adds and wraps cannot know
         /// their row index ahead of the graph rebuild.</summary>
         private void BeginEditOnDirectiveLine(string filePath, int cardIndex, int line1)
         {
             if (cardIndex < 0)
                 return;
-            var node = _canvasHost?.FindNode(Path.GetFullPath(filePath));
+            string full = Path.GetFullPath(filePath);
+            var node = _canvasHost?.FindNode(full);
             if (node == null)
                 return;
             for (int i = 0; i < node.Markup.Count; i++)
@@ -1192,7 +1147,9 @@ namespace Ruitk.Builder
                 var r = node.Markup[i];
                 if (r.Kind == BuilderCardLineKind.Directive && r.DirectiveLine == line1)
                 {
-                    _canvasHost?.BeginEdit($"badge:{cardIndex}:{i}", r.DirectiveText);
+                    _canvasHost?.WithCanvasElement(
+                        $"row-{cardIndex}-{i}",
+                        anchor => ShowDirectiveEditor(full, r.DirectiveLine, r.DirectiveText, anchor));
                     return;
                 }
             }
@@ -1861,6 +1818,281 @@ namespace Ruitk.Builder
             }, "directive");
         }
 
+        // ── UB-76: the ONE floating inline editor ────────────────────────────
+
+        [System.NonSerialized]
+        private readonly BuilderInlineEditorOverlay _inlineEditor = new BuilderInlineEditorOverlay();
+
+        private void ShowAttrValueEditor(
+            string path, int sourceLine, int attrIdx, string seed, VisualElement anchor)
+        {
+            string full = Path.GetFullPath(path);
+            _inlineEditor.Show(anchor, seed, multiline: false,
+                FragmentCompletion(full, (text, l0, c0) => MapAttrFragment(full, sourceLine, attrIdx, text, c0)),
+                text => OnAttrValueEdited(full, sourceLine, attrIdx, text),
+                () => ResyncLspBuffer(full));
+        }
+
+        private void ShowDirectiveEditor(string path, int directiveLine, string seed, VisualElement anchor)
+        {
+            string full = Path.GetFullPath(path);
+            _inlineEditor.Show(anchor, seed, multiline: false,
+                FragmentCompletion(full, (text, l0, c0) => MapLineFragment(full, directiveLine, text, "", c0)),
+                text => OnDirectiveEdited(full, directiveLine, text),
+                () => ResyncLspBuffer(full));
+        }
+
+        private void ShowLineEditor(
+            string path, int sourceLine, string seed, string suffix, VisualElement anchor)
+        {
+            string full = Path.GetFullPath(path);
+            _inlineEditor.Show(anchor, seed, multiline: false,
+                FragmentCompletion(full, (text, l0, c0) => MapLineFragment(full, sourceLine, text, suffix, c0)),
+                text => OnLineRewritten(full, sourceLine, text + (suffix ?? "")),
+                () => ResyncLspBuffer(full));
+        }
+
+        private void ShowIslandEditor(
+            string path, int startLine, int endLine, string seed, VisualElement anchor)
+        {
+            string full = Path.GetFullPath(path);
+            _inlineEditor.Show(anchor, seed, multiline: true,
+                FragmentCompletion(full, (text, l0, c0) => MapIslandFragment(full, startLine, endLine, text, l0, c0)),
+                text => OnIslandEdited(full, startLine, endLine, text),
+                () => ResyncLspBuffer(full));
+        }
+
+        /// <summary>Ctrl+Space inside a fragment editor: the mapper splices the
+        /// IN-PROGRESS fragment into the real buffer and returns the caret's
+        /// file position; the request runs against that synthesized text and
+        /// the real buffer is re-pushed when the editor closes.</summary>
+        private System.Func<int, int, System.Threading.Tasks.Task<System.Collections.Generic.List<(string Label, string Insert)>>>
+            FragmentCompletion(
+                string fullPath,
+                System.Func<string, int, int, (string Synth, int Line0, int Col0)?> map)
+        {
+            return async (localLine0, localCol0) =>
+            {
+                var results = new System.Collections.Generic.List<(string, string)>();
+                try
+                {
+                    var mapped = map(_inlineEditor.CurrentText, localLine0, localCol0);
+                    if (mapped == null)
+                        return results;
+                    var client = await BuilderLspService.GetOrStartAsync();
+                    client.SendDidChangeNow(fullPath, mapped.Value.Synth);
+                    var response = await client.RequestCompletion(
+                        fullPath, mapped.Value.Line0, mapped.Value.Col0);
+                    ParseCompletionItems(response, results);
+                }
+                catch (System.Exception)
+                {
+                }
+                return results;
+            };
+        }
+
+        private static void ParseCompletionItems(
+            Newtonsoft.Json.Linq.JToken response,
+            System.Collections.Generic.List<(string Label, string Insert)> results)
+        {
+            var items = response as Newtonsoft.Json.Linq.JArray
+                ?? (response?["items"] ?? response?["Items"]) as Newtonsoft.Json.Linq.JArray;
+            if (items == null)
+                return;
+            foreach (var item in items)
+            {
+                string label = item.Value<string>("label") ?? item.Value<string>("Label");
+                if (string.IsNullOrEmpty(label))
+                    continue;
+                string insert = item.Value<string>("insertText")
+                    ?? item.Value<string>("InsertText")
+                    ?? label;
+                results.Add((label, insert));
+            }
+        }
+
+        /// <summary>Single-line fragment (directive header, hook chip, style
+        /// entry): the line is replaced by indent + fragment (+ suffix) and the
+        /// caret sits at indent + local column.</summary>
+        private (string Synth, int Line0, int Col0)? MapLineFragment(
+            string fullPath, int line1, string fieldText, string suffix, int localCol0)
+        {
+            var session = _workspace.TryGet(fullPath);
+            if (session == null || line1 <= 0)
+                return null;
+            var lines = session.BufferText.Split('\n');
+            if (line1 - 1 >= lines.Length)
+                return null;
+            string indent = BuilderText.LeadingIndent(lines[line1 - 1]);
+            lines[line1 - 1] = indent + fieldText + (suffix ?? "");
+            return (string.Join("\n", lines), line1 - 1, indent.Length + localCol0);
+        }
+
+        /// <summary>Attribute-value fragment: the open tag's span is joined,
+        /// attr #idx's value run is replaced by the wrapped fragment, and the
+        /// caret maps through the joined offset back to a file position.</summary>
+        private (string Synth, int Line0, int Col0)? MapAttrFragment(
+            string fullPath, int sourceLine, int attrIdx, string fieldText, int localCol0)
+        {
+            var session = _workspace.TryGet(fullPath);
+            if (session == null || sourceLine <= 0)
+                return null;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int start = sourceLine - 1;
+            if (start >= lines.Count)
+                return null;
+            int end = OpenTagEndLine(lines, start);
+            string joined = string.Join("\n", lines.GetRange(start, end - start + 1));
+            var matches = System.Text.RegularExpressions.Regex.Matches(
+                joined, "(\\w+)=(\\{[^}]*\\}|\"[^\"]*\")");
+            if (attrIdx < 0 || attrIdx >= matches.Count)
+                return null;
+            var valueGroup = matches[attrIdx].Groups[2];
+            bool expr = valueGroup.Value.StartsWith("{", System.StringComparison.Ordinal);
+            string wrapped = expr ? "{" + fieldText + "}" : "\"" + fieldText + "\"";
+            string newJoined = joined.Substring(0, valueGroup.Index) + wrapped
+                + joined.Substring(valueGroup.Index + valueGroup.Length);
+            int caretOffset = valueGroup.Index + 1 + localCol0;
+            int caretLine = 0, caretLineStart = 0;
+            for (int i = 0; i < caretOffset && i < newJoined.Length; i++)
+            {
+                if (newJoined[i] == '\n')
+                {
+                    caretLine++;
+                    caretLineStart = i + 1;
+                }
+            }
+            lines.RemoveRange(start, end - start + 1);
+            lines.InsertRange(start, newJoined.Split('\n'));
+            return (string.Join("\n", lines), start + caretLine, caretOffset - caretLineStart);
+        }
+
+        /// <summary>Island fragment: the range is replaced by the re-indented
+        /// in-progress lines (the same re-basing the commit performs), caret =
+        /// range start + local line, 2-space indent + local column.</summary>
+        private (string Synth, int Line0, int Col0)? MapIslandFragment(
+            string fullPath, int startLine, int endLine, string fieldText, int localLine0, int localCol0)
+        {
+            var session = _workspace.TryGet(fullPath);
+            if (session == null || startLine <= 0)
+                return null;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int from = Mathf.Clamp(startLine - 1, 0, lines.Count - 1);
+            int to = Mathf.Clamp(endLine - 1, from, lines.Count - 1);
+            lines.RemoveRange(from, to - from + 1);
+            var replacement = new System.Collections.Generic.List<string>(fieldText.Split('\n'));
+            for (int r = 0; r < replacement.Count; r++)
+                replacement[r] = replacement[r].Length == 0 ? "" : "  " + replacement[r];
+            lines.InsertRange(from, replacement);
+            return (string.Join("\n", lines), from + localLine0, 2 + localCol0);
+        }
+
+        /// <summary>0-based index of the line where the open tag starting at
+        /// <paramref name="start"/> closes ('&gt;' outside strings/braces).</summary>
+        private static int OpenTagEndLine(System.Collections.Generic.List<string> lines, int start)
+        {
+            int braces = 0;
+            bool inString = false;
+            for (int i = start; i < lines.Count && i < start + 24; i++)
+            {
+                foreach (char c in lines[i])
+                {
+                    if (inString)
+                    {
+                        if (c == '"')
+                            inString = false;
+                        continue;
+                    }
+                    if (c == '"')
+                        inString = true;
+                    else if (c == '{')
+                        braces++;
+                    else if (c == '}')
+                        braces--;
+                    else if (c == '>' && braces <= 0)
+                        return i;
+                }
+            }
+            return start;
+        }
+
+        /// <summary>1-based line of the hook decl OnAddHook just inserted — the
+        /// line directly above the component's last <c>return (</c>.</summary>
+        private int LineOfNewHook(string fullPath, int chipIndex)
+        {
+            var session = _workspace.TryGet(fullPath);
+            if (session == null)
+                return 0;
+            var lines = session.BufferText.Split('\n');
+            for (int i = lines.Length - 1; i >= 0; i--)
+                if (lines[i].TrimStart().StartsWith("return (", System.StringComparison.Ordinal))
+                    return i;
+            return 0;
+        }
+
+        /// <summary>Completion requests push SYNTHESIZED buffers to the LSP;
+        /// when the editor closes the server must see the real one again.</summary>
+        private async void ResyncLspBuffer(string fullPath)
+        {
+            try
+            {
+                var session = _workspace.TryGet(fullPath);
+                if (session == null)
+                    return;
+                var client = await BuilderLspService.GetOrStartAsync();
+                client.SendDidChangeNow(fullPath, session.BufferText);
+            }
+            catch (System.Exception)
+            {
+            }
+        }
+
+        /// <summary>Inline single-line commit: rewrite the line keeping its
+        /// indent; an export declaration can never lose its keyword.</summary>
+        private void OnLineRewritten(string path, int line, string text)
+        {
+            EditLineInFile(Path.GetFullPath(path), line, old =>
+            {
+                int w = 0;
+                while (w < old.Length && old[w] == ' ')
+                    w++;
+                string rewritten = old.Substring(0, w) + text.Trim();
+                string trimmedOld = old.TrimStart();
+                if (trimmedOld.StartsWith("export ", System.StringComparison.Ordinal)
+                    && !text.TrimStart().StartsWith("export ", System.StringComparison.Ordinal))
+                {
+                    Toast("An export declaration keeps its 'export' keyword — edit skipped.");
+                    return old;
+                }
+                return rewritten;
+            }, "line edit");
+        }
+
+        /// <summary>Island commit: the range is replaced, blank edges trimmed,
+        /// the block's common indent re-based onto the body's two spaces.</summary>
+        private void OnIslandEdited(string path, int start, int end, string text)
+        {
+            var session = _workspace.TryGet(Path.GetFullPath(path));
+            if (session == null || session.IsReadOnly || start <= 0)
+                return;
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int from = Mathf.Clamp(start - 1, 0, lines.Count - 1);
+            int to = Mathf.Clamp(end - 1, from, lines.Count - 1);
+            lines.RemoveRange(from, to - from + 1);
+            var replacement = new System.Collections.Generic.List<string>(
+                text.Replace("\r\n", "\n").Split('\n'));
+            while (replacement.Count > 0 && replacement[replacement.Count - 1].Trim().Length == 0)
+                replacement.RemoveAt(replacement.Count - 1);
+            while (replacement.Count > 0 && replacement[0].Trim().Length == 0)
+                replacement.RemoveAt(0);
+            BuilderGraphService.StripCommonIndent(replacement);
+            for (int r = 0; r < replacement.Count; r++)
+                replacement[r] = replacement[r].Length == 0 ? "" : "  " + replacement[r];
+            lines.InsertRange(from, replacement);
+            ApplyProgrammaticEdit(Path.GetFullPath(path), string.Join("\n", lines), "body");
+        }
+
         private void AppendToFile(string filePath, string block, string what = null)
         {
             string full = Path.GetFullPath(filePath);
@@ -1940,9 +2172,12 @@ namespace Ruitk.Builder
                 if (_canvasHost != null && _canvasHost.Zoom < 1.05f)
                     _canvasHost.SetViewPreset(1.25f);
                 if (cardIndex >= 0)
-                    _canvasHost?.BeginEdit(
-                        $"attr:{cardIndex}:{rowIdx}:{newAttrIndex}",
-                        value.Length >= 2 ? value.Substring(1, value.Length - 2) : value);
+                    _canvasHost?.WithCanvasElement(
+                        $"row-{cardIndex}-{rowIdx}",
+                        anchor => ShowAttrValueEditor(
+                            filePath, sourceLine, newAttrIndex,
+                            value.Length >= 2 ? value.Substring(1, value.Length - 2) : value,
+                            anchor));
             }
 
             var component = _canvasHost?.FindNodeByTitle(tag);
@@ -2349,7 +2584,7 @@ namespace Ruitk.Builder
                 filePath, string.Join("\n", lines),
                 space > 0 ? header.Substring(0, space) : header);
             if (cardIndex >= 0)
-                _canvasHost?.BeginEdit($"badge:{cardIndex}:{rowIdx}", header);
+                BeginEditOnDirectiveLine(filePath, cardIndex, row.SourceLine);
         }
 
         /// <summary>POC "Remove directive" (j.directive = null): the ELEMENT

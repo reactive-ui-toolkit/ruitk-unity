@@ -98,6 +98,23 @@ namespace Ruitk.Builder
         public Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>>
             CompletionProvider { get; set; }
 
+        /// <summary>UB-76: the field edits a FRAGMENT of a file (an attribute
+        /// value, a directive header, an island), not a whole buffer — the
+        /// regex colouring passes run but the whole-file parse, the local
+        /// diagnostics and the server-token overlay are skipped (a fragment
+        /// parses as garbage). Completion positions are LOCAL; the owner maps
+        /// them into the real file.</summary>
+        public bool FragmentMode { get; set; }
+
+        /// <summary>Enter commits (fires ApplyRequested) instead of inserting a
+        /// newline — the single-line inline-editor flavour.</summary>
+        public bool SingleLine { get; set; }
+
+        /// <summary>0-based caret (line, column) over the LF buffer — the
+        /// inline-editor overlay maps this into the target file for
+        /// completion requests.</summary>
+        public (int Line0, int Char0) CaretLocal => CaretPosition();
+
         /// <summary>POC "#srcpane .srcline" inherits the body's 13px/1.45 metric at
         /// font-size 12, so the line pitch is 17.4px (measured on poc-l2-edit.png:
         /// line tops at 502, 519, 537, 554, 571, 589 at zoom 1).</summary>
@@ -502,10 +519,11 @@ namespace Ruitk.Builder
                 CancelRequested?.Invoke();
                 return;
             }
-            if (evt.ctrlKey
+            if ((evt.ctrlKey || SingleLine)
                 && (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter))
             {
                 evt.StopPropagation();
+                evt.PreventDefault();
                 ApplyRequested?.Invoke();
                 return;
             }
@@ -655,6 +673,15 @@ namespace Ruitk.Builder
         {
             string[] lines = (textLf ?? "").Split('\n');
             SemanticTokenData[] tokens;
+            if (FragmentMode)
+            {
+                // A fragment is not a parseable unit — regex passes only, no
+                // diagnostics, no server tokens.
+                tokens = Array.Empty<SemanticTokenData>();
+                _diagnosticsLabel.style.display = DisplayStyle.None;
+                RecolorRows(lines, tokens);
+                return;
+            }
             try
             {
                 var parsed = BuilderLanguage.Parse(textLf, _filePath);
@@ -681,6 +708,11 @@ namespace Ruitk.Builder
                 RenderDiagnosticsLabel();
             }
 
+            RecolorRows(lines, tokens);
+        }
+
+        private void RecolorRows(string[] lines, SemanticTokenData[] tokens)
+        {
             var byLine = new Dictionary<int, List<SemanticTokenData>>();
             foreach (var token in tokens)
             {

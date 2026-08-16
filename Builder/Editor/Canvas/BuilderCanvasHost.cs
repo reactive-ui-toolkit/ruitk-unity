@@ -43,10 +43,10 @@ namespace Ruitk.Builder
         public Action<string, string, int> OnStyleAddEntry;
         public Action<string> OnAddHook;
         public Action<string> OnDeleteFile;
-        public Action<string, int, int, string> OnAttrValueEdit;
-        public Action<string, int, string> OnDirectiveEdit;
-        public Action<string, int, string> OnLineRewrite;
-        public Action<string, int, int, string> OnIslandEdit;
+        public Action<string, int, int, string, VisualElement> OnEditAttrValue;
+        public Action<string, int, string, VisualElement> OnEditDirective;
+        public Action<string, int, string, string, VisualElement> OnEditLine;
+        public Action<string, int, int, string, VisualElement> OnEditIsland;
         public Action<string> OnAddStyleExport;
         public Action<string> OnAddUtilExport;
         public Action<string> OnTraceStates;
@@ -242,22 +242,26 @@ namespace Ruitk.Builder
             RenderCanvas();
         }
 
-        /// <summary>POC follow-up editors (addAttr / addHook / wrap-in-directive
-        /// all open the new element's inline field): opens an inline editor on
-        /// the mounted canvas without a remount.</summary>
-        public void BeginEdit(string editKey, string editText)
+        /// <summary>UB-76: follow-up editors (addAttr / addHook / wrap all open
+        /// the new element's editor) are the window's floating inline editor
+        /// now — this resolves the named canvas element the window anchors on,
+        /// retrying while the re-render lands.</summary>
+        public void WithCanvasElement(string elementName, Action<VisualElement> action, int attempts = 12)
         {
-            if (_container == null || _graph == null)
+            if (_container == null || action == null)
                 return;
-            _beginEditKey = editKey;
-            _beginEditText = editText ?? "";
-            _beginEditVersion++;
-            RenderCanvas();
+            var found = _container.Q(elementName);
+            if (found != null && found.worldBound.width > 0f)
+            {
+                action(found);
+                return;
+            }
+            if (attempts <= 0)
+                return;
+            _container.schedule.Execute(
+                () => WithCanvasElement(elementName, action, attempts - 1)).ExecuteLater(40);
         }
 
-        private string _beginEditKey = "";
-        private string _beginEditText = "";
-        private int _beginEditVersion;
         private string _selectPath = "";
         private int _selectVersion;
 
@@ -308,9 +312,6 @@ namespace Ruitk.Builder
                         ViewCamX = _camX,
                         ViewCamY = _camY,
                         ViewVersion = _viewVersion,
-                        BeginEditKey = _beginEditKey,
-                        BeginEditText = _beginEditText,
-                        BeginEditVersion = _beginEditVersion,
                         SelectPath = _selectPath,
                         SelectVersion = _selectVersion,
                         OnTraceStates = states => OnTraceStates?.Invoke(states),
@@ -338,14 +339,14 @@ namespace Ruitk.Builder
                         OnStyleAddEntry = (path, styleName, closeLine) =>
                             OnStyleAddEntry?.Invoke(path, styleName, closeLine),
                         OnAddHook = path => OnAddHook?.Invoke(path),
-                        OnAttrValueEdit = (path, line, ai, value) =>
-                            OnAttrValueEdit?.Invoke(path, line, ai, value),
-                        OnDirectiveEdit = (path, line, text) =>
-                            OnDirectiveEdit?.Invoke(path, line, text),
-                        OnLineRewrite = (path, line, text) =>
-                            OnLineRewrite?.Invoke(path, line, text),
-                        OnIslandEdit = (path, start, end, text) =>
-                            OnIslandEdit?.Invoke(path, start, end, text),
+                        OnEditAttrValue = (path, line, ai, seed, anchor) =>
+                            OnEditAttrValue?.Invoke(path, line, ai, seed, anchor),
+                        OnEditDirective = (path, line, seed, anchor) =>
+                            OnEditDirective?.Invoke(path, line, seed, anchor),
+                        OnEditLine = (path, line, seed, suffix, anchor) =>
+                            OnEditLine?.Invoke(path, line, seed, suffix, anchor),
+                        OnEditIsland = (path, start, end, seed, anchor) =>
+                            OnEditIsland?.Invoke(path, start, end, seed, anchor),
                         OnAddStyleExport = path => OnAddStyleExport?.Invoke(path),
                         OnAddUtilExport = path => OnAddUtilExport?.Invoke(path),
                         OnRowNavigate = tag =>
