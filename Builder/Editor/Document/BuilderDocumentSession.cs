@@ -115,6 +115,26 @@ namespace Ruitk.Builder
             IsNewFile = false;
         }
 
+        /// <summary>External change (git pull, sync, IDE edit) under a CLEAN
+        /// session: adopt the new disk text so open cards and the source pane
+        /// never keep serving a stale buffer. The caller enforces the
+        /// dirty-session policy (unsaved edits are never clobbered). The undo
+        /// history belongs to the abandoned lineage and is cleared. Returns
+        /// true when the text actually changed.</summary>
+        public bool AdoptDiskText(string diskTextRaw)
+        {
+            string lf = NormalizeLf(diskTextRaw);
+            if (string.Equals(lf, DiskText, StringComparison.Ordinal))
+                return false;
+            DiskText = lf;
+            BufferText = lf;
+            UsedCrlf = diskTextRaw != null && diskTextRaw.Contains("\r\n");
+            EnsureStacks();
+            _undo.Clear();
+            _redo.Clear();
+            return true;
+        }
+
         // Undo/redo stacks are deliberately [NonSerialized]: only buffers + dirty
         // state must survive a domain reload (plan §4); Unity's window serializer
         // round-trips this object, and after a reload the fields come back null.

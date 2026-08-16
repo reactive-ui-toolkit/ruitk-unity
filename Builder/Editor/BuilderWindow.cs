@@ -67,6 +67,8 @@ namespace Ruitk.Builder
             _workspace.Changed += OnWorkspaceChanged;
             BuilderLspService.DiagnosticsPublished -= OnLspDiagnosticsPublished;
             BuilderLspService.DiagnosticsPublished += OnLspDiagnosticsPublished;
+            BuilderAssetEvents.UitkxImported -= OnUitkxImported;
+            BuilderAssetEvents.UitkxImported += OnUitkxImported;
             saveChangesMessage = "The RUITK Builder has unsaved component edits.";
         }
 
@@ -74,12 +76,42 @@ namespace Ruitk.Builder
         {
             _workspace.Changed -= OnWorkspaceChanged;
             BuilderLspService.DiagnosticsPublished -= OnLspDiagnosticsPublished;
+            BuilderAssetEvents.UitkxImported -= OnUitkxImported;
             _canvasHost?.Unmount();
             _canvasHost = null;
             _previewPane?.Dispose();
             _previewPane = null;
             _previewCompiler?.Dispose();
             _previewCompiler = null;
+        }
+
+        /// <summary>External .uitkx changes (a sync, a git pull, an IDE edit):
+        /// clean sessions adopt the new disk text and every touched card, the
+        /// source pane and the preview refresh. Dirty sessions keep the user's
+        /// unsaved buffer.</summary>
+        private void OnUitkxImported(System.Collections.Generic.List<string> fullPaths)
+        {
+            if (_workspace == null || fullPaths == null)
+                return;
+            var changed = _workspace.ReloadCleanFromDisk(fullPaths);
+            if (changed.Count == 0)
+                return;
+            bool focusChanged = false;
+            string focusFull = string.IsNullOrEmpty(_focusFile) ? "" : Path.GetFullPath(_focusFile);
+            foreach (string path in changed)
+            {
+                _canvasHost?.RefreshGraph(path, ReadBufferOrDisk);
+                if (string.Equals(path, focusFull, System.StringComparison.OrdinalIgnoreCase))
+                    focusChanged = true;
+            }
+            if (focusChanged)
+            {
+                var session = _workspace.TryGet(focusFull);
+                if (session != null && _sourceSnapshot == null)
+                    _codeField?.SetContent(session.BufferText, _focusFile, KnownElementsOrNull());
+                ScheduleServerTokens();
+            }
+            RefreshChrome();
         }
 
         /// <summary>UB-06: the server's published diagnostics reach the source

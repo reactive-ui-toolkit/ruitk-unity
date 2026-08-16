@@ -79,13 +79,42 @@ namespace Ruitk.Builder
         public BuilderDocumentSession Open(string filePath)
         {
             if (_sessions.TryGetValue(filePath, out var existing))
+            {
+                // Sessions survive domain reloads by design (unsaved buffers),
+                // which also means they survive EXTERNAL file changes — a clean
+                // session must re-check the disk or it serves stale text
+                // forever (owner report 2026-08-16: repaired samples still
+                // showed their old mojibake on open cards).
+                if (!existing.IsDirty && File.Exists(filePath)
+                    && existing.AdoptDiskText(File.ReadAllText(filePath)))
+                    Changed?.Invoke();
                 return existing;
+            }
 
             string raw = File.Exists(filePath) ? File.ReadAllText(filePath) : string.Empty;
             var session = BuilderDocumentSession.Open(filePath, raw, IsReadOnlyLocation(filePath));
             _sessions[filePath] = session;
             Changed?.Invoke();
             return session;
+        }
+
+        /// <summary>External-change sweep (asset imports): clean sessions adopt
+        /// the new disk text; dirty sessions keep the user's unsaved buffer.
+        /// Returns the full paths whose buffers changed.</summary>
+        public List<string> ReloadCleanFromDisk(IEnumerable<string> fullPaths)
+        {
+            var changed = new List<string>();
+            foreach (string path in fullPaths)
+            {
+                var session = TryGet(path);
+                if (session == null || session.IsDirty || session.IsReadOnly || !File.Exists(path))
+                    continue;
+                if (session.AdoptDiskText(File.ReadAllText(path)))
+                    changed.Add(path);
+            }
+            if (changed.Count > 0)
+                Changed?.Invoke();
+            return changed;
         }
 
         public BuilderDocumentSession CreateNew(string filePath, string initialBuffer)

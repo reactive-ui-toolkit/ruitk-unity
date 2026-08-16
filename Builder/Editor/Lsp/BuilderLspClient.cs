@@ -549,9 +549,22 @@ namespace Ruitk.Builder
     {
         internal static BuilderLspClient ActiveClient;
 
+        /// <summary>Full paths of imported .uitkx files. The window's clean
+        /// sessions reload from these — external syncs and git pulls must not
+        /// leave open cards serving stale buffers. Fired regardless of LSP
+        /// state.</summary>
+        internal static event Action<List<string>> UitkxImported;
+
         private static void OnPostprocessAllAssets(
             string[] imported, string[] deleted, string[] moved, string[] movedFrom)
         {
+            var importedUitkx = new List<string>();
+            foreach (var p in imported)
+                if (p.EndsWith(".uitkx", StringComparison.OrdinalIgnoreCase))
+                    importedUitkx.Add(Path.GetFullPath(p));
+            if (importedUitkx.Count > 0)
+                UitkxImported?.Invoke(importedUitkx);
+
             var client = ActiveClient;
             if (client == null || !client.IsRunning)
                 return;
