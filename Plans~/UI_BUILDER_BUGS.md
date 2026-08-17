@@ -1053,6 +1053,15 @@ All four workspace sections get it (components, style, hook and util modules),
 not only components; schema natives have no file path and fall through to the
 drag-arm unchanged.
 
+Owner follow-up same day ("double clicking a custom component just place it in
+view, it doesnt also fully zoom it which it should"): FocusNode is now a real
+FRAME operation, not a pan. It solves the zoom so the card fills the viewport
+(88% margin) and only then centres. Card width is LOD-dependent and LOD is
+zoom-dependent, so the fit is solved twice - the second pass uses the width the
+first pass's zoom implies, which converges because there are only three bands.
+ZoomChanged fires so the toolbar layer readout and the scroller restyle track
+it, exactly as the wheel and preset paths do.
+
 ### UB-81 — max zoom-IN gets slow, cause DIAGNOSED `UNVERIFIED` `MED`
 
 Owner report: at high zoom the canvas becomes sluggish. Diagnose before

@@ -326,13 +326,17 @@ namespace Ruitk.Builder
             RenderCanvas();
         }
 
-        /// <summary>UB-80: bring a card into view and select it — the palette's
-        /// custom-component list, which already knows every component on the
-        /// canvas, becomes a way to GET to one. The camera model is the same
-        /// screen = world * zoom + cam the wheel handler anchors on, so
-        /// centring is cam = viewportCentre - cardCentre * zoom. A card taller
-        /// than the viewport is pinned near its top instead of centred, which
-        /// would otherwise scroll its title off-screen.</summary>
+        /// <summary>UB-80: FRAME a card — the palette's workspace list, which
+        /// already knows every module on the canvas, becomes a way to GET to
+        /// one. This is "frame selected" as every node editor means it: the zoom
+        /// is solved so the card FILLS the viewport (owner: focusing must "fully
+        /// zoom it", not just pan it into view), then the camera centres on it.
+        /// <para>Card width is LOD-dependent and LOD is zoom-dependent, so the
+        /// fit is solved twice — the second pass uses the width the first pass's
+        /// zoom actually implies. Two passes suffice because there are only
+        /// three LOD bands. A card too tall to fit even at ZoomMin stays pinned
+        /// near its top rather than centred, which would scroll its title
+        /// off-screen.</para></summary>
         public bool FocusNode(string filePath)
         {
             if (_container == null || _graph == null || string.IsNullOrEmpty(filePath))
@@ -346,21 +350,35 @@ namespace Ruitk.Builder
             float height = _container.resolvedStyle.height;
             if (width <= 0f || height <= 0f)
                 return false;
+            float cardH = BuilderGraphService.CardHeightOf(node);
+            if (cardH <= 0f)
+                cardH = 1f;
             float zoom = _zoom <= 0f ? 1f : _zoom;
             float cardW = BuilderCanvasDrawing.CardWidthFor(LodOf(zoom));
-            float cardH = BuilderGraphService.EstimateCardHeight(node);
+            for (int pass = 0; pass < 2; pass++)
+            {
+                cardW = BuilderCanvasDrawing.CardWidthFor(LodOf(zoom));
+                zoom = Mathf.Clamp(
+                    Mathf.Min(width * FrameMargin / cardW, height * FrameMargin / cardH),
+                    BuilderCanvasDrawing.ZoomMin, BuilderCanvasDrawing.ZoomMax);
+            }
+            _zoom = zoom;
             _camX = width * 0.5f - (node.X + cardW * 0.5f) * zoom;
-            float scaledH = cardH * zoom;
-            _camY = scaledH > height
-                ? height * 0.12f - node.Y * zoom
+            _camY = cardH * zoom > height
+                ? height * 0.06f - node.Y * zoom
                 : height * 0.5f - (node.Y + cardH * 0.5f) * zoom;
             _selectPath = full;
             _selectVersion++;
             _viewVersion++;
             RenderCanvas();
             SaveLayout();
+            ZoomChanged?.Invoke(_zoom);
             return true;
         }
+
+        /// <summary>Fraction of the viewport a framed card fills, leaving a
+        /// margin so the card does not touch the window edges.</summary>
+        private const float FrameMargin = 0.88f;
 
         /// <summary>Seeds the persisted layout slot for a file about to be
         /// created, so the new card appears where the user right-clicked.</summary>
