@@ -331,12 +331,17 @@ namespace Ruitk.Builder
         /// one. This is "frame selected" as every node editor means it: the zoom
         /// is solved so the card FILLS the viewport (owner: focusing must "fully
         /// zoom it", not just pan it into view), then the camera centres on it.
-        /// <para>Card width is LOD-dependent and LOD is zoom-dependent, so the
-        /// fit is solved twice — the second pass uses the width the first pass's
-        /// zoom actually implies. Two passes suffice because there are only
-        /// three LOD bands. A card too tall to fit even at ZoomMin stays pinned
-        /// near its top rather than centred, which would scroll its title
-        /// off-screen.</para></summary>
+        /// <para>The fit is solved on WIDTH only. Fitting height too meant a long
+        /// page card — ShowcaseDemoPage, hundreds of markup rows — solved to
+        /// ZoomMin and read as "it panned but never zoomed" (owner report
+        /// 2026-08-17). Card width is uniform per LOD, so a width fit also makes
+        /// the gesture land at the same readable zoom for every card instead of
+        /// one that swings with how much markup a file happens to hold; a card
+        /// taller than the viewport is pinned near its top, where its title
+        /// is.</para>
+        /// <para>Width is LOD-dependent and LOD is zoom-dependent, so the fit is
+        /// solved twice — the second pass uses the width the first pass's zoom
+        /// implies. Two passes suffice because there are only three bands.</para></summary>
         public bool FocusNode(string filePath)
         {
             if (_container == null || _graph == null || string.IsNullOrEmpty(filePath))
@@ -359,7 +364,7 @@ namespace Ruitk.Builder
             {
                 cardW = BuilderCanvasDrawing.CardWidthFor(LodOf(zoom));
                 zoom = Mathf.Clamp(
-                    Mathf.Min(width * FrameMargin / cardW, height * FrameMargin / cardH),
+                    width * FrameMargin / cardW,
                     BuilderCanvasDrawing.ZoomMin, BuilderCanvasDrawing.ZoomMax);
             }
             _zoom = zoom;

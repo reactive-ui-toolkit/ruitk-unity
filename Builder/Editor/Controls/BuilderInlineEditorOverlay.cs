@@ -89,7 +89,18 @@ namespace Ruitk.Builder
             };
             _panel.Add(_field);
 
+            // The editor spans the whole ROW it belongs to, not just the badge or
+            // label that was clicked: a field narrower than the highlighted item
+            // it is editing reads as misaligned chrome (owner report
+            // 2026-08-17). Falls back to the anchor when the row cannot be found,
+            // which is what every non-row surface uses anyway.
             Rect bound = anchor != null ? anchor.worldBound : new Rect(60f, 60f, 320f, 24f);
+            var rowHost = RowAncestorOf(anchor);
+            if (rowHost != null && rowHost.worldBound.width > bound.width)
+            {
+                var rowBound = rowHost.worldBound;
+                bound = new Rect(rowBound.xMin, bound.yMin, rowBound.width, bound.height);
+            }
             Vector2 local = _root.WorldToLocal(new Vector2(bound.xMin, bound.yMin));
             float rootWidth = _root.layout.width;
             float rootHeight = _root.layout.height;
@@ -110,7 +121,13 @@ namespace Ruitk.Builder
                 if (_field != field)
                     return;
                 field.SetEditing(true);
-                field.FocusEditor();
+                // The edit box is display:none until the line above, so it has
+                // no layout this tick and Focus() would be a silent no-op.
+                // Focusing is retried on later ticks until it actually takes —
+                // a canvas re-render landing between the open and the focus
+                // (which is exactly what a freshly seeded directive header does)
+                // can also drop it once.
+                TryFocusRepeatedly(field, 8);
             }).ExecuteLater(16);
             // Commit-on-blur, the semantics every in-card editor had: when
             // focus leaves the panel entirely, the edit lands unless Esc
@@ -129,6 +146,29 @@ namespace Ruitk.Builder
                     Close(commitIfChanged: true);
                 }).ExecuteLater(1);
             });
+        }
+
+        private void TryFocusRepeatedly(CodeField field, int attempts)
+        {
+            if (_field != field || _done || attempts <= 0)
+                return;
+            field.FocusEditor();
+            if (field.EditorHasFocus)
+                return;
+            _panel?.schedule.Execute(() => TryFocusRepeatedly(field, attempts - 1))
+                .ExecuteLater(24);
+        }
+
+        /// <summary>The canvas row an inline-edit anchor belongs to. Rows are the
+        /// only elements named "row-{card}-{row}", which is the same handle the
+        /// drag hit-test walks for.</summary>
+        private static VisualElement RowAncestorOf(VisualElement anchor)
+        {
+            for (var walk = anchor; walk != null; walk = walk.parent)
+                if (!string.IsNullOrEmpty(walk.name)
+                    && walk.name.StartsWith("row-", System.StringComparison.Ordinal))
+                    return walk;
+            return null;
         }
 
         public void Close(bool commitIfChanged)

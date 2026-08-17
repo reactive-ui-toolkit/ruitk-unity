@@ -308,6 +308,31 @@ namespace Ruitk.Builder
             // TrickleDown: the keys must be consumed before Unity's global routes
             // see them (Ctrl+S -> Save Project, Ctrl+Z -> global Undo).
             root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+            // A KeyDownEvent is dispatched to the FOCUSED element, and nothing in
+            // the canvas is focusable — so every window shortcut only ever fired
+            // while a TextField happened to hold focus, which is exactly when the
+            // field wants the key for itself. Owner report 2026-08-17: Ctrl+Z/Y
+            // and Delete did nothing at all. The root is now focusable and takes
+            // focus whenever a click lands on something that does not want it, so
+            // the shortcuts have a route; a text surface that DID take focus
+            // keeps it and OnKeyDown steps aside for it.
+            root.focusable = true;
+            // TrickleDown here too, and the decision is made from the EVENT
+            // TARGET rather than from who holds focus now: canvas rows
+            // StopPropagation on pointer-down, so a bubble-phase handler would
+            // never see the very clicks that select the thing Delete acts on.
+            root.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.target is VisualElement target && IsTypingSurface(target))
+                    return;
+                root.Focus();
+            }, TrickleDown.TrickleDown);
+            root.RegisterCallback<AttachToPanelEvent>(
+                _ => root.schedule.Execute(() =>
+                {
+                    if (!TypingTargetFocused())
+                        root.Focus();
+                }).ExecuteLater(60));
 
             MountCanvas();
             RefreshChrome();
@@ -1166,7 +1191,7 @@ namespace Ruitk.Builder
         /// overwrite user markup.</summary>
         private void AddIfClause(string filePath, BuilderCardLine head, int cardIndex, bool withCondition)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly || head.CloseLine <= 0)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -1197,7 +1222,7 @@ namespace Ruitk.Builder
             string filePath, BuilderCanvasNode node, int rowIdx, int cardIndex, bool isDefault)
         {
             var head = node.Markup[rowIdx];
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly || head.CloseLine <= 0)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -1241,7 +1266,7 @@ namespace Ruitk.Builder
                     "delete " + row.BadgeText + " clause");
                 return;
             }
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -1409,7 +1434,7 @@ namespace Ruitk.Builder
         /// the header.</summary>
         private void WrapRowInSwitch(string filePath, BuilderCardLine row, int cardIndex)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -1482,7 +1507,7 @@ namespace Ruitk.Builder
                 Toast(blockReason);
                 return;
             }
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -1848,7 +1873,7 @@ namespace Ruitk.Builder
         {
             if (afterLine1 >= fromLine1 - 1 && afterLine1 <= toLine1)
                 return;
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2071,7 +2096,7 @@ namespace Ruitk.Builder
         private (string Synth, int Line0, int Col0)? MapLineFragment(
             string fullPath, int line1, string fieldText, string suffix, int localCol0)
         {
-            var session = _workspace.TryGet(fullPath);
+            var session = EditSession(fullPath);
             if (session == null || line1 <= 0)
                 return null;
             var lines = session.BufferText.Split('\n');
@@ -2088,7 +2113,7 @@ namespace Ruitk.Builder
         private (string Synth, int Line0, int Col0)? MapAttrFragment(
             string fullPath, int sourceLine, int attrIdx, string fieldText, int localCol0)
         {
-            var session = _workspace.TryGet(fullPath);
+            var session = EditSession(fullPath);
             if (session == null || sourceLine <= 0)
                 return null;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2127,7 +2152,7 @@ namespace Ruitk.Builder
         private (string Synth, int Line0, int Col0)? MapIslandFragment(
             string fullPath, int startLine, int endLine, string fieldText, int localLine0, int localCol0)
         {
-            var session = _workspace.TryGet(fullPath);
+            var session = EditSession(fullPath);
             if (session == null || startLine <= 0)
                 return null;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2174,7 +2199,7 @@ namespace Ruitk.Builder
         /// line directly above the component's last <c>return (</c>.</summary>
         private int LineOfNewHook(string fullPath, int chipIndex)
         {
-            var session = _workspace.TryGet(fullPath);
+            var session = EditSession(fullPath);
             if (session == null)
                 return 0;
             var lines = session.BufferText.Split('\n');
@@ -2190,7 +2215,7 @@ namespace Ruitk.Builder
         {
             try
             {
-                var session = _workspace.TryGet(fullPath);
+                var session = EditSession(fullPath);
                 if (session == null)
                     return;
                 var client = await BuilderLspService.GetOrStartAsync();
@@ -2226,7 +2251,7 @@ namespace Ruitk.Builder
         /// the block's common indent re-based onto the body's two spaces.</summary>
         private void OnIslandEdited(string path, int start, int end, string text)
         {
-            var session = _workspace.TryGet(Path.GetFullPath(path));
+            var session = EditSession(Path.GetFullPath(path));
             if (session == null || session.IsReadOnly || start <= 0)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2250,7 +2275,7 @@ namespace Ruitk.Builder
         {
             string full = Path.GetFullPath(filePath);
             OpenSession(full);
-            var session = _workspace.TryGet(full);
+            var session = EditSession(full);
             if (session == null || session.IsReadOnly)
                 return;
             ApplyProgrammaticEdit(full, session.BufferText.TrimEnd('\n') + block + "\n", what);
@@ -2548,9 +2573,20 @@ namespace Ruitk.Builder
             return _workspace.TryGet(filePath);
         }
 
+        /// <summary>The session an EDIT should act on, opened on demand. A canvas
+        /// card is parsed straight from disk, so its rows, menus and drop targets
+        /// all exist for files the user has never opened — and `TryGet` returns
+        /// null for those, which made every action on such a card silently do
+        /// nothing (owner report 2026-08-17: "clicking on wrap with switch
+        /// without selecting the component doesnt do anything"). Read-only
+        /// sessions still refuse to mutate one layer down, which is where that
+        /// decision belongs.</summary>
+        private BuilderDocumentSession EditSession(string filePath) =>
+            _workspace.TryGet(filePath) ?? OpenSession(filePath);
+
         private void InsertBeforeLastReturn(string filePath, string line, string what = null)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2613,7 +2649,7 @@ namespace Ruitk.Builder
 
         private string IndentOf(string filePath, int line1)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null)
                 return "";
             string[] lines = session.BufferText.Split('\n');
@@ -2625,7 +2661,7 @@ namespace Ruitk.Builder
         private void EditLineInFile(
             string filePath, int line1, System.Func<string, string> transform, string what = null)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             string[] lines = session.BufferText.Split('\n');
@@ -2642,7 +2678,7 @@ namespace Ruitk.Builder
         private void EditOpenTagInFile(
             string filePath, int line1, System.Func<string, string> transform, string what)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2694,7 +2730,7 @@ namespace Ruitk.Builder
         private void InsertLinesInFile(
             string filePath, int afterLine1, string newLine, string what = null)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2706,7 +2742,7 @@ namespace Ruitk.Builder
         private void DeleteLinesInFile(
             string filePath, int fromLine1, int toLine1, string what = null)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2719,7 +2755,7 @@ namespace Ruitk.Builder
         private void WrapRowInDirective(
             string filePath, BuilderCardLine row, string header, int cardIndex, int rowIdx)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2748,7 +2784,7 @@ namespace Ruitk.Builder
         /// de-indents by one level. The inverse of WrapRowInDirective.</summary>
         private void RemoveDirectiveBlock(string filePath, int headerLine1)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null || session.IsReadOnly || headerLine1 <= 0)
                 return;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
@@ -2826,7 +2862,7 @@ namespace Ruitk.Builder
         /// <paramref name="headerLine1"/>, or 0 when unbalanced.</summary>
         private int MatchingCloseLine(string filePath, int headerLine1)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null)
                 return 0;
             string[] lines = session.BufferText.Split('\n');
@@ -2860,7 +2896,7 @@ namespace Ruitk.Builder
 
         private void ApplyProgrammaticEdit(string filePath, string newBufferLf, string what = null)
         {
-            var session = _workspace.TryGet(filePath);
+            var session = EditSession(filePath);
             if (session == null)
                 return;
             string before = session.BufferText;
@@ -3802,13 +3838,18 @@ namespace Ruitk.Builder
         {
             if (_inlineEditor != null && _inlineEditor.IsOpen)
                 return true;
-            var focused = rootVisualElement?.focusController?.focusedElement as VisualElement;
-            while (focused != null)
-            {
-                if (focused is TextField || focused is TextElement && focused.focusable)
+            return IsTypingSurface(
+                rootVisualElement?.focusController?.focusedElement as VisualElement);
+        }
+
+        /// <summary>Whether this element (or an ancestor) is something the user
+        /// types into — a text field, or a selectable text element such as the
+        /// diagnostics console. Those own their own Delete and Escape.</summary>
+        private static bool IsTypingSurface(VisualElement element)
+        {
+            for (var walk = element; walk != null; walk = walk.parent)
+                if (walk is TextField || (walk is TextElement && walk.focusable))
                     return true;
-                focused = focused.parent;
-            }
             return false;
         }
 

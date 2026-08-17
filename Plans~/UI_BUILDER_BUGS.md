@@ -1098,3 +1098,95 @@ test comes from the graph layout's own `EstimateCardHeight`, now memoised per
 node (`CachedHeight`, reset on re-parse) because the cull consults it for every
 node on every render. A viewport that has not measured yet returns "near" —
 a missing measurement must never hide content.
+
+## 11. Field report — owner drive-through, 2026-08-17 round 2
+
+Verdicts on the §10 wave: identifier colouring, the copyable console, signature
+colouring, zoom-out, double-click focus and the zoom-in speed all confirmed on
+screen. `UNVERIFIED` still: UB-72 and UB-75 (owner: "not sure how to test").
+The rest produced this round, all fixed same-day.
+
+### UB-82 — window shortcuts never fired: nothing was focusable `UNVERIFIED` `HIGH`
+
+Owner: "none of the keybind works" (UB-73 undo/redo) and "nothing get deleted"
+(UB-74). One root cause for both, and it predates them: a `KeyDownEvent` is
+dispatched to the FOCUSED element, `rootVisualElement` was not focusable, and
+nothing in the canvas is — so `OnKeyDown` only ever ran while a TextField
+happened to hold focus, which is precisely when the field wants the key for
+itself. Ctrl+S/Ctrl+Z had the same hole since they were written. Worse, UB-74's
+own "ignore this while typing" guard meant Delete could never fire at all: it
+needed focus somewhere for the event to route, and bailed whenever that
+somewhere was a text field.
+
+FIX: the root is focusable and takes focus on any pointer-down whose TARGET is
+not a typing surface. The decision reads the target, not the current focus, and
+the handler is TrickleDown — canvas rows `StopPropagation` on pointer-down, so
+a bubble-phase handler would never have seen the very clicks that select the
+thing Delete acts on. `IsTypingSurface` is now one shared predicate for both
+the focus grab and the OnKeyDown guard.
+
+### UB-83 — every menu action no-ops on a card that was never opened `UNVERIFIED` `HIGH`
+
+Owner: "clicking on wrap with switch without selecting the component doesnt do
+anything so no point even bring the menu up if its a must - i think it should
+work regardless." Correct on both counts. A canvas card is parsed straight from
+disk, so its rows, menus and drop targets all exist without a document session
+— and every mutation began `_workspace.TryGet(path)`, which returns null for a
+file the user has never opened, then silently returned. The menu was honest;
+the action was not.
+
+FIX: `EditSession(path)` = `TryGet ?? OpenSession`, opening on demand. Applied
+to all 23 read-then-write sites (clause adds, wraps, deletes, line/tag edits,
+indent and brace-matching helpers, `ApplyProgrammaticEdit`). Deliberately NOT
+applied to `ReadBufferOrDisk` (its disk fallback is the point) or to
+`ApplyLedgerWrites` (an undo must not resurrect a file that is no longer open).
+Read-only sessions still refuse to mutate one layer down, where that decision
+belongs.
+
+### UB-84 — inline editor opened un-typable and narrower than its row `UNVERIFIED` `MED`
+
+Owner: "it doesnt focus that input, it should automatically focus it so you can
+type right away" and "the input doesnt cover the entire selected item which
+looks weird".
+
+FIX (focus): the edit box is `display:none` until `SetEditing`, so it had no
+layout in the tick where `Focus()` was called and the call was a silent no-op.
+Focus is now retried on later ticks until `CodeField.EditorHasFocus` confirms
+it took (8 attempts, 24 ms apart), which also survives a canvas re-render
+landing between the open and the focus — exactly what a freshly seeded
+directive header does.
+
+FIX (width): the panel spanned the clicked BADGE. It now spans the row the
+anchor belongs to (`row-{card}-{row}`, the same handle the drag hit-test walks
+for), falling back to the anchor for non-row surfaces.
+
+### UB-85 — a long page card panned but never zoomed `UNVERIFIED` `MED`
+
+Owner: "double clicking on showcaseDemoPage doesnt zoom it just pans - and it
+seems like the only component where this happens". Not the root: the height.
+UB-80's frame fitted BOTH axes, so a card with hundreds of markup rows solved
+to `ZoomMin` — it did zoom, all the way out, which is indistinguishable from
+not zooming.
+
+FIX: fit WIDTH only. Card width is uniform per LOD, so the gesture now lands at
+the same readable zoom for every card instead of one that swings with how much
+markup a file happens to hold; a card taller than the viewport stays pinned
+near its top, where its title is.
+
+### UB-86 — source pane scrolled itself, and kept the offset across files `UNVERIFIED` `MED`
+
+Owner: "Right side code display scrolls both veriticle and horiznotal and in
+random direction for no reason.. it should not be scroll unless the user does
+and the scroll should reset when you select another component."
+
+Two causes. `FocusLine` (row click -> source sync) used `ScrollView.ScrollTo`,
+which moves BOTH axes to reveal the whole element — and a source row is as wide
+as the longest line in the file, so revealing one row yanked the pane sideways
+to a position nobody asked for. And `SetContent` never reset the offset, so
+selecting another component showed it already scrolled to wherever the previous
+file had been left.
+
+FIX: `ScrollRowIntoView` adjusts the vertical offset only, leaves the
+horizontal offset exactly where the user put it, and does nothing at all when
+the row is already fully in view. `SetContent` resets the offset when the file
+actually changes.

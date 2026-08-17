@@ -95,6 +95,16 @@ namespace Ruitk.Builder
             _input.Focus();
         }
 
+        /// <summary>True once the edit box actually owns the keyboard. The
+        /// overlay retries against this because Focus() on an element that has
+        /// not laid out yet is a silent no-op — the input is display:none until
+        /// SetEditing, so focusing it in the same tick did nothing and a
+        /// freshly-wrapped directive header opened un-typable (owner report
+        /// 2026-08-17).</summary>
+        public bool EditorHasFocus =>
+            _input?.panel?.focusController?.focusedElement is VisualElement focused
+            && (focused == _input || focused.FindCommonAncestor(_input) == _input);
+
         /// <summary>Ctrl+Space asks this for completions at (line0, char0);
         /// the window wires it to the shared LSP client.</summary>
         public Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>>
@@ -467,6 +477,33 @@ namespace Ruitk.Builder
                 inner.verticalScroller?.value ?? 0f);
         }
 
+        /// <summary>Brings a row into view VERTICALLY, leaving the horizontal
+        /// offset exactly where the user put it. ScrollView.ScrollTo moves both
+        /// axes to reveal the whole element, and a source row is as wide as the
+        /// longest line in the file — so revealing one row yanked the pane
+        /// sideways to a position nobody asked for, which read as the pane
+        /// scrolling on its own in random directions (owner report 2026-08-17).
+        /// A row already fully in view is left alone.</summary>
+        private void ScrollRowIntoView(VisualElement row)
+        {
+            if (row == null)
+                return;
+            float viewH = _scroll.contentViewport.resolvedStyle.height;
+            if (viewH <= 0f)
+                return;
+            float top = row.layout.yMin;
+            float bottom = row.layout.yMax;
+            var offset = _scroll.scrollOffset;
+            float y = offset.y;
+            if (top < y)
+                y = top;
+            else if (bottom > y + viewH)
+                y = bottom - viewH;
+            else
+                return;
+            _scroll.scrollOffset = new Vector2(offset.x, Mathf.Max(0f, y));
+        }
+
         /// <summary>POC row→source sync: band the line, scroll it into view, and —
         /// in edit mode — select it.</summary>
         public void FocusLine(int line1)
@@ -479,7 +516,7 @@ namespace Ruitk.Builder
             // listing offset — scrolling the listing directly would shear it
             // off the transparent glyphs; the caret move below drives both.
             if (!_coloredEdit && line1 >= 1 && line1 <= _linesHost.childCount)
-                _scroll.ScrollTo(_linesHost[line1 - 1]);
+                ScrollRowIntoView(_linesHost[line1 - 1]);
             if (!_editing)
                 return;
             string text = _input.value ?? "";
@@ -522,8 +559,17 @@ namespace Ruitk.Builder
         public void SetContent(string textLf, string filePath, HashSet<string> knownElements)
         {
             string nextPath = filePath ?? "";
-            if (!string.Equals(_filePath, nextPath, StringComparison.OrdinalIgnoreCase))
+            bool switchedFile =
+                !string.Equals(_filePath, nextPath, StringComparison.OrdinalIgnoreCase);
+            if (switchedFile)
+            {
                 _overlayDiagnostics = null;
+                // A new document starts at its top. The offset used to carry over
+                // from the previous file, so selecting another component showed
+                // it already scrolled to wherever the last one had been left
+                // (owner report 2026-08-17).
+                _scroll.scrollOffset = Vector2.zero;
+            }
             _filePath = nextPath;
             _knownElements = knownElements;
             _suppressChange = true;
