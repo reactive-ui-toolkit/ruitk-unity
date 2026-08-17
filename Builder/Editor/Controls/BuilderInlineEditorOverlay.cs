@@ -24,6 +24,7 @@ namespace Ruitk.Builder
         private string _seed;
         private Action<string> _commit;
         private Action _closed;
+        private Action _cancelled;
         private bool _done;
 
         public bool IsOpen => _panel != null;
@@ -49,11 +50,13 @@ namespace Ruitk.Builder
             bool multiline,
             Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>> completionProvider,
             Action<string> commit,
-            Action closed = null)
+            Action closed = null,
+            Action cancelled = null)
         {
             if (_root == null)
                 return;
             Close(commitIfChanged: true);
+            _cancelled = cancelled;
 
             _seed = seed ?? "";
             _commit = commit;
@@ -105,9 +108,17 @@ namespace Ruitk.Builder
             float rootWidth = _root.layout.width;
             float rootHeight = _root.layout.height;
             float width = Mathf.Clamp(Mathf.Max(bound.width, 260f), 200f, 640f);
+            // UB-99: the panel is unscaled window chrome sitting over a SCALED
+            // canvas row, so at high zoom a 30px/12px editor floated inside a
+            // much larger highlighted row. Both the box and its glyphs track the
+            // row's on-screen height, which is what the anchor's worldBound
+            // already reports — no zoom value needs to be threaded in.
+            float rowHeight = bound.height > 0f ? bound.height : 22f;
             float height = multiline
                 ? Mathf.Clamp(Mathf.Max(bound.height + 24f, 140f), 140f, 380f)
-                : 30f;
+                : Mathf.Clamp(rowHeight + 6f, 26f, 72f);
+            if (!multiline)
+                _field.FontSize = Mathf.Clamp(rowHeight * 0.62f, 11f, 34f);
             _panel.style.left = Mathf.Clamp(local.x, 4f, Mathf.Max(4f, rootWidth - width - 4f));
             _panel.style.top = Mathf.Clamp(local.y - 3f, 4f, Mathf.Max(4f, rootHeight - height - 4f));
             _panel.style.width = width;
@@ -152,6 +163,15 @@ namespace Ruitk.Builder
         {
             if (_field != field || _done || attempts <= 0)
                 return;
+            // UB-92: focusing an element only routes the keyboard if Unity also
+            // considers the hosting WINDOW focused. A menu pick leaves it on the
+            // Project window, so the field would be "focused" while Enter went
+            // off and opened the file in an external editor.
+            var host = _root?.panel?.visualTree == null
+                ? null
+                : UnityEditor.EditorWindow.focusedWindow;
+            if (host == null || !(host is BuilderWindow))
+                BuilderWindow.FocusExisting();
             field.FocusEditor();
             if (field.EditorHasFocus)
                 return;
@@ -182,10 +202,17 @@ namespace Ruitk.Builder
             string text = _field?.TextLf ?? "";
             var commit = _commit;
             var closed = _closed;
+            var cancelled = _cancelled;
+            _cancelled = null;
             bool changed = !string.Equals(text, _seed, StringComparison.Ordinal);
             RemovePanel();
             if (commitIfChanged && changed)
                 commit?.Invoke(text);
+            // UB-93: Escape on an editor the builder SEEDED has to undo the
+            // seeding too. Cancelling a wrap that only exists because the wrap
+            // opened this editor must leave no wrap behind.
+            else if (!commitIfChanged)
+                cancelled?.Invoke();
             closed?.Invoke();
         }
 

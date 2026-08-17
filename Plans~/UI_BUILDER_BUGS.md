@@ -1279,3 +1279,113 @@ on an older commit (`4ac0b2cd` vs the repo's tip) and was robocopy-synced from
 the repo at some earlier point. Nothing to revert - the content is already the
 committed content. Worth remembering when reading clone `git status`: it is a
 deploy target, not a second checkout of the same commit.
+
+## 12. Field report — owner drive-through, 2026-08-18 round 3
+
+Dogfooding decision recorded: the canvas is a real `.uitkx` component, the
+surrounding chrome is hand-built UI Toolkit C#. Owner: "for now let it stay,
+later we will make 1 go at trying to convert it all to full or close to full
+dogfooding". Not a defect - tracked as a future campaign, not in this wave.
+
+Owner question answered: a tree with no persisted layout opens at zoom **1.0**
+(`BuilderCanvasConfig.Zoom` defaults to 1f), which is LOD 1 - the 340px card
+with signature, imports, hook chips and markup rows but no attributes or code
+islands. A tree the user has opened before restores its saved zoom, clamped
+into the live range on load.
+
+### UB-90 — capabilities document + the skill that keeps it current `UNVERIFIED` `PROCESS`
+
+Owner: a `plans/` document listing everything the builder can do, updated with
+every capability change, "the reason for that is if we need to add that same
+builder to the other project we will have something to go by". Needs the doc
+AND a skill making the update mandatory, since a doc nobody is obliged to
+touch rots within a wave.
+
+### UB-91 — the loading state is invisible `UNVERIFIED` `LOW`
+
+`ShowMessage("Loading tree…")` is a small dim label in the canvas's top-left.
+Owner wants it centred and much larger, or a spinner in the middle.
+
+### UB-92 — inline editor opens with the WINDOW unfocused `UNVERIFIED` `HIGH`
+
+The UB-70 symptom is back and the real cause is finally identified: every menu
+is a separate `EditorWindow` (`BuilderSearchMenu : EditorWindow`, `ShowPopup`).
+When it closes after a pick, focus does NOT return to the builder - it lands on
+whatever Unity had focused before, typically the Project window. So the inline
+editor's `Focus()` succeeds INSIDE the builder's panel while the builder window
+itself is not the focused window, and the keystroke goes elsewhere: Enter
+reaches the Project window, which runs `OpenAsset`, which opens VS2022. The
+focus-retry loop added in UB-84 cannot help, because the field it is focusing
+is in an unfocused window. `BuilderSearchMenu` already records the invoking
+window in `s_pointerWindow` for positioning - it just never focuses it back.
+
+### UB-93 — wrap/edit commit semantics `UNVERIFIED` `MED`
+
+Owner: after a wrap the header input must be focused and typable, with Escape
+cancelling the whole addition, and Enter or clicking away committing. Escape
+currently cancels the EDIT but leaves the seeded directive in the buffer, so
+"cancel" does not undo the wrap that produced it.
+
+### UB-94 — only markup rows are selectable/deletable `UNVERIFIED` `MED`
+
+Owner: "everything should be delitable, not just the footer part of the
+component, hooks/ custom code.. etc.. i should be able to select and delete it
+without right clicking and delete xyz." Needs selection to cover hook chips,
+import rows, code-island lines and style/util export entries, each with a
+delete that knows its own line range.
+
+### UB-95 — flat wrap items should be one submenu `UNVERIFIED` `LOW`
+
+Five sibling "Wrap in @x" rows crowd the row menu. Owner wants a single
+"Wrap in…" opening a submenu of the directives.
+
+### UB-96 — code islands render with wrapped, ugly formatting `UNVERIFIED` `MED`
+
+Owner: "our coloring is phenomenal - formatting is terrible". The island in
+DISPLAY mode wraps long lines mid-expression; the source pane and the island's
+own EDIT mode both look right. Self-inflicted: the round-2 fix for "islands
+should scroll vertically only" set `CodeIslandLine` to `WhiteSpace = WsNormal`,
+which stopped the horizontal scrolling by making every long line wrap. The ask
+was about SCROLLING, not wrapping - the line should stay on one line and be
+clipped at the card edge.
+
+### UB-97 — focus selects the whole text `UNVERIFIED` `MED`
+
+Owner: entering edit mode selects everything (immediately in an island, after
+one extra click in the source pane). A field that selects-all on focus means
+the first keystroke destroys the content.
+
+### UB-98 — edit-mode scrollbar sits inside the text `UNVERIFIED` `MED`
+
+The coloured-edit overlay's scroller is inset from the right edge, overlapping
+the text instead of riding the boundary.
+
+### UB-99 — inline editor mismatches the row at non-default zoom `UNVERIFIED` `MED`
+
+The overlay is unscaled window chrome positioned over a SCALED canvas row, so
+at high zoom the highlighted row is large while the editor keeps its 12px font
+and 30px height - "the selected wrap is big and the input is ugly".
+
+### UB-100 — attribute editors do not auto-focus `UNVERIFIED` `MED`
+
+Same root as UB-92: clicking an attribute value opens the editor without the
+keyboard, so the user must click again before typing.
+
+
+All of UB-90..UB-100 implemented 2026-08-18 in one wave; gates green
+(validate-uitkx 0, SG-backed csc smoke EXIT=0, machine-path clean). Key
+implementation notes:
+- UB-92 is the ACTUAL fix for the long-standing UB-70 "Enter opens VS2022":
+  `BuilderSearchMenu.CloseAndRestoreFocus` focuses the invoking window before
+  running the pick, and the invoker is captured at Place() time rather than
+  relying on the positioning-only `s_pointerWindow`. The overlay also calls
+  `BuilderWindow.FocusExisting` before focusing its field.
+- UB-94 adds a second selection channel, `onLineSelect(path, from, to, label)`,
+  mirrored on the host beside the row selection; selecting either kind clears
+  the other. Wired to hook chips, import rows, code islands and style entries;
+  Delete routes the range through the same DeleteLinesInFile primitive.
+- UB-96 reverses the round-2 `WsNormal` island change: the ask then was about
+  SCROLLING, and wrapping was the wrong lever. Islands keep vertical-only
+  scrolling and clip instead.
+- UB-99 scales the inline editor from the anchor's worldBound height, so no
+  zoom value needs threading into the overlay.

@@ -14,6 +14,7 @@ export VirtualNode CanvasView(
   Action<int> onCardContext = null,
   Action<string, int> onRowClick = null,
   Action<string, int, int> onRowSelect = null,
+  Action<string, int, int, string> onLineSelect = null,
   Action<string, int, int> onRowContext = null,
   Action<float, float> onCanvasContext = null,
   Action<string, string, int> onStyleAddEntry = null,
@@ -46,6 +47,10 @@ export VirtualNode CanvasView(
   var (traceOwner, setTraceOwner) = useState(-1);
   var (layoutVersion, setLayoutVersion) = useState(0);
   var (hoverChipKey, setHoverChipKey) = useState("");
+  // UB-94: the key of whatever NON-markup thing is selected (a hook chip, an
+  // import, a code island, a style entry). Markup rows keep their own pair;
+  // selecting either kind clears the other, so exactly one thing is selected.
+  var (selLineKey, setSelLineKey) = useState("");
 
   var panning = useRef(false);
   var dragCard = useRef(-1);
@@ -384,10 +389,25 @@ export VirtualNode CanvasView(
                           >
                           @for (int x = 0; x < node.Imports.Count; x++) {
                             var imp = node.Imports[x];
+                            string impKey = $"imp:{index}:{x}";
                             return (
                               <VisualElement
                                 key={$"imp-{x}"}
+                                onPointerDown={e => {
+                                  if (e.Button == 1 || imp.SourceLine <= 0) {
+                                    return;
+                                  }
+                                  setSelected(index);
+                                  setSelRowNode(-1);
+                                  setSelRowIdx(-1);
+                                  setSelLineKey(impKey);
+                                  if (onLineSelect != null) {
+                                    onLineSelect(node.FilePath, imp.SourceLine, imp.SourceLine, "import");
+                                  }
+                                  e.StopPropagation();
+                                }}
                                 style={new Style {
+                                  BackgroundColor = selLineKey == impKey ? Rgba(255, 213, 79, 38) : Rgba(0, 0, 0, 0),
                                   FlexDirection = FlexRow,
                                   AlignItems = AlignCenter,
                                   PaddingTop = Px(1.5f),
@@ -469,6 +489,21 @@ export VirtualNode CanvasView(
                                     if (e.ClickCount >= 2 && node.Body[bx].SourceLine > 0) {
                                       if (onEditLine != null) {
                                         onEditLine(node.FilePath, node.Body[bx].SourceLine, node.Body[bx].SourceText, "", e.CurrentTarget);
+                                      }
+                                      e.StopPropagation();
+                                      return;
+                                    }
+                                    // UB-94: a single click SELECTS the chip, so
+                                    // Delete can remove it like any markup row.
+                                    if (node.Body[bx].SourceLine > 0) {
+                                      setSelected(index);
+                                      setSelRowNode(-1);
+                                      setSelRowIdx(-1);
+                                      setSelLineKey(chipKey);
+                                      if (onLineSelect != null) {
+                                        onLineSelect(node.FilePath, node.Body[bx].SourceLine,
+                                          node.Body[bx].EndLine > 0 ? node.Body[bx].EndLine : node.Body[bx].SourceLine,
+                                          "hook");
                                       }
                                       e.StopPropagation();
                                     }
@@ -581,6 +616,18 @@ export VirtualNode CanvasView(
                                         string.Join("\n", node.IslandLines), e.CurrentTarget);
                                     }
                                     e.StopPropagation();
+                                    return;
+                                  }
+                                  if (node.IslandStartLine > 0) {
+                                    setSelected(index);
+                                    setSelRowNode(-1);
+                                    setSelRowIdx(-1);
+                                    setSelLineKey($"island:{index}");
+                                    if (onLineSelect != null) {
+                                      onLineSelect(node.FilePath, node.IslandStartLine,
+                                        node.IslandEndLine, "code island");
+                                    }
+                                    e.StopPropagation();
                                   }
                                 }}
                                 style={traceOwner == index && BuilderCanvasDrawing.RowMatchesTrace(string.Join(" ", node.IslandLines), traceStates)
@@ -685,6 +732,18 @@ export VirtualNode CanvasView(
                                         if (e.ClickCount >= 2) {
                                           if (onEditIsland != null) {
                                             onEditIsland(node.FilePath, detail.SourceLine, detail.EndLine, detail.Text, e.CurrentTarget);
+                                          }
+                                          e.StopPropagation();
+                                          return;
+                                        }
+                                        if (detail.SourceLine > 0) {
+                                          setSelected(index);
+                                          setSelRowNode(-1);
+                                          setSelRowIdx(-1);
+                                          setSelLineKey($"entry:{index}:{x}");
+                                          if (onLineSelect != null) {
+                                            onLineSelect(node.FilePath, detail.SourceLine,
+                                              detail.EndLine > 0 ? detail.EndLine : detail.SourceLine, "entry");
                                           }
                                           e.StopPropagation();
                                         }
@@ -878,6 +937,7 @@ export VirtualNode CanvasView(
                                   setSelected(index);
                                   setSelRowNode(index);
                                   setSelRowIdx(rowIdx);
+                                  setSelLineKey("");
                                   // UB-74: the selection has to leave the fiber
                                   // for the Delete key to have a subject — the
                                   // host mirrors it the way it already mirrors

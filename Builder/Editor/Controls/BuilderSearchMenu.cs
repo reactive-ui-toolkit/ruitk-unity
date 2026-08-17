@@ -46,6 +46,7 @@ namespace Ruitk.Builder
 
         public static Item SectionHeader(string text) => new Item { Header = text };
 
+        private EditorWindow _invoker;
         private List<Item> _items;
         private Func<string, Item> _freeform;
         private string _title;
@@ -123,6 +124,15 @@ namespace Ruitk.Builder
 
         private static void Place(BuilderSearchMenu window, float width, float height)
         {
+            // Captured BEFORE ShowPopup steals focus. s_pointerWindow is only set
+            // by the gestures that need at-cursor placement, so it cannot be the
+            // only source for UB-92's focus restore — a menu opened from a
+            // toolbar or a chained submenu would have nothing to go back to.
+            window._invoker = s_pointerWindow != null && s_pointerValid
+                ? s_pointerWindow
+                : focusedWindow;
+            if (window._invoker == window)
+                window._invoker = null;
             // POC placeMenu(): every menu (and every submenu chained from one)
             // opens AT the click. Event.current is null outside OnGUI — UITK
             // pointer callbacks hand us the panel-space point instead, which the
@@ -254,13 +264,31 @@ namespace Ruitk.Builder
 
         private void OnLostFocus() => Close();
 
+        /// <summary>UB-92: every menu here is its own EditorWindow, so closing
+        /// one hands Unity's focus back to whatever it was on BEFORE the menu
+        /// opened — usually the Project window. The action a pick triggers often
+        /// opens the inline editor, and that editor was then focusing a field
+        /// inside a window Unity did not consider focused, so keystrokes went
+        /// somewhere else entirely: Enter reached the Project window, which runs
+        /// OpenAsset, which opens VS2022. The invoking window is already
+        /// remembered for positioning; focusing it back is what was missing.
+        /// The pick runs AFTER the focus is restored, so anything it opens
+        /// inherits a focused window.</summary>
+        private void CloseAndRestoreFocus()
+        {
+            var invoker = _invoker != null ? _invoker : s_pointerWindow;
+            Close();
+            if (invoker != null)
+                invoker.Focus();
+        }
+
         private void PickFirst()
         {
             foreach (var child in _list.contentContainer.Children())
             {
                 if (child.userData is Item item)
                 {
-                    Close();
+                    CloseAndRestoreFocus();
                     item.OnPick?.Invoke();
                     return;
                 }
@@ -277,7 +305,7 @@ namespace Ruitk.Builder
                     _errorLabel.text = error;
                 return;
             }
-            Close();
+            CloseAndRestoreFocus();
             _nameSubmit?.Invoke(value);
         }
 
@@ -376,7 +404,7 @@ namespace Ruitk.Builder
                     SubmitName();
                     return;
                 }
-                Close();
+                CloseAndRestoreFocus();
                 item.OnPick?.Invoke();
             });
             BuilderCursor.Set(row, MouseCursor.Link);

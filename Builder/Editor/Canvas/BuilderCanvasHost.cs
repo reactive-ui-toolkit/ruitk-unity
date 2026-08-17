@@ -307,11 +307,28 @@ namespace Ruitk.Builder
 
         public string SelectedCardPath => _selectPath;
 
+        private string _selLinePath = "";
+        private int _selLineFrom;
+        private int _selLineTo;
+        private string _selLineLabel = "";
+
+        /// <summary>UB-94: the selected NON-markup thing as a source line range —
+        /// a hook chip, an import, a code island, a style entry. Delete removes
+        /// exactly these lines.</summary>
+        public string SelectedLinePath => _selLinePath;
+
+        public int SelectedLineFrom => _selLineFrom;
+
+        public int SelectedLineTo => _selLineTo;
+
+        public string SelectedLineLabel => _selLineLabel;
+
         public void ClearRowSelection()
         {
             _selRowPath = "";
             _selRowIdx = -1;
             _selRowLine = 0;
+            _selLinePath = "";
         }
 
         /// <summary>POC selectNode(): opening a file from any route (row
@@ -449,6 +466,16 @@ namespace Ruitk.Builder
                             _selRowPath = path;
                             _selRowIdx = rowIdx;
                             _selRowLine = line;
+                            _selLinePath = "";
+                        },
+                        OnLineSelect = (path, from, to, label) =>
+                        {
+                            _selLinePath = path;
+                            _selLineFrom = from;
+                            _selLineTo = to;
+                            _selLineLabel = label;
+                            _selRowPath = "";
+                            _selRowIdx = -1;
                         },
                         OnRowContext = (path, line, rowIdx) => OnRowContext?.Invoke(path, line, rowIdx),
                         OnCanvasContext = (wx, wy) => ShowCreateMenu(wx, wy),
@@ -711,16 +738,60 @@ namespace Ruitk.Builder
 
         private const string DriftWarnedKey = "Ruitk.Builder.SchemaDriftWarned";
 
+        /// <summary>UB-91: a small dim label in the top-left corner read as an
+        /// empty canvas. The message is centred, large, and carries a spinner so
+        /// a slow tree load is obviously WORK rather than a blank window.</summary>
         private void ShowMessage(string text)
         {
             if (_container == null)
                 return;
             EditorRootRendererUtility.Unmount(_container);
             _container.Clear();
-            _container.Add(new Label(text)
+            var centre = new VisualElement
             {
-                style = { marginTop = 12f, marginLeft = 12f, color = new UnityEngine.Color(0.6f, 0.6f, 0.65f) },
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 0f, left = 0f, right = 0f, bottom = 0f,
+                    alignItems = Align.Center,
+                    justifyContent = Justify.Center,
+                },
+            };
+            var spinner = new VisualElement
+            {
+                style =
+                {
+                    width = 34f, height = 34f, marginBottom = 14f,
+                    borderTopLeftRadius = 17f, borderTopRightRadius = 17f,
+                    borderBottomLeftRadius = 17f, borderBottomRightRadius = 17f,
+                    borderTopWidth = 3f, borderRightWidth = 3f,
+                    borderBottomWidth = 3f, borderLeftWidth = 3f,
+                    borderTopColor = BuilderPalette.Accent,
+                    borderRightColor = new UnityEngine.Color(1f, 1f, 1f, 0.10f),
+                    borderBottomColor = new UnityEngine.Color(1f, 1f, 1f, 0.10f),
+                    borderLeftColor = new UnityEngine.Color(1f, 1f, 1f, 0.10f),
+                },
+            };
+            // One arc lit out of four, rotated on a schedule — a border trick, so
+            // it costs no texture and no repaint of anything but itself.
+            int angle = 0;
+            spinner.schedule.Execute(() =>
+            {
+                angle = (angle + 12) % 360;
+                spinner.style.rotate = new StyleRotate(new Rotate(new Angle(angle, AngleUnit.Degree)));
+            }).Every(16);
+            centre.Add(spinner);
+            centre.Add(new Label(text)
+            {
+                style =
+                {
+                    fontSize = 20f,
+                    color = new UnityEngine.Color(0.72f, 0.72f, 0.78f),
+                    unityTextAlign = TextAnchor.MiddleCenter,
+                },
             });
+            _container.Add(centre);
         }
     }
 }

@@ -138,7 +138,7 @@ namespace Ruitk.Builder
         /// <summary>Strips Unity's field chrome off one element of the TextField's
         /// inner hierarchy so the edit box reads as the POC's "#src-edit": a bare
         /// #17171b textarea with 12px mono ink and no inset field box.</summary>
-        private static void FlattenInput(VisualElement element)
+        private static void FlattenInput(VisualElement element, float fontSize)
         {
             if (element == null)
                 return;
@@ -160,15 +160,36 @@ namespace Ruitk.Builder
             element.style.marginBottom = 0f;
             element.style.marginLeft = 0f;
             element.style.marginRight = 0f;
-            element.style.fontSize = 12f;
+            element.style.fontSize = fontSize;
             element.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+        }
+
+        private float _fontSize = 12f;
+
+        /// <summary>UB-99: the inline editor scales its glyphs to the canvas row
+        /// it covers, so a fragment edited at high zoom is not a tiny field
+        /// floating inside a large highlighted row.</summary>
+        public float FontSize
+        {
+            get => _fontSize;
+            set
+            {
+                if (Mathf.Approximately(_fontSize, value))
+                    return;
+                _fontSize = value;
+                _input.style.fontSize = value;
+                FlattenInputTree();
+                foreach (var row in _linesHost.Children())
+                    row.style.fontSize = value;
+                Recolor(TextLf);
+            }
         }
 
         private void FlattenInputTree()
         {
-            FlattenInput(_input.Q(TextField.textInputUssName));
+            FlattenInput(_input.Q(TextField.textInputUssName), _fontSize);
             foreach (var text in _input.Query<TextElement>().ToList())
-                FlattenInput(text);
+                FlattenInput(text, _fontSize);
         }
 
         public CodeField()
@@ -291,6 +312,11 @@ namespace Ruitk.Builder
                 if (_coloredEdit)
                     ApplyColoredEditInk();
             });
+            // UB-97: entering edit mode must not select the whole document. The
+            // stock field selects all on focus, so the first keystroke replaced
+            // an entire code island or source file.
+            _input.textSelection.selectAllOnFocus = false;
+            _input.textSelection.selectAllOnMouseUp = false;
             _input.RegisterValueChangedCallback(OnInputChanged);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
             host.Add(_input);
@@ -425,7 +451,15 @@ namespace Ruitk.Builder
                 BuilderWindow.StyleScrollers(inner);
                 if (inner.verticalScroller != null)
                 {
+                    // UB-98: the input carries a Gutter-wide right padding, which
+                    // pushed its scroller in off the boundary and over the text.
+                    // Pinning it to the right edge puts it where every other
+                    // scroller in the window sits.
                     inner.verticalScroller.style.width = 8f;
+                    inner.verticalScroller.style.position = Position.Absolute;
+                    inner.verticalScroller.style.right = 0f;
+                    inner.verticalScroller.style.top = 0f;
+                    inner.verticalScroller.style.bottom = 0f;
                     inner.verticalScroller.valueChanged += _ => SyncListingScroll(inner);
                 }
                 if (inner.horizontalScroller != null)
@@ -770,7 +804,7 @@ namespace Ruitk.Builder
                     paddingLeft = Gutter,
                     paddingRight = Gutter,
                     color = BuilderPalette.Text,
-                    fontSize = 12f,
+                    fontSize = _fontSize,
                     whiteSpace = WhiteSpace.Pre,
                     unityTextAlign = TextAnchor.MiddleLeft,
                 },

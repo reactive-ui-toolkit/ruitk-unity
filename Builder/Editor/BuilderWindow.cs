@@ -42,6 +42,17 @@ namespace Ruitk.Builder
 
         public BuilderWorkspace Workspace => _workspace;
 
+        /// <summary>Brings an ALREADY-OPEN builder window forward without
+        /// creating one. UB-92: an inline editor needs its host window focused
+        /// for the keyboard to reach it, and a menu pick leaves Unity focused on
+        /// whatever window was in front before the popup.</summary>
+        internal static void FocusExisting()
+        {
+            var windows = Resources.FindObjectsOfTypeAll<BuilderWindow>();
+            if (windows != null && windows.Length > 0)
+                windows[0].Focus();
+        }
+
         public static BuilderWindow OpenEmpty()
         {
             var window = GetWindow<BuilderWindow>();
@@ -379,7 +390,10 @@ namespace Ruitk.Builder
                             "var (value, setValue) = useState(0);", "", anchor));
             };
             _canvasHost.OnEditAttrValue = ShowAttrValueEditor;
-            _canvasHost.OnEditDirective = ShowDirectiveEditor;
+            // Editing an EXISTING badge cancels only the edit; there is no
+            // seeding gesture behind it to undo.
+            _canvasHost.OnEditDirective =
+                (path, line, seed, anchor) => ShowDirectiveEditor(path, line, seed, anchor);
             _canvasHost.OnEditLine = ShowLineEditor;
             _canvasHost.OnEditIsland = ShowIslandEditor;
             // POC openNameMenu: a name entry is a title + placeholder-only input +
@@ -974,7 +988,17 @@ namespace Ruitk.Builder
                     OnPick = () => ShowRemoveAttributeMenu(full, sourceLine, row.AttrsText),
                 });
             items.Add(BuilderSearchMenu.Separator);
-            AddWrapItems(items, full, node, row, cardIndex, rowIdx);
+            // UB-95: one entry, not five siblings crowding the row menu.
+            items.Add(new BuilderSearchMenu.Item
+            {
+                Label = "Wrap in…",
+                OnPick = () =>
+                {
+                    var wraps = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+                    AddWrapItems(wraps, full, node, row, cardIndex, rowIdx);
+                    BuilderSearchMenu.ShowSimple("wrap <" + tag + "> in", wraps);
+                },
+            });
             if (rowIdx != BuilderCanvasDrawing.FirstElementRow(node))
             {
                 items.Add(BuilderSearchMenu.Separator);
@@ -1030,12 +1054,12 @@ namespace Ruitk.Builder
             bool isRoot = rowIdx == BuilderCanvasDrawing.FirstElementRow(node);
             items.Add(new BuilderSearchMenu.Item
             {
-                Label = "Wrap in @if",
+                Label = "@if",
                 OnPick = () => WrapRowInDirective(full, row, "@if (true)", cardIndex, rowIdx),
             });
             items.Add(new BuilderSearchMenu.Item
             {
-                Label = "Wrap in @switch",
+                Label = "@switch",
                 OnPick = () => WrapRowInSwitch(full, row, cardIndex),
             });
             if (isRoot)
@@ -1046,18 +1070,18 @@ namespace Ruitk.Builder
             }
             items.Add(new BuilderSearchMenu.Item
             {
-                Label = "Wrap in @foreach…",
+                Label = "@foreach…",
                 OnPick = () => ShowForeachWrapMenu(full, node, row, cardIndex, rowIdx),
             });
             items.Add(new BuilderSearchMenu.Item
             {
-                Label = "Wrap in @for",
+                Label = "@for",
                 OnPick = () => WrapRowInDirective(
                     full, row, "@for (int i = 0; i < 1; i++)", cardIndex, rowIdx),
             });
             items.Add(new BuilderSearchMenu.Item
             {
-                Label = "Wrap in @while",
+                Label = "@while",
                 OnPick = () => WrapRowInDirective(full, row, "@while (false)", cardIndex, rowIdx),
             });
         }
@@ -1356,9 +1380,13 @@ namespace Ruitk.Builder
                 var r = node.Markup[i];
                 if (r.Kind == BuilderCardLineKind.Directive && r.DirectiveLine == line1)
                 {
+                    // UB-93: this editor only exists because a wrap or a clause
+                    // add just seeded the line, so Escape undoes that seeding —
+                    // the ledger's last entry IS the gesture that opened it.
                     _canvasHost?.WithCanvasElement(
                         $"row-{cardIndex}-{i}",
-                        anchor => ShowDirectiveEditor(full, r.DirectiveLine, r.DirectiveText, anchor));
+                        anchor => ShowDirectiveEditor(
+                            full, r.DirectiveLine, r.DirectiveText, anchor, UndoAction));
                     return;
                 }
             }
@@ -2048,13 +2076,16 @@ namespace Ruitk.Builder
                 () => ResyncLspBuffer(full));
         }
 
-        private void ShowDirectiveEditor(string path, int directiveLine, string seed, VisualElement anchor)
+        private void ShowDirectiveEditor(
+            string path, int directiveLine, string seed, VisualElement anchor,
+            System.Action cancelled = null)
         {
             string full = Path.GetFullPath(path);
             _inlineEditor.Show(anchor, seed, multiline: false,
                 FragmentCompletion(full, (text, l0, c0) => MapLineFragment(full, directiveLine, text, "", c0)),
                 text => OnDirectiveEdited(full, directiveLine, text),
-                () => ResyncLspBuffer(full));
+                () => ResyncLspBuffer(full),
+                cancelled);
         }
 
         private void ShowLineEditor(
@@ -3943,6 +3974,19 @@ namespace Ruitk.Builder
                     return;
                 }
             }
+            // UB-94: a selected hook chip / import / island / style entry is a
+            // plain source-line range, so Delete removes exactly those lines
+            // through the same primitive every menu delete uses.
+            string linePath = _canvasHost?.SelectedLinePath;
+            if (!string.IsNullOrEmpty(linePath) && _canvasHost.SelectedLineFrom > 0)
+            {
+                DeleteLinesInFile(
+                    linePath, _canvasHost.SelectedLineFrom, _canvasHost.SelectedLineTo,
+                    "delete " + _canvasHost.SelectedLineLabel);
+                _canvasHost.ClearRowSelection();
+                return;
+            }
+
             // UB-87: deleting a CARD deletes a FILE off disk, and the card
             // selection is never empty — the window rings the focus file's card
             // from the frame it opens. So Delete with no row selected used to

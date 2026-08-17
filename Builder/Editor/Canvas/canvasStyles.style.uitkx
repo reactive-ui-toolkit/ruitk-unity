@@ -244,12 +244,20 @@ export Style CodeIsland = new Style {
 // Owner decision 2026-08-16 (deliberate POC divergence): islands scroll
 // VERTICALLY only inside the card — a long statement WRAPS instead of hiding
 // behind a horizontal scroll, so the fixed 16.7 line box becomes a minimum.
+// UB-96: one source line renders as ONE line. WsNormal was used to stop the
+// island scrolling horizontally, but it bought that by wrapping every long
+// statement mid-expression, which is why the display read as badly formatted
+// while the same text in edit mode read fine. The island keeps its
+// vertical-only scrolling and simply CLIPS what runs past the card edge —
+// double-click opens the editor, which scrolls horizontally.
 export Style CodeIslandLine = new Style {
   Color = Hex("#bdbdc7"),
   FontSize = Px(11.5f),
-  MinHeight = Px(16.7f),
+  Height = Px(16.7f),
   TextAlign = TextMiddleLeft,
-  WhiteSpace = WsNormal,
+  WhiteSpace = WsPre,
+  Overflow = OverflowHidden,
+  FlexShrink = 0,
   UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
 };
 
