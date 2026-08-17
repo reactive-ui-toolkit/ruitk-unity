@@ -619,8 +619,15 @@ namespace Ruitk.Builder
             BuilderSearchMenu.ShowSimple(node.Title, items);
         }
 
-        /// <summary>The card delete plus its referenced-by guard, in one place so
-        /// the keyboard path (UB-74) cannot drift from the menu's rules.</summary>
+        /// <summary>The card delete plus BOTH its guards, in one place so the
+        /// keyboard path (UB-74) cannot drift from the menu's rules: the
+        /// referenced-by check, and a modal confirmation.
+        /// <para>UB-87: this deletes a FILE off disk and nothing else in the
+        /// builder does. It ran from a bare Delete keypress with no prompt and
+        /// destroyed two of the owner's sample files, so the confirmation lives
+        /// here rather than at either call site — a menu click is one slip away
+        /// from the same loss, and the undo ledger only holds buffers, so it
+        /// cannot bring a deleted file back.</para></summary>
         public bool RequestDeleteCard(int index)
         {
             if (_graph == null || index < 0 || index >= _graph.Nodes.Count)
@@ -635,6 +642,17 @@ namespace Ruitk.Builder
             {
                 OnToast?.Invoke(
                     "Can't delete: still referenced by " + string.Join(", ", referencedBy) + ".");
+                return false;
+            }
+            if (!UnityEditor.EditorUtility.DisplayDialog(
+                    "Delete file?",
+                    "Delete " + System.IO.Path.GetFileName(node.FilePath) + " from disk?\n\n"
+                    + "This removes the asset from the project. Undo history holds "
+                    + "buffers only - it cannot bring a deleted file back.",
+                    "Delete file",
+                    "Cancel"))
+            {
+                OnToast?.Invoke("Delete cancelled");
                 return false;
             }
             OnDeleteFile?.Invoke(node.FilePath);

@@ -425,11 +425,13 @@ namespace Ruitk.Builder
                 int idx = projectRel.IndexOf("/Assets/", System.StringComparison.OrdinalIgnoreCase);
                 if (idx < 0)
                     idx = projectRel.IndexOf("/Packages/", System.StringComparison.OrdinalIgnoreCase);
+                // UB-87: to the OS trash, not erased. Same one keystroke, but the
+                // file is recoverable afterwards instead of gone.
                 if (idx >= 0)
-                    UnityEditor.AssetDatabase.DeleteAsset(projectRel.Substring(idx + 1));
+                    UnityEditor.AssetDatabase.MoveAssetToTrash(projectRel.Substring(idx + 1));
                 else
                     File.Delete(path);
-                Toast("Deleted " + Path.GetFileName(path));
+                Toast("Deleted " + Path.GetFileName(path) + " (moved to trash)");
                 MountCanvas();
             };
             _canvasHost.OnCreateRequested = ShowCreatePrompt;
@@ -3892,17 +3894,21 @@ namespace Ruitk.Builder
                     return;
                 }
             }
+            // UB-87: deleting a CARD deletes a FILE off disk, and the card
+            // selection is never empty — the window rings the focus file's card
+            // from the frame it opens. So Delete with no row selected used to
+            // destroy the file the user had just opened, and because deleting a
+            // row clears the row selection, two Delete presses in a row did
+            // exactly that. A file delete now always asks first, in a modal the
+            // user has to read, naming the file.
             string cardPath = _canvasHost?.SelectedCardPath;
-            if (!string.IsNullOrEmpty(cardPath))
+            int index = string.IsNullOrEmpty(cardPath) ? -1 : _canvasHost.NodeIndexOf(cardPath);
+            if (index < 0)
             {
-                int index = _canvasHost.NodeIndexOf(cardPath);
-                if (index >= 0)
-                {
-                    _canvasHost.RequestDeleteCard(index);
-                    return;
-                }
+                Toast("Nothing selected to delete");
+                return;
             }
-            Toast("Nothing selected to delete");
+            _canvasHost.RequestDeleteCard(index);
         }
 
         /// <summary>Escape cancels the innermost active edit: the floating inline

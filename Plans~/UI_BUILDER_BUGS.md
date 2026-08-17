@@ -1190,3 +1190,39 @@ FIX: `ScrollRowIntoView` adjusts the vertical offset only, leaves the
 horizontal offset exactly where the user put it, and does nothing at all when
 the row is already fully in view. `SetContent` resets the offset when the file
 actually changes.
+
+### UB-87 — Delete destroyed sample FILES off disk `UNVERIFIED` `CRITICAL`
+
+Owner, 2026-08-17: "the actual file got deleted the one i started the builder
+with". Two files were lost from the embedded clone — `ShowcaseDemoPage.uitkx`
+and `ShowcaseFieldsPanel.uitkx`, plus their metas. Both were restored with
+`git restore` in the clone (it is a checkout; the repo copies were never
+touched, which is why the repo showed no changes).
+
+ROOT CAUSE, and it is mine — UB-74's `DeleteSelection` falls back to the CARD
+selection when no row is selected, and deleting a card deletes a FILE. Three
+things compounded:
+1. The card selection is NEVER empty. `Mount` rings the focus file's card from
+   the frame the window opens, so "no row selected" always resolved to "delete
+   the file you just opened".
+2. Deleting a row CLEARS the row selection. So two Delete presses in a row
+   deleted an element and then the whole file.
+3. There was no prompt. A menu click at least names the file it is about to
+   delete; a keypress said nothing.
+
+The owner's other symptom — "only showed 1 module even zoomed out max and no
+connections, and i undo alot but didnt help" — is a consequence, not a separate
+bug: the deleted root was the file that imports everything, and the ledger
+holds BUFFERS, so no amount of undo could bring a file back.
+
+FIX: the confirmation lives in `RequestDeleteCard`, the shared guard, so the
+MENU path is covered too — a click is one slip away from the same loss. It is a
+modal naming the file, and it says plainly that undo cannot reverse it. The
+delete itself now uses `AssetDatabase.MoveAssetToTrash` rather than
+`DeleteAsset`: same keystroke, but the file is recoverable afterwards.
+
+DELIBERATELY NOT DONE: teaching the ledger to resurrect a deleted file. It
+would have to re-create the asset, and a re-created `.uitkx` gets a NEW meta
+and GUID, so every reference to it elsewhere in the project silently rots.
+Unity's own trash keeps the original meta, which is the safer recovery path.
+Revisit only with a design that preserves the GUID.
