@@ -282,6 +282,28 @@ export Style CodeIslandHover = new Style {
   PaddingBottom = Px(6),
 };
 
+// UB-102: a SELECTED island — one click, before any edit. Warm band plus the
+// accent outline, matching how a selected markup row and a selected hook chip
+// read, so "this is what Delete will remove" is the same signal everywhere.
+export Style CodeIslandSelected = new Style {
+  MarginTop = Px(6),
+  BackgroundColor = Rgba(255, 213, 79, 38),
+  Overflow = OverflowHidden,
+  BorderRadius = Px(6),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#ffb74d"),
+  BorderRightColor = Hex("#ffb74d"),
+  BorderBottomColor = Hex("#ffb74d"),
+  BorderLeftColor = Hex("#ffb74d"),
+  PaddingLeft = Px(9),
+  PaddingRight = Px(9),
+  PaddingTop = Px(6),
+  PaddingBottom = Px(6),
+};
+
 // POC ".code-island.hl" — a code island whose text names a traced hook state.
 export Style CodeIslandTrace = new Style {
   MarginTop = Px(6),

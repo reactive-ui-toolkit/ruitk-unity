@@ -166,6 +166,26 @@ namespace Ruitk.Builder
 
         private float _fontSize = 12f;
 
+        /// <summary>Strips the source pane's generous gutter and vertical
+        /// padding. The fragment editors are one row tall, and the 8px/Gutter
+        /// chrome ate so much of the box that scaled-up glyphs were clipped top
+        /// and bottom (owner report 2026-08-18).</summary>
+        public void UseCompactChrome()
+        {
+            _input.style.paddingTop = 2f;
+            _input.style.paddingBottom = 2f;
+            _input.style.paddingLeft = 6f;
+            _input.style.paddingRight = 6f;
+            _compact = true;
+            foreach (var row in _linesHost.Children())
+            {
+                row.style.paddingLeft = 6f;
+                row.style.paddingRight = 6f;
+            }
+        }
+
+        private bool _compact;
+
         /// <summary>UB-99: the inline editor scales its glyphs to the canvas row
         /// it covers, so a fragment edited at high zoom is not a tiny field
         /// floating inside a large highlighted row.</summary>
@@ -666,8 +686,11 @@ namespace Ruitk.Builder
             if ((evt.ctrlKey || SingleLine)
                 && (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter))
             {
-                evt.StopPropagation();
-                evt.PreventDefault();
+                // PreventDefault is obsolete in Unity 6 (CS0618); consuming the
+                // underlying IMGUI event is what actually stops the Editor from
+                // acting on the same keystroke.
+                evt.StopImmediatePropagation();
+                evt.imguiEvent?.Use();
                 ApplyRequested?.Invoke();
                 return;
             }
@@ -798,11 +821,11 @@ namespace Ruitk.Builder
                 enableRichText = true,
                 style =
                 {
-                    height = LineHeight,
+                    height = _compact ? _fontSize * 1.45f : LineHeight,
                     minHeight = 0f,
                     flexShrink = 0f,
-                    paddingLeft = Gutter,
-                    paddingRight = Gutter,
+                    paddingLeft = _compact ? 6f : Gutter,
+                    paddingRight = _compact ? 6f : Gutter,
                     color = BuilderPalette.Text,
                     fontSize = _fontSize,
                     whiteSpace = WhiteSpace.Pre,

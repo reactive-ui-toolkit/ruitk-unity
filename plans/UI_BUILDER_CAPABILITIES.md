@@ -54,8 +54,11 @@ Driven by zoom, three bands:
 
 ### Edges
 Bezier import edges, one per import row plus one per markup row that
-instantiates another module; terminal dots mark anchors. Edges are painted in a
-screen-space overlay so stroke weight is constant at every zoom.
+instantiates another module. An edge LEAVES a card at its top-right corner and
+ARRIVES at the target's top-left, so a curve never crosses the content of the
+card it belongs to. Small anchor dots stay on the individual import and markup
+rows to mark which row owns a reference. Edges are painted in a screen-space
+overlay so stroke weight is constant at every zoom.
 
 ## 3. Reading a tree
 
@@ -83,7 +86,10 @@ diagnostics. Enter commits, Escape cancels, clicking away commits. Escape on an
 editor the builder SEEDED (a fresh wrap or clause) also undoes the seeding.
 
 Editable in place: attribute values, directive headers, hook chips, style entry
-lines, code islands (multiline), and element rows.
+lines, code islands (multiline), and element rows. The editor takes the size and
+position of the thing it edits - a code island editor replaces its island
+exactly, and a single-line editor matches its row's height and glyph size at any
+zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
 
 ### Structural operations
 - **Add attribute** — searchable, typed from the schema for native elements and
@@ -112,7 +118,8 @@ lines, code islands (multiline), and element rows.
 
 ### Selection and the keyboard
 - Exactly one thing is selected at a time: a card, a markup row, or a
-  line-backed item (hook chip, import row, code island, style entry).
+  line-backed item (hook chip, import row, code island, style entry). Selection
+  is always visible - a warm band and accent outline on whatever is selected.
 - **Delete** removes the selection: an element row, a directive clause, a whole
   directive block, a hook/import/island/entry line range, or — falling through
   to the card — the module itself.

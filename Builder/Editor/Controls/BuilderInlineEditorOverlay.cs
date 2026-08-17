@@ -98,7 +98,7 @@ namespace Ruitk.Builder
             // 2026-08-17). Falls back to the anchor when the row cannot be found,
             // which is what every non-row surface uses anyway.
             Rect bound = anchor != null ? anchor.worldBound : new Rect(60f, 60f, 320f, 24f);
-            var rowHost = RowAncestorOf(anchor);
+            var rowHost = multiline ? null : RowAncestorOf(anchor);
             if (rowHost != null && rowHost.worldBound.width > bound.width)
             {
                 var rowBound = rowHost.worldBound;
@@ -107,20 +107,38 @@ namespace Ruitk.Builder
             Vector2 local = _root.WorldToLocal(new Vector2(bound.xMin, bound.yMin));
             float rootWidth = _root.layout.width;
             float rootHeight = _root.layout.height;
-            float width = Mathf.Clamp(Mathf.Max(bound.width, 260f), 200f, 640f);
             // UB-99: the panel is unscaled window chrome sitting over a SCALED
             // canvas row, so at high zoom a 30px/12px editor floated inside a
             // much larger highlighted row. Both the box and its glyphs track the
-            // row's on-screen height, which is what the anchor's worldBound
-            // already reports — no zoom value needs to be threaded in.
+            // anchor's on-screen size, which its worldBound already reports —
+            // no zoom value needs to be threaded in.
             float rowHeight = bound.height > 0f ? bound.height : 22f;
-            float height = multiline
-                ? Mathf.Clamp(Mathf.Max(bound.height + 24f, 140f), 140f, 380f)
-                : Mathf.Clamp(rowHeight + 6f, 26f, 72f);
-            if (!multiline)
-                _field.FontSize = Mathf.Clamp(rowHeight * 0.62f, 11f, 34f);
+            float width;
+            float height;
+            if (multiline)
+            {
+                // UB-101: a code island editor REPLACES its island — same place,
+                // same size — instead of floating as a larger box beside it.
+                width = Mathf.Clamp(bound.width, 260f, 900f);
+                height = Mathf.Clamp(bound.height, 90f, 520f);
+            }
+            else
+            {
+                width = Mathf.Clamp(Mathf.Max(bound.width, 260f), 200f, 640f);
+                // Glyphs sized from the row, then the box sized from the glyphs
+                // plus the compact chrome — the previous order clipped the text
+                // because the input's 8px padding pair was never accounted for.
+                _field.UseCompactChrome();
+                float font = Mathf.Clamp(rowHeight * 0.55f, 11f, 26f);
+                _field.FontSize = font;
+                height = Mathf.Max(font * 1.65f + 8f, rowHeight);
+            }
+            // An island sits exactly where its display was; a single-line field
+            // lifts 3px so its border does not clip the row's own baseline.
+            float topOffset = multiline ? 0f : -3f;
             _panel.style.left = Mathf.Clamp(local.x, 4f, Mathf.Max(4f, rootWidth - width - 4f));
-            _panel.style.top = Mathf.Clamp(local.y - 3f, 4f, Mathf.Max(4f, rootHeight - height - 4f));
+            _panel.style.top =
+                Mathf.Clamp(local.y + topOffset, 4f, Mathf.Max(4f, rootHeight - height - 4f));
             _panel.style.width = width;
             _panel.style.height = height;
 

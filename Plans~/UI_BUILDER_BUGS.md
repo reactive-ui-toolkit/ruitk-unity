@@ -1389,3 +1389,70 @@ implementation notes:
   scrolling and clip instead.
 - UB-99 scales the inline editor from the anchor's worldBound height, so no
   zoom value needs threading into the overlay.
+
+## 13. Field report — owner drive-through, 2026-08-18 round 4
+
+Owner confirmed fixed this round: the code islands now colour (UB-76 wave).
+Everything below was raised in the same message and fixed same-day.
+
+### UB-101 — island editor floats instead of replacing the island `UNVERIFIED` `MED`
+
+Owner: "the body code input doesnt match the size (as if its outside island) -
+maybe we should replace in place the display mode to edit mode same size and
+everything." The multiline branch ignored the anchor's measured size and used a
+fixed 140-380 band plus a +24 pad, so the editor opened as a different-sized
+box overlapping its own island. It now takes the anchor's exact worldBound for
+both position and size, with the 3px lift suppressed for multiline.
+
+### UB-102 — a selected chip or island showed no selection `UNVERIFIED` `MED`
+
+Owner: "when you click 1 time on the field it should be orange selected to
+demonstrate that its selected". UB-94 made these things selectable but only the
+import rows got a highlight. Hook chips now take the warm band plus the accent
+outline, and islands get a `CodeIslandSelected` style — the same signal a
+selected markup row uses, so "this is what Delete removes" reads identically
+everywhere.
+
+### UB-103 — edges leave a card from the middle of its content `UNVERIFIED` `MED`
+
+Owner: "the linking points are in bad position, they should be right top most
+of each component." The SOURCE end of every edge sat at the import or markup row
+that produced it, so at L2 on a tall card the endpoint was far down the card and
+the curve ran back across its own content. Edges now leave from the card's
+TOP-RIGHT corner (`SourceTopRight`), incoming still arrive at the top-left.
+The per-row anchor DOTS are untouched: they still mark which row owns the
+reference, which the curve no longer has to encode.
+
+### UB-104 — setState during render, every frame the host pushed `UNVERIFIED` `HIGH`
+
+`[Hooks][Strict] State update scheduled during render` at CanvasView.uitkx:63.
+Real, and ours: the host pushes selection and camera as version bumps, and the
+component applied them by calling `setSelected`/`setZoom`/`setCamX`/`setCamY`
+in the render body. The render now DERIVES the incoming value for the current
+pass and a `useEffect` keyed on the version commits it for later ones — the
+shape React's "adjusting state on a prop change" guidance describes. This is
+also the most likely source of the "it broke at some point" render corruption
+seen in round 2, since a set during render re-enters the reconciler mid-pass.
+
+### UB-105 — obsolete PreventDefault (CS0618) `UNVERIFIED` `LOW`
+
+Two sites. `EventBase.PreventDefault` is obsolete in Unity 6; it was also
+redundant, since consuming the underlying IMGUI event is what actually stops
+the Editor acting on the keystroke. Both now use
+`StopImmediatePropagation` + `imguiEvent.Use()`.
+
+### UB-106 — inline editor clipped its own text `UNVERIFIED` `MED`
+
+Owner: "the textfield is cut off (maybe font size too big, or too big of
+padding)". Both, and self-inflicted by UB-99: the font was scaled to the row
+height but the box was sized without accounting for the input's 8px vertical
+padding pair and Gutter-wide sides. Fragment editors now use compact chrome
+(2px vertical, 6px sides) and the box is sized FROM the chosen font
+(`font * 1.65 + 8`) rather than the other way round.
+
+### Still outstanding — clone LSP publish
+
+The schema-drift warning naming Vector2Field and friends is the pre-UB-75
+server still running: `Server~/UitkxLanguageServer.dll` in the clone remains
+locked by two live `.NET Host` processes. Publish it with Unity closed; nothing
+else waits on it.

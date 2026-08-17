@@ -751,6 +751,19 @@ namespace Ruitk.Builder
                     : new Vector2(rect.xMin, rect.yMin + EdgeAnchorY / CurrentZoom);
             }
 
+            /// UB-103: an edge LEAVES a card at its top-right corner. The source
+            /// end used to sit at the import or markup row that produced it,
+            /// which at L2 on a tall card put the endpoint far down the card and
+            /// ran the curve back across its own content — the owner's "linking
+            /// points are in bad position, they should be right top most". The
+            /// per-row anchor DOTS stay where they are: they mark which row owns
+            /// the reference, which the curve no longer has to encode.
+            Vector2 SourceTopRight(BuilderCanvasNode node, int index)
+            {
+                var rect = CardRect(index, node);
+                return new Vector2(rect.xMax, rect.yMin + EdgeAnchorY / CurrentZoom);
+            }
+
             // POC computeEdges: ONE edge per import row, PLUS one per markup row
             // that instantiates a graph node — ShopScreen draws 6 + 3 curves, not 6.
             foreach (var edge in graph.Edges)
@@ -769,11 +782,7 @@ namespace Ruitk.Builder
                 }
                 else
                 {
-                    int importRow = ImportRowIndex(from, edge.Specifier);
-                    a = AnchorOf(
-                        "a-imp-" + edge.FromIndex + "-" + importRow,
-                        new Vector2(
-                            from.X + width - 16f, from.Y + ImportRowY(from, edge.Specifier)));
+                    a = SourceTopRight(from, edge.FromIndex);
                 }
 
                 // POC drawEdges() line 1458: "if (!a || !target) return;" — an
@@ -814,9 +823,7 @@ namespace Ruitk.Builder
                     }
                     else
                     {
-                        a = AnchorOf(
-                            "a-row-" + i + "-" + r,
-                            new Vector2(from.X + width - 16f, from.Y + MarkupRowY(from, r)));
+                        a = SourceTopRight(from, i);
                     }
                     StrokeEdge(p, a, TargetOf(target, to), BuilderPalette.UsageEdge, false);
                 }

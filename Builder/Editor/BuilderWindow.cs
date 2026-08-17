@@ -3864,7 +3864,9 @@ namespace Ruitk.Builder
         private static void ConsumeKey(KeyDownEvent evt)
         {
             evt.StopImmediatePropagation();
-            evt.PreventDefault();
+            // PreventDefault is obsolete in Unity 6 (CS0618) and was redundant:
+            // consuming the underlying IMGUI event is the part that stops the
+            // Editor acting on the same keystroke.
             evt.imguiEvent?.Use();
         }
 
