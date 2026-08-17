@@ -43,6 +43,10 @@ namespace Ruitk.Builder
         public Action<string, string, int> OnStyleAddEntry;
         public Action<string> OnAddHook;
         public Action<string> OnDeleteFile;
+
+        /// <summary>UB-88: files to leave out of the tree even though they are
+        /// still on disk — deletions the user has made but not yet saved.</summary>
+        public Func<string, bool> IsFileHidden;
         public Action<string, int, int, string, VisualElement> OnEditAttrValue;
         public Action<string, int, string, VisualElement> OnEditDirective;
         public Action<string, int, string, string, VisualElement> OnEditLine;
@@ -67,7 +71,8 @@ namespace Ruitk.Builder
             try
             {
                 var client = await BuilderLspService.GetOrStartAsync();
-                graph = await BuilderGraphService.LoadTreeAsync(client, focusFile, readText);
+                graph = await BuilderGraphService.LoadTreeAsync(
+                    client, focusFile, readText, IsFileHidden);
                 await CheckSchemaDrift(client);
             }
             catch (Exception ex)
@@ -619,15 +624,10 @@ namespace Ruitk.Builder
             BuilderSearchMenu.ShowSimple(node.Title, items);
         }
 
-        /// <summary>The card delete plus BOTH its guards, in one place so the
-        /// keyboard path (UB-74) cannot drift from the menu's rules: the
-        /// referenced-by check, and a modal confirmation.
-        /// <para>UB-87: this deletes a FILE off disk and nothing else in the
-        /// builder does. It ran from a bare Delete keypress with no prompt and
-        /// destroyed two of the owner's sample files, so the confirmation lives
-        /// here rather than at either call site — a menu click is one slip away
-        /// from the same loss, and the undo ledger only holds buffers, so it
-        /// cannot bring a deleted file back.</para></summary>
+        /// <summary>The card delete plus its referenced-by guard, in one place so
+        /// the keyboard path (UB-74) cannot drift from the menu's rules. The sink
+        /// only MARKS the file (UB-88) — nothing reaches disk before Save, which
+        /// is what makes this reversible and is why it asks nothing here.</summary>
         public bool RequestDeleteCard(int index)
         {
             if (_graph == null || index < 0 || index >= _graph.Nodes.Count)
@@ -642,17 +642,6 @@ namespace Ruitk.Builder
             {
                 OnToast?.Invoke(
                     "Can't delete: still referenced by " + string.Join(", ", referencedBy) + ".");
-                return false;
-            }
-            if (!UnityEditor.EditorUtility.DisplayDialog(
-                    "Delete file?",
-                    "Delete " + System.IO.Path.GetFileName(node.FilePath) + " from disk?\n\n"
-                    + "This removes the asset from the project. Undo history holds "
-                    + "buffers only - it cannot bring a deleted file back.",
-                    "Delete file",
-                    "Cancel"))
-            {
-                OnToast?.Invoke("Delete cancelled");
                 return false;
             }
             OnDeleteFile?.Invoke(node.FilePath);

@@ -1221,8 +1221,61 @@ modal naming the file, and it says plainly that undo cannot reverse it. The
 delete itself now uses `AssetDatabase.MoveAssetToTrash` rather than
 `DeleteAsset`: same keystroke, but the file is recoverable afterwards.
 
-DELIBERATELY NOT DONE: teaching the ledger to resurrect a deleted file. It
-would have to re-create the asset, and a re-created `.uitkx` gets a NEW meta
-and GUID, so every reference to it elsewhere in the project silently rots.
-Unity's own trash keeps the original meta, which is the safer recovery path.
-Revisit only with a design that preserves the GUID.
+SUPERSEDED SAME DAY by UB-88 - see below. The owner corrected the premise:
+nothing may reach disk before Save at all, which dissolves the GUID problem
+rather than working around it.
+
+### UB-88 — deletion violated the save-only contract `UNVERIFIED` `CRITICAL`
+
+Owner, correcting UB-87's fix: "Nothing should be created or deleted or
+anything, really applied until save is clicked, user can play with the builder
+millions of times and years and unless they save.. everything get discarded..
+so this whole thing doesnt apply."
+
+Right, and it makes UB-87's GUID reasoning moot rather than a tradeoff to be
+managed. `BuilderWorkspace` documents the save-only disk contract (VE-D2) in
+its own class comment — "during editing nothing here writes" — and deletion was
+the one operation that ignored it, calling `AssetDatabase` the instant it was
+asked. That is why a keypress could destroy files the user never saved, and why
+no amount of undo helped.
+
+FIX: a deletion is a pending INTENT, like every other edit.
+- `BuilderWorkspace` owns `_pendingDeletes` (serialized, so it survives a domain
+  reload with the rest of the session). `MarkForDeletion` / `UnmarkForDeletion` /
+  `IsPendingDelete`, and `HasUnsavedChanges` counts them.
+- The card leaves the canvas immediately: `LoadTreeAsync` takes an `isHidden`
+  predicate that drops the node and every edge touching it, wired to
+  `IsPendingDelete`. The file itself is untouched.
+- `SaveAll` performs the deletions in the same batch as the writes, via
+  `MoveAssetToTrash`, then clears the list. `AbortAll` discards them.
+- The ledger records deletions as `Change.IsDeletion`, so Ctrl+Z un-marks and
+  Ctrl+Y re-marks. Nothing is re-created, so no GUID churns.
+- The confirmation moved OFF the delete gesture and ONTO Save, which is the
+  moment it stops being reversible; it lists every file by name and says they
+  go to the trash.
+
+### UB-89 — builder shortcuts leaked into Unity `UNVERIFIED` `HIGH`
+
+Owner: "i think ctrl+z and ctrol + shield + z.. and y also happened in the
+window unity not just the ui tree.. which is also bad it should all be
+contained within that window!!"
+
+`StopPropagation()` ends UI Toolkit's own propagation but leaves the underlying
+IMGUI event alive, so the Editor went on to run its GLOBAL Undo/Redo for the
+same keystroke — mutating the scene behind the user while the builder undid a
+buffer. Every builder shortcut had this, including Ctrl+S.
+
+FIX: one `ConsumeKey` helper — `StopImmediatePropagation` + `PreventDefault` +
+`imguiEvent.Use()`. Using the imgui event is the part that tells the Editor the
+keystroke is spoken for.
+
+### Provenance note — the six "modified" sample files were NOT builder writes
+
+Owner: "no change should have happened, i changed nothing deliberately !! didnt
+save one". Confirmed, and the builder is exonerated: all six files in the clone
+are byte-identical to the repo working copy, and the repo's `Samples/` tree is
+clean against its own HEAD. They read as modified only because the CLONE sits
+on an older commit (`4ac0b2cd` vs the repo's tip) and was robocopy-synced from
+the repo at some earlier point. Nothing to revert - the content is already the
+committed content. Worth remembering when reading clone `git status`: it is a
+deploy target, not a second checkout of the same commit.

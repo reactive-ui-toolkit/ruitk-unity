@@ -18,8 +18,14 @@ namespace Ruitk.Builder
     /// </summary>
     internal static class BuilderGraphService
     {
+        /// <summary><paramref name="isHidden"/> drops a file from the tree
+        /// entirely — nodes and every edge touching them. UB-88 uses it for
+        /// files marked for deletion: the card has to leave the canvas the
+        /// moment the user deletes it, while the file itself stays on disk
+        /// until Save.</summary>
         public static async Task<BuilderGraph> LoadTreeAsync(
-            BuilderLspClient client, string focusFile, Func<string, string> readText = null)
+            BuilderLspClient client, string focusFile, Func<string, string> readText = null,
+            Func<string, bool> isHidden = null)
         {
             JToken raw = await RequestGraphWithRetry(client);
             var nodes = (raw?["nodes"] ?? raw?["Nodes"]) as JArray ?? new JArray();
@@ -31,6 +37,8 @@ namespace Ruitk.Builder
             {
                 string file = Str(n, "file", "File");
                 if (string.IsNullOrEmpty(file))
+                    continue;
+                if (isHidden != null && isHidden(file))
                     continue;
                 var names = new List<string>();
                 BuilderNodeKind kind = BuilderNodeKind.Unknown;
@@ -59,6 +67,8 @@ namespace Ruitk.Builder
                 string to = Str(e, "toFile", "ToFile");
                 string spec = Str(e, "specifier", "Specifier");
                 if (string.IsNullOrEmpty(from))
+                    continue;
+                if (isHidden != null && (isHidden(from) || (!string.IsNullOrEmpty(to) && isHidden(to))))
                     continue;
                 from = Path.GetFullPath(from);
                 string toFull = string.IsNullOrEmpty(to) ? "" : Path.GetFullPath(to);

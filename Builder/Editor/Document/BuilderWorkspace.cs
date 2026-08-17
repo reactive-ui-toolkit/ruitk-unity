@@ -30,14 +30,55 @@ namespace Ruitk.Builder
 
         [SerializeField] private List<BuilderDocumentSession> _serializedSessions = new List<BuilderDocumentSession>();
 
+        /// <summary>UB-88: files the user has deleted in the builder but which
+        /// are still on disk. Deleting used to hit `AssetDatabase` the instant
+        /// it was asked for, which broke the save-only contract this class owns
+        /// (VE-D2) in the one direction that could not be taken back — the owner
+        /// lost two sample files to it. A deletion is now a PENDING intent like
+        /// every other edit: the card leaves the canvas, nothing leaves the
+        /// disk, and Save is what makes it real. Abort forgets it, and undo is
+        /// just un-marking, so no asset is ever re-created and no GUID
+        /// churns.</summary>
+        [SerializeField] private List<string> _pendingDeletes = new List<string>();
+
         public event Action Changed;
 
         public IReadOnlyCollection<BuilderDocumentSession> Sessions => _sessions.Values;
+
+        public IReadOnlyList<string> PendingDeletes => _pendingDeletes;
+
+        public bool IsPendingDelete(string filePath) =>
+            filePath != null && _pendingDeletes.Contains(Path.GetFullPath(filePath));
+
+        /// <summary>Returns false when the file is read-only or already marked.</summary>
+        public bool MarkForDeletion(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || IsReadOnlyLocation(filePath))
+                return false;
+            string full = Path.GetFullPath(filePath);
+            if (_pendingDeletes.Contains(full))
+                return false;
+            _pendingDeletes.Add(full);
+            Changed?.Invoke();
+            return true;
+        }
+
+        public bool UnmarkForDeletion(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return false;
+            if (!_pendingDeletes.Remove(Path.GetFullPath(filePath)))
+                return false;
+            Changed?.Invoke();
+            return true;
+        }
 
         public bool HasUnsavedChanges
         {
             get
             {
+                if (_pendingDeletes.Count > 0)
+                    return true;
                 foreach (var s in _sessions.Values)
                     if (s.IsDirty && !s.IsReadOnly)
                         return true;
@@ -148,9 +189,9 @@ namespace Ruitk.Builder
         {
             var dirty = new List<BuilderDocumentSession>();
             foreach (var s in _sessions.Values)
-                if (s.IsDirty && !s.IsReadOnly)
+                if (s.IsDirty && !s.IsReadOnly && !IsPendingDelete(s.FilePath))
                     dirty.Add(s);
-            if (dirty.Count == 0)
+            if (dirty.Count == 0 && _pendingDeletes.Count == 0)
                 return 0;
 
             bool hmrActive = UitkxHmrController.IsActive;
@@ -172,20 +213,38 @@ namespace Ruitk.Builder
                     File.WriteAllText(s.FilePath, text);
                     s.MarkClean(s.BufferText);
                 }
+
+                // Deletions land in the same batch, and only here. The asset is
+                // moved to the trash rather than erased, so even a CONFIRMED and
+                // SAVED delete stays recoverable outside the builder.
+                foreach (string path in _pendingDeletes)
+                {
+                    _sessions.Remove(path);
+                    string assetPath = ToAssetPath(path);
+                    if (assetPath != null)
+                        AssetDatabase.MoveAssetToTrash(assetPath);
+                    else if (File.Exists(path))
+                        File.Delete(path);
+                }
             }
             finally
             {
                 suppressor?.Dispose();
             }
 
+            int deleted = _pendingDeletes.Count;
+            _pendingDeletes.Clear();
             Changed?.Invoke();
-            return dirty.Count;
+            return dirty.Count + deleted;
         }
 
-        /// <summary>Discards every dirty buffer back to disk state; never-saved sessions close.</summary>
+        /// <summary>Discards every dirty buffer back to disk state; never-saved
+        /// sessions close. Pending deletions are discarded too — an aborted
+        /// session must leave the tree exactly as it found it.</summary>
         public int AbortAll()
         {
-            int reverted = 0;
+            int reverted = _pendingDeletes.Count;
+            _pendingDeletes.Clear();
             var toRemove = new List<string>();
             foreach (var s in _sessions.Values)
             {
@@ -208,6 +267,18 @@ namespace Ruitk.Builder
         {
             if (_sessions.Remove(filePath))
                 Changed?.Invoke();
+        }
+
+        /// <summary>Absolute path to the "Assets/…" or "Packages/…" form the
+        /// AssetDatabase understands, or null when the file lives outside both
+        /// (a tree opened from somewhere Unity does not index).</summary>
+        private static string ToAssetPath(string fullPath)
+        {
+            string normalized = fullPath.Replace('\\', '/');
+            int at = normalized.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
+            if (at < 0)
+                at = normalized.IndexOf("/Packages/", StringComparison.OrdinalIgnoreCase);
+            return at < 0 ? null : normalized.Substring(at + 1);
         }
 
         // ── ISerializationCallbackReceiver ───────────────────────────────────

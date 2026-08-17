@@ -419,21 +419,27 @@ namespace Ruitk.Builder
                                 path, "\nexport int " + name + " = 0;", "value " + name)),
                     },
                 });
+            // UB-88: a delete is an EDIT, and edits do not reach disk until Save
+            // (VE-D2). This used to call AssetDatabase straight away, which is
+            // how a keypress destroyed sample files the user never saved. It now
+            // only marks the intent, so Abort forgets it and Ctrl+Z un-marks it —
+            // the asset is never re-created, so no GUID ever churns.
             _canvasHost.OnDeleteFile = path =>
             {
-                string projectRel = path.Replace('\\', '/');
-                int idx = projectRel.IndexOf("/Assets/", System.StringComparison.OrdinalIgnoreCase);
-                if (idx < 0)
-                    idx = projectRel.IndexOf("/Packages/", System.StringComparison.OrdinalIgnoreCase);
-                // UB-87: to the OS trash, not erased. Same one keystroke, but the
-                // file is recoverable afterwards instead of gone.
-                if (idx >= 0)
-                    UnityEditor.AssetDatabase.MoveAssetToTrash(projectRel.Substring(idx + 1));
-                else
-                    File.Delete(path);
-                Toast("Deleted " + Path.GetFileName(path) + " (moved to trash)");
+                if (!_workspace.MarkForDeletion(path))
+                {
+                    Toast("Can't delete " + Path.GetFileName(path) + " (read-only)");
+                    return;
+                }
+                _ledger.Begin("delete " + Path.GetFileName(path));
+                _ledger.RecordDeletion(path);
+                _ledger.End();
+                RefreshHistoryPanel();
+                Toast("Deleted " + Path.GetFileName(path) + " - applies on Save");
+                RefreshChrome();
                 MountCanvas();
             };
+            _canvasHost.IsFileHidden = path => _workspace.IsPendingDelete(path);
             _canvasHost.OnCreateRequested = ShowCreatePrompt;
             _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
             // The side panes are built BEFORE the canvas mounts. Mount() is an
@@ -789,9 +795,20 @@ namespace Ruitk.Builder
             // Reverse order: a gesture that inserted then re-indented the same
             // region unwinds in the order it was written.
             var writes = new System.Collections.Generic.List<(string, string)>();
+            bool remounted = false;
             for (int i = entry.Changes.Count - 1; i >= 0; i--)
-                writes.Add((entry.Changes[i].FilePath, entry.Changes[i].Before));
-            ApplyLedgerWrites(writes, "Undo " + entry.Description);
+            {
+                var change = entry.Changes[i];
+                if (change.IsDeletion)
+                {
+                    // The file never left the disk, so undoing a delete is just
+                    // dropping the intent — the card comes straight back.
+                    remounted |= _workspace.UnmarkForDeletion(change.FilePath);
+                    continue;
+                }
+                writes.Add((change.FilePath, change.Before));
+            }
+            ApplyLedgerWrites(writes, "Undo " + entry.Description, remounted);
         }
 
         private void RedoAction()
@@ -803,9 +820,17 @@ namespace Ruitk.Builder
                 return;
             }
             var writes = new System.Collections.Generic.List<(string, string)>();
+            bool remounted = false;
             foreach (var change in entry.Changes)
+            {
+                if (change.IsDeletion)
+                {
+                    remounted |= _workspace.MarkForDeletion(change.FilePath);
+                    continue;
+                }
                 writes.Add((change.FilePath, change.After));
-            ApplyLedgerWrites(writes, "Redo " + entry.Description);
+            }
+            ApplyLedgerWrites(writes, "Redo " + entry.Description, remounted);
         }
 
         /// <summary>Writes a ledger step's buffers back with recording OFF, then
@@ -814,10 +839,20 @@ namespace Ruitk.Builder
         /// in the ledger, but the guard is the same last line of defense the
         /// edit path uses.</summary>
         private void ApplyLedgerWrites(
-            System.Collections.Generic.List<(string FilePath, string Text)> writes, string label)
+            System.Collections.Generic.List<(string FilePath, string Text)> writes, string label,
+            bool remountCanvas = false)
         {
-            if (writes.Count == 0)
+            if (writes.Count == 0 && !remountCanvas)
                 return;
+            if (remountCanvas)
+            {
+                RefreshChrome();
+                RefreshHistoryPanel();
+                MountCanvas();
+                Toast(label);
+                if (writes.Count == 0)
+                    return;
+            }
             using (_ledger.Suppress())
             {
                 foreach (var (filePath, text) in writes)
@@ -3788,6 +3823,20 @@ namespace Ruitk.Builder
             return legend;
         }
 
+        /// <summary>UB-89: fully consumes a key the builder handled.
+        /// StopPropagation only ends UI Toolkit's own propagation — the
+        /// underlying IMGUI event carries on to the Editor, which is why
+        /// Ctrl+Z in the builder ALSO ran Unity's global Undo and Ctrl+Y its
+        /// Redo, mutating the scene behind the user's back. Using the imgui
+        /// event is what tells the Editor the keystroke is spoken for, so the
+        /// builder's shortcuts stay inside the builder's window.</summary>
+        private static void ConsumeKey(KeyDownEvent evt)
+        {
+            evt.StopImmediatePropagation();
+            evt.PreventDefault();
+            evt.imguiEvent?.Use();
+        }
+
         private void OnKeyDown(KeyDownEvent evt)
         {
             if (!evt.ctrlKey && !evt.commandKey)
@@ -3800,12 +3849,12 @@ namespace Ruitk.Builder
                 if (evt.keyCode == KeyCode.Delete)
                 {
                     DeleteSelection();
-                    evt.StopPropagation();
+                    ConsumeKey(evt);
                 }
                 else if (evt.keyCode == KeyCode.Escape)
                 {
                     CancelActiveEdit();
-                    evt.StopPropagation();
+                    ConsumeKey(evt);
                 }
                 return;
             }
@@ -3814,7 +3863,7 @@ namespace Ruitk.Builder
             {
                 case KeyCode.S:
                     SaveAll();
-                    evt.StopPropagation();
+                    ConsumeKey(evt);
                     break;
                 // UB-73: undo walks the ACTION ledger, not the focus file's own
                 // stack — a gesture that touched two files reverts as one step
@@ -3824,11 +3873,11 @@ namespace Ruitk.Builder
                         RedoAction();
                     else
                         UndoAction();
-                    evt.StopPropagation();
+                    ConsumeKey(evt);
                     break;
                 case KeyCode.Y:
                     RedoAction();
-                    evt.StopPropagation();
+                    ConsumeKey(evt);
                     break;
             }
         }
@@ -3931,6 +3980,28 @@ namespace Ruitk.Builder
 
         private void SaveAll()
         {
+            // UB-88: Save is where a deletion stops being reversible, so it is
+            // the only place worth asking — up to that moment the user can undo
+            // it, abort, or simply never save. The list names every file.
+            var pending = _workspace.PendingDeletes;
+            if (pending.Count > 0)
+            {
+                var names = new System.Text.StringBuilder();
+                foreach (string path in pending)
+                    names.Append("  ").Append(Path.GetFileName(path)).Append('\n');
+                if (!UnityEditor.EditorUtility.DisplayDialog(
+                        "Save deletes files",
+                        "Saving will delete " + pending.Count + " file(s) from the project:\n\n"
+                        + names
+                        + "\nThey are moved to the trash, not erased. Everything else "
+                        + "in this save is a normal text edit.",
+                        "Save and delete",
+                        "Cancel"))
+                {
+                    Toast("Save cancelled");
+                    return;
+                }
+            }
             bool hmrActive = Ruitk.EditorSupport.HMR.UitkxHmrController.IsActive;
             int written = _workspace.SaveAll();
             BuilderSaveMetrics.RecordSaveBatch(written, hmrActive);

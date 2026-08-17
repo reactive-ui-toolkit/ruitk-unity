@@ -27,6 +27,11 @@ namespace Ruitk.Builder
             public string FilePath;
             public string Before;
             public string After;
+
+            /// <summary>A pending-deletion mark rather than a buffer rewrite.
+            /// Undo un-marks it, redo re-marks it — nothing on disk moves either
+            /// way, because the deletion itself only happens at Save.</summary>
+            public bool IsDeletion;
         }
 
         internal sealed class Entry
@@ -109,6 +114,20 @@ namespace Ruitk.Builder
                 return;
             }
             _open.Changes.Add(new Change { FilePath = filePath, Before = before, After = after });
+            if (standalone)
+                Commit();
+        }
+
+        /// <summary>Records that a file was marked for deletion. Carries no text
+        /// because none is needed: the file is still on disk until Save.</summary>
+        public void RecordDeletion(string filePath)
+        {
+            if (Replaying || string.IsNullOrEmpty(filePath))
+                return;
+            bool standalone = _open == null;
+            if (standalone)
+                _open = new Entry { Description = "delete", At = DateTime.Now };
+            _open.Changes.Add(new Change { FilePath = filePath, IsDeletion = true });
             if (standalone)
                 Commit();
         }
