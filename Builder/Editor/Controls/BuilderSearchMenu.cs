@@ -227,7 +227,21 @@ namespace Ruitk.Builder
                         if (_nameValidate != null)
                             SubmitName();
                         else
-                            PickFirst();
+                            PickHighlighted();
+                        evt.StopPropagation();
+                    }
+                    // UB-122: the list could only ever be driven by the mouse or
+                    // by Enter-on-the-first-match. Arrows move a highlight and
+                    // Enter takes it, so a menu is usable without leaving the
+                    // keyboard the search field already owns.
+                    else if (evt.keyCode == KeyCode.DownArrow)
+                    {
+                        MoveHighlight(1);
+                        evt.StopPropagation();
+                    }
+                    else if (evt.keyCode == KeyCode.UpArrow)
+                    {
+                        MoveHighlight(-1);
                         evt.StopPropagation();
                     }
                 }, TrickleDown.TrickleDown);
@@ -282,17 +296,48 @@ namespace Ruitk.Builder
                 invoker.Focus();
         }
 
-        private void PickFirst()
+        private void PickFirst() => PickHighlighted();
+
+        /// <summary>Index into the PICKABLE rows (headers and separators are not
+        /// pickable and are skipped). -1 means "the first pickable row", which
+        /// keeps Enter-without-arrows behaving as it always did.</summary>
+        private int _highlight = -1;
+
+        private List<VisualElement> PickableRows()
         {
+            var rows = new List<VisualElement>();
+            if (_list == null)
+                return rows;
             foreach (var child in _list.contentContainer.Children())
-            {
-                if (child.userData is Item item)
-                {
-                    CloseAndRestoreFocus();
-                    item.OnPick?.Invoke();
-                    return;
-                }
-            }
+                if (child.userData is Item)
+                    rows.Add(child);
+            return rows;
+        }
+
+        private void MoveHighlight(int delta)
+        {
+            var rows = PickableRows();
+            if (rows.Count == 0)
+                return;
+            int next = _highlight < 0 ? (delta > 0 ? 0 : rows.Count - 1) : _highlight + delta;
+            _highlight = Mathf.Clamp(next, 0, rows.Count - 1);
+            for (int i = 0; i < rows.Count; i++)
+                rows[i].style.backgroundColor = i == _highlight
+                    ? new Color(0.31f, 0.76f, 0.97f, 0.14f)
+                    : new Color(0f, 0f, 0f, 0f);
+            _list.ScrollTo(rows[_highlight]);
+        }
+
+        private void PickHighlighted()
+        {
+            var rows = PickableRows();
+            if (rows.Count == 0)
+                return;
+            int index = _highlight < 0 ? 0 : Mathf.Clamp(_highlight, 0, rows.Count - 1);
+            if (!(rows[index].userData is Item item))
+                return;
+            CloseAndRestoreFocus();
+            item.OnPick?.Invoke();
         }
 
         private void SubmitName()
@@ -311,6 +356,10 @@ namespace Ruitk.Builder
 
         private void Rebuild()
         {
+            // Typing refilters, so the previous highlight index means nothing
+            // against the new row set — back to "the first match", which is what
+            // Enter has always taken.
+            _highlight = -1;
             _list.contentContainer.Clear();
             if (_nameValidate != null)
             {

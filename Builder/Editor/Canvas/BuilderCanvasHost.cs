@@ -46,6 +46,9 @@ namespace Ruitk.Builder
         /// <summary>UB-117: "+ code" — a statement in the component body, which
         /// until now could only be written in the source pane.</summary>
         public Action<string> OnAddCode;
+
+        /// <summary>UB-123: double-clicking an import row copies its alias.</summary>
+        public Action<string> OnCopyImportAlias;
         public Action<string> OnDeleteFile;
 
         /// <summary>UB-88: files to leave out of the tree even though they are
@@ -98,6 +101,75 @@ namespace Ruitk.Builder
         {
             ".style.uitkx", ".hooks.uitkx", ".uitkx",
         };
+
+        /// <summary>UB-121: edges came ONLY from the language server's module
+        /// graph, which is built from files on disk — so an import pointing at a
+        /// module that is still an unsaved buffer produced no edge, and the card
+        /// showed an anchor DOT with no line leaving it. The dots are painted per
+        /// import ROW, which is why one appeared without the other. Any import
+        /// whose specifier resolves to a node on this canvas now gets an edge,
+        /// whatever the server knew about it.</summary>
+        private static void AppendMissingImportEdges(BuilderGraph graph)
+        {
+            if (graph == null)
+                return;
+            for (int i = 0; i < graph.Nodes.Count; i++)
+            {
+                var node = graph.Nodes[i];
+                string dir = System.IO.Path.GetDirectoryName(node.FilePath);
+                if (string.IsNullOrEmpty(dir))
+                    continue;
+                foreach (var import in node.Imports)
+                {
+                    string spec = import.AttrsText;
+                    if (string.IsNullOrEmpty(spec) || !spec.StartsWith(".", StringComparison.Ordinal))
+                        continue;
+                    int target = ResolveSpecifier(graph, dir, spec);
+                    if (target < 0 || target == i)
+                        continue;
+                    bool known = false;
+                    foreach (var edge in graph.Edges)
+                        if (edge.FromIndex == i && edge.ToIndex == target)
+                        {
+                            known = true;
+                            break;
+                        }
+                    if (known)
+                        continue;
+                    graph.Edges.Add(new BuilderCanvasEdge
+                    {
+                        FromIndex = i,
+                        ToIndex = target,
+                        Specifier = spec,
+                        TargetKind = graph.Nodes[target].Kind,
+                    });
+                }
+            }
+        }
+
+        /// <summary>A relative import specifier to a node index. The specifier
+        /// carries no extension, so each module suffix is tried in turn — the
+        /// same set the pending-node titles are stripped with.</summary>
+        private static int ResolveSpecifier(BuilderGraph graph, string fromDir, string specifier)
+        {
+            foreach (string suffix in s_moduleSuffixes)
+            {
+                string candidate;
+                try
+                {
+                    candidate = System.IO.Path.GetFullPath(
+                        System.IO.Path.Combine(fromDir, specifier + suffix));
+                }
+                catch (Exception)
+                {
+                    return -1;
+                }
+                int index = graph.IndexOf(candidate);
+                if (index >= 0)
+                    return index;
+            }
+            return -1;
+        }
         public Action<string, int, int, string, VisualElement> OnEditAttrValue;
         public Action<string, int, string, VisualElement> OnEditDirective;
         public Action<string, int, string, string, VisualElement> OnEditLine;
@@ -141,6 +213,7 @@ namespace Ruitk.Builder
             // buffer through the same PopulateCardDetail every other card uses,
             // so a never-saved component is a real card until Save makes it one.
             AppendPendingNewNodes(graph, readText);
+            AppendMissingImportEdges(graph);
             _graph = graph;
             onGraphLoaded?.Invoke(graph);
             _config = BuilderCanvasConfig.LoadForMember(focusFile)
@@ -547,6 +620,7 @@ namespace Ruitk.Builder
                             OnStyleAddEntry?.Invoke(path, styleName, closeLine),
                         OnAddHook = path => OnAddHook?.Invoke(path),
                         OnAddCode = path => OnAddCode?.Invoke(path),
+                        OnCopyImportAlias = text => OnCopyImportAlias?.Invoke(text),
                         OnEditAttrValue = (path, line, ai, seed, anchor) =>
                             OnEditAttrValue?.Invoke(path, line, ai, seed, anchor),
                         OnEditDirective = (path, line, seed, anchor) =>

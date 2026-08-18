@@ -20,6 +20,7 @@ export VirtualNode CanvasView(
   Action<string, string, int> onStyleAddEntry = null,
   Action<string> onAddHook = null,
   Action<string> onAddCode = null,
+  Action<string> onCopyImportAlias = null,
   Action<string> onRowNavigate = null,
   Action<string, int, int, string, VisualElement> onEditAttrValue = null,
   Action<string, int, string, VisualElement> onEditDirective = null,
@@ -413,8 +414,17 @@ export VirtualNode CanvasView(
                             return (
                               <VisualElement
                                 key={$"imp-{x}"}
+                                tooltip={imp.Text + " - double-click copies the name"}
                                 onPointerDown={e => {
                                   if (e.Button == 1 || imp.SourceLine <= 0) {
+                                    return;
+                                  }
+                                  // the alias is the name every reference spells
+                                  if (e.ClickCount >= 2) {
+                                    if (onCopyImportAlias != null) {
+                                      onCopyImportAlias(imp.Text);
+                                    }
+                                    e.StopPropagation();
                                     return;
                                   }
                                   setSelected(index);

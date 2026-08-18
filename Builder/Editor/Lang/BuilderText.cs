@@ -19,6 +19,27 @@ namespace Ruitk.Builder
             return i;
         }
 
+        /// <summary>UB-123: the NAME an import binds, from its row text. Handles
+        /// the three shapes the language allows — "import * as Alias from …",
+        /// "import { A, B } from …" (the first name), and a bare namespace
+        /// import, which binds nothing and returns null.</summary>
+        public static string ImportAliasOf(string importLine)
+        {
+            if (string.IsNullOrEmpty(importLine))
+                return null;
+            var star = System.Text.RegularExpressions.Regex.Match(
+                importLine, @"\*\s+as\s+([A-Za-z_][A-Za-z0-9_]*)");
+            if (star.Success)
+                return star.Groups[1].Value;
+            var braced = System.Text.RegularExpressions.Regex.Match(
+                importLine, @"\{\s*([A-Za-z_][A-Za-z0-9_]*)");
+            if (braced.Success)
+                return braced.Groups[1].Value;
+            var direct = System.Text.RegularExpressions.Regex.Match(
+                importLine, @"^\s*import\s+([A-Za-z_][A-Za-z0-9_]*)\s+from");
+            return direct.Success ? direct.Groups[1].Value : null;
+        }
+
         public static string LeadingIndent(string line) =>
             string.IsNullOrEmpty(line) ? "" : line.Substring(0, LeadingSpaceCount(line));
     }

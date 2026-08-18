@@ -422,6 +422,21 @@ namespace Ruitk.Builder
                         anchor => ShowLineEditor(
                             full, LineOfNewHook(full, chipIndex), seed, "", anchor));
             };
+            // UB-123: the alias is the name every reference to the module has to
+            // spell, and the row truncates it. Double-click puts just the alias
+            // on the clipboard — the specifier and the "import"/"from" chrome
+            // are never what the user needs to paste.
+            _canvasHost.OnCopyImportAlias = text =>
+            {
+                string alias = BuilderText.ImportAliasOf(text);
+                if (string.IsNullOrEmpty(alias))
+                {
+                    Toast("Couldn't read that import's name");
+                    return;
+                }
+                UnityEditor.EditorGUIUtility.systemCopyBuffer = alias;
+                Toast("Copied \"" + alias + "\"");
+            };
             _canvasHost.OnEditAttrValue = ShowAttrValueEditor;
             // Editing an EXISTING badge cancels only the edit; there is no
             // seeding gesture behind it to undo.

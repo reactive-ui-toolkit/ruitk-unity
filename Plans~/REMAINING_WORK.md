@@ -174,3 +174,45 @@ pins all 18 tags, and the docs site has the "uGUI Backend" page at /ugui.
 | UG-3b | Compile-time markup diagnostics: driven-rect warning (rect props on a child of a childControl* LayoutGroup tag) and pointer-with-raycastTarget-false hint — the runtime editor hint ships (`UguiRectApplier.HintIfDriven`); the markup-level analysis needs parent-chain prop inspection in DiagnosticsAnalyzer | runtime hint only | ugui field wave shows the runtime hint is not early enough |
 | UG-7 | `Animate` support for ugui hosts (tween adapter) — ON HOLD by owner; current guidance: Animator/DOTween via `Ref<RectTransform>` | `ResolveAnimationTarget` casts to VisualElement (null for ugui) | owner go |
 | UG-8 | Prefab-bridge and island SCENE samples (need owner-side prefab/PanelSettings assets) + store omit-list review. Shipped: UguiDemo counter, RuntimeUguiGalleryDemo (slider/toggle/dropdown/input/scroll list), RuntimeUguiStressTestDemo (StressTest port), and the Ruitk.Ugui.Tests EditMode assembly (11 runtime tests incl. two stress-churn loops) | Samples/Showcase/Runtime + Ugui/Tests | owner F5 pass |
+
+## SG-APOSTROPHE — an apostrophe in a `//` comment inside a `{…}` attribute expression breaks emission
+
+Found 2026-08-19 while editing `Builder/Editor/Canvas/CanvasView.uitkx`.
+
+MINIMAL REPRO — inside any attribute expression lambda:
+```
+onPointerDown={e => {
+  // an import's alias is the name
+  if (e.ClickCount >= 2) { … }
+}}
+```
+The file PARSES cleanly (`validate-uitkx` reports 0 diagnostics) but the
+GENERATED C# is malformed: the smoke compile reports `CS1520 Method must have
+a return type` and a cascade of ~37 errors at generated positions. Removing the
+apostrophe from the comment — same comment, same place — compiles clean. So it
+is the `'`, not the comment and not the flattening.
+
+WHY IT IS NOT A ONE-LINE FIX: every char-literal scanner in `language-lib` and
+`SourceGenerator~` already routes through `CSharpLexFacts`, so the naive-scan
+explanation does not hold; the fault is subtler, most likely in
+`TrySkipNonCode`'s comment handling or an emitter path that re-scans comment
+text after the parse. Fixing it properly means finding that path, moving it
+onto the shared lexer, and carrying the change across all FOUR emission layers
+(SG emitter, HMR emitters, IDE virtual doc, shared parser) with tests — the
+parity discipline CLAUDE.md requires, not a tail-end patch.
+
+USER IMPACT: real and not builder-specific. Any `.uitkx` author writing an
+ordinary English comment ("// don't do this") inside an attribute lambda gets a
+file that parses but will not compile, with errors pointing at generated
+positions rather than at their comment. Worth a dedicated pass.
+
+WORKAROUND until then: no apostrophes in comments inside attribute expressions.
+
+## UB-124 — rename a module from the canvas
+
+Owner ask 2026-08-19: "all component should have an option to renaim them."
+Not started. Scope is why: a rename is the export name, the file name, the
+folder name when the module owns one, and EVERY importer's specifier and
+binding across the tree — with the save-only contract meaning all of it stays
+pending until Save. That is a real refactor feature, not a menu item, and it
+wants its own pass rather than being bolted onto a fix wave.

@@ -1734,3 +1734,54 @@ replacement for it.
 
 Lesson worth keeping: a save-only contract cannot be enforced by a string
 comparison at one call site, because the framework has its own save door.
+
+## 17. Field report — wiring a style module, 2026-08-19
+
+### UB-121 — an import to an unsaved module drew a dot but no line `UNVERIFIED` `HIGH`
+
+Owner: "even when connected no pint line, just dots." Edges came ONLY from the
+language server's module graph, which is built from files on DISK, so an import
+pointing at a module that is still an unsaved buffer produced no edge at all.
+The anchor DOTS are painted per import ROW, independently, which is exactly why
+one appeared without the other. `AppendMissingImportEdges` now resolves every
+relative import specifier against the nodes on the canvas and adds any edge the
+server did not know about — so a brand-new style module wires up immediately,
+and the dot always has its line.
+
+### UB-122 — menus were mouse-only `UNVERIFIED` `MED`
+
+Owner: "the menus doesnt have up / down for navigating them." Arrow keys now
+move a highlight through the pickable rows (headers and separators skipped) and
+Enter takes it; the list scrolls to follow. Typing refilters and resets the
+highlight to "first match", which is what Enter always did.
+
+### UB-123 — an import's binding name was unreachable text `UNVERIFIED` `MED`
+
+Owner: "we cannot copy the name of the variable in the import so either make it
+copyable, or make it autocomplete in fields." Double-clicking an import row now
+copies just the BINDING — `BuilderText.ImportAliasOf` reads the three shapes the
+language allows (`* as Alias`, `{ A, B }`, a bare default) — not the specifier
+or the import chrome, since the binding is the only part a reference has to
+spell.
+
+### Answered, not defects
+
+- "Why is the component not visible / shows nothing on the right" — a preview
+  needs a compiled TYPE, and a module that has never been saved has never been
+  compiled, so there is nothing to instantiate. The pane already says so. This
+  is inherent to save-gating, not a regression: save once and previews work
+  from then on.
+- "How do I connect a new style to the component" — dragging the style module
+  from the library onto the CARD already adds the import (`stylemod` drop,
+  guarded to components). The menu is not the only route; the gesture the owner
+  proposed is the one that exists.
+
+### Deferred with a reason
+
+- Renaming a module — REMAINING_WORK UB-124. It is a cross-file refactor
+  (export, file, folder, and every importer's specifier and binding), not a
+  menu item.
+- An apostrophe in a `//` comment inside a `{…}` attribute expression breaks
+  SOURCE GENERATION while parsing clean — REMAINING_WORK SG-APOSTROPHE. Found
+  while editing CanvasView; minimal repro recorded. It affects any .uitkx
+  author, not just the builder.
