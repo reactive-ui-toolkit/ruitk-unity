@@ -34,13 +34,15 @@ namespace Ruitk.Builder
         /// ComponentName/components/New/New.uitkx, while a style, hook or util
         /// module belongs to the component being edited and lands beside it.
         /// </summary>
-        public static string PathFor(string focusDirectory, string kind, string name)
+        public static string PathFor(
+            string focusDirectory, string kind, string name, bool asRoot = false)
         {
             if (string.IsNullOrEmpty(focusDirectory))
                 return null;
             if (kind == "Component")
-                return Path.Combine(
-                    focusDirectory, "components", name, name + ".uitkx");
+                return asRoot
+                    ? Path.Combine(focusDirectory, name, name + ".uitkx")
+                    : Path.Combine(focusDirectory, "components", name, name + ".uitkx");
             string fileName = kind switch
             {
                 "Hooks" => name + ".hooks.uitkx",

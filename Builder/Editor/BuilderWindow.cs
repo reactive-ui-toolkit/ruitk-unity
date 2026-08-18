@@ -360,7 +360,13 @@ namespace Ruitk.Builder
         private void MountCanvas()
         {
             if (string.IsNullOrEmpty(_focusFile))
+            {
+                // UB-113: opening the builder from the menu used to mount
+                // nothing at all — an empty window whose only hint pointed back
+                // at the Project view. The empty state is now the way IN.
+                ShowEmptyState();
                 return;
+            }
             var container = rootVisualElement?.Q("builder-canvas");
             if (container == null)
                 return;
@@ -519,6 +525,75 @@ namespace Ruitk.Builder
             }
             return set;
         }
+
+        /// <summary>UB-113: the start screen. A builder opened with no tree can
+        /// begin one here; the modules live in memory until Save, which is when
+        /// it asks where they belong (there is no folder to infer one from).</summary>
+        private void ShowEmptyState()
+        {
+            var container = rootVisualElement?.Q("builder-canvas");
+            if (container == null)
+                return;
+            _canvasHost?.Unmount();
+            _canvasHost = null;
+            container.Clear();
+            var centre = new VisualElement
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 0f, left = 0f, right = 0f, bottom = 0f,
+                    alignItems = Align.Center,
+                    justifyContent = Justify.Center,
+                },
+            };
+            centre.Add(new Label("Start a UI")
+            {
+                style =
+                {
+                    fontSize = 22f, color = BuilderPalette.Text, marginBottom = 6f,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                },
+            });
+            centre.Add(new Label("Nothing is written to disk until you press Save.")
+            {
+                style = { fontSize = 12f, color = BuilderPalette.Dim, marginBottom = 18f },
+            });
+            var row = new VisualElement
+            {
+                style = { flexDirection = FlexDirection.Row, marginBottom = 18f },
+            };
+            foreach (var (kind, label) in s_startKinds)
+            {
+                string captured = kind;
+                var button = ToolbarButton(label, () => CreateModule(captured, 60f, 40f));
+                button.style.marginRight = 8f;
+                button.style.paddingTop = 5f;
+                button.style.paddingBottom = 5f;
+                row.Add(button);
+            }
+            centre.Add(row);
+            centre.Add(new Label(
+                "…or right-click a .uitkx asset in the Project window and choose "
+                + "\"Open in RUITK UI Builder\" to edit an existing tree.")
+            {
+                style =
+                {
+                    fontSize = 11f, color = BuilderPalette.Dim,
+                    whiteSpace = WhiteSpace.Normal, maxWidth = 420f,
+                    unityTextAlign = TextAnchor.MiddleCenter,
+                },
+            });
+            container.Add(centre);
+        }
+
+        private static readonly (string Kind, string Label)[] s_startKinds =
+        {
+            ("Component", "New component"),
+            ("Style", "New style module"),
+            ("Hooks", "New hook module"),
+            ("Utils", "New util module"),
+        };
 
         private void MountLibrary()
         {
@@ -4112,8 +4187,73 @@ namespace Ruitk.Builder
             _canvasHost?.ClearRowSelection();
         }
 
+        /// <summary>The in-memory home of a tree started from the empty state.
+        /// Nothing is ever written here — Save relocates every session under it
+        /// into the folder the user picks, and refuses to write until it has
+        /// one. It sits under Assets deliberately: `IsReadOnlyLocation` treats
+        /// anything outside the project as immutable, so a provisional path in
+        /// the temp directory would open the first card READ-ONLY and refuse
+        /// every edit.</summary>
+        private static string UnsavedRoot =>
+            Path.Combine(Application.dataPath, "__RuitkBuilderUnsaved__");
+
+        /// <summary>UB-113: a tree begun from the empty state has no folder to
+        /// infer, so Save asks for one, once, and moves the pending sessions
+        /// there before writing. Returns false when the user cancels or picks
+        /// somewhere Unity cannot see.</summary>
+        private bool ResolveUnsavedLocation()
+        {
+            string root = UnsavedRoot;
+            var pending = new System.Collections.Generic.List<string>();
+            foreach (string path in _workspace.PendingNewFiles)
+                if (path.StartsWith(root, System.StringComparison.OrdinalIgnoreCase))
+                    pending.Add(path);
+            if (pending.Count == 0)
+                return true;
+
+            string chosen = UnityEditor.EditorUtility.SaveFolderPanel(
+                "Where should this UI live?", Application.dataPath, "");
+            if (string.IsNullOrEmpty(chosen))
+            {
+                Toast("Save cancelled - pick a folder to save a new tree");
+                return false;
+            }
+            string projectRoot =
+                Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
+            string full = Path.GetFullPath(chosen).Replace('\\', '/');
+            if (!full.StartsWith(projectRoot, System.StringComparison.OrdinalIgnoreCase))
+            {
+                UnityEditor.EditorUtility.DisplayDialog(
+                    "Outside the project",
+                    "Pick a folder inside this Unity project - a .uitkx outside it is "
+                    + "never compiled.",
+                    "OK");
+                return false;
+            }
+
+            foreach (string path in pending)
+            {
+                string relative = path.Substring(root.Length).TrimStart('\\', '/');
+                string moved = Path.GetFullPath(Path.Combine(chosen, relative));
+                if (File.Exists(moved))
+                {
+                    UnityEditor.EditorUtility.DisplayDialog(
+                        "Already exists", Path.GetFileName(moved) + " is already there.", "OK");
+                    return false;
+                }
+                if (!_workspace.Relocate(path, moved))
+                    continue;
+                if (string.Equals(_focusFile, path, System.StringComparison.OrdinalIgnoreCase))
+                    _focusFile = moved;
+                _relocatedOnSave = true;
+            }
+            return true;
+        }
+
         private void SaveAll()
         {
+            if (!ResolveUnsavedLocation())
+                return;
             // UB-88: Save is where a deletion stops being reversible, so it is
             // the only place worth asking — up to that moment the user can undo
             // it, abort, or simply never save. The list names every file.
@@ -4142,7 +4282,16 @@ namespace Ruitk.Builder
             if (written > 0)
                 Toast($"Saved {written} file(s)");
             RefreshChrome();
+            // A relocated tree now exists on disk under a different path than
+            // the graph was built from, so it is re-read rather than patched.
+            if (_relocatedOnSave)
+            {
+                _relocatedOnSave = false;
+                MountCanvas();
+            }
         }
+
+        [System.NonSerialized] private bool _relocatedOnSave;
 
         private void NewFile()
         {
@@ -4171,12 +4320,24 @@ namespace Ruitk.Builder
         /// <summary>POC openCreateMenu → openNameMenu: an at-cursor popup with a
         /// title, a placeholder-only input, an inline error row and a "Create"
         /// row. An invalid or duplicate name shows the error IN PLACE.</summary>
-        private void ShowCreatePrompt(string kind, float worldX, float worldY)
+        private void ShowCreatePrompt(string kind, float worldX, float worldY) =>
+            CreateModule(kind, worldX, worldY);
+
+        /// <summary>UB-113: with a tree open, a new module lands relative to the
+        /// focus file. With NO tree, it lands under a provisional root that
+        /// exists only in memory — the modules are real cards and real buffers,
+        /// and Save is where the builder asks which folder they belong in. That
+        /// keeps "nothing on disk until Save" true even for the very first
+        /// file, which has no folder to be inferred from.</summary>
+        private void CreateModule(string kind, float worldX, float worldY)
         {
-            string dir = string.IsNullOrEmpty(_focusFile) ? null : Path.GetDirectoryName(_focusFile);
+            bool rooted = !string.IsNullOrEmpty(_focusFile);
+            string dir = rooted
+                ? Path.GetDirectoryName(_focusFile)
+                : UnsavedRoot;
             if (dir == null)
             {
-                Toast("Open a tree first - new files are created beside it");
+                Toast("Could not resolve a location for the new module");
                 return;
             }
             var prompt = s_createPrompts.TryGetValue(kind, out var found)
@@ -4188,7 +4349,10 @@ namespace Ruitk.Builder
                 name => ValidateNewName(kind, name),
                 name =>
                 {
-                    string created = BuilderNewFileDialog.PathFor(dir, kind, name);
+                    // A brand-new tree has no parent component, so its first
+                    // component owns its folder rather than nesting under a
+                    // "components" directory that has nothing above it.
+                    string created = BuilderNewFileDialog.PathFor(dir, kind, name, asRoot: !rooted);
                     if (created == null || File.Exists(created)
                         || _workspace.TryGet(Path.GetFullPath(created)) != null)
                     {

@@ -171,6 +171,22 @@ namespace Ruitk.Builder
             return session;
         }
 
+        /// <summary>Moves a never-saved session to its real path (UB-113: a tree
+        /// begun with no folder picks one at Save). Only never-saved sessions
+        /// move — a session with a disk file behind it would leave that file
+        /// orphaned.</summary>
+        public bool Relocate(string oldPath, string newPath)
+        {
+            var session = TryGet(oldPath);
+            if (session == null || !session.IsNewFile || _sessions.ContainsKey(newPath))
+                return false;
+            _sessions.Remove(oldPath);
+            session.FilePath = newPath;
+            _sessions[newPath] = session;
+            Changed?.Invoke();
+            return true;
+        }
+
         /// <summary>Drops a never-saved session — undoing a create. Refuses to
         /// touch a session that has been saved, which is a real file and belongs
         /// to the deletion path instead.</summary>

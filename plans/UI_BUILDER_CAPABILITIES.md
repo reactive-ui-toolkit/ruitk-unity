@@ -12,6 +12,17 @@ Defect history and per-item root causes live in `Plans~/UI_BUILDER_BUGS.md`
 
 ---
 
+## 0. Getting in
+
+Two entry points:
+- **Right-click a `.uitkx` asset → "Open in RUITK UI Builder"** opens the tree
+  that file belongs to.
+- **The menu item** opens the builder with no tree, on a start screen offering
+  the four module kinds. A tree begun this way lives entirely in memory; the
+  first Save asks which folder it belongs in (refusing anywhere outside the
+  Unity project), moves the pending modules there, and writes. Cancelling that
+  prompt cancels the save and writes nothing.
+
 ## 1. What the builder is
 
 A canvas of CARDS, one per `.uitkx` module in the open tree, wired by IMPORT

@@ -1600,3 +1600,36 @@ through the card's own affordances), and a component and a hook emit exactly
 the export the user just named, with the smallest legal body. NOTE for the
 owner: a hook must return something, so `useX` still emits one `useState` —
 that is the smallest thing that IS a hook, and the only invention left.
+
+### UB-113 — the menu item opened a dead end `UNVERIFIED` `HIGH`
+
+Owner: "i just clicked on our reactiveUiToolkit -> Ui Builder. and its empty,
+how do i even start ? theres no new no nothing, pointless to have that menu
+item if we cannot do anythig with it."
+
+Correct — `MountCanvas` returned immediately with no focus file, so the window
+mounted nothing and its only hint pointed back at the Project window. Every
+create path also required a focus file to derive a folder from, so "+ new" and
+the canvas right-click both refused with "Open a tree first".
+
+FIX, following the owner's proposal exactly:
+- An EMPTY STATE is now the way in: a centred "Start a UI" panel with the four
+  module kinds, the reassurance that nothing is written until Save, and the
+  right-click route for an existing tree.
+- `CreateModule` no longer needs a tree. With one open, a module lands relative
+  to the focus file as before. With none, it lands under a provisional root
+  that exists only in memory, and the first COMPONENT owns its own folder
+  rather than nesting under a `components/` directory with nothing above it.
+- Save is where an unrooted tree gets a home: `ResolveUnsavedLocation` asks for
+  a folder (starting at the project root), refuses one outside the project
+  because a `.uitkx` there is never compiled, refuses to clobber existing
+  files, relocates every pending session with `BuilderWorkspace.Relocate`, and
+  only then writes. Cancelling the folder prompt cancels the save with nothing
+  written. The canvas remounts afterwards, since the tree now lives at a
+  different path than the graph was built from.
+
+Note on the provisional root: it sits under `Assets/` rather than the temp
+directory because `IsReadOnlyLocation` treats everything outside the project as
+immutable — a temp path would have opened the first card READ-ONLY and refused
+every edit. Nothing is ever written there; Save relocates first or does not
+write at all.
