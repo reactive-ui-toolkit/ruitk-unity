@@ -4240,8 +4240,15 @@ namespace Ruitk.Builder
         /// GetFullPath and was all backslashes. The prefix test never matched,
         /// the relocation was skipped, and Save wrote the module at its
         /// PROVISIONAL path (UB-119).</para>
+        /// <para>UB-120: the folder name ends in '~', which Unity's Asset
+        /// Database ignores wholesale. If a provisional path ever reaches disk
+        /// again, Unity will not import it, will not generate a .meta, and the
+        /// source generator will not compile it — instead of what happened
+        /// once: a stray module became a real asset whose single bad token
+        /// failed Assembly-CSharp and cascaded into Burst assembly-resolution
+        /// errors across the whole project.</para>
         private static string UnsavedRoot =>
-            Path.GetFullPath(Path.Combine(Application.dataPath, "__RuitkBuilderUnsaved__"));
+            Path.GetFullPath(Path.Combine(Application.dataPath, "__RuitkBuilderUnsaved__~"));
 
         /// <summary>UB-113: a tree begun from the empty state has no folder to
         /// infer, so Save asks for one, once, and moves the pending sessions

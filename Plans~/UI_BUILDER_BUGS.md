@@ -1717,6 +1717,20 @@ FIX, in three layers so no single comparison carries the invariant:
    calls it, however the paths compare. `Relocate` clears the flag.
 3. `SaveChanges` shares the window's save path.
 
-The leftover folder is inert: nothing references it and it can be deleted.
+CORRECTION — the leftover folder was NOT inert, as first reported. It sat in
+Assets/, so Unity imported it and the source generator compiled it: after a
+Reimport All the whole project failed on its single bad token (CS0065), and the
+failure cascaded into Mono.Cecil assembly-resolution errors for
+Assembly-CSharp-Editor across Burst. It was deleted, and UB-120 makes a repeat
+harmless.
+
+### UB-120 — the provisional root was visible to Unity `UNVERIFIED` `MED`
+
+The in-memory root lived at a normal folder name under Assets, so anything that
+reached it became a REAL asset. The folder now ends in '~', which the Asset
+Database ignores wholesale: a future leak cannot be imported, cannot get a
+.meta, and cannot be compiled. Defence in depth behind UB-119 rather than a
+replacement for it.
+
 Lesson worth keeping: a save-only contract cannot be enforced by a string
 comparison at one call site, because the framework has its own save door.
