@@ -1662,6 +1662,44 @@ namespace Ruitk.Builder
         /// SAME commit ("&lt;Tag&gt; child (import auto-added where needed)").
         /// A self-closing target is re-opened first, because the POC re-serialises
         /// the AST and a childless node simply gains a body.</summary>
+        /// <summary>Inserts <paramref name="tag"/> as the target's FIRST child,
+        /// directly under its open tag.
+        /// <para>UB-110: the canvas lists rows flattened, so the gap under a
+        /// container row is visually the gap before its first CHILD — but an
+        /// "after" drop there inserted past the container's whole block, which
+        /// on a deep tree is hundreds of lines away. The caret said one thing
+        /// and the edit did another ("i see the dotted line and it drops it on
+        /// the first visualElement"). The owner's model is the one the layout
+        /// already implies: hovering a row appends inside it, and the gap
+        /// between a row and its first child means "become that first
+        /// child".</para></summary>
+        private void InsertFirstChildTag(string filePath, BuilderCardLine row, string tag)
+        {
+            string full = Path.GetFullPath(filePath);
+            var session = EditSession(full);
+            if (session == null || session.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+            var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
+            int start = Mathf.Clamp(row.SourceLine - 1, 0, Mathf.Max(0, lines.Count - 1));
+            // A self-closing target has no inside to be first in; appending is
+            // the only meaning available, and it also rewrites "/>" to "> … </>".
+            if (row.SelfClosing)
+            {
+                InsertChildTag(filePath, row, tag);
+                return;
+            }
+            int openEnd = OpenTagEndLine(lines, start);
+            int at = Mathf.Clamp(openEnd + 1, 0, lines.Count);
+            lines.Insert(at, IndentOf(full, row.SourceLine) + "  " + SeededTag(tag));
+            AddUsageImport(lines, full, tag);
+            ApplyProgrammaticEdit(
+                full, string.Join("\n", lines),
+                "<" + tag + "> as first child (import auto-added where needed)");
+        }
+
         private void InsertChildTag(string filePath, BuilderCardLine row, string tag)
         {
             string full = Path.GetFullPath(filePath);
@@ -1786,6 +1824,18 @@ namespace Ruitk.Builder
                             InsertChildTag(full, row, name);
                         break;
                     }
+                    // UB-110: the caret under a container row is drawn in the gap
+                    // before its first CHILD, because the canvas flattens the
+                    // tree. Inserting after the container's whole block there
+                    // put the element far below where the caret pointed. When
+                    // the next listed row is deeper, "after" means "first
+                    // child" — which is exactly what the caret shows.
+                    if (band == 2 && rowIdx + 1 < node.Markup.Count
+                        && node.Markup[rowIdx + 1].Depth > row.Depth)
+                    {
+                        InsertFirstChildTag(full, row, name);
+                        break;
+                    }
                     var siblingLines =
                         new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
                     int at = band == 0 ? BeforeAnchor(row) : AfterAnchor(full, row);
@@ -1908,14 +1958,27 @@ namespace Ruitk.Builder
                         break;
                     }
                     bool intoSelfClosing = band == 1 && row.SelfClosing;
+                    // UB-110, move side: the same caret means the same thing for
+                    // a relocation as for an insert — the gap under a container
+                    // row is the gap before its first child.
+                    bool asFirstChild = band == 2 && !appendToRoot && !row.SelfClosing
+                        && rowIdx + 1 < node.Markup.Count
+                        && node.Markup[rowIdx + 1].Depth > row.Depth;
                     int destination = appendToRoot
                         ? (row.EndLine > row.SourceLine ? row.EndLine - 1 : row.SourceLine)
+                        : asFirstChild
+                            ? OpenTagEndLine(
+                                new System.Collections.Generic.List<string>(
+                                    session.BufferText.Split('\n')),
+                                Mathf.Max(0, row.SourceLine - 1)) + 1
                         : band == 0 ? BeforeAnchor(row)
                             : band == 2 || intoSelfClosing ? AfterAnchor(full, row)
                             : (row.EndLine > row.SourceLine ? row.EndLine - 1 : row.SourceLine);
                     MoveLineRange(
                         full, srcFrom, srcTo, destination,
-                        appendToRoot ? indent : indent + (band == 1 && !intoSelfClosing ? "  " : ""),
+                        appendToRoot
+                            ? indent
+                            : indent + ((asFirstChild || (band == 1 && !intoSelfClosing)) ? "  " : ""),
                         "moved " + srcRow.Text);
                     break;
                 }

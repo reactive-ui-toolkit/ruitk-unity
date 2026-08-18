@@ -1510,3 +1510,31 @@ FIX: a sibling insert paints a thick DASHED rule with end caps at the exact
 line the element will land on, clearly distinct from the tinted box that means
 "nest inside". Dash and cap sizes divide by the live zoom so the caret is the
 same weight at every LOD.
+
+### UB-110 — the drop caret pointed at a different place than the drop `UNVERIFIED` `HIGH`
+
+Owner: "i see the dotted line and it drops it on the first visualElement as if
+there can be 2 right positions". Exactly that — there were two.
+
+The canvas lists markup FLATTENED with indentation, so the row element for
+`<VisualElement style={safeStyle}>` is only its OPEN TAG line, and the gap
+drawn under it is visually the gap before its FIRST CHILD. But the "after"
+band inserted at `AfterAnchor`, which is the row's whole-block `EndLine` —
+past every descendant, hundreds of lines below on a deep tree. The caret and
+the edit were reading the same gesture in two different coordinate systems, so
+UB-109's clearer caret made the mismatch obvious rather than causing it.
+
+FIX, and it is the model the owner described: the caret is a POSITION IN THE
+LISTED TREE, and the edit lands there.
+- Hovering a row (middle band) appends INSIDE it, at the end. Unchanged.
+- The gap under a row whose next listed row is DEEPER means "become that row's
+  first child" — `InsertFirstChildTag`, inserting under the open tag (which
+  `OpenTagEndLine` finds, so a multi-line attribute run is handled).
+- The gap under a row whose next listed row is a sibling or shallower still
+  means "after this row's block", which is the same point visually.
+- The top band still means "before this row", as a sibling.
+
+Applied to BOTH the insert path and the move path, so dragging a new element
+and relocating an existing one read the caret identically. A self-closing
+target has no inside to be first in, so it falls back to the append path that
+rewrites `/>` into an open/close pair.

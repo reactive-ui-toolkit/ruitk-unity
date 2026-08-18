@@ -110,11 +110,16 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
   right-click or the library's "+ new", named through a validating prompt.
 
 ### Drag and drop
-- Library rows drag onto markup rows: the drop band (top 30% / bottom 30% /
-  middle) inserts before, after, or nests inside. The hint distinguishes the
-  two outcomes: a thick dashed caret with end caps marks the exact line a
-  SIBLING will land on, while a tinted outlined box means it will NEST inside
-  the target.
+- Library rows drag onto markup rows. The canvas lists markup flattened with
+  indentation, and a drop lands exactly where the hint is drawn:
+  - **middle band** — a tinted outlined box over the row: appended INSIDE it,
+    as its last child.
+  - **bottom band** — a dashed caret in the gap under the row: if the next
+    listed row is deeper, the element becomes that row's FIRST child;
+    otherwise it lands after the row's whole block. Both are the same point
+    on screen.
+  - **top band** — a dashed caret above the row: inserted before it, as a
+    sibling.
 - Existing markup rows drag to reorder or re-parent, moving their whole line
   range with re-indentation. Directive heads move their entire block.
 - Hooks drop onto BODY; style/util modules drop onto a card and add the import.
