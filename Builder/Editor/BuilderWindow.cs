@@ -4233,8 +4233,15 @@ namespace Ruitk.Builder
         /// anything outside the project as immutable, so a provisional path in
         /// the temp directory would open the first card READ-ONLY and refuse
         /// every edit.</summary>
+        /// <para>GetFullPath, not Combine: `Application.dataPath` comes back with
+        /// FORWARD slashes on Windows and Combine only inserts a separator
+        /// without rewriting the ones already there, so the root kept forward
+        /// slashes in its prefix while every session path had been through
+        /// GetFullPath and was all backslashes. The prefix test never matched,
+        /// the relocation was skipped, and Save wrote the module at its
+        /// PROVISIONAL path (UB-119).</para>
         private static string UnsavedRoot =>
-            Path.Combine(Application.dataPath, "__RuitkBuilderUnsaved__");
+            Path.GetFullPath(Path.Combine(Application.dataPath, "__RuitkBuilderUnsaved__"));
 
         /// <summary>UB-113: a tree begun from the empty state has no folder to
         /// infer, so Save asks for one, once, and moves the pending sessions
@@ -4245,7 +4252,8 @@ namespace Ruitk.Builder
             string root = UnsavedRoot;
             var pending = new System.Collections.Generic.List<string>();
             foreach (string path in _workspace.PendingNewFiles)
-                if (path.StartsWith(root, System.StringComparison.OrdinalIgnoreCase))
+                if (Path.GetFullPath(path)
+                    .StartsWith(root, System.StringComparison.OrdinalIgnoreCase))
                     pending.Add(path);
             if (pending.Count == 0)
                 return true;
@@ -4446,8 +4454,9 @@ namespace Ruitk.Builder
                     // ledger entry lets Ctrl+Z take it back — the same contract
                     // every other edit already obeyed.
                     string full = Path.GetFullPath(created);
-                    if (_workspace.CreateNew(full, BuilderNewFileDialog.TemplateFor(kind, name))
-                        == null)
+                    if (_workspace.CreateNew(
+                            full, BuilderNewFileDialog.TemplateFor(kind, name),
+                            needsLocation: !rooted) == null)
                     {
                         Toast("Could not create " + name);
                         return;
@@ -4522,9 +4531,20 @@ namespace Ruitk.Builder
             }
         }
 
+        /// <summary>Unity calls this from ITS prompt — closing the window, a
+        /// domain reload, entering play mode. UB-118: it went straight to
+        /// `_workspace.SaveAll()`, bypassing the window's own Save entirely, so
+        /// a tree that had never been given a folder was written to the
+        /// PROVISIONAL path and a buffer never got formatted. Routing through
+        /// the same SaveAll the toolbar button uses means Unity's prompt asks
+        /// for a location exactly like the button does, and a cancelled
+        /// location leaves the window still dirty rather than reporting a save
+        /// that did not happen.</summary>
         public override void SaveChanges()
         {
-            _workspace.SaveAll();
+            SaveAll();
+            if (_workspace.HasUnsavedChanges)
+                return;
             base.SaveChanges();
         }
 

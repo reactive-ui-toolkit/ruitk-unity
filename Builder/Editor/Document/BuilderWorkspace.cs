@@ -161,11 +161,13 @@ namespace Ruitk.Builder
         /// <summary>Opens a never-saved session for a module that does not exist
         /// on disk yet (UB-111). Returns null when something already claims the
         /// path — a redo replaying a create must not throw.</summary>
-        public BuilderDocumentSession CreateNew(string filePath, string initialBuffer)
+        public BuilderDocumentSession CreateNew(
+            string filePath, string initialBuffer, bool needsLocation = false)
         {
             if (_sessions.ContainsKey(filePath) || File.Exists(filePath))
                 return null;
             var session = BuilderDocumentSession.CreateNew(filePath, initialBuffer);
+            session.NeedsLocation = needsLocation;
             _sessions[filePath] = session;
             Changed?.Invoke();
             return session;
@@ -182,6 +184,8 @@ namespace Ruitk.Builder
                 return false;
             _sessions.Remove(oldPath);
             session.FilePath = newPath;
+            // It has a home now, so it is writable.
+            session.NeedsLocation = false;
             _sessions[newPath] = session;
             Changed?.Invoke();
             return true;
@@ -234,7 +238,8 @@ namespace Ruitk.Builder
         {
             var dirty = new List<BuilderDocumentSession>();
             foreach (var s in _sessions.Values)
-                if (s.IsDirty && !s.IsReadOnly && !IsPendingDelete(s.FilePath))
+                if (s.IsDirty && !s.IsReadOnly && !s.NeedsLocation
+                    && !IsPendingDelete(s.FilePath))
                     dirty.Add(s);
             if (dirty.Count == 0 && _pendingDeletes.Count == 0)
                 return 0;

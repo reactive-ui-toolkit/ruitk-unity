@@ -32,6 +32,14 @@ namespace Ruitk.Builder
         /// <summary>True when this session was created in the builder and never saved.</summary>
         public bool IsNewFile;
 
+        /// <summary>UB-119: this module has no real home yet — it was started
+        /// before the user chose a folder, so its path is provisional. SaveAll
+        /// REFUSES to write it, whoever calls: the invariant lives on the
+        /// session rather than in a path comparison, because the comparison is
+        /// exactly what failed (a mixed-separator prefix test) and let a
+        /// provisional path reach disk.</summary>
+        public bool NeedsLocation;
+
         public static string NormalizeLf(string text) =>
             text == null ? string.Empty : text.Replace("\r\n", "\n").Replace("\r", "\n");
 

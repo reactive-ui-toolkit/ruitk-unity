@@ -1686,3 +1686,37 @@ The CS1525 storm in the owner's capture comes from `onClick={event => …}`:
 `event` is a reserved C# keyword and cannot name a lambda parameter. The
 diagnostics reported it correctly. Worth noting only because the cascade
 (CS1002/CS1031/CS1055/CS0065 …) reads like a builder failure and is not one.
+
+### UB-118/119 — an unsaved tree reached disk anyway `UNVERIFIED` `CRITICAL`
+
+Owner: "Why this file exist if i discarded and never saved?" It existed at
+`Assets/__RuitkBuilderUnsaved__/SomeComponent/SomeComponent.uitkx`, with a
+`.meta`, so Unity had imported it. Two independent defects, either of which was
+enough on its own.
+
+UB-118 — `SaveChanges()`, the override UNITY calls from its own prompt (closing
+the window, a domain reload, entering play mode), went straight to
+`_workspace.SaveAll()`. That bypassed the window's SaveAll completely: no
+location prompt, no format pass. So the user never pressed Save — Unity did, on
+their behalf, through a door that skipped every guard. It now routes through
+the same SaveAll the toolbar uses and, if the location prompt is cancelled,
+leaves the window dirty rather than reporting a save that did not happen.
+
+UB-119 — even the window's own SaveAll would have written it. `UnsavedRoot` was
+built with `Path.Combine(Application.dataPath, …)`, and `Application.dataPath`
+returns FORWARD slashes on Windows while Combine only inserts a separator
+without rewriting the ones already there. The root therefore kept forward
+slashes in its prefix while every session path had been through
+`Path.GetFullPath` and was all backslashes, so the `StartsWith` prefix test
+never matched, `pending` came back empty, and the relocation was skipped.
+
+FIX, in three layers so no single comparison carries the invariant:
+1. Both sides of the test are `GetFullPath`-normalised.
+2. `BuilderDocumentSession.NeedsLocation` marks a module whose path is
+   provisional, and `BuilderWorkspace.SaveAll` REFUSES to write one — whoever
+   calls it, however the paths compare. `Relocate` clears the flag.
+3. `SaveChanges` shares the window's save path.
+
+The leftover folder is inert: nothing references it and it can be deleted.
+Lesson worth keeping: a save-only contract cannot be enforced by a string
+comparison at one call site, because the framework has its own save door.
