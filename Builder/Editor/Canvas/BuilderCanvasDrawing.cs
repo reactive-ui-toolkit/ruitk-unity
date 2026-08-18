@@ -751,18 +751,17 @@ namespace Ruitk.Builder
                     : new Vector2(rect.xMin, rect.yMin + EdgeAnchorY / CurrentZoom);
             }
 
-            /// UB-103: an edge LEAVES a card at its top-right corner. The source
-            /// end used to sit at the import or markup row that produced it,
-            /// which at L2 on a tall card put the endpoint far down the card and
-            /// ran the curve back across its own content — the owner's "linking
-            /// points are in bad position, they should be right top most". The
-            /// per-row anchor DOTS stay where they are: they mark which row owns
-            /// the reference, which the curve no longer has to encode.
-            Vector2 SourceTopRight(BuilderCanvasNode node, int index)
-            {
-                var rect = CardRect(index, node);
-                return new Vector2(rect.xMax, rect.yMin + EdgeAnchorY / CurrentZoom);
-            }
+            /// UB-103 take 2. The first attempt moved every edge's source to the
+            /// card's top-right corner and left the anchor DOTS on their rows,
+            /// which orphaned them: a dot beside a row with no line touching it
+            /// reads as broken wiring (owner, "where are their lines?"). A dot
+            /// and its curve are one thing and must share a point. The source is
+            /// the row's dot again, and the fix for the original complaint is
+            /// applied to the POSITION instead — the anchor sits ON the card's
+            /// right border rather than 16px inside it, so a curve leaves the
+            /// card at its edge and never doubles back over its own content.
+            Vector2 RowAnchorFallback(BuilderCanvasNode node, float rowY) =>
+                new Vector2(node.X + CardWidthFor(CurrentLod), node.Y + rowY);
 
             // POC computeEdges: ONE edge per import row, PLUS one per markup row
             // that instantiates a graph node — ShopScreen draws 6 + 3 curves, not 6.
@@ -782,7 +781,10 @@ namespace Ruitk.Builder
                 }
                 else
                 {
-                    a = SourceTopRight(from, edge.FromIndex);
+                    int importRow = ImportRowIndex(from, edge.Specifier);
+                    a = AnchorOf(
+                        "a-imp-" + edge.FromIndex + "-" + importRow,
+                        RowAnchorFallback(from, ImportRowY(from, edge.Specifier)));
                 }
 
                 // POC drawEdges() line 1458: "if (!a || !target) return;" — an
@@ -823,7 +825,9 @@ namespace Ruitk.Builder
                     }
                     else
                     {
-                        a = SourceTopRight(from, i);
+                        a = AnchorOf(
+                            "a-row-" + i + "-" + r,
+                            RowAnchorFallback(from, MarkupRowY(from, r)));
                     }
                     StrokeEdge(p, a, TargetOf(target, to), BuilderPalette.UsageEdge, false);
                 }
@@ -844,7 +848,7 @@ namespace Ruitk.Builder
                             continue;
                         PaintAnchorDot(p, AnchorOf(
                             "a-imp-" + i + "-" + r,
-                            new Vector2(node.X + width - 16f, node.Y + ImportRowY(node, imp.AttrsText))),
+                            RowAnchorFallback(node, ImportRowY(node, imp.AttrsText))),
                             imp.BadgeKind);
                     }
                     for (int r = 0; r < node.Markup.Count; r++)
@@ -853,7 +857,7 @@ namespace Ruitk.Builder
                             continue;
                         PaintAnchorDot(p, AnchorOf(
                             "a-row-" + i + "-" + r,
-                            new Vector2(node.X + width - 16f, node.Y + MarkupRowY(node, r))), 5);
+                            RowAnchorFallback(node, MarkupRowY(node, r))), 5);
                     }
                 }
             }

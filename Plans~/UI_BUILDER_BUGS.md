@@ -1420,8 +1420,15 @@ of each component." The SOURCE end of every edge sat at the import or markup row
 that produced it, so at L2 on a tall card the endpoint was far down the card and
 the curve ran back across its own content. Edges now leave from the card's
 TOP-RIGHT corner (`SourceTopRight`), incoming still arrive at the top-left.
-The per-row anchor DOTS are untouched: they still mark which row owns the
-reference, which the curve no longer has to encode.
+CORRECTED same day. Moving the curve while leaving the DOTS on their rows
+orphaned them - the owner's next look was "where are their lines ?", with dots
+beside rows and no line touching any of them. A dot and its curve are one
+thing and must share a point. The source is the row's dot again, and the
+original complaint is answered by the POSITION instead: both the dot and the
+curve now sit ON the card's right border (`RowAnchorFallback`) rather than
+16px inside it, so an edge leaves at the card edge instead of starting over
+its own content. Lesson recorded: an anchor GLYPH and the geometry it
+represents must be computed from one expression, never two.
 
 ### UB-104 — setState during render, every frame the host pushed `UNVERIFIED` `HIGH`
 
