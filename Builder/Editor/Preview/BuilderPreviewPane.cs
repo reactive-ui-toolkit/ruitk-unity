@@ -651,9 +651,16 @@ namespace Ruitk.Builder
                 _statusIsModuleCopy = !declaresComponent;
                 SetStatus(!declaresComponent
                     ? NoPreviewText(uitkxPath)
-                    : "Component type not found — does the project compile?\n"
-                        + "A freshly created file needs one successful Unity compile "
-                        + "before its first preview; edits after that hot-swap.");
+                    // UB-125: the old copy blamed the file for being "freshly
+                    // created" and told the user to wait for a Unity compile.
+                    // That is wrong and it misleads: the preview compiles from
+                    // BUFFERS, so an unsaved module previews as soon as its code
+                    // compiles. Every time this message appears there is a real
+                    // diagnostic underneath it, and pointing at that is the only
+                    // useful thing to say.
+                    : "No preview yet — this component has not compiled.\n"
+                        + "Check the errors under the source pane; the preview "
+                        + "appears as soon as they clear. Saving is not required.");
                 UnmountPreview();
                 if (_knobsHost != null)
                     _knobsHost.Clear();
