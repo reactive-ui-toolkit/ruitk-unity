@@ -267,13 +267,19 @@ namespace Ruitk.Builder
             root.Add(_list);
             Rebuild();
             if (_searchable)
+            {
                 _search.schedule.Execute(() => _search.Focus());
+            }
             else
-                root.RegisterCallback<KeyDownEvent>(evt =>
-                {
-                    if (evt.keyCode == KeyCode.Escape)
-                        Close();
-                });
+            {
+                // UB-126: the arrow/Enter handling lived on the SEARCH FIELD, so
+                // a menu built without one — the create menu, and every simple
+                // pick list — was mouse-only. The same keys are bound to the
+                // root, and the root takes focus so they arrive at all.
+                root.focusable = true;
+                root.RegisterCallback<KeyDownEvent>(OnListKeyDown);
+                root.schedule.Execute(() => root.Focus());
+            }
         }
 
         private void OnLostFocus() => Close();
@@ -294,6 +300,32 @@ namespace Ruitk.Builder
             Close();
             if (invoker != null)
                 invoker.Focus();
+        }
+
+        /// <summary>The list keyboard, shared by the searchable and the
+        /// non-searchable menu so neither can drift from the other.</summary>
+        private void OnListKeyDown(KeyDownEvent evt)
+        {
+            switch (evt.keyCode)
+            {
+                case KeyCode.Escape:
+                    Close();
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.DownArrow:
+                    MoveHighlight(1);
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.UpArrow:
+                    MoveHighlight(-1);
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.Return:
+                case KeyCode.KeypadEnter:
+                    PickHighlighted();
+                    evt.StopPropagation();
+                    break;
+            }
         }
 
         private void PickFirst() => PickHighlighted();

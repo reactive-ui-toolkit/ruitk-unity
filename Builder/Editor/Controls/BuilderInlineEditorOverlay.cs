@@ -124,7 +124,15 @@ namespace Ruitk.Builder
             }
             else
             {
-                width = Mathf.Clamp(Mathf.Max(bound.width, 260f), 200f, 640f);
+                // UB-127: a hook chip is only as wide as its summary text
+                // ("useState -> value, setValue"), but the LINE it edits is the
+                // full declaration, so the field clipped mid-word. A single-line
+                // editor gets the width of the SECTION it sits in when that is
+                // wider than the thing clicked — the edit needs room for the
+                // text, not for the badge that launched it.
+                float room = SectionWidthOf(anchor);
+                width = Mathf.Clamp(
+                    Mathf.Max(Mathf.Max(bound.width, room), 260f), 200f, 720f);
                 // Glyphs sized from the row, then the box sized from the glyphs
                 // plus the compact chrome — the previous order clipped the text
                 // because the input's 8px padding pair was never accounted for.
@@ -200,6 +208,23 @@ namespace Ruitk.Builder
         /// <summary>The canvas row an inline-edit anchor belongs to. Rows are the
         /// only elements named "row-{card}-{row}", which is the same handle the
         /// drag hit-test walks for.</summary>
+        /// <summary>Usable width of the card section the anchor sits in, minus a
+        /// small inset so the editor never touches the card frame. Zero when the
+        /// anchor is not inside a card, which leaves the anchor's own width to
+        /// decide.</summary>
+        private static float SectionWidthOf(VisualElement anchor)
+        {
+            for (var walk = anchor; walk != null; walk = walk.parent)
+            {
+                if (string.IsNullOrEmpty(walk.name)
+                    || !walk.name.StartsWith("card-", System.StringComparison.Ordinal))
+                    continue;
+                float width = walk.worldBound.width;
+                return width > 24f ? width - 18f : 0f;
+            }
+            return 0f;
+        }
+
         private static VisualElement RowAncestorOf(VisualElement anchor)
         {
             for (var walk = anchor; walk != null; walk = walk.parent)
