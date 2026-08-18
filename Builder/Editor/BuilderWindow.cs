@@ -462,6 +462,7 @@ namespace Ruitk.Builder
                 MountCanvas();
             };
             _canvasHost.IsFileHidden = path => _workspace.IsPendingDelete(path);
+            _canvasHost.PendingNewFiles = () => _workspace.PendingNewFiles;
             _canvasHost.OnCreateRequested = ShowCreatePrompt;
             _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
             // The side panes are built BEFORE the canvas mounts. Mount() is an
@@ -828,6 +829,17 @@ namespace Ruitk.Builder
                     remounted |= _workspace.UnmarkForDeletion(change.FilePath);
                     continue;
                 }
+                if (change.IsCreation)
+                {
+                    // Nothing was written, so undoing a create is closing the
+                    // never-saved session. Its text is kept on the entry so redo
+                    // can re-open it unchanged.
+                    var pending = _workspace.TryGet(change.FilePath);
+                    if (pending != null)
+                        change.After = pending.BufferText;
+                    remounted |= _workspace.DiscardNew(change.FilePath);
+                    continue;
+                }
                 writes.Add((change.FilePath, change.Before));
             }
             ApplyLedgerWrites(writes, "Undo " + entry.Description, remounted);
@@ -848,6 +860,11 @@ namespace Ruitk.Builder
                 if (change.IsDeletion)
                 {
                     remounted |= _workspace.MarkForDeletion(change.FilePath);
+                    continue;
+                }
+                if (change.IsCreation)
+                {
+                    remounted |= _workspace.CreateNew(change.FilePath, change.After ?? "") != null;
                     continue;
                 }
                 writes.Add((change.FilePath, change.After));
@@ -4171,15 +4188,32 @@ namespace Ruitk.Builder
                 name => ValidateNewName(kind, name),
                 name =>
                 {
-                    string created = BuilderNewFileDialog.Create(dir, kind, name);
-                    if (created == null)
+                    string created = BuilderNewFileDialog.PathFor(dir, kind, name);
+                    if (created == null || File.Exists(created)
+                        || _workspace.TryGet(Path.GetFullPath(created)) != null)
+                    {
+                        Toast("Could not create " + name + " (already exists)");
+                        return;
+                    }
+                    // UB-111: a new module is a PENDING session, not a file. Save
+                    // writes it (creating its folder), Abort drops it, and the
+                    // ledger entry lets Ctrl+Z take it back — the same contract
+                    // every other edit already obeyed.
+                    string full = Path.GetFullPath(created);
+                    if (_workspace.CreateNew(full, BuilderNewFileDialog.TemplateFor(kind, name))
+                        == null)
                     {
                         Toast("Could not create " + name);
                         return;
                     }
-                    _canvasHost?.PlaceNewCard(created, worldX, worldY);
-                    Toast("Created " + Path.GetFileName(created));
-                    OpenAdditionalFile(created);
+                    _ledger.Begin("create " + Path.GetFileName(created));
+                    _ledger.RecordCreation(full);
+                    _ledger.End();
+                    RefreshHistoryPanel();
+                    _canvasHost?.PlaceNewCard(full, worldX, worldY);
+                    Toast("Created " + Path.GetFileName(created) + " - applies on Save");
+                    RefreshChrome();
+                    OpenAdditionalFile(full);
                 });
         }
 

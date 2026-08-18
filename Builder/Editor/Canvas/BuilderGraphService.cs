@@ -1237,6 +1237,13 @@ namespace Ruitk.Builder
         /// <c>export GameState Update(...)</c> — as a component. The fallback now
         /// reads the declaration heads, which is the same rule the LSP's own
         /// DirectiveParser applies.</summary>
+        /// <summary>Module kind from the filename suffix alone, for a module the
+        /// graph has never seen (UB-111: a new one, still only a buffer). A
+        /// plain ".uitkx" is treated as a component; its real kind settles from
+        /// the exports as soon as the card is populated.</summary>
+        public static BuilderNodeKind KindFromFileName(string file) =>
+            ClassifyByPathAndExports(file, BuilderNodeKind.Component, null);
+
         private static BuilderNodeKind ClassifyByPathAndExports(
             string file, BuilderNodeKind exportKind, string source)
         {

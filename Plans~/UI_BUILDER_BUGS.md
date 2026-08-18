@@ -1538,3 +1538,65 @@ Applied to BOTH the insert path and the move path, so dragging a new element
 and relocating an existing one read the caret identically. A self-closing
 target has no inside to be first in, so it falls back to the append path that
 rewrites `/>` into an open/close pair.
+
+## 15. Creation flow — save-gated, 2026-08-18
+
+Raised while auditing the create path before the owner drove it.
+
+### UB-111 — creation wrote to disk immediately `UNVERIFIED` `HIGH`
+
+`BuilderNewFileDialog.Create` called `File.WriteAllText` + `AssetDatabase.Refresh`
+the moment the name prompt was confirmed. Same class as UB-88 on the other
+side: the owner's rule is "nothing should be created/update/deleted anything on
+files until save". A created file survived Abort, survived closing without
+saving, and Ctrl+Z could not remove it.
+
+Why it was written that way, and the real work in fixing it: the canvas cards
+come from the LSP module graph, which is built from files on DISK, so a module
+that exists only as a buffer has no node and would show no card at all.
+
+FIX:
+- `BuilderNewFileDialog` no longer touches disk. It answers two questions —
+  `PathFor` and `TemplateFor`.
+- The window opens a never-saved session (`BuilderWorkspace.CreateNew`, which
+  already existed and had NO callers — the save-gated path was half-built) and
+  records a ledger entry.
+- `BuilderCanvasHost.AppendPendingNewNodes` synthesises a node per pending new
+  module after the graph loads and fills it through the same
+  `PopulateCardDetail` every other card uses, so a never-saved module is a real
+  card with real parsed content.
+- `SaveAll` writes it (creating the folder chain) and then calls
+  `AssetDatabase.Refresh` OUTSIDE the reload suppressor, since a plain
+  `File.WriteAllText` leaves no `.meta` and Unity would not see the asset.
+- `AbortAll` already dropped never-saved sessions; `DiscardNew` lets undo do
+  the same for one file, and redo re-opens it from the text kept on the entry.
+
+### UB-112 — new modules landed flat, with invented exports `UNVERIFIED` `MED`
+
+Two owner corrections in one:
+
+FOLDER LAYOUT — files were created beside the focus file. The house layout puts
+a component in its OWN folder and nests children under `components/`:
+```
+ComponentName/
+    ComponentName.uitkx
+    ComponentName.style.uitkx
+    components/
+        SubComponent/
+            SubComponent.uitkx
+```
+`PathFor` now sends a new COMPONENT to `<focusDir>/components/<Name>/<Name>.uitkx`
+and a style/hook/util module beside the component it belongs to. Suffixes are
+unchanged (`.style.uitkx`, `.hooks.uitkx`, plain `.uitkx`): the builder detects
+module KIND from them (`ClassifyByPathAndExports`) and every existing sample
+uses them, so the owner's shorthand `.hook.uitkx` / `.util.uitkx` was read as
+the established convention rather than a rename.
+
+TEMPLATES — "we should only export what the user add". The old templates
+invented members nobody asked for: `nameRoot` for a style, `nameText` for a
+util, plus a counter body and a decorative `<Label>` for a component. Now a
+style and a util module start EMPTY (their exports are named one at a time
+through the card's own affordances), and a component and a hook emit exactly
+the export the user just named, with the smallest legal body. NOTE for the
+owner: a hook must return something, so `useX` still emits one `useState` —
+that is the smallest thing that IS a hook, and the only invention left.

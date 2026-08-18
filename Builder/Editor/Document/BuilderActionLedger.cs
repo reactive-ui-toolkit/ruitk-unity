@@ -32,6 +32,11 @@ namespace Ruitk.Builder
             /// Undo un-marks it, redo re-marks it — nothing on disk moves either
             /// way, because the deletion itself only happens at Save.</summary>
             public bool IsDeletion;
+
+            /// <summary>A pending NEW module. Undo closes the never-saved
+            /// session, redo re-opens it from <see cref="After"/>. Nothing on
+            /// disk moves either way — the file is only written at Save.</summary>
+            public bool IsCreation;
         }
 
         internal sealed class Entry
@@ -128,6 +133,20 @@ namespace Ruitk.Builder
             if (standalone)
                 _open = new Entry { Description = "delete", At = DateTime.Now };
             _open.Changes.Add(new Change { FilePath = filePath, IsDeletion = true });
+            if (standalone)
+                Commit();
+        }
+
+        /// <summary>Records a new module. The text rides along so redo can
+        /// re-open the session with exactly what the user had.</summary>
+        public void RecordCreation(string filePath)
+        {
+            if (Replaying || string.IsNullOrEmpty(filePath))
+                return;
+            bool standalone = _open == null;
+            if (standalone)
+                _open = new Entry { Description = "create", At = DateTime.Now };
+            _open.Changes.Add(new Change { FilePath = filePath, IsCreation = true });
             if (standalone)
                 Commit();
         }

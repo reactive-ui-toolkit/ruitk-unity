@@ -158,14 +158,43 @@ namespace Ruitk.Builder
             return changed;
         }
 
+        /// <summary>Opens a never-saved session for a module that does not exist
+        /// on disk yet (UB-111). Returns null when something already claims the
+        /// path — a redo replaying a create must not throw.</summary>
         public BuilderDocumentSession CreateNew(string filePath, string initialBuffer)
         {
             if (_sessions.ContainsKey(filePath) || File.Exists(filePath))
-                throw new InvalidOperationException($"'{filePath}' already exists.");
+                return null;
             var session = BuilderDocumentSession.CreateNew(filePath, initialBuffer);
             _sessions[filePath] = session;
             Changed?.Invoke();
             return session;
+        }
+
+        /// <summary>Drops a never-saved session — undoing a create. Refuses to
+        /// touch a session that has been saved, which is a real file and belongs
+        /// to the deletion path instead.</summary>
+        public bool DiscardNew(string filePath)
+        {
+            var session = TryGet(filePath);
+            if (session == null || !session.IsNewFile)
+                return false;
+            _sessions.Remove(filePath);
+            Changed?.Invoke();
+            return true;
+        }
+
+        /// <summary>Paths of modules that exist only as buffers so far. The
+        /// canvas synthesises a card for each, since the module graph the cards
+        /// come from is built from files on DISK.</summary>
+        public IEnumerable<string> PendingNewFiles
+        {
+            get
+            {
+                foreach (var s in _sessions.Values)
+                    if (s.IsNewFile)
+                        yield return s.FilePath;
+            }
         }
 
         public void ApplyEdit(string filePath, string newBufferLf)
@@ -195,6 +224,7 @@ namespace Ruitk.Builder
                 return 0;
 
             bool hmrActive = UitkxHmrController.IsActive;
+            bool createdAssets = false;
             AssemblyReloadSuppressor suppressor = null;
             try
             {
@@ -209,6 +239,10 @@ namespace Ruitk.Builder
                     string dir = Path.GetDirectoryName(s.FilePath);
                     if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                         Directory.CreateDirectory(dir);
+                    // A never-saved module becomes a real asset in this batch,
+                    // and a plain File.WriteAllText is invisible to Unity until
+                    // something imports it (UB-111).
+                    createdAssets |= s.IsNewFile;
                     string text = s.UsedCrlf ? s.BufferText.Replace("\n", "\r\n") : s.BufferText;
                     File.WriteAllText(s.FilePath, text);
                     s.MarkClean(s.BufferText);
@@ -234,6 +268,10 @@ namespace Ruitk.Builder
 
             int deleted = _pendingDeletes.Count;
             _pendingDeletes.Clear();
+            // Outside the reload suppressor: importing is what makes a new file
+            // an asset with a .meta, and it must not run while the lock is held.
+            if (createdAssets)
+                AssetDatabase.Refresh();
             Changed?.Invoke();
             return dirty.Count + deleted;
         }

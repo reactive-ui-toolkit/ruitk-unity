@@ -47,6 +47,53 @@ namespace Ruitk.Builder
         /// <summary>UB-88: files to leave out of the tree even though they are
         /// still on disk — deletions the user has made but not yet saved.</summary>
         public Func<string, bool> IsFileHidden;
+
+        /// <summary>UB-111: modules that exist only as unsaved buffers, which the
+        /// disk-built module graph cannot know about.</summary>
+        public Func<IEnumerable<string>> PendingNewFiles;
+
+        private void AppendPendingNewNodes(BuilderGraph graph, Func<string, string> readText)
+        {
+            if (graph == null || PendingNewFiles == null)
+                return;
+            foreach (string path in PendingNewFiles())
+            {
+                if (string.IsNullOrEmpty(path))
+                    continue;
+                string full = System.IO.Path.GetFullPath(path);
+                if (graph.IndexOf(full) >= 0)
+                    continue;
+                string title = System.IO.Path.GetFileName(full);
+                foreach (string suffix in s_moduleSuffixes)
+                {
+                    if (!title.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    title = title.Substring(0, title.Length - suffix.Length);
+                    break;
+                }
+                var node = new BuilderCanvasNode
+                {
+                    FilePath = full,
+                    Title = title,
+                    Kind = BuilderGraphService.KindFromFileName(full),
+                };
+                graph.Nodes.Add(node);
+                try
+                {
+                    BuilderGraphService.PopulateCardDetail(node, readText);
+                }
+                catch (Exception)
+                {
+                    // A half-typed new module still gets its card; the source
+                    // pane and diagnostics are where the error belongs.
+                }
+            }
+        }
+
+        private static readonly string[] s_moduleSuffixes =
+        {
+            ".style.uitkx", ".hooks.uitkx", ".uitkx",
+        };
         public Action<string, int, int, string, VisualElement> OnEditAttrValue;
         public Action<string, int, string, VisualElement> OnEditDirective;
         public Action<string, int, string, string, VisualElement> OnEditLine;
@@ -83,6 +130,13 @@ namespace Ruitk.Builder
             if (_container == null || _container.panel == null)
                 return;
 
+            // UB-111: the module graph is built from files on DISK, so a module
+            // that exists only as an unsaved buffer has no node and would show
+            // no card at all — which is why creation used to write immediately.
+            // Each pending new module gets a synthesised node, parsed from its
+            // buffer through the same PopulateCardDetail every other card uses,
+            // so a never-saved component is a real card until Save makes it one.
+            AppendPendingNewNodes(graph, readText);
             _graph = graph;
             onGraphLoaded?.Invoke(graph);
             _config = BuilderCanvasConfig.LoadForMember(focusFile)

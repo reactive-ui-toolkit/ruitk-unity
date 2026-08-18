@@ -107,7 +107,15 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
 - **Add style/util export**, and **add style entry** with searchable keys and
   value helpers (Px/Pct/Hex/Rgba/flex/justify/align/font/text/display/position).
 - **Create module** — component / style / hook / util, from the canvas
-  right-click or the library's "+ new", named through a validating prompt.
+  right-click or the library's "+ new", named through a validating prompt
+  (PascalCase components, camelCase style/util, `use…` hooks, no duplicates).
+  A new COMPONENT gets its own folder under the current component's
+  `components/` directory; a style, hook or util module lands beside the
+  component it belongs to. Suffixes: `.style.uitkx`, `.hooks.uitkx`, plain
+  `.uitkx`. A component and a hook start with exactly the export just named
+  and the smallest legal body; a style and a util module start EMPTY. Like
+  every other edit, the file is a pending buffer with a real card on the
+  canvas - Save writes it, Abort and undo drop it.
 
 ### Drag and drop
 - Library rows drag onto markup rows. The canvas lists markup flattened with
