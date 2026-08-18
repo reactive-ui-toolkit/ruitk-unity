@@ -1633,3 +1633,56 @@ directory because `IsReadOnlyLocation` treats everything outside the project as
 immutable — a temp path would have opened the first card READ-ONLY and refused
 every edit. Nothing is ever written there; Save relocates first or does not
 write at all.
+
+## 16. Field report — building a component from zero, 2026-08-19
+
+### UB-114 — a card froze whenever a re-parse threw `UNVERIFIED` `HIGH`
+
+Owner: "When i added a button it automatically added a text attribute but only
+in the right side component code, in the card the attribute didnt show until i
+tried to add another attribute."
+
+`BuilderCanvasHost.RefreshGraph` wrapped `PopulateCardDetail` in a try/catch
+whose catch RETURNED — skipping `RenderCanvas`. So any edit whose re-parse
+threw (routine while a buffer is half-typed) left the card showing its previous
+content, and the change only appeared when a LATER edit happened to parse
+cleanly, which is why two edits arrived together. The catch now swallows and
+falls through to the redraw: the node keeps whatever it managed to populate,
+and a broken buffer is reported by diagnostics rather than by a frozen card.
+
+### UB-115 — the value editor nested its own wrapper `UNVERIFIED` `MED`
+
+Owner: "when editing a field it adds "" automatically which makes {value} turn
+into "{value}"." The attribute editors deliberately keep the quotes or braces
+OUTSIDE the field, so a value typed with braces got wrapped again and became a
+literal brace string. Typing a value the user wrapped themselves now switches
+the attribute's FORM: `{…}` makes it an expression, `"…"` makes it a string
+literal. Both directions, so an expression slot accepts a quoted literal too.
+
+### UB-116 — canvas edits were never formatted `UNVERIFIED` `MED`
+
+Owner: "the formatting of the text doesnt work there and it should happened
+when you type and when you save and if both is too much so just when you save."
+Canvas edits splice LINES into the buffer, so an inserted tag carried whatever
+indent the splice guessed. Save now runs every dirty buffer through the same
+AST formatter the source pane's apply uses, recording the result in the ledger
+so it is undoable. Chosen deliberately: format on SAVE only, not per keystroke
+— the formatter is a whole-file reprint and would fight the caret while typing.
+A buffer that does not format cleanly is left EXACTLY as it was, since the
+formatter's non-Formatted outcomes are data-loss guards, not results.
+
+### UB-117 — no way to add body code except the source pane `UNVERIFIED` `MED`
+
+Owner: "The only way to add custom logic / code in body of component is editing
+the text on right sidebar. we should add a button like the + hook so + code."
+Added beside "+ hook" on component and hook cards. It rides the same path — the
+body is one list of statement lines and a hook call is just one of them — so it
+seeds a statement, opens the inline editor on it, and is undoable like any
+other edit.
+
+### Not a builder defect — `event` as a lambda parameter
+
+The CS1525 storm in the owner's capture comes from `onClick={event => …}`:
+`event` is a reserved C# keyword and cannot name a lambda parameter. The
+diagnostics reported it correctly. Worth noting only because the cascade
+(CS1002/CS1031/CS1055/CS0065 …) reads like a builder failure and is not one.

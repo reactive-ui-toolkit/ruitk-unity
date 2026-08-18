@@ -403,6 +403,25 @@ namespace Ruitk.Builder
                             full, LineOfNewHook(full, chipIndex),
                             "var (value, setValue) = useState(0);", "", anchor));
             };
+            // UB-117: "+ code" seeds a plain statement in the body and opens it
+            // for editing, so custom logic no longer requires the source pane.
+            // It rides the exact path "+ hook" uses — the body is one list of
+            // statement lines and a hook call is just one of them.
+            _canvasHost.OnAddCode = path =>
+            {
+                string full = Path.GetFullPath(path);
+                EditSession(full);
+                var node = _canvasHost?.FindNode(full);
+                int chipIndex = node?.Body.Count ?? 0;
+                int cardIndex = _canvasHost?.NodeIndexOf(full) ?? -1;
+                const string seed = "var someThing = \"\";";
+                InsertBeforeLastReturn(full, "  " + seed, "new code");
+                if (cardIndex >= 0)
+                    _canvasHost?.WithCanvasElement(
+                        $"chip-{cardIndex}-{chipIndex}",
+                        anchor => ShowLineEditor(
+                            full, LineOfNewHook(full, chipIndex), seed, "", anchor));
+            };
             _canvasHost.OnEditAttrValue = ShowAttrValueEditor;
             // Editing an EXISTING badge cancels only the edit; there is no
             // seeding gesture behind it to undo.
@@ -2166,6 +2185,26 @@ namespace Ruitk.Builder
                     return tag.Remove(m.Index, m.Length).Replace("  ", " ");
                 string oldValue = m.Groups[2].Value;
                 bool expr = oldValue.StartsWith("{", System.StringComparison.Ordinal);
+                // UB-115: the wrapper stays outside the field, so typing an
+                // EXPRESSION into a quoted attribute used to nest it —
+                // {value} became text="{value}", a literal brace string. A
+                // value the user wrapped in braces themselves means "make this
+                // an expression"; the same in reverse for a quoted literal
+                // typed into an expression slot.
+                string typed = newValue.Trim();
+                if (typed.Length >= 2 && typed.StartsWith("{", System.StringComparison.Ordinal)
+                    && typed.EndsWith("}", System.StringComparison.Ordinal))
+                {
+                    expr = true;
+                    newValue = typed.Substring(1, typed.Length - 2);
+                }
+                else if (typed.Length >= 2
+                    && typed.StartsWith("\"", System.StringComparison.Ordinal)
+                    && typed.EndsWith("\"", System.StringComparison.Ordinal))
+                {
+                    expr = false;
+                    newValue = typed.Substring(1, typed.Length - 2);
+                }
                 string wrapped = expr ? "{" + newValue + "}" : "\"" + newValue + "\"";
                 return tag.Substring(0, m.Groups[2].Index) + wrapped
                     + tag.Substring(m.Groups[2].Index + m.Groups[2].Length);
@@ -4250,10 +4289,53 @@ namespace Ruitk.Builder
             return true;
         }
 
+        /// <summary>UB-116: canvas edits splice LINES into the buffer, so an
+        /// inserted tag carries the indentation the splice guessed rather than
+        /// the file's canonical shape — the owner's "the formatting of the text
+        /// doesnt work". Save runs every dirty buffer through the same AST
+        /// formatter the source pane's apply uses. A buffer that does not format
+        /// cleanly is left EXACTLY as it was: a half-typed file must still save,
+        /// and the formatter's non-Formatted outcomes are data-loss guards, not
+        /// results to write.</summary>
+        private void FormatDirtyBuffers()
+        {
+            foreach (var session in _workspace.Sessions)
+            {
+                if (session.IsReadOnly || !session.IsDirty
+                    || _workspace.IsPendingDelete(session.FilePath))
+                    continue;
+                string before = session.BufferText;
+                string formatted;
+                try
+                {
+                    formatted = BuilderLanguage.FormatText(
+                        before, session.FilePath, out var outcome);
+                    if (outcome != Ruitk.Language.Formatter.FormatOutcome.Formatted
+                        || string.IsNullOrEmpty(formatted)
+                        || string.Equals(formatted, before, System.StringComparison.Ordinal))
+                        continue;
+                }
+                catch (System.Exception)
+                {
+                    continue;
+                }
+                session.ApplyEdit(formatted);
+                _ledger.Record(session.FilePath, before, formatted);
+                if (string.Equals(Path.GetFullPath(session.FilePath),
+                        Path.GetFullPath(_focusFile), System.StringComparison.OrdinalIgnoreCase))
+                    _codeField?.SetContent(formatted, _focusFile, KnownElementsOrNull());
+                SyncLspBuffer(session.FilePath, formatted, open: false);
+                _canvasHost?.RefreshGraph(session.FilePath, ReadBufferOrDisk);
+            }
+        }
+
         private void SaveAll()
         {
             if (!ResolveUnsavedLocation())
                 return;
+            _ledger.Begin("format on save");
+            FormatDirtyBuffers();
+            _ledger.End();
             // UB-88: Save is where a deletion stops being reversible, so it is
             // the only place worth asking — up to that moment the user can undo
             // it, abort, or simply never save. The list names every file.

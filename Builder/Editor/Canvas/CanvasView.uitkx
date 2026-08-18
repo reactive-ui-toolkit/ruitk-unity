@@ -19,6 +19,7 @@ export VirtualNode CanvasView(
   Action<float, float> onCanvasContext = null,
   Action<string, string, int> onStyleAddEntry = null,
   Action<string> onAddHook = null,
+  Action<string> onAddCode = null,
   Action<string> onRowNavigate = null,
   Action<string, int, int, string, VisualElement> onEditAttrValue = null,
   Action<string, int, string, VisualElement> onEditDirective = null,
@@ -617,6 +618,41 @@ export VirtualNode CanvasView(
                                     PaddingTop = Px(3),
                                     PaddingBottom = Px(3),
                                     MarginBottom = Px(5),
+                                  }}
+                                />
+                              );
+                            }
+                            @if (node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook) {
+                              return (
+                                <Label
+                                  text="+ code"
+                                  tooltip="add a statement to the component body"
+                                  onPointerEnter={e => { setHoverChipKey($"addcode:{index}"); }}
+                                  onPointerLeave={e => { setHoverChipKey(""); }}
+                                  onPointerDown={e => {
+                                    if (e.Button == 1) {
+                                      return;
+                                    }
+                                    if (onAddCode != null) {
+                                      onAddCode(node.FilePath);
+                                    }
+                                    e.StopPropagation();
+                                  }}
+                                  onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawDashedChipBorder(ctx, hoverChipKey == $"addcode:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"))}
+                                  style={new Style {
+                                    Color = hoverChipKey == $"addcode:{index}" ? Hex("#4fc3f7") : Hex("#8b8b96"),
+                                    FontSize = Px(11.5f),
+                                    Height = Px(22.7f),
+                                    TextAlign = TextMiddleLeft,
+                                    UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                                    BackgroundColor = Hex("#2a2a31"),
+                                    BorderRadius = Px(10),
+                                    PaddingLeft = Px(10.5f),
+                                    PaddingRight = Px(10.5f),
+                                    PaddingTop = Px(3),
+                                    PaddingBottom = Px(3),
+                                    MarginBottom = Px(5),
+                                    MarginLeft = Px(5),
                                   }}
                                 />
                               );

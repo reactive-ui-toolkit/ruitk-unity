@@ -42,6 +42,10 @@ namespace Ruitk.Builder
         public Action<string, int, int, string> OnRowDrop;
         public Action<string, string, int> OnStyleAddEntry;
         public Action<string> OnAddHook;
+
+        /// <summary>UB-117: "+ code" — a statement in the component body, which
+        /// until now could only be written in the source pane.</summary>
+        public Action<string> OnAddCode;
         public Action<string> OnDeleteFile;
 
         /// <summary>UB-88: files to leave out of the tree even though they are
@@ -318,7 +322,13 @@ namespace Ruitk.Builder
             }
             catch (Exception)
             {
-                return;
+                // UB-114: this used to RETURN, skipping the re-render — so a
+                // parse that threw on a half-typed buffer left the card showing
+                // its previous content, and the edit only appeared when a LATER
+                // edit happened to parse ("the attribute didnt show until i
+                // tried to add another attribute"). The node keeps whatever it
+                // managed to populate and the canvas always redraws; diagnostics
+                // are where a broken buffer is reported, not a frozen card.
             }
             RenderCanvas();
         }
@@ -536,6 +546,7 @@ namespace Ruitk.Builder
                         OnStyleAddEntry = (path, styleName, closeLine) =>
                             OnStyleAddEntry?.Invoke(path, styleName, closeLine),
                         OnAddHook = path => OnAddHook?.Invoke(path),
+                        OnAddCode = path => OnAddCode?.Invoke(path),
                         OnEditAttrValue = (path, line, ai, seed, anchor) =>
                             OnEditAttrValue?.Invoke(path, line, ai, seed, anchor),
                         OnEditDirective = (path, line, seed, anchor) =>

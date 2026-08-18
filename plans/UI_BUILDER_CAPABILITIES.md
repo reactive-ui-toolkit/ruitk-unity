@@ -114,7 +114,10 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
   `@case`/`@default` to a `@switch`. New cases insert above `@default`; new
   case labels are the next unused integer.
 - **Unwrap** a single-clause directive, keeping its children.
-- **Add hook** — seeds a `useState` before the return.
+- **Add hook** / **Add code** — the BODY section carries a "+ hook" chip that
+  seeds a `useState` and a "+ code" chip that seeds a plain statement; both
+  open the inline editor on the new line, so custom body logic never requires
+  the source pane.
 - **Add style/util export**, and **add style entry** with searchable keys and
   value helpers (Px/Pct/Hex/Rgba/flex/justify/align/font/text/display/position).
 - **Create module** — component / style / hook / util, from the canvas
@@ -209,7 +212,14 @@ Three tiers, merged into the source console and the card overlays:
    reported unknown because the schema lags.
 3. C# compile errors (`CS####`) from the preview compile.
 
-## 10. Persistence
+## 10. Formatting
+
+Save reprints every dirty buffer through the AST formatter, so text spliced in
+by canvas edits ends up in the canonical shape. It is deliberately a SAVE-time
+pass, not per keystroke. A buffer that does not format cleanly is written
+exactly as it stands.
+
+## 11. Persistence
 
 - Card positions, camera and zoom per tree, in a local layout file.
 - Document buffers and pending deletions survive a domain reload.
