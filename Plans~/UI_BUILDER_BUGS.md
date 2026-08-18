@@ -1463,3 +1463,50 @@ The schema-drift warning naming Vector2Field and friends is the pre-UB-75
 server still running: `Server~/UitkxLanguageServer.dll` in the clone remains
 locked by two live `.NET Host` processes. Publish it with Unity closed; nothing
 else waits on it.
+
+## 14. Field report — owner drive-through, 2026-08-18 round 5
+
+Owner convention from here: "If i didnt mention a feature consider it success,
+I will only report failures." Unreported items in a wave are CLOSED.
+
+### UB-107 — anchor dots sat on top of the code `UNVERIFIED` `MED`
+
+Owner: "either we have lines and the points are in wrong place, or the points
+are in right place but we dont have lines? what i want is for the points/dots
+to be on the right side, but still have lines."
+
+Both halves were the same bug seen from two sides. `AnchorOf` returns the
+marker ELEMENT's centre, and the marker is laid out after the row's attribute
+run — so on a long L2 row it sits in the middle of the code, and both the dot
+and its curve started from there. UB-103's first attempt then moved the curve
+to the card corner and left the dot behind, which orphaned it.
+
+FIX: `RowAnchor` keeps the marker's measured Y (so it still tracks its row and
+the section's scroll clamp) and pins X to the card's right BORDER. Every dot
+lands in one clean column on the card edge, each on its own row, with its line
+attached. One expression feeds both the dot and the curve.
+
+### UB-108 — closing an inline editor dropped window focus `UNVERIFIED` `HIGH`
+
+Owner: "right click, wrap in, foreach, enter - loses focus, ctrl z goes on
+unity, - same with any other directive", and the same after Escape. Closing the
+editor destroys the focused element and Unity hands the keyboard to no one, so
+the builder stops being the focused window and the next Ctrl+Z ran UNITY's
+undo. UB-92 fixed focus on the way IN; this is the way OUT.
+
+FIX: `RemovePanel` — the single exit path for commit, cancel and blur — calls
+`BuilderWindow.FocusExisting`, then re-focuses the window ROOT on the next tick
+(a KeyDownEvent needs a focused ELEMENT, not just a focused window).
+
+### UB-109 — sibling drop hint was too faint to read `UNVERIFIED` `MED`
+
+Owner: "i just tried for several attempt to drop the label between the 2
+visualElements and it failed every time or at least i thought it did, but it
+didnt". The drop was landing correctly — `AfterAnchor` already uses the row's
+whole-block `EndLine` — but a 2px accent rule at the row boundary was too easy
+to miss, so a correct drop read as a failed one.
+
+FIX: a sibling insert paints a thick DASHED rule with end caps at the exact
+line the element will land on, clearly distinct from the tinted box that means
+"nest inside". Dash and cap sizes divide by the live zoom so the caret is the
+same weight at every LOD.

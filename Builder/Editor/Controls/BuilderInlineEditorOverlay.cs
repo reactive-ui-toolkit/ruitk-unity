@@ -234,10 +234,29 @@ namespace Ruitk.Builder
             closed?.Invoke();
         }
 
+        /// <summary>Closing the editor destroys the focused element, and Unity
+        /// does not hand the keyboard back to anything — the window itself stops
+        /// being the focused EditorWindow, so the next Ctrl+Z ran UNITY's undo
+        /// instead of the builder's (owner, 2026-08-18: "wrap in, foreach,
+        /// enter - loses focus, ctrl z goes on unity"). Every exit path routes
+        /// through here, so the window and its root are re-focused here.</summary>
+        private void RestoreHostFocus()
+        {
+            BuilderWindow.FocusExisting();
+            if (_root == null)
+                return;
+            _root.schedule.Execute(() =>
+            {
+                if (_panel == null)
+                    BuilderWindow.FocusExisting(focusRoot: true);
+            }).ExecuteLater(1);
+        }
+
         private void RemovePanel()
         {
             _panel?.RemoveFromHierarchy();
             _panel = null;
+            RestoreHostFocus();
             _field = null;
             _commit = null;
             _closed = null;

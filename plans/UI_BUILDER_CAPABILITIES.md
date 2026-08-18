@@ -54,11 +54,11 @@ Driven by zoom, three bands:
 
 ### Edges
 Bezier import edges, one per import row plus one per markup row that
-instantiates another module. An edge LEAVES a card at its top-right corner and
-ARRIVES at the target's top-left, so a curve never crosses the content of the
-card it belongs to. Small anchor dots stay on the individual import and markup
-rows to mark which row owns a reference. Edges are painted in a screen-space
-overlay so stroke weight is constant at every zoom.
+instantiates another module. Anchor dots sit in a column ON the card's right
+border, one per referencing row, and each edge leaves from its own dot and
+arrives at the target card's top-left — so a curve never starts over the card's
+own content, and every dot has a visible line. Edges are painted in a
+screen-space overlay so stroke weight is constant at every zoom.
 
 ## 3. Reading a tree
 
@@ -111,7 +111,10 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
 
 ### Drag and drop
 - Library rows drag onto markup rows: the drop band (top 30% / bottom 30% /
-  middle) inserts before, after, or nests inside, with a live hint.
+  middle) inserts before, after, or nests inside. The hint distinguishes the
+  two outcomes: a thick dashed caret with end caps marks the exact line a
+  SIBLING will land on, while a tinted outlined box means it will NEST inside
+  the target.
 - Existing markup rows drag to reorder or re-parent, moving their whole line
   range with re-indentation. Directive heads move their entire block.
 - Hooks drop onto BODY; style/util modules drop onto a card and add the import.

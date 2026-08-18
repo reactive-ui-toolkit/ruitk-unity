@@ -46,11 +46,19 @@ namespace Ruitk.Builder
         /// creating one. UB-92: an inline editor needs its host window focused
         /// for the keyboard to reach it, and a menu pick leaves Unity focused on
         /// whatever window was in front before the popup.</summary>
-        internal static void FocusExisting()
+        internal static void FocusExisting(bool focusRoot = false)
         {
             var windows = Resources.FindObjectsOfTypeAll<BuilderWindow>();
-            if (windows != null && windows.Length > 0)
-                windows[0].Focus();
+            if (windows == null || windows.Length == 0)
+                return;
+            var window = windows[0];
+            window.Focus();
+            // Focusing the WINDOW is not enough for shortcuts: a KeyDownEvent is
+            // dispatched to the focused ELEMENT, and closing an inline editor
+            // leaves none. The root takes it back so Ctrl+Z reaches OnKeyDown
+            // rather than falling through to Unity's global undo.
+            if (focusRoot)
+                window.rootVisualElement?.Focus();
         }
 
         public static BuilderWindow OpenEmpty()

@@ -763,6 +763,20 @@ namespace Ruitk.Builder
             Vector2 RowAnchorFallback(BuilderCanvasNode node, float rowY) =>
                 new Vector2(node.X + CardWidthFor(CurrentLod), node.Y + rowY);
 
+            /// The anchor for one row: its measured Y (so it tracks the row and
+            /// the section's scroll clamp) but an X pinned to the card's right
+            /// BORDER. The marker element is laid out after the row's attribute
+            /// run, so on a long L2 row its own centre sits in the middle of the
+            /// code — dots landed on top of the text with curves leaving from
+            /// there (owner, 2026-08-18). Pinning X puts every dot in one clean
+            /// column on the card edge and keeps each line attached to its dot.
+            Vector2 RowAnchor(string name, BuilderCanvasNode node, int index, float rowY)
+            {
+                var point = AnchorOf(name, RowAnchorFallback(node, rowY));
+                point.x = CardRect(index, node).xMax;
+                return point;
+            }
+
             // POC computeEdges: ONE edge per import row, PLUS one per markup row
             // that instantiates a graph node — ShopScreen draws 6 + 3 curves, not 6.
             foreach (var edge in graph.Edges)
@@ -782,9 +796,9 @@ namespace Ruitk.Builder
                 else
                 {
                     int importRow = ImportRowIndex(from, edge.Specifier);
-                    a = AnchorOf(
+                    a = RowAnchor(
                         "a-imp-" + edge.FromIndex + "-" + importRow,
-                        RowAnchorFallback(from, ImportRowY(from, edge.Specifier)));
+                        from, edge.FromIndex, ImportRowY(from, edge.Specifier));
                 }
 
                 // POC drawEdges() line 1458: "if (!a || !target) return;" — an
@@ -825,9 +839,7 @@ namespace Ruitk.Builder
                     }
                     else
                     {
-                        a = AnchorOf(
-                            "a-row-" + i + "-" + r,
-                            RowAnchorFallback(from, MarkupRowY(from, r)));
+                        a = RowAnchor("a-row-" + i + "-" + r, from, i, MarkupRowY(from, r));
                     }
                     StrokeEdge(p, a, TargetOf(target, to), BuilderPalette.UsageEdge, false);
                 }
@@ -846,18 +858,16 @@ namespace Ruitk.Builder
                         var imp = node.Imports[r];
                         if (imp.BadgeKind == NamespaceImportBadge)
                             continue;
-                        PaintAnchorDot(p, AnchorOf(
-                            "a-imp-" + i + "-" + r,
-                            RowAnchorFallback(node, ImportRowY(node, imp.AttrsText))),
-                            imp.BadgeKind);
+                        PaintAnchorDot(p, RowAnchor(
+                            "a-imp-" + i + "-" + r, node, i,
+                            ImportRowY(node, imp.AttrsText)), imp.BadgeKind);
                     }
                     for (int r = 0; r < node.Markup.Count; r++)
                     {
                         if (!ResolvesToNode(graph, node.Markup[r].Text))
                             continue;
-                        PaintAnchorDot(p, AnchorOf(
-                            "a-row-" + i + "-" + r,
-                            RowAnchorFallback(node, MarkupRowY(node, r))), 5);
+                        PaintAnchorDot(p, RowAnchor(
+                            "a-row-" + i + "-" + r, node, i, MarkupRowY(node, r)), 5);
                     }
                 }
             }
@@ -920,11 +930,32 @@ namespace Ruitk.Builder
             }
             else
             {
+                // A 2px accent rule was too easy to miss: the owner tried
+                // repeatedly to drop BETWEEN two elements, could not tell it had
+                // worked, and concluded it had failed (2026-08-18). A sibling
+                // insert now paints an unmistakable caret — a thick dashed rule
+                // with end caps at the exact line the element will land on.
                 float y = target.Band == 0 ? min.y : max.y;
                 p.strokeColor = accent;
+                p.lineWidth = 3f;
+                float dash = 7f / CurrentZoom;
+                float gap = 4f / CurrentZoom;
+                for (float x = min.x; x < max.x; x += dash + gap)
+                {
+                    p.BeginPath();
+                    p.MoveTo(new Vector2(x, y));
+                    p.LineTo(new Vector2(Mathf.Min(x + dash, max.x), y));
+                    p.Stroke();
+                }
+                float cap = 5f / CurrentZoom;
+                p.lineWidth = 2f;
                 p.BeginPath();
-                p.MoveTo(new Vector2(min.x, y));
-                p.LineTo(new Vector2(max.x, y));
+                p.MoveTo(new Vector2(min.x, y - cap));
+                p.LineTo(new Vector2(min.x, y + cap));
+                p.Stroke();
+                p.BeginPath();
+                p.MoveTo(new Vector2(max.x, y - cap));
+                p.LineTo(new Vector2(max.x, y + cap));
                 p.Stroke();
             }
         }
