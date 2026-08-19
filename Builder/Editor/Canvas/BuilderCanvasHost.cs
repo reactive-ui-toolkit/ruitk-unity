@@ -49,6 +49,9 @@ namespace Ruitk.Builder
 
         /// <summary>UB-123: double-clicking an import row copies its alias.</summary>
         public Action<string> OnCopyImportAlias;
+        /// <summary>UB-124: rename the module a card stands for - its export,
+        /// its file, its folder when it owns one, and every importer.</summary>
+        public Action<string> OnRenameCard;
         public Action<string> OnDeleteFile;
 
         /// <summary>UB-88: files to leave out of the tree even though they are
@@ -781,6 +784,11 @@ namespace Ruitk.Builder
             var node = _graph.Nodes[index];
             var items = new List<BuilderSearchMenu.Item>
             {
+                new BuilderSearchMenu.Item
+                {
+                    Label = "Rename " + node.Title + "…",
+                    OnPick = () => OnRenameCard?.Invoke(node.FilePath),
+                },
                 new BuilderSearchMenu.Item
                 {
                     Label = "Delete " + System.IO.Path.GetFileName(node.FilePath),

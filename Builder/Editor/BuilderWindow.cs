@@ -486,6 +486,7 @@ namespace Ruitk.Builder
             // how a keypress destroyed sample files the user never saved. It now
             // only marks the intent, so Abort forgets it and Ctrl+Z un-marks it —
             // the asset is never re-created, so no GUID ever churns.
+            _canvasHost.OnRenameCard = ShowRenamePrompt;
             _canvasHost.OnDeleteFile = path =>
             {
                 if (!_workspace.MarkForDeletion(path))
@@ -2765,6 +2766,163 @@ namespace Ruitk.Builder
         /// → the entry lands before the export's closing brace. Keys and
         /// templates come from the reflected Style surface (UB-08), never a
         /// hand-written table.</summary>
+
+        /// <summary>UB-124: renames the module a card stands for. A rename is
+        /// four edits that must land together or not at all - the EXPORT the
+        /// module declares, the FILE name, the FOLDER when the module owns one,
+        /// and every IMPORTER's specifier and binding. All of it is pending
+        /// buffer work under the save-only contract, recorded as ONE ledger
+        /// entry so a single Ctrl+Z takes the whole rename back.</summary>
+        private void ShowRenamePrompt(string filePath)
+        {
+            string full = Path.GetFullPath(filePath);
+            var node = _canvasHost?.FindNode(full);
+            if (node == null)
+            {
+                Toast("That module is not on this canvas");
+                return;
+            }
+            var session = EditSession(full);
+            if (session == null || session.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+            string oldName = node.Title;
+            string kind = KindKeyOf(node.Kind, full);
+            BuilderSearchMenu.ShowNamePrompt(
+                "rename " + oldName,
+                oldName,
+                name => string.Equals(name, oldName, System.StringComparison.Ordinal)
+                    ? "that is the current name"
+                    : ValidateNewName(kind, name),
+                name => RenameModule(full, oldName, name));
+        }
+
+        /// <summary>The create-prompt kind key for an EXISTING module, so rename
+        /// validates a name exactly the way creation does.</summary>
+        private static string KindKeyOf(BuilderNodeKind kind, string path)
+        {
+            string file = Path.GetFileName(path);
+            if (file.EndsWith(".style.uitkx", System.StringComparison.OrdinalIgnoreCase))
+                return "Style";
+            if (file.EndsWith(".hooks.uitkx", System.StringComparison.OrdinalIgnoreCase))
+                return "Hooks";
+            return kind == BuilderNodeKind.Component ? "Component" : "Utils";
+        }
+
+        private void RenameModule(string full, string oldName, string newName)
+        {
+            var nodes = _canvasHost?.Nodes;
+            if (nodes == null)
+                return;
+            string dir = Path.GetDirectoryName(full) ?? "";
+            string file = Path.GetFileName(full);
+            string suffix = file.EndsWith(".style.uitkx", System.StringComparison.OrdinalIgnoreCase)
+                ? ".style.uitkx"
+                : file.EndsWith(".hooks.uitkx", System.StringComparison.OrdinalIgnoreCase)
+                    ? ".hooks.uitkx"
+                    : ".uitkx";
+            // A module that owns its folder (the house layout for components)
+            // moves the folder too, so the folder can never contradict the file.
+            bool ownsFolder = string.Equals(
+                Path.GetFileName(dir), oldName, System.StringComparison.Ordinal);
+            string newDir = ownsFolder
+                ? Path.Combine(Path.GetDirectoryName(dir) ?? "", newName)
+                : dir;
+            string newFull = Path.GetFullPath(Path.Combine(newDir, newName + suffix));
+            if (File.Exists(newFull) || _workspace.TryGet(newFull) != null)
+            {
+                Toast(newName + " already exists");
+                return;
+            }
+
+            _ledger.Begin("rename " + oldName + " to " + newName);
+
+            // 1. The module's own text: the export it declares.
+            var own = EditSession(full);
+            if (own != null && !own.IsReadOnly)
+            {
+                string renamed = RenameExportIn(own.BufferText, oldName, newName);
+                if (!string.Equals(renamed, own.BufferText, System.StringComparison.Ordinal))
+                {
+                    string before = own.BufferText;
+                    own.ApplyEdit(renamed);
+                    _ledger.Record(full, before, renamed);
+                }
+            }
+
+            // 2. Every importer: the specifier AND the binding it introduces,
+            //    plus that binding's uses in the file.
+            foreach (var other in nodes)
+            {
+                string otherFull = Path.GetFullPath(other.FilePath);
+                if (string.Equals(otherFull, full, System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var peer = _workspace.TryGet(otherFull);
+                if (peer == null || peer.IsReadOnly)
+                    continue;
+                string updated = RenameReferencesIn(peer.BufferText, oldName, newName, suffix);
+                if (string.Equals(updated, peer.BufferText, System.StringComparison.Ordinal))
+                    continue;
+                string before = peer.BufferText;
+                peer.ApplyEdit(updated);
+                _ledger.Record(otherFull, before, updated);
+            }
+
+            // 3. The file, and its folder when it owns one - a PENDING move,
+            //    like every other edit.
+            if (!_workspace.Rename(full, newFull))
+            {
+                _ledger.End();
+                Toast("Could not rename " + oldName);
+                return;
+            }
+            // The move is a pending creation plus a pending deletion, so
+            // both are recorded: undo discards the new session and
+            // un-marks the old one, putting the module back where it was.
+            _ledger.RecordCreation(newFull);
+            _ledger.RecordDeletion(full);
+            if (string.Equals(Path.GetFullPath(_focusFile), full,
+                    System.StringComparison.OrdinalIgnoreCase))
+                _focusFile = newFull;
+            _ledger.End();
+            RefreshHistoryPanel();
+            RefreshChrome();
+            MountCanvas();
+            Toast("Renamed to " + newName + " - applies on Save");
+        }
+
+        /// <summary>Rewrites the module's own export DECLARATION only. A
+        /// word-boundary replace over the whole file would also rewrite
+        /// unrelated identifiers that merely share the name.</summary>
+        private static string RenameExportIn(string text, string oldName, string newName)
+        {
+            var pattern = new System.Text.RegularExpressions.Regex(
+                @"(\bexport\s+[^\r\n=;]*?\b)"
+                + System.Text.RegularExpressions.Regex.Escape(oldName) + @"\b");
+            return pattern.Replace(text, m => m.Groups[1].Value + newName, 1);
+        }
+
+        /// <summary>Rewrites one importer: the import SPECIFIER (the path stem),
+        /// the BINDING it introduces, and that binding's uses. Specifier and
+        /// binding move together, because renaming either alone leaves the file
+        /// referring to something that no longer exists.</summary>
+        private static string RenameReferencesIn(
+            string text, string oldName, string newName, string suffix)
+        {
+            string stem = suffix == ".style.uitkx" ? ".style"
+                : suffix == ".hooks.uitkx" ? ".hooks"
+                : "";
+            var withSpecifier = new System.Text.RegularExpressions.Regex(
+                @"([""'/])" + System.Text.RegularExpressions.Regex.Escape(oldName)
+                + System.Text.RegularExpressions.Regex.Escape(stem) + @"(?=[""'])");
+            string updated = withSpecifier.Replace(
+                text, m => m.Groups[1].Value + newName + stem);
+            var binding = new System.Text.RegularExpressions.Regex(
+                @"\b" + System.Text.RegularExpressions.Regex.Escape(oldName) + @"\b");
+            return binding.Replace(updated, newName);
+        }
         private void OnStyleAddEntry(string filePath, string styleName, int closeLine)
         {
             var used = UsedStyleKeys(filePath, styleName);

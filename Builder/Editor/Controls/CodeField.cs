@@ -172,19 +172,30 @@ namespace Ruitk.Builder
         /// and bottom (owner report 2026-08-18).</summary>
         public void UseCompactChrome()
         {
-            _input.style.paddingTop = 2f;
-            _input.style.paddingBottom = 2f;
-            _input.style.paddingLeft = 6f;
-            _input.style.paddingRight = 6f;
+            _input.style.paddingTop = CompactPadY;
+            _input.style.paddingBottom = CompactPadY;
+            _input.style.paddingLeft = CompactPadX;
+            _input.style.paddingRight = CompactPadX;
+            _scroll.style.paddingTop = CompactPadY;
+            _scroll.style.paddingBottom = CompactPadY;
             _compact = true;
             foreach (var row in _linesHost.Children())
             {
-                row.style.paddingLeft = 6f;
-                row.style.paddingRight = 6f;
+                row.style.paddingLeft = CompactPadX;
+                row.style.paddingRight = CompactPadX;
             }
         }
 
         private bool _compact;
+
+        /// <summary>The coloured-edit overlay only registers while the INPUT
+        /// and the LISTING share identical text geometry, so compact mode must
+        /// move BOTH. Driving the input alone left the listing on the source
+        /// pane's 8px band, and the selection highlight - which the input draws -
+        /// sat several pixels off the glyphs the user sees, reading as a
+        /// half-covered line.</summary>
+        private const float CompactPadX = 6f;
+        private const float CompactPadY = 2f;
 
         /// <summary>UB-99: the inline editor scales its glyphs to the canvas row
         /// it covers, so a fragment edited at high zoom is not a tiny field
@@ -824,8 +835,8 @@ namespace Ruitk.Builder
                     height = _compact ? _fontSize * 1.45f : LineHeight,
                     minHeight = 0f,
                     flexShrink = 0f,
-                    paddingLeft = _compact ? 6f : Gutter,
-                    paddingRight = _compact ? 6f : Gutter,
+                    paddingLeft = _compact ? CompactPadX : Gutter,
+                    paddingRight = _compact ? CompactPadX : Gutter,
                     color = BuilderPalette.Text,
                     fontSize = _fontSize,
                     whiteSpace = WhiteSpace.Pre,

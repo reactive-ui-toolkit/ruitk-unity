@@ -120,6 +120,10 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
   the source pane.
 - **Add style/util export**, and **add style entry** with searchable keys and
   value helpers (Px/Pct/Hex/Rgba/flex/justify/align/font/text/display/position).
+- **Rename module** — from the card menu. Renames the export, the file, the
+  folder when the module owns one, and every importer's specifier and
+  binding across the tree. Like every edit it is pending: Save applies it,
+  Abort drops it, and one undo reverses the whole rename.
 - **Create module** — component / style / hook / util, from the canvas
   right-click or the library's "+ new", named through a validating prompt
   (PascalCase components, camelCase style/util, `use…` hooks, no duplicates).

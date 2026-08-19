@@ -191,6 +191,35 @@ namespace Ruitk.Builder
             return true;
         }
 
+
+        /// <summary>UB-124: moves a module to a new path as a PENDING change.
+        /// <para>A never-saved module has no file behind it, so it simply
+        /// relocates. A SAVED one cannot be moved on disk without breaking the
+        /// save-only contract, so the rename is expressed with the two pending
+        /// mechanisms that already exist: a new session carrying the text at the
+        /// new path, and a deletion mark on the old one. Save then writes the
+        /// new file and trashes the old in the same batch; Abort drops both, and
+        /// undo reverses both because the ledger records them as a creation and
+        /// a deletion.</para></summary>
+        public bool Rename(string oldPath, string newPath)
+        {
+            if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath))
+                return false;
+            if (_sessions.ContainsKey(newPath) || File.Exists(newPath))
+                return false;
+            var session = TryGet(oldPath);
+            if (session == null || session.IsReadOnly)
+                return false;
+            if (session.IsNewFile)
+                return Relocate(oldPath, newPath);
+
+            var moved = BuilderDocumentSession.CreateNew(newPath, session.BufferText);
+            _sessions[newPath] = moved;
+            MarkForDeletion(oldPath);
+            Changed?.Invoke();
+            return true;
+        }
+
         /// <summary>Drops a never-saved session — undoing a create. Refuses to
         /// touch a session that has been saved, which is a real file and belongs
         /// to the deletion path instead.</summary>

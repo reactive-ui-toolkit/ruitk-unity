@@ -1785,3 +1785,56 @@ spell.
   SOURCE GENERATION while parsing clean — REMAINING_WORK SG-APOSTROPHE. Found
   while editing CanvasView; minimal repro recorded. It affects any .uitkx
   author, not just the builder.
+
+## 18. Rename, and a selection regression, 2026-08-19
+
+### UB-124 — rename a module `UNVERIFIED` `FEATURE`
+
+Owner: "all component should have an option to renaim them" — and, on the
+scope: "yes that make sense." Implemented as a real refactor rather than a
+menu item, because a rename is FOUR edits that must land together or not at
+all:
+1. the EXPORT the module declares (`RenameExportIn` rewrites the declaration
+   only — a word-boundary sweep over the file would rewrite unrelated
+   identifiers that merely share the name);
+2. every IMPORTER's specifier AND binding, plus that binding's uses
+   (`RenameReferencesIn` — the two move together, since renaming either alone
+   leaves the file pointing at something that no longer exists);
+3. the FILE name;
+4. the FOLDER, when the module owns one (the house layout for components), so
+   the folder can never contradict the file.
+
+All of it is pending buffer work: `BuilderWorkspace.Rename` relocates a
+never-saved module outright, and expresses a SAVED one with the two pending
+mechanisms that already exist — a new session carrying the text at the new
+path plus a deletion mark on the old. Save writes the new file and trashes the
+old in one batch; Abort drops both. The whole rename is ONE ledger entry
+including the creation and the deletion, so a single Ctrl+Z puts the module
+back where it was. Name validation reuses the create-prompt rules via
+`KindKeyOf`, so a rename cannot produce a name creation would have refused.
+
+### UB-126 — menu keys existed only where a search field did `UNVERIFIED` `MED`
+
+Owner: "not fixed in all menus, new component menu doesnt have those keys."
+Correct, and the previous fix was the shallow one: the arrow/Enter handling was
+bound to the SEARCH FIELD, so every menu built without one — the create menu
+and every simple pick list — stayed mouse-only. The keys now live in a single
+`OnListKeyDown` shared by both menu shapes, bound to the root for the
+non-searchable case with the root taking focus so they arrive at all.
+
+### UB-127 — the hook editor clipped its own line `UNVERIFIED` `MED`
+
+A hook chip is only as wide as its summary ("useState -> value, setValue"), but
+the line it edits is the full declaration. A single-line editor now takes the
+width of the CARD SECTION it sits in when that is wider than the thing clicked.
+
+### UB-128 — selection highlight covered half the line `UNVERIFIED` `MED`
+
+Owner: "the text select only marks half of the text." A regression from the
+compact chrome added for UB-106/127. The coloured-edit overlay only registers
+while the INPUT and the LISTING share identical text geometry, and compact mode
+moved the input to a 2px vertical band while leaving the listing on the source
+pane's 8px one. The selection highlight is drawn by the input, the glyphs the
+user sees are the listing, so the band sat several pixels off the text. Both
+surfaces are now driven from one pair of constants, and the row builder reads
+the same pair, so they cannot diverge again.
