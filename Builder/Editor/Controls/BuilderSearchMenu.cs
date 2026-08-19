@@ -56,6 +56,13 @@ namespace Ruitk.Builder
         private ScrollView _list;
         private Func<string, string> _nameValidate;
         private Action<string> _nameSubmit;
+
+        /// <summary>UB-129: the starting TEXT of a name prompt, as opposed to
+        /// the placeholder. A rename has to open with the current name IN the
+        /// field and selected, so it can be edited or replaced; a placeholder
+        /// only draws grey hint text over an EMPTY field, which is why the
+        /// first keystroke wiped the name and nothing could be selected.</summary>
+        private string _initialValue;
         private Label _errorLabel;
 
         /// <summary>POC plain context menu (row / card / create): title header,
@@ -92,7 +99,8 @@ namespace Ruitk.Builder
         /// "Create" row. Enter submits, Esc closes, and a failed validation writes
         /// into the error line WITHOUT closing so the name can be corrected.</summary>
         public static void ShowNamePrompt(
-            string title, string placeholder, Func<string, string> validate, Action<string> onSubmit)
+            string title, string placeholder, Func<string, string> validate,
+            Action<string> onSubmit, string initialValue = null)
         {
             var window = CreateInstance<BuilderSearchMenu>();
             window._title = title;
@@ -101,6 +109,7 @@ namespace Ruitk.Builder
             window._searchable = true;
             window._nameValidate = validate;
             window._nameSubmit = onSubmit;
+            window._initialValue = initialValue;
             Place(window, 240f, 104f);
         }
 
@@ -217,6 +226,17 @@ namespace Ruitk.Builder
                 });
                 _search.RegisterCallback<KeyDownEvent>(evt =>
                 {
+                    // UB-130: this popup is its own EditorWindow, so an undo
+                    // chord typed while editing a name fell straight through to
+                    // UNITY's global undo and mutated the scene. The field owns
+                    // these keys for the duration of the prompt.
+                    if ((evt.ctrlKey || evt.commandKey)
+                        && (evt.keyCode == KeyCode.Z || evt.keyCode == KeyCode.Y))
+                    {
+                        evt.StopImmediatePropagation();
+                        evt.imguiEvent?.Use();
+                        return;
+                    }
                     if (evt.keyCode == KeyCode.Escape)
                     {
                         Close();
@@ -268,7 +288,14 @@ namespace Ruitk.Builder
             Rebuild();
             if (_searchable)
             {
-                _search.schedule.Execute(() => _search.Focus());
+                if (!string.IsNullOrEmpty(_initialValue))
+                    _search.SetValueWithoutNotify(_initialValue);
+                _search.schedule.Execute(() =>
+                {
+                    _search.Focus();
+                    if (!string.IsNullOrEmpty(_initialValue))
+                        _search.textSelection.SelectAll();
+                });
             }
             else
             {

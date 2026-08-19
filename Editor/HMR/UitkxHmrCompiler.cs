@@ -779,7 +779,16 @@ namespace Ruitk.EditorSupport.HMR
                 if (compDir != null)
                 {
                     string prefix = componentName + ".";
-                    foreach (var file in Directory.GetFiles(compDir, prefix + "*.uitkx"))
+                    // A module the builder is holding as a pending buffer can
+                    // sit in a directory that does not exist on disk yet (a new
+                    // component owns a fresh folder, and so does a rename). An
+                    // absent directory HAS no companions - that is an answer,
+                    // not a failure - but the unguarded scan threw
+                    // DirectoryNotFoundException on every debounced recompile,
+                    // which killed the preview and made typing crawl.
+                    foreach (var file in Directory.Exists(compDir)
+                        ? Directory.GetFiles(compDir, prefix + "*.uitkx")
+                        : System.Array.Empty<string>())
                     {
                         if (!string.Equals(file, uitkxPath, StringComparison.OrdinalIgnoreCase))
                             artifacts.CompanionUitkxPathsConsumed.Add(Path.GetFullPath(file));
@@ -1312,7 +1321,11 @@ namespace Ruitk.EditorSupport.HMR
             var candidateFiles = new List<string>();
             var seenCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             string prefix = componentName + ".";
-            foreach (var f in Directory.GetFiles(dir, prefix + "*.uitkx"))
+            // Same reason as the companion scan above: a pending module may
+            // have no directory on disk, which simply means no candidates.
+            foreach (var f in Directory.Exists(dir)
+                ? Directory.GetFiles(dir, prefix + "*.uitkx")
+                : System.Array.Empty<string>())
                 if (seenCandidates.Add(Path.GetFullPath(f)))
                     candidateFiles.Add(f);
             if (componentDirectives != null && _importResolverMap != null)

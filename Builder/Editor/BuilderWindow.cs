@@ -987,21 +987,19 @@ namespace Ruitk.Builder
         /// sessions are skipped rather than throwing — a package file cannot be
         /// in the ledger, but the guard is the same last line of defense the
         /// edit path uses.</summary>
+        /// <summary>Replays one ledger step. Order matters and used to be wrong:
+        /// the canvas was remounted BEFORE the buffers were written and before
+        /// the focus was re-pointed, so an undo that removed the focused session
+        /// rebuilt the whole window around a file that no longer existed. Now
+        /// every model change lands first, then the focus is validated, then the
+        /// views are refreshed exactly once.</summary>
         private void ApplyLedgerWrites(
             System.Collections.Generic.List<(string FilePath, string Text)> writes, string label,
             bool remountCanvas = false)
         {
             if (writes.Count == 0 && !remountCanvas)
                 return;
-            if (remountCanvas)
-            {
-                RefreshChrome();
-                RefreshHistoryPanel();
-                MountCanvas();
-                Toast(label);
-                if (writes.Count == 0)
-                    return;
-            }
+
             using (_ledger.Suppress())
             {
                 foreach (var (filePath, text) in writes)
@@ -1011,18 +1009,51 @@ namespace Ruitk.Builder
                         continue;
                     session.ApplyEdit(text);
                     SyncLspBuffer(filePath, text, open: false);
-                    _canvasHost?.RefreshGraph(filePath, ReadBufferOrDisk);
-                    if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(_focusFile),
-                            System.StringComparison.OrdinalIgnoreCase))
-                        _codeField?.SetContent(text, _focusFile, KnownElementsOrNull());
                 }
             }
+
+            // UB-131: undoing a rename DISCARDS the renamed module's session, and
+            // the window was still focused on it - so the source pane and the card
+            // rendered emptiness over a tree that was perfectly intact. The focus
+            // is validated BEFORE anything redraws.
+            RebindFocusIfMissing();
+
+            if (remountCanvas)
+            {
+                MountCanvas();
+            }
+            else
+            {
+                foreach (var (filePath, _) in writes)
+                    _canvasHost?.RefreshGraph(filePath, ReadBufferOrDisk);
+            }
+
+            var focused = _workspace.TryGet(_focusFile);
+            if (focused != null)
+                _codeField?.SetContent(focused.BufferText, _focusFile, KnownElementsOrNull());
             RefreshChrome();
             NotifyBufferChanged();
             RefreshHistoryPanel();
             Toast(label);
         }
 
+
+        /// <summary>Points the window at a session that actually exists. A
+        /// ledger replay can remove the focused one (undoing a create, or the
+        /// creation half of a rename), and every pane then renders emptiness
+        /// over a tree that is perfectly intact.</summary>
+        private void RebindFocusIfMissing()
+        {
+            if (!string.IsNullOrEmpty(_focusFile) && _workspace.TryGet(_focusFile) != null)
+                return;
+            foreach (var session in _workspace.Sessions)
+            {
+                if (_workspace.IsPendingDelete(session.FilePath))
+                    continue;
+                _focusFile = session.FilePath;
+                return;
+            }
+        }
         private void RefreshEditedBuffer(BuilderDocumentSession session)
         {
             _codeField?.SetContent(session.BufferText, session.FilePath, KnownElementsOrNull());
@@ -2796,7 +2827,8 @@ namespace Ruitk.Builder
                 name => string.Equals(name, oldName, System.StringComparison.Ordinal)
                     ? "that is the current name"
                     : ValidateNewName(kind, name),
-                name => RenameModule(full, oldName, name));
+                name => RenameModule(full, oldName, name),
+                initialValue: oldName);
         }
 
         /// <summary>The create-prompt kind key for an EXISTING module, so rename

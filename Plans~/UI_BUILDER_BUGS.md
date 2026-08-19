@@ -1838,3 +1838,57 @@ pane's 8px one. The selection highlight is drawn by the input, the glyphs the
 user sees are the listing, so the band sat several pixels off the text. Both
 surfaces are now driven from one pair of constants, and the row builder reads
 the same pair, so they cannot diverge again.
+
+## 19. Rename fallout, 2026-08-19 — four defects, three of them mine
+
+### UB-129 — the rename prompt could not be edited `UNVERIFIED` `HIGH`
+
+Owner: "it shows the original name but it doesnt allow you to select part of it
+or all of it... typing any letter just clears the entire value." Exactly right,
+and a call-site blunder: `ShowNamePrompt` takes a PLACEHOLDER, and I passed the
+current name as one. A placeholder is grey hint text drawn over an EMPTY field —
+there is nothing to select and the first keystroke is simply the first
+character. The prompt now takes an `initialValue` distinct from the
+placeholder, seeds the field with it, and selects it on open, so a rename can
+be edited or replaced wholesale.
+
+### UB-130 — an undo chord inside a prompt hit Unity `UNVERIFIED` `HIGH`
+
+Owner: "if while editing the name you mistakenly ctrl + z it applies to unity."
+The prompt is its own EditorWindow and never claimed the chord, so it fell
+through to Unity's global undo and mutated the scene. UB-89 fixed this for the
+builder window; the popups were a second, unfixed door. The name field now
+consumes Ctrl+Z/Y for the life of the prompt.
+
+### UB-131 — undoing a rename blanked the window `UNVERIFIED` `CRITICAL`
+
+Owner: "after the change i ctrl Z and [the card and source pane are empty]".
+Two compounding faults in the replay:
+1. Undoing a rename DISCARDS the renamed module's session, but `_focusFile`
+   still named it — so every pane rendered emptiness over a tree that was
+   perfectly intact, and the card had no content because the graph had no such
+   node.
+2. `ApplyLedgerWrites` remounted the canvas BEFORE writing the buffers and
+   before validating the focus, so the whole window was rebuilt around a file
+   that no longer existed.
+
+Fixed by ordering the replay the way it should always have been: every model
+change lands FIRST, then the focus is validated (`RebindFocusIfMissing` moves
+to any live, non-deleted session), then the views refresh exactly once.
+
+### UB-132 — a pending module in a non-existent folder broke the preview `UNVERIFIED` `HIGH`
+
+Owner: "everything broke... its extremely slow to type in", with
+`DirectoryNotFoundException: Could not find a part of the path ...\SomeBodyThat`.
+NOT a rename bug — a hole in the save-gated design that rename merely exposed
+hard. Two companion scans in `UitkxHmrCompiler` call `Directory.GetFiles(dir)`
+unguarded, and a module the builder holds as a pending buffer can legitimately
+sit in a directory that does not exist yet: a new component owns a fresh folder,
+and so does a rename. The exception killed the preview compile and, because the
+compile is debounced per keystroke, threw on every character — which is the
+typing slowness. An absent directory HAS no companions; that is an answer, not
+a failure, and both scans now say so. The same exception was visible in the
+CREATE flow days earlier and was misread as noise.
+
+Gates: SG 1879/1879 (including the Hmr parity contracts, since this touched
+`Editor/HMR/`), csc smoke EXIT=0, validate-uitkx 0, machine-path clean.
