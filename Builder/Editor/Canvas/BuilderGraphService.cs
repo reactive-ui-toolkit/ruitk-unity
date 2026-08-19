@@ -25,7 +25,8 @@ namespace Ruitk.Builder
         /// until Save.</summary>
         public static async Task<BuilderGraph> LoadTreeAsync(
             BuilderLspClient client, string focusFile, Func<string, string> readText = null,
-            Func<string, bool> isHidden = null)
+            Func<string, bool> isHidden = null,
+            IEnumerable<string> pendingFiles = null)
         {
             JToken raw = await RequestGraphWithRetry(client);
             var nodes = (raw?["nodes"] ?? raw?["Nodes"]) as JArray ?? new JArray();
@@ -86,6 +87,15 @@ namespace Ruitk.Builder
                     Link(importedBy, toFull, from);
                 }
             }
+
+            // UB-133: the adjacency comes only from the language server, which
+            // knows files on DISK. A module the builder holds as a pending
+            // buffer - a new one, or the new half of a rename - has no edges
+            // there, so the reachability walk below found NOTHING connected to
+            // it and the whole tree collapsed to a single card. Pending modules
+            // contribute their own imports first, so the walk sees the tree the
+            // user is actually looking at.
+            LinkPendingImports(adjacency, importedBy, pendingFiles, readText, isHidden);
 
             string focus = Path.GetFullPath(focusFile);
             var member = ConnectedComponent(adjacency, focus);
@@ -1132,6 +1142,82 @@ namespace Ruitk.Builder
             return sb.ToString();
         }
 
+
+        /// <summary>Adds adjacency for modules that exist only as buffers, by
+        /// parsing their own import directives. Resolution mirrors the canvas
+        /// side: a specifier carries no extension, so each module suffix is
+        /// tried and the first that names a real file wins. A specifier that
+        /// resolves to nothing is simply skipped - a half-typed import must not
+        /// break the tree.</summary>
+        private static void LinkPendingImports(
+            Dictionary<string, HashSet<string>> adjacency,
+            Dictionary<string, HashSet<string>> importedBy,
+            IEnumerable<string> pendingFiles,
+            Func<string, string> readText,
+            Func<string, bool> isHidden)
+        {
+            if (pendingFiles == null || readText == null)
+                return;
+            foreach (string pending in pendingFiles)
+            {
+                if (string.IsNullOrEmpty(pending))
+                    continue;
+                string from = Path.GetFullPath(pending);
+                if (isHidden != null && isHidden(from))
+                    continue;
+                string text = readText(from);
+                if (string.IsNullOrEmpty(text))
+                    continue;
+                string dir = Path.GetDirectoryName(from);
+                if (string.IsNullOrEmpty(dir))
+                    continue;
+                Ruitk.Language.Parser.ParseResult parsed;
+                try
+                {
+                    parsed = BuilderLanguage.Parse(text, from);
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+                foreach (var import in parsed.Directives.Imports)
+                {
+                    string spec = import.Specifier ?? "";
+                    if (spec.Length == 0 || spec.StartsWith("@", StringComparison.Ordinal))
+                        continue;
+                    string target = ResolvePendingSpecifier(dir, spec);
+                    if (target == null || (isHidden != null && isHidden(target)))
+                        continue;
+                    Link(adjacency, from, target);
+                    Link(adjacency, target, from);
+                    Link(importedBy, target, from);
+                }
+            }
+        }
+
+        private static readonly string[] s_pendingSuffixes =
+        {
+            ".style.uitkx", ".hooks.uitkx", ".uitkx",
+        };
+
+        private static string ResolvePendingSpecifier(string fromDir, string specifier)
+        {
+            foreach (string suffix in s_pendingSuffixes)
+            {
+                string candidate;
+                try
+                {
+                    candidate = Path.GetFullPath(Path.Combine(fromDir, specifier + suffix));
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+            return null;
+        }
         private static void Link(Dictionary<string, HashSet<string>> map, string key, string value)
         {
             if (!map.TryGetValue(key, out var set))

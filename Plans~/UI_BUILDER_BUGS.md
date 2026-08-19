@@ -1892,3 +1892,28 @@ CREATE flow days earlier and was misread as noise.
 
 Gates: SG 1879/1879 (including the Hmr parity contracts, since this touched
 `Editor/HMR/`), csc smoke EXIT=0, validate-uitkx 0, machine-path clean.
+
+### UB-133 — renaming the root collapsed the whole tree `UNVERIFIED` `CRITICAL`
+
+Owner renamed ShowcaseDemoPage to BhowcaseDemoPage and the canvas went from the
+full tree (seven-plus cards, every usage edge) to TWO cards.
+
+ROOT CAUSE, and it is the same hole as UB-132 seen from the graph side: the
+canvas adjacency is built ONLY from the language server's edge list, which is
+derived from files on DISK. A renamed module is a PENDING buffer at a path the
+server has never seen, and the old path is hidden as a pending delete, so its
+edges are filtered out too. `ConnectedComponent` therefore found nothing
+attached to the focus file, `member` came back as just that one file, and every
+other module dropped out of the graph. `AppendPendingNewNodes` had added the
+node itself, and `AppendMissingImportEdges` could only draw edges BETWEEN nodes
+that were already there — which is why exactly one neighbour survived.
+
+FIX at the layer the fault lives: `LoadTreeAsync` now takes the pending set and
+`LinkPendingImports` parses each pending buffer's own import directives,
+resolves the specifiers, and feeds them into the adjacency BEFORE the
+reachability walk. The walk then sees the tree the user is actually looking at,
+whether or not the server knows the file exists. A specifier that resolves to
+nothing is skipped, so a half-typed import cannot break the tree.
+
+This also fixes the same collapse for a NEWLY CREATED component that imports
+existing modules — it was always latent there; rename just made it obvious.

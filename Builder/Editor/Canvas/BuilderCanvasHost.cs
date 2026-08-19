@@ -198,7 +198,8 @@ namespace Ruitk.Builder
             {
                 var client = await BuilderLspService.GetOrStartAsync();
                 graph = await BuilderGraphService.LoadTreeAsync(
-                    client, focusFile, readText, IsFileHidden);
+                    client, focusFile, readText, IsFileHidden,
+                    PendingNewFiles?.Invoke());
                 await CheckSchemaDrift(client);
             }
             catch (Exception ex)
