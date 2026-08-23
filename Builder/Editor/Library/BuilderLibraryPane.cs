@@ -56,6 +56,16 @@ namespace Ruitk.Builder
         private TextField _search;
         private string _filter = "";
 
+        /// <summary>How many rows a section shows before the rest fold away. The
+        /// pane lists every native element, every hook and every module in the
+        /// tree, which is a long scroll to reach the section you want.</summary>
+        private const int CollapsedRows = 5;
+
+        /// <summary>Sections the user has opened. Collapse is a VIEW state, so it
+        /// is remembered here rather than pushed into the entries - rebuilding the
+        /// list from a new graph must not close a drawer the user just opened.</summary>
+        private readonly HashSet<string> _expanded = new HashSet<string>(StringComparer.Ordinal);
+
         /// <summary>Fires once the LSP schema has been parsed into
         /// BuilderSchemaCache — the window re-pushes knownElements then.</summary>
         public Action SchemaLoaded;
@@ -466,6 +476,51 @@ namespace Ruitk.Builder
             }
         }
 
+        /// <summary>Closes a section off: "+N more" when rows are hidden, "show
+        /// less" when they are not and the section is longer than the fold. Called
+        /// where a section ENDS - at the next header and after the last row - so
+        /// one call site cannot be the one that forgets.</summary>
+        private void AddFoldRow(string section, Dictionary<string, int> counts)
+        {
+            if (_filter.Length > 0 || string.IsNullOrEmpty(section))
+                return;
+            if (!counts.TryGetValue(section, out int total) || total <= CollapsedRows)
+                return;
+            bool open = _expanded.Contains(section);
+            string captured = section;
+            var fold = new Label(open ? "show less" : "+" + (total - CollapsedRows) + " more")
+            {
+                tooltip = open
+                    ? "Fold " + section + " back to " + CollapsedRows + " rows"
+                    : "Show all " + total + " in " + section,
+                style =
+                {
+                    fontSize = 11f,
+                    color = BuilderPalette.Dim,
+                    paddingLeft = 9f, paddingRight = 9f,
+                    paddingTop = 2f, paddingBottom = 2f,
+                    marginBottom = 4f,
+                    unityTextAlign = TextAnchor.MiddleLeft,
+                    flexShrink = 0f,
+                },
+            };
+            fold.userData = "lib-item";
+            BuilderCursor.Set(fold, UnityEditor.MouseCursor.Link);
+            fold.RegisterCallback<MouseEnterEvent>(_ => fold.style.color = BuilderPalette.Accent);
+            fold.RegisterCallback<MouseLeaveEvent>(_ => fold.style.color = BuilderPalette.Dim);
+            fold.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.button != 0)
+                    return;
+                if (!_expanded.Remove(captured))
+                    _expanded.Add(captured);
+                evt.StopPropagation();
+                Rebuild();
+                ApplyRowWidth();
+            });
+            _listHost.Add(fold);
+        }
+
         private static Label SectionHeader(string section) =>
             new Label(section.ToUpperInvariant())
             {
@@ -504,6 +559,17 @@ namespace Ruitk.Builder
             _listHost.Clear();
             _listHost.style.alignItems = Align.FlexStart;
             string section = null;
+            // A search reaches the whole library, collapsed rows included: folding
+            // is about the resting state, and a filter that could not see past it
+            // would be a search that lies about what is there.
+            bool folding = _filter.Length == 0;
+            var sectionCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var counted in _entries)
+            {
+                sectionCounts.TryGetValue(counted.Section, out int n);
+                sectionCounts[counted.Section] = n + 1;
+            }
+            int shown = 0;
             // POC buildLibrary() emits all five headers unconditionally, in order,
             // whether or not the tree contributes a row to any of them — an empty
             // section still tells you the drawer exists. Filtering hides headers.
@@ -516,6 +582,7 @@ namespace Ruitk.Builder
                     continue;
                 if (entry.Section != section)
                 {
+                    AddFoldRow(section, sectionCounts);
                     if (_filter.Length == 0)
                     {
                         int from = Array.IndexOf(s_sectionOrder, section) + 1;
@@ -524,8 +591,12 @@ namespace Ruitk.Builder
                             _listHost.Add(SectionHeader(s_sectionOrder[s]));
                     }
                     section = entry.Section;
+                    shown = 0;
                     _listHost.Add(SectionHeader(section));
                 }
+                shown++;
+                if (folding && shown > CollapsedRows && !_expanded.Contains(section))
+                    continue;
                 var row = new Label(entry.Name)
                 {
                     tooltip = entry.Description,
@@ -611,6 +682,7 @@ namespace Ruitk.Builder
                 _listHost.Add(row);
             }
 
+            AddFoldRow(section, sectionCounts);
             if (_filter.Length == 0)
             {
                 for (int s = Array.IndexOf(s_sectionOrder, section) + 1;

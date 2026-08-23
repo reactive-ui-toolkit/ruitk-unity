@@ -2794,3 +2794,45 @@ the reported case - those are the same state. For a SAVED module they differ, an
 the module would come back at Save. Deleting a saved module and re-creating it
 under the same name inside one session is the only way to reach that, and the
 right fix is for the ledger to model a revive as its own change kind.
+
+### UB-173 — the tree model `SHIPPED` `STRUCTURAL`
+
+Not a defect report: the shape that produced UB-135 through UB-172. Intent was
+stored BESIDE the data - a pending-delete list, a pending-folder-move list - and
+every consumer had to join the two. Five defects in two days were one consumer
+that did not know to join, or one route that bypassed the join.
+
+Plans~/BUILDER_TREE_MODEL.md is the plan and it is fully implemented. Load reads
+the tree once; every manipulation happens on it; rendering reads it; Save walks
+it and writes. Deletion is ABSENCE - a module leaves the tree and that is the
+whole of it - and Save works out what that implies by diffing against the paths
+that were on disk last time. There is nothing left to join.
+
+This RETIRES the known asymmetry recorded under UB-172. There is no "deleted,
+pending" state for an undo to land on any more: the ledger holds the module the
+deletion removed, and undo puts that same module back with its identity, its
+buffer and its DiskPath intact. Deleting a saved module and re-creating it under
+the same name inside one session is now the same operation as any other move
+through the tree.
+
+### UB-174 — the library pane was one long scroll `SHIPPED` `LOW`
+
+Owner ask 2026-08-22, deferred behind the delete fix: "on the left side menu,
+lets have 5 items alwyas shown, the rest should be collapse".
+
+Each section now shows five rows and folds the rest behind "+N more"; opening one
+is remembered across rebuilds, so a new graph cannot close a drawer the user just
+opened. A SEARCH reaches the whole library, folded rows included - a filter that
+could not see past the fold would be a search that lies about what is there.
+
+### UB-175 — style entries do not chain `OPEN` `LOW`
+
+Owner ask 2026-08-22, deferred behind the delete fix: "lets make it so when 1
+styles is over the +entry is 'focused' right a way and enter behave as if you
+clicked the +entry".
+
+Two readings, materially different, and the owner has not been asked yet: FOCUS
+the card's "+ entry" row after an entry commits, so Enter opens the key menu
+again; or RE-OPEN the key menu automatically, so entries chain until Escape. The
+first needs the fiber-rendered canvas row to be focusable, addressable after a
+re-render, and Enter-activated - none of which is verifiable outside the editor.
