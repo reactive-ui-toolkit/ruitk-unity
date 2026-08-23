@@ -79,7 +79,8 @@ namespace Ruitk.Builder
 
             var root = BuildHierarchy(modules, out string rootPath);
             _list.Add(Hint(
-                "Drag a module onto a folder to move it. Nothing moves on disk until Save."));
+                "Drag a module onto a folder to move it. Double-click to open it.\n"
+                + "Nothing moves on disk until Save."));
             Emit(root, 0, rootPath);
         }
 
@@ -141,46 +142,101 @@ namespace Ruitk.Builder
 
         private VisualElement FolderRow(Node node, int depth)
         {
-            var row = new Label(node.Name.Length > 0 ? node.Name : node.Path)
-            {
-                tooltip = node.Path,
-                style =
-                {
-                    fontSize = 12f,
-                    color = BuilderPalette.Text,
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    paddingLeft = 6f + depth * 14f,
-                    paddingTop = 3f, paddingBottom = 3f,
-                    marginBottom = 1f,
-                    borderTopLeftRadius = 4f, borderTopRightRadius = 4f,
-                    borderBottomLeftRadius = 4f, borderBottomRightRadius = 4f,
-                },
-            };
+            var row = Row(depth, FolderIcon, node.Name.Length > 0 ? node.Name : node.Path,
+                BuilderPalette.Text, node.Path, bold: true);
             Register(row, node.Path, null);
             return row;
         }
 
         private VisualElement ModuleRow(BuilderModule module, int depth)
         {
-            var row = new Label(Path.GetFileName(module.FilePath))
+            var row = Row(depth, ModuleIcon, Path.GetFileName(module.FilePath),
+                TintOf(module.Kind), module.FilePath, bold: false);
+            BuilderCursor.Set(row, UnityEditor.MouseCursor.Pan);
+            Register(row, Canon(module.Folder), Canon(module.FilePath));
+            return row;
+        }
+
+        /// <summary>One row: an icon and a name. The icon is what makes the shape
+        /// of the tree readable at a glance - indentation alone reads as a wall of
+        /// text, which is what the first cut of this pane was.</summary>
+        private static VisualElement Row(
+            int depth, Texture2D icon, string text, Color color, string tooltip, bool bold)
+        {
+            var row = new VisualElement
             {
-                tooltip = module.FilePath,
+                tooltip = tooltip,
                 style =
                 {
-                    fontSize = 12f,
-                    color = TintOf(module.Kind),
-                    unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
-                    paddingLeft = 6f + depth * 14f,
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    paddingLeft = 6f + depth * 16f,
                     paddingTop = 2f, paddingBottom = 2f,
                     marginBottom = 1f,
                     borderTopLeftRadius = 4f, borderTopRightRadius = 4f,
                     borderBottomLeftRadius = 4f, borderBottomRightRadius = 4f,
                 },
             };
-            BuilderCursor.Set(row, UnityEditor.MouseCursor.Pan);
-            Register(row, Canon(module.Folder), Canon(module.FilePath));
+            var glyph = new VisualElement
+            {
+                // A row with no icon still lines its NAME up with the rows that
+                // have one, so a missing texture cannot ripple into the layout.
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    width = 16f, height = 16f, marginRight = 6f, flexShrink = 0f,
+                    backgroundImage = icon == null ? null : Background.FromTexture2D(icon),
+                },
+            };
+            row.Add(glyph);
+            row.Add(new Label(text)
+            {
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    fontSize = 12f,
+                    color = color,
+                    unityFontStyleAndWeight = bold ? FontStyle.Bold : FontStyle.Normal,
+                    unityFontDefinition = bold
+                        ? new StyleFontDefinition(StyleKeyword.Null)
+                        : BuilderCanvasDrawing.MonoFontDefinition,
+                    unityTextAlign = TextAnchor.MiddleLeft,
+                },
+            });
             return row;
         }
+
+        /// <summary>Unity's own folder icon, so a folder here looks like a folder
+        /// in the Project window rather than like a second convention.</summary>
+        private static Texture2D FolderIcon =>
+            UnityEditor.EditorGUIUtility.IconContent(
+                UnityEditor.EditorGUIUtility.isProSkin ? "d_Folder Icon" : "Folder Icon")?.image as Texture2D;
+
+        /// <summary>The .uitkx icon the IDE extensions use, so one file type has
+        /// one face across the editor and VS Code. Found by GUID-free search
+        /// rather than a path, because the package can be embedded or installed
+        /// and its folder differs.</summary>
+        private static Texture2D ModuleIcon
+        {
+            get
+            {
+                if (s_moduleIcon != null)
+                    return s_moduleIcon;
+                foreach (string guid in UnityEditor.AssetDatabase.FindAssets(
+                             "uitkx-file t:Texture2D"))
+                {
+                    string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    if (path.IndexOf("/Builder/Editor/Icons/", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    s_moduleIcon = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                    if (s_moduleIcon != null)
+                        return s_moduleIcon;
+                }
+                return null;
+            }
+        }
+
+        private static Texture2D s_moduleIcon;
 
         /// <summary>Wires one row for hover, drag and drop. A row is a drop TARGET
         /// whether it is a folder or a module - dropping onto a module means its
@@ -263,10 +319,14 @@ namespace Ruitk.Builder
         {
             style =
             {
-                fontSize = 10.5f,
+                fontSize = 12f,
                 color = BuilderPalette.Dim,
                 whiteSpace = WhiteSpace.Normal,
-                marginBottom = 8f,
+                marginBottom = 12f,
+                marginTop = 2f,
+                paddingBottom = 8f,
+                borderBottomWidth = 1f,
+                borderBottomColor = BuilderPalette.Line,
             },
         };
 
