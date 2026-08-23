@@ -31,6 +31,67 @@ static class Program
         return m;
     }
 
+    /// <summary>BuilderTree.ResolveRoot reads the FILESYSTEM, so these build the
+    /// real folder shapes rather than asserting against a string. The layouts are
+    /// the ones this package actually ships - including Samples/Components, whose
+    /// name alone used to look like the house "components" nesting level.</summary>
+    static void RootChecks()
+    {
+        string sandbox = Path.Combine(Path.GetTempPath(), "ruitk-root-test");
+        if (Directory.Exists(sandbox))
+            Directory.Delete(sandbox, true);
+
+        void Module(params string[] segments)
+        {
+            string full = Path.Combine(sandbox, Path.Combine(segments));
+            Directory.CreateDirectory(Path.GetDirectoryName(full));
+            File.WriteAllText(full, "export VirtualNode X() {}");
+        }
+
+        // Samples/Components/<26 demo trees>, each Page/Page.uitkx + components/
+        Module("Samples", "Components", "ShowcaseDemoPage", "ShowcaseDemoPage.uitkx");
+        Module("Samples", "Components", "ShowcaseDemoPage", "components",
+               "ShowcaseFieldsPanel", "ShowcaseFieldsPanel.uitkx");
+        Module("Samples", "Components", "ShowcaseDemoPage", "components",
+               "ShowcaseTopBar", "ShowcaseTopBar.uitkx");
+        Module("Samples", "Components", "DoomGame", "DoomGame.uitkx");
+
+        string page = Path.Combine(sandbox, "Samples", "Components", "ShowcaseDemoPage");
+        string child = Path.Combine(page, "components", "ShowcaseFieldsPanel",
+                                    "ShowcaseFieldsPanel.uitkx");
+
+        Check(string.Equals(BuilderTree.ResolveRoot(child), page,
+                  StringComparison.OrdinalIgnoreCase),
+              "a child under components/ resolves to the component that owns it");
+        Check(string.Equals(
+                  BuilderTree.ResolveRoot(Path.Combine(page, "ShowcaseDemoPage.uitkx")), page,
+                  StringComparison.OrdinalIgnoreCase),
+              "the root module resolves to its own folder");
+        Check(!BuilderTree.ResolveRoot(child)
+                  .EndsWith("Samples", StringComparison.OrdinalIgnoreCase),
+              "a folder merely NAMED Components is not the house nesting level");
+
+        // A companion beside its component, and a module in a plain folder.
+        Module("Flat", "Loose.uitkx");
+        Check(string.Equals(BuilderTree.ResolveRoot(Path.Combine(sandbox, "Flat", "Loose.uitkx")),
+                  Path.Combine(sandbox, "Flat"), StringComparison.OrdinalIgnoreCase),
+              "a module in a plain folder roots at that folder");
+
+        // components/ WITHOUT an owning component above it is not a nesting level
+        // either - the guard cuts both ways.
+        Module("Orphan", "components", "Thing", "Thing.uitkx");
+        Check(string.Equals(
+                  BuilderTree.ResolveRoot(
+                      Path.Combine(sandbox, "Orphan", "components", "Thing", "Thing.uitkx")),
+                  Path.Combine(sandbox, "Orphan", "components", "Thing"),
+                  StringComparison.OrdinalIgnoreCase),
+              "components/ with no owning component above it is just a folder");
+
+        Check(BuilderTree.ResolveRoot(null) == null, "no focus resolves to no root");
+
+        Directory.Delete(sandbox, true);
+    }
+
     static void Main()
     {
         string comp = Path.Combine(Root, "Showcase");
@@ -219,6 +280,10 @@ static class Program
         id.MoveTo(i1, Path.Combine(Root, "Twice"), "Twice");
         Check(i1.FilePath + "|" + i2.FilePath == after1,
               "repeating a move changes nothing, subtree included");
+
+        // ---- where a tree starts, against real folders on disk --------------
+        Console.WriteLine("tree root");
+        RootChecks();
 
         Console.WriteLine();
         Console.WriteLine(failures == 0

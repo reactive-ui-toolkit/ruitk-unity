@@ -2836,3 +2836,40 @@ the card's "+ entry" row after an entry commits, so Enter opens the key menu
 again; or RE-OPEN the key menu automatically, so entries chain until Escape. The
 first needs the fiber-rendered canvas row to be focusable, addressable after a
 re-render, and Enter-activated - none of which is verifiable outside the editor.
+
+### UB-176 — opening a file drew ONE card, not the tree `FIXED` `CRITICAL`
+
+Owner report 2026-08-23, right after the tree model landed: right-click
+`ShowcaseFieldsPanel.uitkx` (a child, under `ShowcaseDemoPage/components/`) then
+"Open in RUITK UI Builder", and the canvas shows a single card. Status bar:
+"1 file(s), 0 dirty" - which is the model saying exactly what happened.
+
+ROOT CAUSE: `OpenFor` still called `_workspace.Open(path)`, which adds ONE
+module. `LoadTree` was written, tested and never entered - its only caller was
+`AbortAll`. Under the old shape this was invisible: the canvas got its inventory
+from the language server's workspace graph, so one open file still drew the whole
+tree. Now the graph is a PROJECTION of the tree, and the tree had one thing in
+it. The half of the model that reads was in; the half that loads was not wired to
+the door the user comes through.
+
+FIX: `LoadTreeFor` on the open path. A load REPLACES the tree, so unsaved work
+vetoes it - the file is opened into the tree already present and the user is told
+why they are looking at one card. Losing an unsaved buffer to a right-click in
+the Project window is not a trade worth making.
+
+### UB-177 — a folder NAMED "Components" was read as the nesting level `FIXED` `CRITICAL`
+
+Found while fixing UB-176, before it could ever be seen: `ResolveTreeRoot` stepped
+over any ancestor named "components", case-insensitively, on the way to the tree
+root. This package ships its samples under `Samples/Components/`, holding 26
+unrelated demo trees. Opening any sample would have climbed past
+`ShowcaseDemoPage` to `Samples` and loaded all 26 into one canvas - which, the
+moment UB-176 was fixed, would have read as a catastrophic regression.
+
+ROOT CAUSE: matching a LAYOUT by name alone. "components" is a nesting level only
+where it is the house layout - a folder named "components" INSIDE a component
+that owns a module named after itself.
+
+FIX: the guard, plus the resolution moved to `BuilderTree.ResolveRoot` where it
+has no Unity dependency and `Builder~/ModelTests` can build the real folder
+shapes on disk and assert against them. Six checks, including this exact layout.

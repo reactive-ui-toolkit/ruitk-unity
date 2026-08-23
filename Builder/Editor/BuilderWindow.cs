@@ -77,19 +77,47 @@ namespace Ruitk.Builder
         {
             var window = OpenEmpty();
             window._focusFile = uitkxFilePath;
+            window.LoadTreeFor(uitkxFilePath);
             if (pendingText == null)
             {
                 window._workspace.Open(uitkxFilePath);
             }
             else if (window._workspace.CreateNew(uitkxFilePath, pendingText) == null)
             {
-                var session = window._workspace.Open(uitkxFilePath);
-                if (session != null && !session.IsReadOnly)
-                    session.ApplyEdit(BuilderModule.NormalizeLf(pendingText));
+                var module = window._workspace.Open(uitkxFilePath);
+                if (module != null && !module.IsReadOnly)
+                    module.ApplyEdit(BuilderModule.NormalizeLf(pendingText));
             }
             window.MountCanvas();
             window.RefreshChrome();
             return window;
+        }
+
+        /// <summary>Brings in the whole TREE the file belongs to. Everything the
+        /// canvas draws is a projection of what is loaded, so opening a single
+        /// module drew a single card - the tree was there in the model and nothing
+        /// ever entered it.
+        ///
+        /// A load REPLACES the tree, which is why unsaved work vetoes it: the file
+        /// is opened into the tree already present instead, and the user is told
+        /// why they are looking at one card. Losing an unsaved buffer to a
+        /// right-click in the Project window is not a trade worth making.</summary>
+        private void LoadTreeFor(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || _workspace.TryGet(filePath) != null)
+                return;
+            if (_workspace.HasUnsavedChanges)
+            {
+                _workspace.Open(filePath);
+                Toast("Opened " + Path.GetFileName(filePath)
+                    + " on its own - save or abort first to load its whole tree");
+                return;
+            }
+            _workspace.LoadTree(filePath);
+            // A focus the scan could not reach - a module outside any tree root -
+            // still gets its own card rather than an empty canvas.
+            if (_workspace.TryGet(filePath) == null)
+                _workspace.Open(filePath);
         }
 
         private void OnEnable()

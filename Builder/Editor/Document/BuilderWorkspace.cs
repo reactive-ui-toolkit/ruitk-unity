@@ -81,7 +81,7 @@ namespace Ruitk.Builder
             // does not care.
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            string root = ResolveTreeRoot(focusFullPath);
+            string root = BuilderTree.ResolveRoot(focusFullPath);
             if (!string.IsNullOrEmpty(root) && Directory.Exists(root))
             {
                 string[] files;
@@ -168,62 +168,6 @@ namespace Ruitk.Builder
                 if (!string.IsNullOrEmpty(mapped))
                     yield return BuilderTree.Canon(mapped);
             }
-        }
-
-        /// <summary>The outermost folder of the tree the focus belongs to,
-        /// following the house layout: a component owns the folder it is named
-        /// after, and children nest under a "components" folder inside it. The
-        /// walk stops at the first ancestor that is neither, which is the tree's
-        /// own root.</summary>
-        public static string ResolveTreeRoot(string focusFullPath)
-        {
-            if (string.IsNullOrEmpty(focusFullPath))
-                return null;
-            string dir;
-            try
-            {
-                dir = Path.GetDirectoryName(BuilderTree.Canon(focusFullPath));
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-            if (string.IsNullOrEmpty(dir))
-                return null;
-
-            while (true)
-            {
-                DirectoryInfo parent;
-                try
-                {
-                    parent = Directory.GetParent(dir);
-                }
-                catch (Exception)
-                {
-                    break;
-                }
-                if (parent == null)
-                    break;
-
-                // "components" is a nesting level, never a tree root, so step
-                // over it to the component that owns it.
-                if (string.Equals(parent.Name, "components", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (parent.Parent == null)
-                        break;
-                    dir = parent.Parent.FullName;
-                    continue;
-                }
-                // A folder that owns a module named after itself is still inside
-                // the tree, so keep climbing.
-                if (File.Exists(Path.Combine(parent.FullName, parent.Name + ".uitkx")))
-                {
-                    dir = parent.FullName;
-                    continue;
-                }
-                break;
-            }
-            return dir;
         }
 
         /// <summary>Brings a single file into the tree - opening a module from

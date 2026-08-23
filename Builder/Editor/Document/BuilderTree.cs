@@ -284,6 +284,67 @@ namespace Ruitk.Builder
             return problems;
         }
 
+        /// <summary>The outermost folder of the tree the focus belongs to,
+        /// following the house layout: a component owns the folder it is named
+        /// after, and children nest under a "components" folder inside it. The
+        /// walk stops at the first ancestor that is neither, which is the tree's
+        /// own root.</summary>
+        public static string ResolveRoot(string focusFullPath)
+        {
+            if (string.IsNullOrEmpty(focusFullPath))
+                return null;
+            string dir;
+            try
+            {
+                dir = System.IO.Path.GetDirectoryName(Canon(focusFullPath));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+            if (string.IsNullOrEmpty(dir))
+                return null;
+
+            while (true)
+            {
+                System.IO.DirectoryInfo parent;
+                try
+                {
+                    parent = System.IO.Directory.GetParent(dir);
+                }
+                catch (Exception)
+                {
+                    break;
+                }
+                if (parent == null)
+                    break;
+
+                // "components" is a nesting level ONLY where it is the house
+                // layout - a folder named "components" INSIDE a component that
+                // owns it. The name alone is not enough: this package ships its
+                // samples under Samples/Components/, which held 26 unrelated demo
+                // trees, and matching on the name climbed straight past the real
+                // root and loaded all of them into one canvas.
+                if (string.Equals(parent.Name, "components", StringComparison.OrdinalIgnoreCase)
+                    && parent.Parent != null
+                    && System.IO.File.Exists(System.IO.Path.Combine(
+                        parent.Parent.FullName, parent.Parent.Name + ".uitkx")))
+                {
+                    dir = parent.Parent.FullName;
+                    continue;
+                }
+                // A folder that owns a module named after itself is still inside
+                // the tree, so keep climbing.
+                if (System.IO.File.Exists(System.IO.Path.Combine(parent.FullName, parent.Name + ".uitkx")))
+                {
+                    dir = parent.FullName;
+                    continue;
+                }
+                break;
+            }
+            return dir;
+        }
+
         internal static string Canon(string path)
         {
             if (string.IsNullOrEmpty(path))
