@@ -2825,18 +2825,6 @@ is remembered across rebuilds, so a new graph cannot close a drawer the user jus
 opened. A SEARCH reaches the whole library, folded rows included - a filter that
 could not see past the fold would be a search that lies about what is there.
 
-### UB-175 — style entries do not chain `OPEN` `LOW`
-
-Owner ask 2026-08-22, deferred behind the delete fix: "lets make it so when 1
-styles is over the +entry is 'focused' right a way and enter behave as if you
-clicked the +entry".
-
-Two readings, materially different, and the owner has not been asked yet: FOCUS
-the card's "+ entry" row after an entry commits, so Enter opens the key menu
-again; or RE-OPEN the key menu automatically, so entries chain until Escape. The
-first needs the fiber-rendered canvas row to be focusable, addressable after a
-re-render, and Enter-activated - none of which is verifiable outside the editor.
-
 ### UB-176 — opening a file drew ONE card, not the tree `FIXED` `CRITICAL`
 
 Owner report 2026-08-23, right after the tree model landed: right-click
