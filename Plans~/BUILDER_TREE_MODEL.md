@@ -223,3 +223,58 @@ running-build check (`grep -a` the new symbols in
 `Library/ScriptAssemblies/Ruitk.Builder.Editor.dll`) before asking the owner to
 test. The SG and LSP suites only when a stage touches the generator or the
 language lib, which none of these should.
+
+## Mitigations for the domain-reload risk
+
+Agreed 2026-08-23. The principle is to make each invariant UNREPRESENTABLE
+rather than remembered - "remember to check" has failed three times in this
+campaign already (hidden files, import resolution, assembly identity), each time
+because a guard sat on the callers instead of at the point of decision.
+
+**1. Encapsulate every hazard behind one accessor.**
+
+- Unity turns a null string into `""` on deserialize, and `DiskPath == null` is
+  MEANINGFUL here - it is how a module says it has never been written. So
+  `DiskPath` is never compared at a call site: `IsOnDisk` answers the question
+  once, over `string.IsNullOrEmpty`. The existing code already does this for
+  `OriginalDiskPath`, by convention rather than by construction; this makes it
+  structural.
+- `Parsed` is a lazy property that re-parses when null. A reload clearing it is
+  then indistinguishable from "not parsed yet" and self-heals, so nothing
+  downstream has to know a reload happened.
+- The id and path indexes stay private and are rebuilt in `OnAfterDeserialize`.
+  Callers reach them only through `ById`/`ByPath`, so no stale dictionary can be
+  held across a reload.
+
+**2. A constraint to design around, not to mitigate.** `OnAfterDeserialize` can
+run OFF the main thread and must not touch Unity APIs. Today's implementation
+only moves managed data, which is why it is safe. The re-parse therefore cannot
+live there - a second, independent reason for the lazy property above. Do not
+"optimise" it later by rebuilding the cache eagerly in the callback.
+
+**3. Validate after every reload.** `OnEnable` runs `BuilderTree.Validate()`:
+the module count matches the serialized list, no duplicate paths, the indexes
+agree with the list, no module claims an empty-but-not-null disk path. The value
+is not the check, it is that a broken round-trip ANNOUNCES ITSELF where it
+happens instead of surfacing three stages later as an inexplicable bug.
+
+**4. A reload journal, as the actual backstop.** Everything above lowers the
+chance of a serialization bug; none of it recovers the work if one slips
+through. `AssemblyReloadEvents.beforeAssemblyReload` already has a subscriber in
+`BuilderSaveMetrics`, so the hook is proven. The tree is dumped to JSON under
+`UserSettings/` before every reload; after one, if validation fails or the tree
+comes back empty while the journal is newer, the user is offered a restore.
+
+This also covers the case nothing currently protects against: the Unity fatal
+error the owner hit on 2026-08-22 killed the editor with unsaved modules open.
+The journal is the only mitigation here that survives a process death, and it is
+worth having independently of this refactor.
+
+**5. Test the round trip outside Unity.** `OnBeforeSerialize` and
+`OnAfterDeserialize` are pure functions over managed data - no Unity APIs - so
+the shuttle is testable in the ordinary loop: build a tree, run it, assert it
+comes back identical, including a null `DiskPath` AND an empty one.
+
+**Honest limit:** none of this proves Unity's own serializer behaves as
+documented for these exact field shapes. That needs one real reload with an
+unsaved tree open, and it is stage 1's exit gate - before anything depends on it.

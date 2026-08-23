@@ -137,7 +137,19 @@ $root = "$env:TEMP\ruitk-parity\unity"
 New-Item -ItemType Directory -Force $root, $OutDir | Out-Null
 Get-ChildItem $root -File -ErrorAction SilentlyContinue | Remove-Item -Force
 
-$pkg = 'C:\Yanivs\GameDev\UnityComponents\Packages\com.reactiveuitoolkit'
+# The embedded clone is THIS MACHINE's value, so it is probed rather than
+# written down: $env:RUITK_CLONE -> .ruitk-local.json clonePackagePath -> an
+# error naming both.
+$pkg = $env:RUITK_CLONE
+if (-not $pkg) {
+  $localCfg = Join-Path $repo '.ruitk-local.json'
+  if (Test-Path $localCfg) {
+    $pkg = (Get-Content $localCfg -Raw | ConvertFrom-Json).clonePackagePath
+  }
+}
+if (-not $pkg) {
+  throw "Set `$env:RUITK_CLONE or clonePackagePath in .ruitk-local.json to the embedded clone's package folder."
+}
 $showcase = "$pkg\Samples\Components\ShowcaseDemoPage"
 $galaga = "$pkg\Samples\Components\GalagaGame"
 

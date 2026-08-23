@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
-$repo = 'C:\Yanivs\GameDev\reactive-ui-toolkit\ruitk-unity'
+# Derived, never written down: this harness lives at <repo>/Plans~/capture-harness.
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $asm = [Reflection.Assembly]::LoadFrom((Join-Path $repo 'Analyzers\Ruitk.Language.dll'))
 $immAsm = [Reflection.Assembly]::LoadFrom((Join-Path $repo 'Editor\Plugins\System.Collections.Immutable.dll'))
 

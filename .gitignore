@@ -112,3 +112,6 @@ DiabloMenuDemo.meta
 DiabloMenuDemoFunc/
 DiabloMenuDemoFunc.meta
 ide-extensions~/.language-editor-variant/
+
+# Owner scratch: pasted Unity console output
+/errors
