@@ -429,6 +429,32 @@ namespace Ruitk.Builder
             return false;
         }
 
+        /// <summary>The name a card drags under. A module's EXPORT is what an
+        /// importer writes, so that is what the drop has to insert; the file title
+        /// is the fallback for a module whose exports did not parse.</summary>
+        public static string CardDragName(BuilderCanvasNode node)
+        {
+            if (node == null)
+                return null;
+            bool byExport = node.Kind == BuilderNodeKind.Component
+                || node.Kind == BuilderNodeKind.Hook;
+            if (byExport && node.Exports != null && node.Exports.Count > 0)
+                return node.Exports[0];
+            return node.Title;
+        }
+
+        /// <summary>Dragging a card by its kind chip drops it INTO another card,
+        /// exactly as dragging the same module out of the library does - the chip
+        /// is just a second handle on the same gesture, next to the thing itself
+        /// rather than in a list of everything.</summary>
+        public static string CardDragPayload(BuilderCanvasNode node)
+        {
+            string name = CardDragName(node);
+            return string.IsNullOrEmpty(name)
+                ? null
+                : BuilderDragService.PayloadFor(node.Kind, name);
+        }
+
         public static string KindLabel(BuilderNodeKind kind)
         {
             switch (kind)

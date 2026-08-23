@@ -35,6 +35,45 @@ static class Program
     /// real folder shapes rather than asserting against a string. The layouts are
     /// the ones this package actually ships - including Samples/Components, whose
     /// name alone used to look like the house "components" nesting level.</summary>
+    /// <summary>Drives the specifier pair over every shape the house layout
+    /// produces, in both directions. Pure path arithmetic - no filesystem.</summary>
+    static void SpecifierChecks()
+    {
+        string root = Path.Combine(Root, "Panel");
+        string owner = Path.Combine(root, "Panel.uitkx");
+        string beside = Path.Combine(root, "panelStyle.style.uitkx");
+        string leaf = Path.Combine(root, "components", "Leaf", "Leaf.uitkx");
+        string other = Path.Combine(root, "components", "Twig", "Twig.uitkx");
+
+        void RoundTrip(string from, string target, string expected, string what)
+        {
+            string spec = BuilderSpecifiers.Relative(Path.GetDirectoryName(from), target);
+            Check(spec == expected, what + " spells as \"" + expected + "\" (got \"" + spec + "\")");
+            string back = BuilderSpecifiers.Map(from, spec);
+            Check(string.Equals(back, target, StringComparison.OrdinalIgnoreCase),
+                  what + " maps back to the same file");
+        }
+
+        RoundTrip(owner, beside, "./panelStyle.style", "a companion beside its component");
+        RoundTrip(owner, leaf, "./components/Leaf/Leaf", "a child under components/");
+        RoundTrip(leaf, owner, "../../Panel", "the parent, from a child");
+        RoundTrip(leaf, beside, "../../panelStyle.style", "a shared style, from a child");
+        RoundTrip(leaf, other, "../Twig/Twig", "a sibling child");
+
+        // The move case: the same target from a NEW home has to re-spell, and the
+        // new spelling has to resolve from the new home.
+        string moved = Path.Combine(Root, "Elsewhere", "Leaf.uitkx");
+        string was = BuilderSpecifiers.Relative(Path.GetDirectoryName(leaf), beside);
+        string now = BuilderSpecifiers.Relative(Path.GetDirectoryName(moved), beside);
+        Check(was != now, "moving the importer changes how it must spell the same target");
+        Check(string.Equals(BuilderSpecifiers.Map(moved, now), beside,
+                  StringComparison.OrdinalIgnoreCase),
+              "and the new spelling resolves from the new home");
+
+        Check(BuilderSpecifiers.Relative(null, beside) == null, "no folder spells nothing");
+        Check(BuilderSpecifiers.Map(owner, null) == null, "no specifier maps to nothing");
+    }
+
     static void RootChecks()
     {
         string sandbox = Path.Combine(Path.GetTempPath(), "ruitk-root-test");
@@ -317,6 +356,14 @@ static class Program
         Check(string.Equals(owner.Folder, moved, StringComparison.OrdinalIgnoreCase)
               && string.Equals(hookBeside.Folder, moved, StringComparison.OrdinalIgnoreCase),
               "renaming a companion moves only itself");
+
+        // ---- import specifiers, both directions ------------------------------
+        // A move re-spells every specifier it invalidated, so these two have to
+        // agree exactly: whatever Relative writes, Map must read back to the same
+        // file. A disagreement would not produce one bad import - it would
+        // rewrite every import in the tree to something that does not resolve.
+        Console.WriteLine("specifier round trip");
+        SpecifierChecks();
 
         // ---- where a tree starts, against real folders on disk --------------
         Console.WriteLine("tree root");

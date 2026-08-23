@@ -33,6 +33,19 @@ namespace Ruitk.Builder
 
         public static string Payload;
 
+        /// <summary>The payload for dragging a MODULE, by kind. The vocabulary
+        /// is spelled once here because two places arm the same drag - a library
+        /// row and a card's kind chip - and a payload the drop handler does not
+        /// recognise fails silently, as a drag that does nothing.</summary>
+        public static string PayloadFor(BuilderNodeKind kind, string name) => kind switch
+        {
+            BuilderNodeKind.Component => "component:" + name,
+            BuilderNodeKind.Hook => "hook:" + name,
+            BuilderNodeKind.Style => "stylemod:" + name,
+            BuilderNodeKind.Util => "utilmod:" + name,
+            _ => null,
+        };
+
         /// <summary>Window root that hosts the ghost chip (set by BuilderWindow).</summary>
         public static VisualElement GhostRoot;
 

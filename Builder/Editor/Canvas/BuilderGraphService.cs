@@ -287,28 +287,15 @@ namespace Ruitk.Builder
             return full != null && inventory.Contains(full) ? full : null;
         }
 
+        /// <summary>The specifier an importer in <paramref name="fromFolder"/>
+        /// must write to reach <paramref name="targetPath"/>.</summary>
+        internal static string RelativeSpecifier(string fromFolder, string targetPath) =>
+            BuilderSpecifiers.Relative(fromFolder, targetPath);
+
         /// <summary>Maps a relative specifier to the absolute path it names, with
-        /// no check that anything is there. This is the only place in the builder
-        /// that turns an import into a path; the preview compiler orders its
-        /// compiles with the same answer the canvas draws its edges from.</summary>
-        internal static string MapSpecifier(string fromFile, string specifier)
-        {
-            string fromDir = Path.GetDirectoryName(fromFile);
-            if (string.IsNullOrEmpty(fromDir) || string.IsNullOrEmpty(specifier))
-                return null;
-            string mapped = Ruitk.Language.ImportResolver.MapSpecifierToPath(
-                fromDir, specifier, null, out bool escaped);
-            if (escaped || string.IsNullOrEmpty(mapped))
-                return null;
-            try
-            {
-                return Path.GetFullPath(mapped);
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
+        /// no check that anything is there.</summary>
+        internal static string MapSpecifier(string fromFile, string specifier) =>
+            BuilderSpecifiers.Map(fromFile, specifier);
 
         private static readonly Regex s_hookCall = new Regex(
             @"(?:var\s*\(([^)]*)\)\s*=\s*|var\s+(\w+)\s*=\s*)?\b(use[A-Z][A-Za-z0-9]*)\s*(?:<[^>\n]*>)?\s*\(",

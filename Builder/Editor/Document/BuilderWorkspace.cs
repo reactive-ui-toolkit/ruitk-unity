@@ -285,13 +285,15 @@ namespace Ruitk.Builder
         /// <summary>Gives a module its real home. A module carried along by a
         /// parent that owned its folder is already there, and moving it to where
         /// it already is changes nothing, so the walk is order-independent.</summary>
-        public bool PlaceAt(BuilderModule module, string newFolder)
+        public List<ImportRewrite> PlaceAt(BuilderModule module, string newFolder)
         {
             if (module == null || _tree.ByPath(module.FilePath) != module)
-                return false;
+                return null;
+            var snapshot = CaptureImports();
             _tree.MoveTo(module, newFolder, module.Name);
+            var rewrites = ReconcileImports(snapshot);
             Changed?.Invoke();
-            return true;
+            return rewrites;
         }
 
         /// <summary>Deletes a module: it leaves the tree. Save works out that its
@@ -318,28 +320,189 @@ namespace Ruitk.Builder
             return module;
         }
 
+        /// <summary>One buffer rewritten to keep an import true across a move.</summary>
+        public sealed class ImportRewrite
+        {
+            public string FilePath;
+            public string Before;
+            public string After;
+        }
+
         /// <summary>Moves a module, carrying its folder's contents when it owns
-        /// the folder. Nothing happens on disk - Save sees DiskPath disagree with
-        /// the derived path and projects the move.</summary>
-        public bool MoveTo(string filePath, string newFolder, string newName)
+        /// the folder, and rewrites every specifier the move invalidated. Returns
+        /// those rewrites - NULL when the move was refused - so the caller can put
+        /// them in the ledger beside the move itself.
+        ///
+        /// Nothing happens on disk: Save sees DiskPath disagree with the derived
+        /// path and projects the move.</summary>
+        public List<ImportRewrite> MoveTo(string filePath, string newFolder, string newName)
         {
             var module = _tree.ByPath(filePath);
             if (module == null || module.IsReadOnly)
-                return false;
+                return null;
+            var snapshot = CaptureImports();
             _tree.MoveTo(module, newFolder, newName);
+            var rewrites = ReconcileImports(snapshot);
             Changed?.Invoke();
-            return true;
+            return rewrites;
         }
 
         /// <summary>Moves a module to a target PATH, splitting the folder, name
         /// and kind out of it. What the ledger replays: an entry records where a
         /// module went, and walking it back is the same operation the other way.</summary>
-        public bool MoveToPath(string fromPath, string toPath)
+        public List<ImportRewrite> MoveToPath(string fromPath, string toPath)
         {
             string to = BuilderTree.Canon(toPath);
             if (string.IsNullOrEmpty(to))
-                return false;
+                return null;
             return MoveTo(fromPath, Path.GetDirectoryName(to) ?? string.Empty, NameOf(to));
+        }
+
+        /// <summary>What every import in the tree POINTED AT, taken before an
+        /// operation that will move things.
+        ///
+        /// Keyed by (importer, LINE) rather than by the specifier text. A rename
+        /// edits specifier text in place before the move happens, so a snapshot
+        /// keyed on that text could no longer find its own entries afterwards -
+        /// which is how a specifier naming the moved FOLDER from outside it
+        /// (`"../Panel/Panel"`) stayed broken: the name rewrite had already made
+        /// it unresolvable, so nothing downstream could tell what it had meant. A
+        /// line survives an edit within it.</summary>
+        public sealed class ImportSnapshot
+        {
+            internal readonly Dictionary<(string ImporterId, int Line), string> Targets =
+                new Dictionary<(string, int), string>();
+        }
+
+        public ImportSnapshot CaptureImports()
+        {
+            var snapshot = new ImportSnapshot();
+            foreach (var module in _tree.Modules)
+            {
+                if (module.IsReadOnly)
+                    continue;
+                Ruitk.Language.Parser.ParseResult parsed;
+                try
+                {
+                    parsed = BuilderLanguage.Parse(module.BufferText, module.FilePath);
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+                foreach (var import in parsed.Directives.Imports)
+                {
+                    string spec = import.Specifier ?? string.Empty;
+                    if (spec.Length == 0 || spec.StartsWith("@", StringComparison.Ordinal)
+                        || import.Line <= 0)
+                        continue;
+                    string mapped = BuilderSpecifiers.Map(module.FilePath, spec);
+                    var target = mapped == null ? null : _tree.ByPath(mapped);
+                    if (target != null)
+                        snapshot.Targets[(module.Id, import.Line)] = target.Id;
+                }
+            }
+            return snapshot;
+        }
+
+        /// <summary>Re-spells every snapshotted import for where its two ends now
+        /// sit, and returns the buffers it changed.
+        ///
+        /// Both ends matter: a module that MOVED changes how everyone reaches it,
+        /// and an IMPORTER that moved changes how it reaches everyone else -
+        /// rewriting only the importers of the moved module would leave a
+        /// relocated component pointing at everything it used to sit beside.</summary>
+        public List<ImportRewrite> ReconcileImports(ImportSnapshot snapshot)
+        {
+            var rewrites = new List<ImportRewrite>();
+            if (snapshot == null || snapshot.Targets.Count == 0)
+                return rewrites;
+
+            var byImporter = new Dictionary<string, List<(int Line, string Wanted)>>(
+                StringComparer.Ordinal);
+            foreach (var pair in snapshot.Targets)
+            {
+                var importer = _tree.ById(pair.Key.ImporterId);
+                var target = _tree.ById(pair.Value);
+                if (importer == null || target == null || importer.IsReadOnly)
+                    continue;
+                string wanted = BuilderSpecifiers.Relative(importer.Folder, target.FilePath);
+                if (string.IsNullOrEmpty(wanted))
+                    continue;
+                if (!byImporter.TryGetValue(pair.Key.ImporterId, out var list))
+                    byImporter[pair.Key.ImporterId] = list = new List<(int, string)>();
+                list.Add((pair.Key.Line, wanted));
+            }
+
+            foreach (var pair in byImporter)
+            {
+                var importer = _tree.ById(pair.Key);
+                string before = importer.BufferText;
+                string after = RewriteSpecifiers(importer, pair.Value);
+                if (after == null || string.Equals(after, before, StringComparison.Ordinal))
+                    continue;
+                importer.ApplyEdit(after);
+                rewrites.Add(new ImportRewrite
+                {
+                    FilePath = importer.FilePath, Before = before, After = after,
+                });
+            }
+            return rewrites;
+        }
+
+        /// <summary>Replaces the quoted specifier of each named import, using the
+        /// parser's own span rather than searching the text: a specifier is an
+        /// ordinary string and can appear anywhere else in the file. Edits are
+        /// applied from the LAST line backwards so the spans ahead of each one
+        /// stay valid.</summary>
+        private static string RewriteSpecifiers(
+            BuilderModule importer, List<(int Line, string Wanted)> wanted)
+        {
+            Ruitk.Language.Parser.ParseResult parsed;
+            try
+            {
+                parsed = BuilderLanguage.Parse(importer.BufferText, importer.FilePath);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+
+            var edits = new List<(int Line0, int Start, int Length, string Text)>();
+            foreach (var import in parsed.Directives.Imports)
+            {
+                if (import.SpecifierColumn < 0 || import.Line <= 0)
+                    continue;
+                foreach (var (line, replacement) in wanted)
+                {
+                    if (import.Line != line
+                        || string.Equals(import.Specifier, replacement, StringComparison.Ordinal))
+                        continue;
+                    edits.Add((
+                        import.Line - 1,
+                        import.SpecifierColumn,
+                        (import.Specifier?.Length ?? 0) + 2,
+                        "\"" + replacement + "\""));
+                    break;
+                }
+            }
+            if (edits.Count == 0)
+                return null;
+
+            var lines = new List<string>(importer.BufferText.Split('\n'));
+            edits.Sort((a, b) => a.Line0 != b.Line0
+                ? b.Line0.CompareTo(a.Line0)
+                : b.Start.CompareTo(a.Start));
+            foreach (var (line0, start, length, text) in edits)
+            {
+                if (line0 < 0 || line0 >= lines.Count)
+                    continue;
+                string line = lines[line0];
+                if (start < 0 || start + length > line.Length)
+                    continue;
+                lines[line0] = line.Substring(0, start) + text + line.Substring(start + length);
+            }
+            return string.Join("\n", lines);
         }
 
         public void ApplyEdit(string filePath, string newBufferLf)

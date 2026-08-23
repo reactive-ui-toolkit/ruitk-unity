@@ -3375,8 +3375,15 @@ namespace Ruitk.Builder
             string fromDir = module.Folder;
             bool ownsFolder = module.OwnsFolder;
             string toDir = Path.GetDirectoryName(to) ?? "";
-            if (!_workspace.MoveToPath(from, to))
+            var rewrites = _workspace.MoveToPath(from, to);
+            if (rewrites == null)
                 return false;
+            // A move re-spells every specifier it invalidated. Those rewrites go
+            // in the ledger beside the move, so the entry describes the file
+            // contents completely - a redo that restored a buffer recorded
+            // BEFORE the rewrite would otherwise put the stale specifier back.
+            foreach (var rewrite in rewrites)
+                _ledger.Record(rewrite.FilePath, rewrite.Before, rewrite.After);
             if (ownsFolder)
             {
                 // The folder takes every card inside it along, this module's own
@@ -3408,6 +3415,14 @@ namespace Ruitk.Builder
             }
 
             _ledger.Begin("rename " + oldName + " to " + newName);
+            // Captured BEFORE the name rewrites below touch any specifier text.
+            // Those rewrites replace the module's NAME wherever it appears, which
+            // gets the last path segment right and leaves a FOLDER segment naming
+            // the same module wrong ("../Panel/Panel" from outside the folder).
+            // Reconciling at the end re-derives every specifier from where the
+            // modules actually ended up, so the string surgery no longer has to be
+            // right about paths - only about names.
+            var imports = _workspace.CaptureImports();
 
             // 1. The module's own text: the export it declares.
             var own = EditSession(full);
@@ -3457,6 +3472,8 @@ namespace Ruitk.Builder
                 return;
             }
             _ledger.RecordMove(full, newFull);
+            foreach (var rewrite in _workspace.ReconcileImports(imports))
+                _ledger.Record(rewrite.FilePath, rewrite.Before, rewrite.After);
             _ledger.End();
             RefreshHistoryPanel();
             RefreshChrome();
@@ -5205,6 +5222,7 @@ namespace Ruitk.Builder
             // whole relocation instead of leaving half the tree in the new folder
             // and half at the provisional path.
             string root = BuilderWorkspace.UnsavedRoot;
+            _ledger.Begin("place the tree");
             var plan = new System.Collections.Generic.List<(BuilderModule Module, string Folder)>();
             foreach (var module in pending)
             {
@@ -5217,6 +5235,7 @@ namespace Ruitk.Builder
                 string to = Path.Combine(target, Path.GetFileName(module.FilePath));
                 if (!_workspace.IsPathAvailable(to))
                 {
+                    _ledger.End();
                     UnityEditor.EditorUtility.DisplayDialog(
                         "Already exists", Path.GetFileName(to) + " is already there.", "OK");
                     return false;
@@ -5230,8 +5249,11 @@ namespace Ruitk.Builder
                 // it now is, which changes nothing - so the walk does not care
                 // what order the tree hands it back.
                 string from = step.Module.FilePath;
-                if (!_workspace.PlaceAt(step.Module, step.Folder))
+                var rewrites = _workspace.PlaceAt(step.Module, step.Folder);
+                if (rewrites == null)
                     continue;
+                foreach (var rewrite in rewrites)
+                    _ledger.Record(rewrite.FilePath, rewrite.Before, rewrite.After);
                 string to = step.Module.FilePath;
                 _canvasHost?.RepathLayout(from, to, isFolder: false);
                 if (string.Equals(FocusFull, Path.GetFullPath(from),
@@ -5239,6 +5261,8 @@ namespace Ruitk.Builder
                     _focusFile = to;
                 _relocatedOnSave = true;
             }
+            _ledger.End();
+            RefreshHistoryPanel();
             return true;
         }
 

@@ -2982,3 +2982,48 @@ reaching anything. It now offers "Delete entry" on an entry line and "Delete
 style <name>" on the export head, which needed the head to carry its block's
 EXTENT: `ParseStyleDetail` now records where the export closes, so deleting it is
 one range rather than a walk each caller repeats.
+
+### UB-182 — drag a module from its card `SHIPPED` `LOW`
+
+Owner ask 2026-08-23: dragging a component by its kind chip and dropping it on
+another component. It is the same gesture as dragging that module out of the
+library - the chip is just a second handle, next to the thing itself rather than
+in a list of everything - so it arms the same payload and every drop rule
+already in place applies unchanged, self-containment refusal included.
+
+The payload vocabulary moved to `BuilderDragService.PayloadFor(kind, name)` and
+the library now builds from it. Two places arm the same drag, and a payload the
+drop handler does not recognise fails SILENTLY, as a drag that does nothing.
+
+### UB-184 — a move left every importer pointing at the old path `FIXED` `HIGH`
+
+Found while planning the folder view, before it could be reported: nothing
+recomputed an import specifier when a module MOVED. Rename rewrote the module's
+NAME wherever it appeared, which is not the same thing - it gets the last path
+segment right and leaves a folder segment naming the same module wrong, so
+`"../Panel/Panel"` from outside a renamed folder stayed broken. And a module that
+moved without being renamed had nothing rewritten at all.
+
+This is the primitive the naming convention and the folder view both stand on:
+either one moves modules, and a move that does not carry its imports produces
+exactly the CS1029 wave the owner already lost an evening to.
+
+FIX: `CaptureImports` / `ReconcileImports`. Capture records what every import
+POINTED AT before the operation; reconcile re-derives every specifier from where
+the modules actually ended up. Both ends are handled - a module that moved
+changes how everyone reaches it, and an IMPORTER that moved changes how it
+reaches everyone else, which rewriting only the moved module's importers would
+have missed.
+
+Bindings are keyed by (importer, LINE), not by specifier text, because rename
+edits that text before the move happens and a text-keyed snapshot could not find
+its own entries afterwards. Rewrites use the parser's own specifier SPAN rather
+than searching the buffer - a specifier is an ordinary string and can appear
+anywhere else in the file - and are applied last-line-first so the spans ahead of
+each stay valid.
+
+`MapSpecifier` and its new inverse now live together in `BuilderSpecifiers`,
+which is pure and linked into `Builder~/ModelTests`: 14 checks drive the round
+trip over every shape the house layout produces, in both directions. They are
+only correct as a PAIR, and a disagreement would not produce one bad import - it
+would rewrite every import in the tree to something that does not resolve.

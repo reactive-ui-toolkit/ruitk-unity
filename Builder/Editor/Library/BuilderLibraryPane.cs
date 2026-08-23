@@ -522,14 +522,14 @@ namespace Ruitk.Builder
                 case "Native elements":
                     return "element:" + bare;
                 case "Custom components":
-                    return "component:" + bare;
+                    return BuilderDragService.PayloadFor(BuilderNodeKind.Component, bare);
                 case "Hooks":
                 case "Hook modules":
-                    return "hook:" + bare;
+                    return BuilderDragService.PayloadFor(BuilderNodeKind.Hook, bare);
                 case "Style modules":
-                    return "stylemod:" + bare;
+                    return BuilderDragService.PayloadFor(BuilderNodeKind.Style, bare);
                 case "Util modules":
-                    return "utilmod:" + bare;
+                    return BuilderDragService.PayloadFor(BuilderNodeKind.Util, bare);
                 default:
                     return "snippet:" + entry.Snippet;
             }
