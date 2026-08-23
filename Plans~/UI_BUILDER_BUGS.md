@@ -3098,3 +3098,40 @@ somewhere the user is not looking is the same as a file that did not appear.
 
 `BuilderNaming` is pure and linked into `Builder~/ModelTests` - 11 checks
 including the prefix trap (`useful` is not a hook for "ful") and nearest-wins.
+
+### UB-188 — the folder view `SHIPPED` `MEDIUM`
+
+Step 4 of the agreed plan, and the owner's original ask: "another view/layer that
+will show folder structure, and you could drag things there and when saving it
+will sync that structure over there. and ofc it will also sit in memory until
+saving."
+
+A "Folders" toolbar button swaps the centre pane between the canvas and the tree
+as FOLDERS - two projections of the same modules, one showing what imports what
+and the other showing where things live. The hierarchy is DERIVED from the
+modules' folders, so there is no folder here that nothing lives in and no list to
+keep in step with the tree.
+
+Dragging a module onto a folder moves it. Nothing reaches disk: the move is a
+tree change like every other edit, so Save projects it (through
+`AssetDatabase.MoveAsset`, keeping GUIDs and metas), Abort forgets it, and Ctrl+Z
+walks it back. "In memory until saving" needed no work at all - it is what the
+tree model already does.
+
+Two rules the drop needs and would be wrong without:
+
+- A component that OWNS its folder takes the folder with it. Dropping
+  `SomeNew` into `Other/` yields `Other/SomeNew/SomeNew.uitkx`, not
+  `Other/SomeNew.uitkx` with its children stranded - the house layout is
+  ComponentName/ComponentName.uitkx with its children inside.
+- It cannot be dropped INTO its own subtree, which would make the folder its own
+  ancestor and drag every child in after it.
+
+Every specifier the move invalidates is re-derived before the drop returns
+(UB-184), which is what makes free placement safe: this pane exists to move
+modules around, and a move that did not carry its imports would break the tree on
+the first drag.
+
+The convention (UB-187) does not argue with any of it. It decides where a module
+is BORN and nothing re-places one afterwards, which is exactly why both features
+can exist.

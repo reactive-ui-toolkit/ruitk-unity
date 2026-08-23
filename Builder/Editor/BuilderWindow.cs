@@ -306,6 +306,8 @@ namespace Ruitk.Builder
             toolbar.Add(Separator());
             toolbar.Add(ToolbarButton("Import .uxml…", ImportUxml));
             toolbar.Add(ToolbarButton("History", ToggleHistory));
+            _foldersButton = ToolbarButton("Folders", ToggleFolders);
+            toolbar.Add(_foldersButton);
             toolbar.Add(ToolbarButton("? How to drive it", ToggleHelp));
             // DOCUMENTED DEVIATION (owner-decided, do not re-flag): the POC has no
             // Save/Abort because it never writes a file — every "commit" is mock.
@@ -342,10 +344,29 @@ namespace Ruitk.Builder
             {
                 style = { flexGrow = 1f },
             };
-            var canvasPane = new VisualElement { name = "builder-canvas", style = { minWidth = 300f } };
+            // The centre holds two projections of the same tree - the canvas, and
+            // the folders it lives in. One is visible at a time; both read the
+            // workspace, so neither can be stale with respect to the other.
+            var centerPane = new VisualElement
+            {
+                name = "builder-center",
+                style = { minWidth = 300f, flexGrow = 1f, minHeight = 0f },
+            };
+            var canvasPane = new VisualElement
+            {
+                name = "builder-canvas",
+                style = { flexGrow = 1f, minHeight = 0f },
+            };
             // POC "#canvasWrap { cursor: grab }".
             BuilderCursor.Set(canvasPane, MouseCursor.Pan);
-            innerSplit.Add(canvasPane);
+            var foldersPane = new VisualElement
+            {
+                name = "builder-folders",
+                style = { flexGrow = 1f, minHeight = 0f, display = DisplayStyle.None },
+            };
+            centerPane.Add(canvasPane);
+            centerPane.Add(foldersPane);
+            innerSplit.Add(centerPane);
             innerSplit.Add(new VisualElement { name = "builder-side", style = { minWidth = 280f } });
             body.Add(innerSplit);
             root.Add(body);
@@ -418,7 +439,122 @@ namespace Ruitk.Builder
                 }).ExecuteLater(60));
 
             MountCanvas();
+            // The choice of view survives a domain reload, so it has to be applied
+            // after one - the visual tree is rebuilt showing the canvas.
+            ApplyCenterView();
             RefreshChrome();
+        }
+
+        [System.NonSerialized] private BuilderFolderPane _folderPane;
+        [System.NonSerialized] private Button _foldersButton;
+        [SerializeField] private bool _showFolders;
+
+        /// <summary>Swaps the centre between the canvas and the folder view. Both
+        /// are projections of the same tree, so this shows the other one rather
+        /// than loading anything.</summary>
+        private void ToggleFolders()
+        {
+            _showFolders = !_showFolders;
+            ApplyCenterView();
+        }
+
+        private void ApplyCenterView()
+        {
+            var canvas = rootVisualElement?.Q("builder-canvas");
+            var folders = rootVisualElement?.Q("builder-folders");
+            if (canvas == null || folders == null)
+                return;
+            canvas.style.display = _showFolders ? DisplayStyle.None : DisplayStyle.Flex;
+            folders.style.display = _showFolders ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_foldersButton != null)
+                _foldersButton.text = _showFolders ? "Canvas" : "Folders";
+            if (_showFolders)
+                MountFolders();
+        }
+
+        private void MountFolders()
+        {
+            var container = rootVisualElement?.Q("builder-folders");
+            if (container == null)
+                return;
+            _folderPane ??= new BuilderFolderPane
+            {
+                Modules = () => _workspace.Modules,
+                OnToast = Toast,
+                OnOpen = OpenFileFromCanvas,
+                OnMove = MoveModuleToFolder,
+            };
+            // A reload rebuilds the visual tree but not the pane, so an empty
+            // container means the rows it holds belong to a panel that is gone.
+            if (container.childCount == 0)
+                _folderPane.Attach(container);
+            else
+                _folderPane.Rebuild();
+        }
+
+        /// <summary>A drop in the folder view. The move is a tree change like any
+        /// other - it records, it re-derives every specifier it invalidates, and
+        /// nothing reaches disk until Save.</summary>
+        private void MoveModuleToFolder(string modulePath, string targetFolder)
+        {
+            var module = _workspace.TryGet(modulePath);
+            if (module == null)
+                return;
+            if (module.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+            // Dropping a component that OWNS its folder moves that FOLDER, rather
+            // than tipping its file out into the destination: the house layout is
+            // ComponentName/ComponentName.uitkx with its children inside.
+            string destination = module.OwnsFolder
+                ? Path.Combine(targetFolder, module.Name)
+                : targetFolder;
+            // ... and it cannot be dropped INTO its own subtree, which would make
+            // the folder its own ancestor and drag every child in after it.
+            if (module.OwnsFolder && IsInside(targetFolder, module.Folder))
+            {
+                Toast("Can't move " + module.Name + " inside itself");
+                return;
+            }
+            string to = Path.GetFullPath(
+                Path.Combine(destination, Path.GetFileName(modulePath)));
+            if (!_workspace.IsPathAvailable(to))
+            {
+                Toast(Path.GetFileName(to) + " is already there");
+                return;
+            }
+            _ledger.Begin("move " + Path.GetFileName(modulePath));
+            if (!MoveModule(modulePath, to))
+            {
+                _ledger.End();
+                Toast("Could not move " + Path.GetFileName(modulePath));
+                return;
+            }
+            _ledger.RecordMove(modulePath, to);
+            _ledger.End();
+            RefreshHistoryPanel();
+            RefreshChrome();
+            MountCanvas();
+            _folderPane?.Rebuild();
+            Toast("Moved " + Path.GetFileName(to) + " - applies on Save");
+        }
+
+        /// <summary>Whether <paramref name="path"/> is at or below
+        /// <paramref name="folder"/>. Segment-wise: a character prefix would call
+        /// "Panel" an ancestor of "PanelExtras".</summary>
+        private static bool IsInside(string path, string folder)
+        {
+            if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(folder))
+                return false;
+            string a = Path.GetFullPath(path);
+            string b = Path.GetFullPath(folder);
+            if (string.Equals(a, b, System.StringComparison.OrdinalIgnoreCase))
+                return true;
+            return a.StartsWith(
+                b.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                System.StringComparison.OrdinalIgnoreCase);
         }
 
         private void MountCanvas()
@@ -5633,6 +5769,8 @@ namespace Ruitk.Builder
         private void OnWorkspaceChanged()
         {
             RefreshChrome();
+            if (_showFolders)
+                _folderPane?.Rebuild();
             // Crash cover. Throttled, so the journal can trail the tree by a few
             // seconds - which is the honest cost of not writing the whole tree on
             // every commit, and still the difference between losing a session and
