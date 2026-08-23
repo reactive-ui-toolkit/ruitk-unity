@@ -37,12 +37,32 @@ namespace Ruitk.Builder
             /// session, redo re-opens it from <see cref="After"/>. Nothing on
             /// disk moves either way — the file is only written at Save.</summary>
             public bool IsCreation;
+
+            /// <summary>A pending MOVE. <see cref="Before"/> is the path the
+            /// module came from and <see cref="After"/> is where it went;
+            /// undo and redo just move it the other way. Nothing on disk
+            /// moves either way - the projection happens at Save.</summary>
+            public bool IsMove;
+
+            /// <summary>A pending FOLDER move, carrying its whole contents.
+            /// <see cref="Before"/> and <see cref="After"/> are the directories.</summary>
+            public bool IsFolderMove;
+
+            /// <summary>The module's stable identity at record time. A ledger entry
+            /// outlives the PATH it was recorded against - a rename moves the module,
+            /// and a replay that looked the session up by path then wrote to a name
+            /// nothing answered to. Replay resolves identity first.</summary>
+            public string ModuleId;
         }
 
         internal sealed class Entry
         {
             public string Description;
             public DateTime At;
+
+            /// <summary>Free typing, as opposed to a discrete gesture. Consecutive
+            /// keystrokes in the same file merge into one of these.</summary>
+            public bool IsTyping;
             public List<Change> Changes = new List<Change>();
 
             public string FileSummary
@@ -64,6 +84,11 @@ namespace Ruitk.Builder
         private int _cursor;
 
         private Entry _open;
+
+        /// <summary>Resolves a path to the owning module's stable identity, set by
+        /// the window. Capturing it at record time is what makes replay immune to
+        /// the paths moving underneath it.</summary>
+        internal Func<string, string> IdOf;
         private int _depth;
 
         /// <summary>Suppresses recording while the ledger itself is rewriting
@@ -98,6 +123,56 @@ namespace Ruitk.Builder
                 _open.Description = description;
         }
 
+        /// <summary>How long a typing burst stays open for merging. Only affects
+        /// UNDO GRANULARITY - nothing downstream is timed off it.</summary>
+        private static readonly TimeSpan TypingWindow = TimeSpan.FromSeconds(1.5);
+
+        /// <summary>Records free typing. Consecutive keystrokes in the same file
+        /// merge into ONE entry instead of one entry per character, which is what
+        /// the source pane produced - a hundred history rows for typing a name, and
+        /// a Ctrl+Z that walked back one letter at a time.
+        ///
+        /// Merging only happens at the tip of the history and outside any gesture
+        /// scope: an undo moves the cursor, and a compound action owns its own
+        /// entry, so neither can be silently extended by the next keystroke.</summary>
+        public void RecordTyping(string filePath, string before, string after)
+        {
+            if (Replaying || string.IsNullOrEmpty(filePath))
+                return;
+            if (string.Equals(before, after, StringComparison.Ordinal))
+                return;
+            if (_open != null)
+            {
+                Record(filePath, before, after);
+                return;
+            }
+
+            var last = _cursor > 0 && _cursor == _entries.Count ? _entries[_cursor - 1] : null;
+            if (last != null && last.IsTyping && last.Changes.Count == 1
+                && string.Equals(
+                    last.Changes[0].FilePath, filePath, StringComparison.OrdinalIgnoreCase)
+                && DateTime.Now - last.At < TypingWindow)
+            {
+                last.Changes[0].After = after;
+                last.At = DateTime.Now;
+                Changed?.Invoke();
+                return;
+            }
+
+            _open = new Entry
+            {
+                Description = "type in " + System.IO.Path.GetFileName(filePath),
+                At = DateTime.Now,
+                IsTyping = true,
+            };
+            _open.Changes.Add(new Change
+            {
+                FilePath = filePath, ModuleId = IdOf?.Invoke(filePath),
+                Before = before, After = after,
+            });
+            Commit();
+        }
+
         public void Record(string filePath, string before, string after)
         {
             if (Replaying || string.IsNullOrEmpty(filePath))
@@ -118,7 +193,55 @@ namespace Ruitk.Builder
                     Commit();
                 return;
             }
-            _open.Changes.Add(new Change { FilePath = filePath, Before = before, After = after });
+            _open.Changes.Add(new Change
+            {
+                FilePath = filePath, ModuleId = IdOf?.Invoke(filePath),
+                Before = before, After = after,
+            });
+            if (standalone)
+                Commit();
+        }
+
+        /// <summary>Records a module changing PATH as ONE change, rather than an
+        /// unrelated creation and deletion. The pair was never two events: it is
+        /// one module in two places, and describing it as two is what let undo
+        /// put the module back without its history.</summary>
+        public void RecordMove(string fromPath, string toPath)
+        {
+            if (Replaying || string.IsNullOrEmpty(fromPath) || string.IsNullOrEmpty(toPath))
+                return;
+            bool standalone = _open == null;
+            if (standalone)
+                _open = new Entry { Description = "rename", At = DateTime.Now };
+            _open.Changes.Add(new Change
+            {
+                FilePath = toPath,
+                ModuleId = IdOf?.Invoke(fromPath),
+                Before = fromPath,
+                After = toPath,
+                IsMove = true,
+            });
+            if (standalone)
+                Commit();
+        }
+
+        /// <summary>Records a FOLDER moving with everything in it. Distinct from a
+        /// module move: the directory operation is what preserves the GUIDs of the
+        /// children and carries the files the builder does not manage.</summary>
+        public void RecordFolderMove(string fromDir, string toDir)
+        {
+            if (Replaying || string.IsNullOrEmpty(fromDir) || string.IsNullOrEmpty(toDir))
+                return;
+            bool standalone = _open == null;
+            if (standalone)
+                _open = new Entry { Description = "move folder", At = DateTime.Now };
+            _open.Changes.Add(new Change
+            {
+                FilePath = toDir,
+                Before = fromDir,
+                After = toDir,
+                IsFolderMove = true,
+            });
             if (standalone)
                 Commit();
         }
@@ -132,7 +255,10 @@ namespace Ruitk.Builder
             bool standalone = _open == null;
             if (standalone)
                 _open = new Entry { Description = "delete", At = DateTime.Now };
-            _open.Changes.Add(new Change { FilePath = filePath, IsDeletion = true });
+            _open.Changes.Add(new Change
+            {
+                FilePath = filePath, ModuleId = IdOf?.Invoke(filePath), IsDeletion = true,
+            });
             if (standalone)
                 Commit();
         }
@@ -146,7 +272,10 @@ namespace Ruitk.Builder
             bool standalone = _open == null;
             if (standalone)
                 _open = new Entry { Description = "create", At = DateTime.Now };
-            _open.Changes.Add(new Change { FilePath = filePath, IsCreation = true });
+            _open.Changes.Add(new Change
+            {
+                FilePath = filePath, ModuleId = IdOf?.Invoke(filePath), IsCreation = true,
+            });
             if (standalone)
                 Commit();
         }
@@ -186,8 +315,8 @@ namespace Ruitk.Builder
 
         private const int MaxEntries = 400;
 
-        /// <summary>Steps the cursor back one entry and hands the caller every
-        /// (file, text) pair to restore. Null when there is nothing to undo.</summary>
+        /// <summary>Steps the cursor back one entry and returns it, for the caller
+        /// to replay in reverse. Null when there is nothing to undo.</summary>
         public Entry Undo()
         {
             if (!CanUndo)
@@ -205,35 +334,6 @@ namespace Ruitk.Builder
             _cursor++;
             Changed?.Invoke();
             return entry;
-        }
-
-        /// <summary>Walks the cursor to <paramref name="target"/>, returning the
-        /// buffer writes needed, in order. Used by the history panel, where a
-        /// click can cross several entries at once.</summary>
-        public List<(string FilePath, string Text)> WalkTo(int target)
-        {
-            var writes = new List<(string, string)>();
-            if (target < 0)
-                target = 0;
-            if (target > _entries.Count)
-                target = _entries.Count;
-            while (_cursor > target)
-            {
-                _cursor--;
-                var entry = _entries[_cursor];
-                for (int i = entry.Changes.Count - 1; i >= 0; i--)
-                    writes.Add((entry.Changes[i].FilePath, entry.Changes[i].Before));
-            }
-            while (_cursor < target)
-            {
-                var entry = _entries[_cursor];
-                _cursor++;
-                foreach (var change in entry.Changes)
-                    writes.Add((change.FilePath, change.After));
-            }
-            if (writes.Count > 0)
-                Changed?.Invoke();
-            return writes;
         }
 
         public IDisposable Suppress() => new Suppression(this);

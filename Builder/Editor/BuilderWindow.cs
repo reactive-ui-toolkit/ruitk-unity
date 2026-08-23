@@ -70,11 +70,23 @@ namespace Ruitk.Builder
             return window;
         }
 
-        public static BuilderWindow OpenFor(string uitkxFilePath)
+        /// <param name="pendingText">Text for a module that is NOT on disk yet, or
+        /// that is being replaced. It arrives as a pending buffer like every other
+        /// edit, so Save is still the only thing that writes.</param>
+        public static BuilderWindow OpenFor(string uitkxFilePath, string pendingText = null)
         {
             var window = OpenEmpty();
             window._focusFile = uitkxFilePath;
-            window._workspace.Open(uitkxFilePath);
+            if (pendingText == null)
+            {
+                window._workspace.Open(uitkxFilePath);
+            }
+            else if (window._workspace.CreateNew(uitkxFilePath, pendingText) == null)
+            {
+                var session = window._workspace.Open(uitkxFilePath);
+                if (session != null && !session.IsReadOnly)
+                    session.ApplyEdit(BuilderDocumentSession.NormalizeLf(pendingText));
+            }
             window.MountCanvas();
             window.RefreshChrome();
             return window;
@@ -82,6 +94,11 @@ namespace Ruitk.Builder
 
         private void OnEnable()
         {
+            // Every ledger change records WHICH MODULE it belongs to, so a replay
+            // still finds it after a rename has moved the path out from under it.
+            // The ledger is NonSerialized and comes back empty from a domain
+            // reload, so this is re-wired here rather than at mount time.
+            _ledger.IdOf = path => _workspace.TryGet(path)?.Id;
             _workspace.Changed -= OnWorkspaceChanged;
             _workspace.Changed += OnWorkspaceChanged;
             BuilderLspService.DiagnosticsPublished -= OnLspDiagnosticsPublished;
@@ -125,7 +142,12 @@ namespace Ruitk.Builder
             if (changed.Count == 0)
                 return;
             bool focusChanged = false;
-            string focusFull = string.IsNullOrEmpty(_focusFile) ? "" : Path.GetFullPath(_focusFile);
+            string focusFull = FocusFull;
+            // An external change alters what the preview would render, so it has to
+            // rebuild. This was simply missing: the card refreshed and the preview
+            // kept showing the pre-change build.
+            if (changed.Count > 0)
+                NotifyBufferChanged();
             foreach (string path in changed)
             {
                 _canvasHost?.RefreshGraph(path, ReadBufferOrDisk);
@@ -149,7 +171,7 @@ namespace Ruitk.Builder
         private void OnLspDiagnosticsPublished(string path, Newtonsoft.Json.Linq.JToken diagnostics)
         {
             if (_codeField == null || string.IsNullOrEmpty(_focusFile)
-                || !string.Equals(Path.GetFullPath(path), Path.GetFullPath(_focusFile),
+                || !string.Equals(Path.GetFullPath(path), FocusFull,
                     System.StringComparison.OrdinalIgnoreCase))
                 return;
             var overlay = new System.Collections.Generic.List<(string, int, string)>();
@@ -426,6 +448,22 @@ namespace Ruitk.Builder
             // spell, and the row truncates it. Double-click puts just the alias
             // on the clipboard — the specifier and the "import"/"from" chrome
             // are never what the user needs to paste.
+            _canvasHost.OnImportContext = (importerPath, specifier) =>
+            {
+                string full = Path.GetFullPath(importerPath);
+                string target = BuilderGraphService.MapSpecifier(full, specifier);
+                var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>
+                {
+                    new BuilderSearchMenu.Item
+                    {
+                        Label = "remove import \"" + specifier + "\"",
+                        OnPick = () => RemoveImportFrom(full, target, specifier),
+                    },
+                };
+                // ShowSimple, like the card menu: one action needs no search field,
+                // and Show placed the popup away from the row that opened it.
+                BuilderSearchMenu.ShowSimple("import", items);
+            };
             _canvasHost.OnCopyImportAlias = text =>
             {
                 string alias = BuilderText.ImportAliasOf(text);
@@ -489,21 +527,52 @@ namespace Ruitk.Builder
             _canvasHost.OnRenameCard = ShowRenamePrompt;
             _canvasHost.OnDeleteFile = path =>
             {
+                // MarkForDeletion refuses for two unrelated reasons and the toast
+                // blamed both on read-only, which sent the owner looking for a
+                // permissions problem that was not there. Each case is now named,
+                // and a module that is ALREADY marked simply re-syncs the canvas -
+                // if its card is still on screen the canvas is what is stale, and
+                // repeating the delete could never have helped.
+                if (_workspace.IsPendingDelete(path))
+                {
+                    RefreshChrome();
+                    MountCanvas();
+                    return;
+                }
+                if (BuilderWorkspace.IsReadOnlyLocation(path))
+                {
+                    Toast("Can't delete " + Path.GetFileName(path)
+                        + " - read-only location: " + Path.GetDirectoryName(path));
+                    return;
+                }
                 if (!_workspace.MarkForDeletion(path))
                 {
-                    Toast("Can't delete " + Path.GetFileName(path) + " (read-only)");
+                    Toast("Could not delete " + Path.GetFileName(path));
                     return;
                 }
                 _ledger.Begin("delete " + Path.GetFileName(path));
+                // One entry covers the module AND every reference to it, so a
+                // single undo puts the tree back exactly as it was.
+                StripReferencesTo(Path.GetFullPath(path));
                 _ledger.RecordDeletion(path);
                 _ledger.End();
                 RefreshHistoryPanel();
                 Toast("Deleted " + Path.GetFileName(path) + " - applies on Save");
+                RebindFocusIfMissing();
                 RefreshChrome();
                 MountCanvas();
             };
-            _canvasHost.IsFileHidden = path => _workspace.IsPendingDelete(path);
+            _canvasHost.IsFileHidden = path => _workspace.IsHiddenOnDisk(path);
             _canvasHost.PendingNewFiles = () => _workspace.PendingNewFiles;
+            // The server reads disk. Anything the builder has created, moved or
+            // edited is newer than the file it is looking at, so that module gets
+            // parsed from its buffer instead of trusted from the server answer.
+            _canvasHost.IsFileOverridden = path =>
+            {
+                var session = _workspace.TryGet(path);
+                return session != null
+                    && (session.IsDirty || session.IsNewFile || session.IsMoved);
+            };
             _canvasHost.OnCreateRequested = ShowCreatePrompt;
             _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
             // The side panes are built BEFORE the canvas mounts. Mount() is an
@@ -522,6 +591,9 @@ namespace Ruitk.Builder
                 {
                     _libraryPane?.SetWorkspaceEntries(graph);
                     _previewPane?.RefreshModuleNotes();
+                    // The graph is what the set is built from, so this is where it
+                    // stops being valid.
+                    InvalidateKnownElements();
                     _codeField?.SetKnownElements(KnownElementsOrNull());
                 });
         }
@@ -532,7 +604,26 @@ namespace Ruitk.Builder
         /// BOTH sources are live, which suppresses UITKX0105/0109 instead of
         /// storming false errors during startup (same discipline as the LSP's
         /// initial-scan gate).</summary>
+        [System.NonSerialized]
+        private System.Collections.Generic.HashSet<string> _knownElementsCache;
+
+        /// <summary>The known-element set changes only when the graph or the schema
+        /// does, but it was REBUILT on every call - and it is passed to SetContent
+        /// on every programmatic edit. That allocated a few hundred strings per
+        /// edit, and worse: SetKnownElements skips its re-colour when the set is
+        /// the SAME INSTANCE, so handing it a fresh one every time forced a second
+        /// full re-colour of the source pane on each edit.</summary>
+        private void InvalidateKnownElements() => _knownElementsCache = null;
+
         private System.Collections.Generic.HashSet<string> KnownElementsOrNull()
+        {
+            if (_knownElementsCache != null)
+                return _knownElementsCache;
+            _knownElementsCache = BuildKnownElements();
+            return _knownElementsCache;
+        }
+
+        private System.Collections.Generic.HashSet<string> BuildKnownElements()
         {
             var nodes = _canvasHost?.Nodes;
             if (!BuilderSchemaCache.HasSchema || nodes == null || nodes.Count == 0)
@@ -708,7 +799,8 @@ namespace Ruitk.Builder
                 _codeField = new CodeField();
                 _codeField.TextEdited += OnCodeEdited;
                 _codeField.CompletionProvider = RequestCompletions;
-                _codeField.EditRequested += BeginSourceEdit;
+                _codeField.EditingFinished += NotifyBufferChanged;
+            _codeField.EditRequested += BeginSourceEdit;
                 _codeField.ApplyRequested += ApplySourceEdit;
                 _codeField.CancelRequested += CancelSourceEdit;
                 codeSection.Add(_codeField);
@@ -719,13 +811,28 @@ namespace Ruitk.Builder
                     .Replace(".style", "").Replace(".hooks", "").ToUpperInvariant() + ">";
             if (_sourceName != null)
                 _sourceName.text = Path.GetFileName(_focusFile).ToUpperInvariant();
-            _previewPane.ShowFile(_focusFile, session?.BufferText, null);
+            // Hand over the assembly this module was last BUILT into rather than
+            // null. Passing null makes the pane scan for a matching [UitkxSource],
+            // and every swap assembly in the session matches - so switching away
+            // and back rendered whichever one the scan happened to reach first.
+            _previewPane.ShowFile(
+                _focusFile, session?.BufferText,
+                _previewCompiler?.BuiltAssemblyFor(_focusFile));
             _codeField.SetContent(session?.BufferText ?? "", _focusFile, KnownElementsOrNull());
             _codeField.SetEditable(session != null && !session.IsReadOnly);
             // POC selectNode(): opening another file leaves source-edit mode.
             _codeField.SetEditing(_sourceSnapshot != null);
-            SyncLspBuffer(_focusFile, session?.BufferText, open: true);
+            SyncLspBuffer(_focusFile, session?.BufferText);
             ScheduleServerTokens();
+            // The preview resolves its component out of a COMPILED assembly, and a
+            // compile only ever ran in response to an EDIT. A tree nobody has edited
+            // in THIS process had nothing to resolve and showed an empty stage - and
+            // that is every unsaved tree after a domain reload or an editor restart,
+            // because the buffers survive with the window while the assemblies do
+            // not. So restarting Unity, the obvious thing to try, was the one thing
+            // guaranteed to leave the preview blank. Mounting now asks for the
+            // compile; it is debounced and skips modules whose text has not moved.
+            NotifyBufferChanged();
         }
 
         [System.NonSerialized] private Label _editButton;
@@ -817,17 +924,33 @@ namespace Ruitk.Builder
         private readonly System.Collections.Generic.HashSet<string> _lspOpened =
             new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 
-        private async void SyncLspBuffer(string path, string textLf, bool open)
+        /// <summary>Pushes a buffer to the language server, opening the document
+        /// first if it has not been opened yet. The open was previously gated on a
+        /// caller flag AND the set insert, and && short-circuits: a path first
+        /// synced by an edit rather than by a mount never entered the set, so it
+        /// got didChange forever for a document the server had never been told
+        /// about. A rename makes that routine, since the module arrives at a path
+        /// nothing has opened.</summary>
+        private async void SyncLspBuffer(string path, string textLf)
         {
             if (string.IsNullOrEmpty(path) || textLf == null)
                 return;
+            string full;
+            try
+            {
+                full = Path.GetFullPath(path);
+            }
+            catch (System.Exception)
+            {
+                return;
+            }
             try
             {
                 var client = await BuilderLspService.GetOrStartAsync();
-                if (open && _lspOpened.Add(Path.GetFullPath(path)))
-                    client.DidOpen(path, textLf);
+                if (_lspOpened.Add(full))
+                    client.DidOpen(full, textLf);
                 else
-                    client.DidChangeDebounced(path, textLf);
+                    client.DidChangeDebounced(full, textLf);
             }
             catch (System.Exception)
             {
@@ -917,6 +1040,83 @@ namespace Ruitk.Builder
 
         [System.NonSerialized] private readonly BuilderActionLedger _ledger = new BuilderActionLedger();
 
+        /// <summary>Applies ONE history entry in one direction, and is the only
+        /// place that knows what each change kind means. Undo walks the changes in
+        /// reverse - a gesture that inserted then re-indented the same region has
+        /// to unwind in the order it was written - and redo walks them forward.
+        /// Buffer writes are collected rather than applied, so a jump across
+        /// several entries settles the model first and redraws once.</summary>
+        private bool ApplyEntry(
+            BuilderActionLedger.Entry entry, bool undo,
+            System.Collections.Generic.List<(string, string, string)> writes)
+        {
+            bool remounted = false;
+            int count = entry.Changes.Count;
+            for (int n = 0; n < count; n++)
+            {
+                var change = entry.Changes[undo ? count - 1 - n : n];
+                if (change.IsDeletion)
+                {
+                    // The file never left the disk, so a delete is only ever an
+                    // intent being dropped or re-taken.
+                    remounted |= undo
+                        ? _workspace.UnmarkForDeletion(change.FilePath)
+                        : _workspace.MarkForDeletion(change.FilePath);
+                    continue;
+                }
+                if (change.IsCreation)
+                {
+                    // Nothing was written, so undoing a create closes the
+                    // never-saved session. Its text is kept on the entry so redo
+                    // can re-open it unchanged.
+                    if (undo)
+                    {
+                        var pending = _workspace.TryGet(change.FilePath);
+                        if (pending != null)
+                            change.After = pending.BufferText;
+                        remounted |= _workspace.DiscardNew(change.FilePath);
+                    }
+                    else
+                    {
+                        remounted |=
+                            _workspace.CreateNew(change.FilePath, change.After ?? "") != null;
+                    }
+                    continue;
+                }
+                if (change.IsMove)
+                {
+                    // Nothing on disk moved, so walking a move is just pointing the
+                    // session at the other path.
+                    string from = undo ? change.After : change.Before;
+                    string to = undo ? change.Before : change.After;
+                    if (_workspace.Rename(from, to))
+                    {
+                        remounted = true;
+                        _canvasHost?.RepathLayout(from, to, isFolder: false);
+                        if (string.Equals(FocusFull, Path.GetFullPath(from),
+                                System.StringComparison.OrdinalIgnoreCase))
+                            _focusFile = to;
+                    }
+                    continue;
+                }
+                if (change.IsFolderMove)
+                {
+                    string from = undo ? change.After : change.Before;
+                    string to = undo ? change.Before : change.After;
+                    if (_workspace.MoveFolder(from, to))
+                    {
+                        remounted = true;
+                        _canvasHost?.RepathLayout(from, to, isFolder: true);
+                        RepointFocus(from, to);
+                    }
+                    continue;
+                }
+                writes.Add((change.ModuleId, change.FilePath,
+                    undo ? change.Before : change.After));
+            }
+            return remounted;
+        }
+
         private void UndoAction()
         {
             var entry = _ledger.Undo();
@@ -925,33 +1125,8 @@ namespace Ruitk.Builder
                 Toast("Nothing to undo");
                 return;
             }
-            // Reverse order: a gesture that inserted then re-indented the same
-            // region unwinds in the order it was written.
-            var writes = new System.Collections.Generic.List<(string, string)>();
-            bool remounted = false;
-            for (int i = entry.Changes.Count - 1; i >= 0; i--)
-            {
-                var change = entry.Changes[i];
-                if (change.IsDeletion)
-                {
-                    // The file never left the disk, so undoing a delete is just
-                    // dropping the intent — the card comes straight back.
-                    remounted |= _workspace.UnmarkForDeletion(change.FilePath);
-                    continue;
-                }
-                if (change.IsCreation)
-                {
-                    // Nothing was written, so undoing a create is closing the
-                    // never-saved session. Its text is kept on the entry so redo
-                    // can re-open it unchanged.
-                    var pending = _workspace.TryGet(change.FilePath);
-                    if (pending != null)
-                        change.After = pending.BufferText;
-                    remounted |= _workspace.DiscardNew(change.FilePath);
-                    continue;
-                }
-                writes.Add((change.FilePath, change.Before));
-            }
+            var writes = new System.Collections.Generic.List<(string, string, string)>();
+            bool remounted = ApplyEntry(entry, undo: true, writes);
             ApplyLedgerWrites(writes, "Undo " + entry.Description, remounted);
         }
 
@@ -963,23 +1138,40 @@ namespace Ruitk.Builder
                 Toast("Nothing to redo");
                 return;
             }
-            var writes = new System.Collections.Generic.List<(string, string)>();
-            bool remounted = false;
-            foreach (var change in entry.Changes)
-            {
-                if (change.IsDeletion)
-                {
-                    remounted |= _workspace.MarkForDeletion(change.FilePath);
-                    continue;
-                }
-                if (change.IsCreation)
-                {
-                    remounted |= _workspace.CreateNew(change.FilePath, change.After ?? "") != null;
-                    continue;
-                }
-                writes.Add((change.FilePath, change.After));
-            }
+            var writes = new System.Collections.Generic.List<(string, string, string)>();
+            bool remounted = ApplyEntry(entry, undo: false, writes);
             ApplyLedgerWrites(writes, "Redo " + entry.Description, remounted);
+        }
+
+        /// <summary>Jumps the history to a chosen point. It used to ask the ledger
+        /// for the buffer writes alone, which meant a jump across a create, a delete
+        /// or a rename moved the TEXT while leaving the shape of the tree where it
+        /// was. It now replays whole entries through the same path undo and redo
+        /// use, so every change kind is honoured, and redraws once at the end.</summary>
+        private void JumpHistoryTo(int target, string label)
+        {
+            var writes = new System.Collections.Generic.List<(string, string, string)>();
+            bool remounted = false;
+            bool moved = false;
+            while (_ledger.Cursor > target)
+            {
+                var entry = _ledger.Undo();
+                if (entry == null)
+                    break;
+                remounted |= ApplyEntry(entry, undo: true, writes);
+                moved = true;
+            }
+            while (_ledger.Cursor < target)
+            {
+                var entry = _ledger.Redo();
+                if (entry == null)
+                    break;
+                remounted |= ApplyEntry(entry, undo: false, writes);
+                moved = true;
+            }
+            if (!moved)
+                return;
+            ApplyLedgerWrites(writes, "History - " + label, remounted);
         }
 
         /// <summary>Writes a ledger step's buffers back with recording OFF, then
@@ -994,21 +1186,24 @@ namespace Ruitk.Builder
         /// every model change lands first, then the focus is validated, then the
         /// views are refreshed exactly once.</summary>
         private void ApplyLedgerWrites(
-            System.Collections.Generic.List<(string FilePath, string Text)> writes, string label,
-            bool remountCanvas = false)
+            System.Collections.Generic.List<(string ModuleId, string FilePath, string Text)> writes,
+            string label, bool remountCanvas = false)
         {
             if (writes.Count == 0 && !remountCanvas)
                 return;
 
             using (_ledger.Suppress())
             {
-                foreach (var (filePath, text) in writes)
+                foreach (var (moduleId, filePath, text) in writes)
                 {
-                    var session = _workspace.TryGet(filePath);
+                    // Identity first: the path this was recorded against may since
+                    // have moved, and writing by path would either miss the module
+                    // entirely or, worse, hit whatever now sits at that name.
+                    var session = _workspace.ById(moduleId) ?? _workspace.TryGet(filePath);
                     if (session == null || session.IsReadOnly)
                         continue;
                     session.ApplyEdit(text);
-                    SyncLspBuffer(filePath, text, open: false);
+                    SyncLspBuffer(session.FilePath, text);
                 }
             }
 
@@ -1024,8 +1219,9 @@ namespace Ruitk.Builder
             }
             else
             {
-                foreach (var (filePath, _) in writes)
-                    _canvasHost?.RefreshGraph(filePath, ReadBufferOrDisk);
+                foreach (var (moduleId, filePath, _) in writes)
+                    _canvasHost?.RefreshGraph(
+                        _workspace.ById(moduleId)?.FilePath ?? filePath, ReadBufferOrDisk);
             }
 
             var focused = _workspace.TryGet(_focusFile);
@@ -1042,9 +1238,165 @@ namespace Ruitk.Builder
         /// ledger replay can remove the focused one (undoing a create, or the
         /// creation half of a rename), and every pane then renders emptiness
         /// over a tree that is perfectly intact.</summary>
+        /// <summary>The focused file as a full path, or empty when there is no
+        /// focus. An empty workspace has none - undoing the creation of the only
+        /// module produces exactly that - and GetFullPath(null) throws, so every
+        /// comparison against the focus went through this instead.</summary>
+        private string FocusFull =>
+            string.IsNullOrEmpty(_focusFile) ? string.Empty : Path.GetFullPath(_focusFile);
+
+        /// <summary>Removes ONE import from ONE file, with whatever it bound. There
+        /// was no way to do this at all: an import row had no delete, so a child
+        /// component could only be detached by editing the source by hand.</summary>
+        private void RemoveImportFrom(string importerFull, string targetFull, string specifier)
+        {
+            var session = EditSession(importerFull);
+            if (session == null || session.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+            if (targetFull == null)
+            {
+                Toast("Could not resolve " + specifier);
+                return;
+            }
+            string updated = RemoveImportOf(session.BufferText, importerFull, targetFull);
+            if (updated == null || string.Equals(
+                    updated, session.BufferText, System.StringComparison.Ordinal))
+            {
+                Toast("Nothing to remove");
+                return;
+            }
+            _ledger.Begin("remove import " + specifier);
+            string before = session.BufferText;
+            session.ApplyEdit(updated);
+            _ledger.Record(importerFull, before, updated);
+            _ledger.End();
+            SyncLspBuffer(importerFull, updated);
+            RefreshHistoryPanel();
+            RefreshChrome();
+            NotifyBufferChanged();
+            MountCanvas();
+            Toast("Removed import " + specifier);
+        }
+
+        /// <summary>Removes every reference to a module from the rest of the tree:
+        /// the import that binds it, and any attribute whose value uses what that
+        /// import bound. Deleting a module used to be REFUSED while anything still
+        /// imported it, which is backwards - the builder knows exactly who refers
+        /// to it and can unpick that itself.</summary>
+        private void StripReferencesTo(string targetFull)
+        {
+            var nodes = _canvasHost?.Nodes;
+            if (nodes == null)
+                return;
+            foreach (var other in nodes)
+            {
+                string otherFull;
+                try
+                {
+                    otherFull = Path.GetFullPath(other.FilePath);
+                }
+                catch (System.Exception)
+                {
+                    continue;
+                }
+                if (string.Equals(otherFull, targetFull, System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var peer = EditSession(otherFull);
+                if (peer == null || peer.IsReadOnly)
+                    continue;
+                string updated = RemoveImportOf(peer.BufferText, otherFull, targetFull);
+                if (updated == null || string.Equals(
+                        updated, peer.BufferText, System.StringComparison.Ordinal))
+                    continue;
+                string before = peer.BufferText;
+                peer.ApplyEdit(updated);
+                _ledger.Record(otherFull, before, updated);
+                SyncLspBuffer(otherFull, updated);
+            }
+        }
+
+        /// <summary>Drops the import of <paramref name="targetFull"/> from a file,
+        /// and with it every attribute whose value uses a name that import bound.
+        /// Leaving those behind would turn a delete into a broken build, which is
+        /// the thing the old refusal was trying to avoid.</summary>
+        private static string RemoveImportOf(
+            string textLf, string importerPath, string targetFull)
+        {
+            Ruitk.Language.Parser.ParseResult parsed;
+            try
+            {
+                parsed = BuilderLanguage.Parse(textLf, importerPath);
+            }
+            catch (System.Exception)
+            {
+                return null;
+            }
+
+            var boundNames = new System.Collections.Generic.List<string>();
+            var dropLines = new System.Collections.Generic.HashSet<int>();
+            foreach (var import in parsed.Directives.Imports)
+            {
+                string spec = import.Specifier ?? "";
+                if (spec.Length == 0 || spec.StartsWith("@", System.StringComparison.Ordinal))
+                    continue;
+                string resolved = BuilderGraphService.MapSpecifier(importerPath, spec);
+                if (resolved == null || !string.Equals(
+                        resolved, targetFull, System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+                dropLines.Add(import.Line);
+                if (import.IsStar && !string.IsNullOrEmpty(import.StarAlias))
+                    boundNames.Add(import.StarAlias);
+                if (import.IsDefault && !string.IsNullOrEmpty(import.DefaultAlias))
+                    boundNames.Add(import.DefaultAlias);
+                if (!import.Names.IsDefaultOrEmpty)
+                {
+                    for (int i = 0; i < import.Names.Length; i++)
+                    {
+                        string alias = import.Aliases.IsDefaultOrEmpty || import.Aliases.Length <= i
+                            ? null
+                            : import.Aliases[i];
+                        boundNames.Add(string.IsNullOrEmpty(alias) ? import.Names[i] : alias);
+                    }
+                }
+            }
+            if (dropLines.Count == 0)
+                return null;
+
+            var lines = new System.Collections.Generic.List<string>(textLf.Split('\n'));
+            for (int i = lines.Count - 1; i >= 0; i--)
+            {
+                if (dropLines.Contains(i + 1))
+                {
+                    lines.RemoveAt(i);
+                    continue;
+                }
+                foreach (string name in boundNames)
+                {
+                    // An attribute whose value reads through the bound name goes
+                    // with it - style={Thing.container} is meaningless once Thing
+                    // is gone.
+                    var attr = new System.Text.RegularExpressions.Regex(
+                        @"\s+[A-Za-z_][A-Za-z0-9_]*=\{[^}]*\b"
+                        + System.Text.RegularExpressions.Regex.Escape(name)
+                        + @"\b[^}]*\}");
+                    lines[i] = attr.Replace(lines[i], "");
+                }
+            }
+            return string.Join("\n", lines);
+        }
+
         private void RebindFocusIfMissing()
         {
-            if (!string.IsNullOrEmpty(_focusFile) && _workspace.TryGet(_focusFile) != null)
+            // A module marked for deletion is not a valid focus either. Its session
+            // still exists until Save, so the missing-session test alone left the
+            // window pointed at a module the user had just deleted - the preview
+            // kept describing it and the source pane kept showing it.
+            if (!string.IsNullOrEmpty(_focusFile)
+                && _workspace.TryGet(_focusFile) != null
+                && !_workspace.IsPendingDelete(_focusFile))
                 return;
             foreach (var session in _workspace.Sessions)
             {
@@ -1053,12 +1405,12 @@ namespace Ruitk.Builder
                 _focusFile = session.FilePath;
                 return;
             }
-        }
-        private void RefreshEditedBuffer(BuilderDocumentSession session)
-        {
-            _codeField?.SetContent(session.BufferText, session.FilePath, KnownElementsOrNull());
-            RefreshChrome();
-            NotifyBufferChanged();
+            // Nothing is left to focus. Undoing the creation of the ONLY module
+            // used to leave the focus naming a module that no longer existed, and
+            // MountCanvas mounted it regardless - an empty card for a file with no
+            // session behind it, which then could not be deleted because there was
+            // nothing there to delete. An empty workspace shows the empty state.
+            _focusFile = null;
         }
 
         private void OnCodeEdited(string bufferLf)
@@ -1068,10 +1420,14 @@ namespace Ruitk.Builder
                 return;
             string before = session.BufferText;
             session.ApplyEdit(bufferLf);
-            _ledger.Record(_focusFile, before, bufferLf);
-            SyncLspBuffer(_focusFile, bufferLf, open: false);
+            // Typing is not an action. It coalesces into one history entry, and it
+            // does NOT compile: a name typed into a field and then abandoned used to
+            // cost a build of half-written code that could only fail. The CARD still
+            // re-parses on every keystroke - that is cheap and local - and the
+            // preview compiles when the edit is finished.
+            _ledger.RecordTyping(_focusFile, before, bufferLf);
+            SyncLspBuffer(_focusFile, bufferLf);
             RefreshChrome();
-            NotifyBufferChanged();
             ScheduleCanvasRefresh(_focusFile);
         }
 
@@ -1107,7 +1463,7 @@ namespace Ruitk.Builder
         private void OnCanvasRowClicked(string filePath, int sourceLine)
         {
             string full = Path.GetFullPath(filePath);
-            if (!string.Equals(full, Path.GetFullPath(_focusFile), System.StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(full, FocusFull, System.StringComparison.OrdinalIgnoreCase))
                 OpenFileFromCanvas(full);
             _codeField?.FocusLine(sourceLine);
         }
@@ -2039,7 +2395,21 @@ namespace Ruitk.Builder
                         return;
                     }
                     var module = _canvasHost.FindNodeByTitle(name);
-                    if (module != null && AlreadyImports(node, module.FilePath))
+                    bool imported = module != null && AlreadyImports(node, module.FilePath);
+
+                    // A style module dropped ON AN ELEMENT is applied there. The
+                    // gesture only ever added the IMPORT, whatever it was dropped
+                    // on, and an import styles nothing - so the card gained a line,
+                    // the preview looked identical, and the styling the drop was
+                    // for had to be typed by hand as a style attribute.
+                    if (kind == "stylemod" && hasRow && row != null && row.SourceLine > 0
+                        && module != null && module.Exports.Count > 0)
+                    {
+                        ApplyStyleModuleToRow(full, row, module, name, imported);
+                        break;
+                    }
+
+                    if (imported)
                     {
                         Toast(name + " is already imported.");
                         return;
@@ -2826,7 +3196,8 @@ namespace Ruitk.Builder
                 oldName,
                 name => string.Equals(name, oldName, System.StringComparison.Ordinal)
                     ? "that is the current name"
-                    : ValidateNewName(kind, name),
+                    : ValidateNewName(
+                        kind, name, n => RenameTargetPath(full, oldName, n, out _, out _)),
                 name => RenameModule(full, oldName, name),
                 initialValue: oldName);
         }
@@ -2843,6 +3214,38 @@ namespace Ruitk.Builder
             return kind == BuilderNodeKind.Component ? "Component" : "Utils";
         }
 
+        /// <summary>Brings every module inside a folder into the model before the
+        /// folder moves. Without it the children are invisible to the builder: they
+        /// are on disk, so nothing re-paths them, and the canvas would keep drawing
+        /// them at a location the folder has left.</summary>
+        private void OpenModulesUnder(string dir)
+        {
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+                return;
+            string[] files;
+            try
+            {
+                files = Directory.GetFiles(dir, "*.uitkx", SearchOption.AllDirectories);
+            }
+            catch (System.Exception)
+            {
+                return;
+            }
+            foreach (string file in files)
+                EditSession(Path.GetFullPath(file));
+        }
+
+        /// <summary>Follows the focused file across a folder move.</summary>
+        private void RepointFocus(string oldDir, string newDir)
+        {
+            if (string.IsNullOrEmpty(_focusFile))
+                return;
+            string prefix = Path.GetFullPath(oldDir) + Path.DirectorySeparatorChar;
+            string focus = FocusFull;
+            if (focus.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase))
+                _focusFile = Path.Combine(newDir, focus.Substring(prefix.Length));
+        }
+
         private void RenameModule(string full, string oldName, string newName)
         {
             var nodes = _canvasHost?.Nodes;
@@ -2850,20 +3253,11 @@ namespace Ruitk.Builder
                 return;
             string dir = Path.GetDirectoryName(full) ?? "";
             string file = Path.GetFileName(full);
-            string suffix = file.EndsWith(".style.uitkx", System.StringComparison.OrdinalIgnoreCase)
-                ? ".style.uitkx"
-                : file.EndsWith(".hooks.uitkx", System.StringComparison.OrdinalIgnoreCase)
-                    ? ".hooks.uitkx"
-                    : ".uitkx";
-            // A module that owns its folder (the house layout for components)
-            // moves the folder too, so the folder can never contradict the file.
-            bool ownsFolder = string.Equals(
-                Path.GetFileName(dir), oldName, System.StringComparison.Ordinal);
-            string newDir = ownsFolder
-                ? Path.Combine(Path.GetDirectoryName(dir) ?? "", newName)
-                : dir;
-            string newFull = Path.GetFullPath(Path.Combine(newDir, newName + suffix));
-            if (File.Exists(newFull) || _workspace.TryGet(newFull) != null)
+            string suffix = SuffixOf(file);
+            string newFull = RenameTargetPath(
+                full, oldName, newName, out string newDir, out bool ownsFolder);
+            if (File.Exists(newFull) || _workspace.TryGet(newFull) != null
+                || (ownsFolder && Directory.Exists(newDir)))
             {
                 Toast(newName + " already exists");
                 return;
@@ -2891,7 +3285,10 @@ namespace Ruitk.Builder
                 string otherFull = Path.GetFullPath(other.FilePath);
                 if (string.Equals(otherFull, full, System.StringComparison.OrdinalIgnoreCase))
                     continue;
-                var peer = _workspace.TryGet(otherFull);
+                // EditSession, not TryGet: an importer the user has not opened is
+                // still an importer, and skipping it left it pointing at a module
+                // that had moved.
+                var peer = EditSession(otherFull);
                 if (peer == null || peer.IsReadOnly)
                     continue;
                 string updated = RenameReferencesIn(peer.BufferText, oldName, newName, suffix);
@@ -2902,20 +3299,43 @@ namespace Ruitk.Builder
                 _ledger.Record(otherFull, before, updated);
             }
 
-            // 3. The file, and its folder when it owns one - a PENDING move,
-            //    like every other edit.
-            if (!_workspace.Rename(full, newFull))
+            // 3. The folder first, when the module owns one. It carries its whole
+            //    contents - sub-components, companions, everything the builder does
+            //    not manage - so the children keep their position relative to their
+            //    parent and every relative import inside the subtree stays correct.
+            //    Only the module's own file used to move, which left every child
+            //    behind at the old location while the parent's imports pointed into
+            //    the new one.
+            string movedFull = full;
+            if (ownsFolder)
+            {
+                OpenModulesUnder(dir);
+                if (!_workspace.MoveFolder(dir, newDir))
+                {
+                    _ledger.End();
+                    Toast("Could not move " + Path.GetFileName(dir));
+                    return;
+                }
+                _ledger.RecordFolderMove(dir, newDir);
+                _canvasHost?.RepathLayout(dir, newDir, isFolder: true);
+                RepointFocus(dir, newDir);
+                movedFull = Path.GetFullPath(Path.Combine(newDir, file));
+            }
+
+            // 4. The module's own file inside it - a PENDING move, like every
+            //    other edit.
+            if (!_workspace.Rename(movedFull, newFull))
             {
                 _ledger.End();
                 Toast("Could not rename " + oldName);
                 return;
             }
-            // The move is a pending creation plus a pending deletion, so
-            // both are recorded: undo discards the new session and
-            // un-marks the old one, putting the module back where it was.
-            _ledger.RecordCreation(newFull);
-            _ledger.RecordDeletion(full);
-            if (string.Equals(Path.GetFullPath(_focusFile), full,
+            // One module in two places, recorded as one move: undo walks it back
+            // to where it was, with its buffer, undo history and card position
+            // intact, because the session object never changed.
+            _ledger.RecordMove(movedFull, newFull);
+            _canvasHost?.RepathLayout(movedFull, newFull, isFolder: false);
+            if (string.Equals(FocusFull, movedFull,
                     System.StringComparison.OrdinalIgnoreCase))
                 _focusFile = newFull;
             _ledger.End();
@@ -3094,7 +3514,82 @@ namespace Ruitk.Builder
             return false;
         }
 
-        private static string BuildImportLine(
+        /// <summary>The name a star import binds, chosen so it cannot collide with
+        /// something the file already means.
+        ///
+        /// PascalCasing the module name is the convention and it walks straight
+        /// into the component's own name: a style module called someComponent,
+        /// imported into SomeComponent, produced `SomeComponent.container` - which
+        /// binds to the COMPONENT and fails with CS0117. That pairing is legal, and
+        /// the folder convention positively encourages it, so the ALIAS is what has
+        /// to give.
+        ///
+        /// A module that is ALREADY imported keeps whatever alias it was given, or
+        /// a second element styled from the same module would reference a name the
+        /// file never bound.</summary>
+        private string ImportAliasFor(
+            string importerPath, BuilderCanvasNode module, string moduleName, bool styleModule)
+        {
+            var taken = new System.Collections.Generic.HashSet<string>(
+                System.StringComparer.Ordinal);
+            // The component's own name. By convention it is the file stem, and that
+            // is precisely the name a PascalCased companion collides with.
+            taken.Add(Path.GetFileNameWithoutExtension(importerPath));
+
+            string targetFull = module == null || string.IsNullOrEmpty(module.FilePath)
+                ? null
+                : Path.GetFullPath(module.FilePath);
+            var session = _workspace.TryGet(Path.GetFullPath(importerPath));
+            if (session != null)
+            {
+                try
+                {
+                    var parsed = BuilderLanguage.Parse(session.BufferText, importerPath);
+                    foreach (var import in parsed.Directives.Imports)
+                    {
+                        string spec = import.Specifier;
+                        string bound = import.IsStar ? import.StarAlias
+                            : import.IsDefault ? import.DefaultAlias
+                            : null;
+                        if (targetFull != null && import.IsStar && !string.IsNullOrEmpty(bound)
+                            && string.Equals(
+                                BuilderGraphService.MapSpecifier(importerPath, spec), targetFull,
+                                System.StringComparison.OrdinalIgnoreCase))
+                            return bound;
+                        if (!string.IsNullOrEmpty(bound))
+                            taken.Add(bound);
+                        if (!import.Names.IsDefaultOrEmpty)
+                        {
+                            for (int i = 0; i < import.Names.Length; i++)
+                            {
+                                string alias = import.Aliases.IsDefaultOrEmpty
+                                    || import.Aliases.Length <= i
+                                        ? null
+                                        : import.Aliases[i];
+                                taken.Add(string.IsNullOrEmpty(alias) ? import.Names[i] : alias);
+                            }
+                        }
+                    }
+                }
+                catch (System.Exception)
+                {
+                    // A half-typed buffer just means fewer known names to avoid.
+                }
+            }
+
+            string candidate = char.ToUpperInvariant(moduleName[0]) + moduleName.Substring(1);
+            if (!taken.Contains(candidate))
+                return candidate;
+            string qualified = candidate + (styleModule ? "Style" : "Module");
+            if (!taken.Contains(qualified))
+                return qualified;
+            for (int i = 2; i < 100; i++)
+                if (!taken.Contains(qualified + i))
+                    return qualified + i;
+            return qualified;
+        }
+
+        private string BuildImportLine(
             string importerPath, BuilderCanvasNode module, bool styleModule, string name)
         {
             if (module == null)
@@ -3109,7 +3604,7 @@ namespace Ruitk.Builder
                 if (!rel.StartsWith(".", System.StringComparison.Ordinal))
                     rel = "./" + rel;
                 if (styleModule)
-                    return "import * as " + char.ToUpperInvariant(name[0]) + name.Substring(1)
+                    return "import * as " + ImportAliasFor(importerPath, module, name, true)
                         + " from \"" + rel + "\"";
                 string names = module.Exports.Count > 0
                     ? string.Join(", ", module.Exports)
@@ -3150,6 +3645,84 @@ namespace Ruitk.Builder
         /// across lines behaves exactly like a single-line one. Here the open
         /// tag's line SPAN is joined, transformed as one string, and re-split —
         /// otherwise the per-line regexes silently no-op on wrapped tags.</summary>
+        /// <summary>Puts a style module's export on one element: sets its style
+        /// attribute and adds the import if the file does not have it yet, as ONE
+        /// undoable action. A module with several exports asks which.
+        ///
+        /// The order is load-bearing. The attribute is written FIRST, against the
+        /// row's current source line; inserting the import at the top shifts every
+        /// line below it by one, so doing that first would aim the attribute edit a
+        /// line high.</summary>
+        private void ApplyStyleModuleToRow(
+            string filePath, BuilderCardLine row, BuilderCanvasNode module,
+            string moduleName, bool alreadyImported)
+        {
+            // The same rule the import line uses, so the attribute references the
+            // name the file actually binds - including when the module was already
+            // imported under a disambiguated alias.
+            string alias = ImportAliasFor(filePath, module, moduleName, true);
+
+            void Apply(string exportName)
+            {
+                _ledger.Begin("style " + moduleName + "." + exportName);
+                string value = "{" + alias + "." + exportName + "}";
+                bool wrote = false;
+                EditOpenTagInFile(filePath, row.SourceLine, tag =>
+                {
+                    var existing = System.Text.RegularExpressions.Regex.Match(
+                        tag, @"\sstyle=(\{[^}]*\}|""[^""]*"")");
+                    if (existing.Success)
+                    {
+                        wrote = true;
+                        return tag.Substring(0, existing.Index) + " style=" + value
+                            + tag.Substring(existing.Index + existing.Length);
+                    }
+                    int close = tag.LastIndexOf("/>", System.StringComparison.Ordinal);
+                    if (close < 0)
+                        close = tag.LastIndexOf('>');
+                    if (close < 0)
+                        return null;
+                    wrote = true;
+                    return tag.Substring(0, close).TrimEnd() + " style=" + value
+                        + (tag.Substring(close).StartsWith("/") ? " " : "") + tag.Substring(close);
+                }, "styled with " + exportName);
+
+                if (!wrote)
+                {
+                    _ledger.End();
+                    Toast("Couldn't find the open tag's end - style not applied.");
+                    return;
+                }
+                if (!alreadyImported)
+                {
+                    string line = BuildImportLine(filePath, module, true, moduleName);
+                    if (line != null)
+                        InsertLinesInFile(filePath, 0, line, "style import " + moduleName);
+                }
+                _ledger.End();
+                RefreshHistoryPanel();
+                Toast("Applied " + moduleName + "." + exportName);
+            }
+
+            if (module.Exports.Count == 1)
+            {
+                Apply(module.Exports[0]);
+                return;
+            }
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+            foreach (string export in module.Exports)
+            {
+                string captured = export;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = captured,
+                    OnPick = () => Apply(captured),
+                });
+            }
+            BuilderSearchMenu.Show(
+                moduleName + " - which style", "search styles...", items);
+        }
+
         private void EditOpenTagInFile(
             string filePath, int line1, System.Func<string, string> transform, string what)
         {
@@ -3382,10 +3955,10 @@ namespace Ruitk.Builder
             _ledger.Record(filePath, before, newBufferLf);
             _ledger.End();
             RefreshHistoryPanel();
-            if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(_focusFile),
+            if (string.Equals(Path.GetFullPath(filePath), FocusFull,
                     System.StringComparison.OrdinalIgnoreCase))
                 _codeField?.SetContent(newBufferLf, _focusFile, KnownElementsOrNull());
-            SyncLspBuffer(filePath, newBufferLf, open: false);
+            SyncLspBuffer(filePath, newBufferLf);
             RefreshChrome();
             NotifyBufferChanged();
             // POC commitNode(): rebuild ONLY the edited card and redraw the edges —
@@ -3400,7 +3973,7 @@ namespace Ruitk.Builder
         private void OnPreviewComponentPicked(string filePath)
         {
             string full = Path.GetFullPath(filePath);
-            if (!string.Equals(full, Path.GetFullPath(_focusFile), System.StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(full, FocusFull, System.StringComparison.OrdinalIgnoreCase))
                 OpenFileFromCanvas(full);
         }
 
@@ -3526,13 +4099,21 @@ namespace Ruitk.Builder
                 return;
             }
             var summary = _previewCompiler.CompileDirty(_focusFile);
+            var focusSession = _workspace.TryGet(_focusFile);
+            // The pane is ALWAYS told which assembly to render, whether or not this
+            // round rebuilt anything. A module that needs no rebuild still has a
+            // current build, and leaving it to the pane to find one meant scanning
+            // every loaded swap assembly for a matching [UitkxSource] - they all
+            // match, so it found an arbitrary one and the preview fell back to an
+            // older render that nothing then corrected.
+            var focusAssembly =
+                summary?.FocusResult != null && summary.FocusResult.Success
+                    ? summary.FocusResult.LoadedAssembly
+                    : _previewCompiler.BuiltAssemblyFor(_focusFile);
+            if (focusAssembly != null)
+                _previewPane?.OnRecompiled(focusAssembly, focusSession?.BufferText);
             if (summary == null)
                 return;
-            if (summary.FocusResult != null && summary.FocusResult.Success)
-            {
-                var session = _workspace.TryGet(_focusFile);
-                _previewPane?.OnRecompiled(summary.FocusResult.LoadedAssembly, session?.BufferText);
-            }
             // UB-15: every failed round names its FIRST real error in the pane —
             // including when the focus file itself was clean or skipped, the
             // case the old code reported as nothing at all.
@@ -3575,18 +4156,29 @@ namespace Ruitk.Builder
                 Toast("UXML import failed: " + string.Join("; ", result.Warnings));
                 return;
             }
-            string target = Path.Combine(
-                start ?? Path.GetDirectoryName(source) ?? "", componentName + ".uitkx");
-            if (File.Exists(target))
+            string target = Path.GetFullPath(Path.Combine(
+                start ?? Path.GetDirectoryName(source) ?? "", componentName + ".uitkx"));
+            if (File.Exists(target) || _workspace.TryGet(target) != null)
             {
                 Toast(componentName + ".uitkx already exists.");
                 return;
             }
-            File.WriteAllText(target, result.UitkxText);
-            AssetDatabase.Refresh();
+            // An import is an edit like any other. It used to write the file and
+            // refresh the AssetDatabase on the spot, which broke the save-only
+            // contract the rest of the builder obeys: the module now arrives as a
+            // pending buffer, Save writes it and Abort drops it.
+            if (_workspace.CreateNew(target, result.UitkxText) == null)
+            {
+                Toast("Could not import " + componentName);
+                return;
+            }
+            _ledger.Begin("import " + componentName + ".uitkx");
+            _ledger.RecordCreation(target);
+            _ledger.End();
+            RefreshHistoryPanel();
             foreach (string warning in result.Warnings)
                 Debug.LogWarning("[RUITK Builder] UXML import: " + warning);
-            Toast("Imported " + componentName + ".uitkx (one-way)");
+            Toast("Imported " + componentName + ".uitkx (one-way) - applies on Save");
             OpenAdditionalFile(target);
         }
 
@@ -3853,7 +4445,7 @@ namespace Ruitk.Builder
                 });
                 BuilderCursor.Set(row, UnityEditor.MouseCursor.Link);
                 row.RegisterCallback<PointerDownEvent>(_ =>
-                    ApplyLedgerWrites(_ledger.WalkTo(target), "History → " + entry.Description));
+                    JumpHistoryTo(target, entry.Description));
                 _historyList.Add(row);
             }
         }
@@ -4542,9 +5134,9 @@ namespace Ruitk.Builder
                 session.ApplyEdit(formatted);
                 _ledger.Record(session.FilePath, before, formatted);
                 if (string.Equals(Path.GetFullPath(session.FilePath),
-                        Path.GetFullPath(_focusFile), System.StringComparison.OrdinalIgnoreCase))
+                        FocusFull, System.StringComparison.OrdinalIgnoreCase))
                     _codeField?.SetContent(formatted, _focusFile, KnownElementsOrNull());
-                SyncLspBuffer(session.FilePath, formatted, open: false);
+                SyncLspBuffer(session.FilePath, formatted);
                 _canvasHost?.RefreshGraph(session.FilePath, ReadBufferOrDisk);
             }
         }
@@ -4579,7 +5171,21 @@ namespace Ruitk.Builder
                 }
             }
             bool hmrActive = Ruitk.EditorSupport.HMR.UitkxHmrController.IsActive;
-            int written = _workspace.SaveAll();
+            int written;
+            try
+            {
+                written = _workspace.SaveAll();
+            }
+            catch (System.IO.IOException ex)
+            {
+                // A folder move the AssetDatabase refused is the one save step
+                // that can fail outright. Everything it had not reached is still
+                // pending, so say so and leave the session intact to retry.
+                Debug.LogError("[RUITK Builder] save failed: " + ex.Message);
+                Toast("Save failed - " + ex.Message);
+                RefreshChrome();
+                return;
+            }
             BuilderSaveMetrics.RecordSaveBatch(written, hmrActive);
             if (written > 0)
                 Toast($"Saved {written} file(s)");
@@ -4648,15 +5254,19 @@ namespace Ruitk.Builder
             BuilderSearchMenu.ShowNamePrompt(
                 prompt.Item1,
                 prompt.Item2,
-                name => ValidateNewName(kind, name),
+                name => ValidateNewName(
+                    kind, name,
+                    n => BuilderNewFileDialog.PathFor(dir, kind, n, asRoot: !rooted) is string made
+                        ? Path.GetFullPath(made)
+                        : null),
                 name =>
                 {
                     // A brand-new tree has no parent component, so its first
                     // component owns its folder rather than nesting under a
                     // "components" directory that has nothing above it.
                     string created = BuilderNewFileDialog.PathFor(dir, kind, name, asRoot: !rooted);
-                    if (created == null || File.Exists(created)
-                        || _workspace.TryGet(Path.GetFullPath(created)) != null)
+                    if (created == null
+                        || !_workspace.IsPathAvailable(Path.GetFullPath(created)))
                     {
                         Toast("Could not create " + name + " (already exists)");
                         return;
@@ -4684,7 +5294,10 @@ namespace Ruitk.Builder
                 });
         }
 
-        private string ValidateNewName(string kind, string name)
+        /// <param name="targetPathFor">Maps a candidate name to the file it would
+        /// produce. Null skips the collision check.</param>
+        private string ValidateNewName(
+            string kind, string name, System.Func<string, string> targetPathFor)
         {
             if (string.IsNullOrEmpty(name))
                 return "name required";
@@ -4698,14 +5311,46 @@ namespace Ruitk.Builder
             if (!hook && !pascal
                 && !System.Text.RegularExpressions.Regex.IsMatch(name, "^[a-z][A-Za-z0-9]*$"))
                 return "camelCase identifier required";
-            foreach (var node in _canvasHost?.Nodes
-                ?? new System.Collections.Generic.List<BuilderCanvasNode>())
-            {
-                if (string.Equals(node.Title, name, System.StringComparison.OrdinalIgnoreCase))
-                    return name + " already exists";
-            }
+            // A name is taken only when the FILE it would produce is already
+            // taken. This used to compare DISPLAY names, which have their
+            // .style/.hooks stripped and are matched case-insensitively - so a
+            // style module called someComponent was refused because a component
+            // called SomeComponent existed, even though the two produce
+            // someComponent.style.uitkx and SomeComponent.uitkx and are exactly
+            // the pairing the folder convention is built around.
+            string target = targetPathFor?.Invoke(name);
+            if (!string.IsNullOrEmpty(target) && !_workspace.IsPathAvailable(target))
+                return name + " already exists";
             return null;
         }
+
+        /// <summary>Where a rename would put the module, and whether it takes its
+        /// folder with it. One place, so the prompt's live validation and the
+        /// rename itself can never disagree about what a name would produce.</summary>
+        private static string RenameTargetPath(
+            string full, string oldName, string newName, out string newDir, out bool ownsFolder)
+        {
+            string dir = Path.GetDirectoryName(full) ?? "";
+            string file = Path.GetFileName(full);
+            string suffix = SuffixOf(file);
+            // A COMPANION never owns the folder: a card title has its
+            // .style/.hooks stripped, so someComponent.style.uitkx sitting in
+            // someComponent/ would otherwise match the folder just as its
+            // component does, and renaming the companion would move the lot.
+            ownsFolder = suffix == ".uitkx"
+                && string.Equals(Path.GetFileName(dir), oldName, System.StringComparison.Ordinal);
+            newDir = ownsFolder
+                ? Path.Combine(Path.GetDirectoryName(dir) ?? "", newName)
+                : dir;
+            return Path.GetFullPath(Path.Combine(newDir, newName + suffix));
+        }
+
+        private static string SuffixOf(string fileName) =>
+            fileName.EndsWith(".style.uitkx", System.StringComparison.OrdinalIgnoreCase)
+                ? ".style.uitkx"
+                : fileName.EndsWith(".hooks.uitkx", System.StringComparison.OrdinalIgnoreCase)
+                    ? ".hooks.uitkx"
+                    : ".uitkx";
 
         public void OpenAdditionalFile(string filePath)
         {
@@ -4715,12 +5360,46 @@ namespace Ruitk.Builder
             RefreshChrome();
         }
 
+        /// <summary>Discards every pending change. Abort now puts PATHS back as
+        /// well as text - a renamed module returns to its old name and a moved
+        /// folder to its old place - so the canvas has to be rebuilt rather than
+        /// merely repainted, and the saved layout has to follow the modules back
+        /// the same way it followed them out. What moved is read off the workspace
+        /// BEFORE the abort, because the abort is what forgets it.</summary>
         private void AbortAll()
         {
+            var folderMoves = new System.Collections.Generic.List<(string From, string To)>();
+            foreach (var move in _workspace.PendingFolderMoves)
+                folderMoves.Add((move.From, move.To));
+            var moduleMoves = new System.Collections.Generic.List<(string From, string To)>();
+            foreach (var session in _workspace.Sessions)
+                if (session.IsMoved)
+                    moduleMoves.Add((session.FilePath, session.OriginalDiskPath));
+
             int reverted = _workspace.AbortAll();
-            if (reverted > 0)
-                Toast($"Discarded {reverted} buffer(s)");
+            if (reverted <= 0)
+            {
+                RefreshChrome();
+                return;
+            }
+
+            foreach (var move in moduleMoves)
+            {
+                _canvasHost?.RepathLayout(move.From, move.To, isFolder: false);
+                if (string.Equals(FocusFull, Path.GetFullPath(move.From),
+                        System.StringComparison.OrdinalIgnoreCase))
+                    _focusFile = move.To;
+            }
+            foreach (var move in folderMoves)
+            {
+                _canvasHost?.RepathLayout(move.To, move.From, isFolder: true);
+                RepointFocus(move.To, move.From);
+            }
+
+            Toast($"Discarded {reverted} buffer(s)");
+            RebindFocusIfMissing();
             RefreshChrome();
+            MountCanvas();
         }
 
         private void OnWorkspaceChanged() => RefreshChrome();

@@ -29,8 +29,30 @@ namespace Ruitk.Builder
         public bool IsDirty =>
             !string.Equals(BufferText, DiskText, StringComparison.Ordinal);
 
-        /// <summary>True when this session was created in the builder and never saved.</summary>
-        public bool IsNewFile;
+        /// <summary>Stable identity. A module keeps this across every
+        /// rename and move, so its buffer, undo history, recorded line-ending
+        /// flavor, layout position and selection all survive a rename that
+        /// changes its path. The path is DERIVED state; this is not.</summary>
+        public string Id;
+
+        /// <summary>Where this module currently lives ON DISK, or null when it
+        /// has never been written. A rename only rewrites <see cref="FilePath"/>,
+        /// so the two disagreeing is exactly what a pending move IS - and it is
+        /// what lets Save project the move instead of guessing from a separate
+        /// creation and deletion pair.</summary>
+        public string OriginalDiskPath;
+
+        /// <summary>True when this session was created in the builder and never
+        /// saved. Derived: a module is new precisely when no file backs it.</summary>
+        public bool IsNewFile => string.IsNullOrEmpty(OriginalDiskPath);
+
+        /// <summary>A saved module whose path has been changed but whose file is
+        /// still at the old location. Save moves it; Abort puts the path back.</summary>
+        public bool IsMoved =>
+            !string.IsNullOrEmpty(OriginalDiskPath) &&
+            !string.Equals(OriginalDiskPath, FilePath, StringComparison.OrdinalIgnoreCase);
+
+        public static string NewId() => Guid.NewGuid().ToString("N");
 
         /// <summary>UB-119: this module has no real home yet — it was started
         /// before the user chose a folder, so its path is provisional. SaveAll
@@ -43,7 +65,12 @@ namespace Ruitk.Builder
         public static string NormalizeLf(string text) =>
             text == null ? string.Empty : text.Replace("\r\n", "\n").Replace("\r", "\n");
 
-        public static BuilderDocumentSession Open(string filePath, string diskTextRaw, bool isReadOnly)
+        /// <param name="existsOnDisk">False when the caller opened a path with no
+        /// file behind it. Such a session is NEW - claiming a disk origin it does
+        /// not have would make Save write the file without importing it, leaving a
+        /// .uitkx on disk that Unity never compiles.</param>
+        public static BuilderDocumentSession Open(
+            string filePath, string diskTextRaw, bool isReadOnly, bool existsOnDisk = true)
         {
             return new BuilderDocumentSession
             {
@@ -52,7 +79,8 @@ namespace Ruitk.Builder
                 BufferText = NormalizeLf(diskTextRaw),
                 IsReadOnly = isReadOnly,
                 UsedCrlf = diskTextRaw != null && diskTextRaw.Contains("\r\n"),
-                IsNewFile = false,
+                Id = NewId(),
+                OriginalDiskPath = existsOnDisk ? filePath : null,
             };
         }
 
@@ -65,7 +93,8 @@ namespace Ruitk.Builder
                 BufferText = NormalizeLf(initialBuffer),
                 IsReadOnly = false,
                 UsedCrlf = false,
-                IsNewFile = true,
+                Id = NewId(),
+                OriginalDiskPath = null,
             };
         }
 
@@ -120,7 +149,7 @@ namespace Ruitk.Builder
         {
             DiskText = newDiskTextLf;
             BufferText = newDiskTextLf;
-            IsNewFile = false;
+            OriginalDiskPath = FilePath;
         }
 
         /// <summary>External change (git pull, sync, IDE edit) under a CLEAN

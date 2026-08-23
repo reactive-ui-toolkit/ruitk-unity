@@ -186,6 +186,21 @@ namespace Ruitk.Builder
             }
         }
 
+        /// <summary>Centres a single line inside a box that is TALLER than the
+        /// text needs. The compact chrome pins 2px above and below, so whenever the
+        /// editor was stretched to cover a tall canvas row - which it is, because it
+        /// takes the row's height - the glyphs sat at the top of the box with all
+        /// the slack underneath. The surplus is split evenly instead.</summary>
+        public void CenterSingleLine(float boxHeight)
+        {
+            float line = FontSize * 1.4f;
+            float pad = Mathf.Max(CompactPadY, (boxHeight - line) * 0.5f);
+            _input.style.paddingTop = pad;
+            _input.style.paddingBottom = pad;
+            _scroll.style.paddingTop = pad;
+            _scroll.style.paddingBottom = pad;
+        }
+
         private bool _compact;
 
         /// <summary>The coloured-edit overlay only registers while the INPUT
@@ -349,6 +364,7 @@ namespace Ruitk.Builder
             _input.textSelection.selectAllOnFocus = false;
             _input.textSelection.selectAllOnMouseUp = false;
             _input.RegisterValueChangedCallback(OnInputChanged);
+            _input.RegisterCallback<FocusOutEvent>(OnInputBlur);
             _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
             host.Add(_input);
 
@@ -676,6 +692,14 @@ namespace Ruitk.Builder
             _input.isReadOnly = !editable;
         }
 
+        /// <summary>The edit is over: focus left the field. This is the source
+        /// pane's commit boundary - free typing has no other one - and it is what
+        /// the preview compiles on, so typing something and abandoning it never
+        /// costs a build.</summary>
+        public event Action EditingFinished;
+
+        private void OnInputBlur(FocusOutEvent evt) => EditingFinished?.Invoke();
+
         private void OnInputChanged(ChangeEvent<string> evt)
         {
             if (_suppressChange)
@@ -871,13 +895,11 @@ namespace Ruitk.Builder
                     ? _serverTokens
                     : BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
 
-                var diags = BuilderLanguage.Diagnose(parsed, _filePath, _knownElements);
-                var sb = new StringBuilder();
-                foreach (var d in diags)
-                    sb.Append(d.Code).Append(" L").Append(d.SourceLine)
-                        .Append(": ").Append(d.Message).Append('\n');
-                _localDiagnosticsText = sb.ToString();
-                RenderDiagnosticsLabel();
+                // Diagnostics are the expensive half - a full analyzer pass - and
+                // nothing about them has to be true THIS keystroke. Colouring stays
+                // synchronous because the user is looking straight at it; the
+                // console catches up once typing settles.
+                ScheduleDiagnostics(textLf);
             }
             catch (Exception)
             {
@@ -887,6 +909,56 @@ namespace Ruitk.Builder
             }
 
             RecolorRows(lines, tokens);
+        }
+
+        [NonSerialized] private double _diagnosticsDue;
+        [NonSerialized] private bool _diagnosticsScheduled;
+        [NonSerialized] private string _diagnosticsText;
+
+        /// <summary>Runs the analyzer once typing settles rather than on every
+        /// keystroke. A blank buffer is not a broken one - a style or util module
+        /// is created EMPTY by design - so it reports nothing at all.</summary>
+        private void ScheduleDiagnostics(string textLf)
+        {
+            _diagnosticsText = textLf;
+            _diagnosticsDue = UnityEditor.EditorApplication.timeSinceStartup + 0.25;
+            if (_diagnosticsScheduled)
+                return;
+            _diagnosticsScheduled = true;
+            UnityEditor.EditorApplication.update += RunDiagnosticsWhenQuiet;
+        }
+
+        private void RunDiagnosticsWhenQuiet()
+        {
+            if (UnityEditor.EditorApplication.timeSinceStartup < _diagnosticsDue)
+                return;
+            UnityEditor.EditorApplication.update -= RunDiagnosticsWhenQuiet;
+            _diagnosticsScheduled = false;
+
+            string textLf = _diagnosticsText;
+            if (textLf == null || FragmentMode)
+                return;
+            try
+            {
+                if (textLf.Trim().Length == 0)
+                {
+                    _localDiagnosticsText = "";
+                }
+                else
+                {
+                    var parsed = BuilderLanguage.Parse(textLf, _filePath);
+                    var sb = new StringBuilder();
+                    foreach (var d in BuilderLanguage.Diagnose(parsed, _filePath, _knownElements))
+                        sb.Append(d.Code).Append(" L").Append(d.SourceLine)
+                            .Append(": ").Append(d.Message).Append('\n');
+                    _localDiagnosticsText = sb.ToString();
+                }
+            }
+            catch (Exception)
+            {
+                _localDiagnosticsText = "";
+            }
+            RenderDiagnosticsLabel();
         }
 
         private void RecolorRows(string[] lines, SemanticTokenData[] tokens)

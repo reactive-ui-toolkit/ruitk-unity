@@ -75,6 +75,22 @@ var server = await LanguageServer.From(options =>
             services.AddSingleton<OmniSharp.Extensions.LanguageServer.Protocol.Server.IOnLanguageServerStarted>(
                 new StartupLogger()
             );
+            // An import TARGET that is only open in the editor - never written -
+            // is invisible to ImportScopeFacts, which resolves targets off the
+            // filesystem to work out the using aliases an import implies. Without
+            // this, a module the RUITK Builder is holding in memory produced a
+            // CS0103 on its own alias in the diagnostics we publish, for code that
+            // compiles perfectly well. Editor content wins; anything not open falls
+            // through to disk exactly as before.
+            services.AddSingleton<OmniSharp.Extensions.LanguageServer.Protocol.Server.IOnLanguageServerStarted>(
+                sp =>
+                {
+                    var docs = sp.GetRequiredService<DocumentStore>();
+                    Ruitk.Language.ImportScopeFacts.SourceOverlay = path =>
+                        docs.TryGetByPath(path, out string text) ? text : null;
+                    return new StartupLogger();
+                }
+            );
             services.AddSingleton<OmniSharp.Extensions.LanguageServer.Protocol.Server.IOnLanguageServerStarted>(
                 sp => sp.GetRequiredService<WorkspaceIndex>()
             );

@@ -28,6 +28,13 @@ namespace Ruitk.Builder
         public float Zoom = 1f;
         public string SavedAt = "";
 
+        /// <summary>Config files this layout has outgrown, because the tree root
+        /// moved and the file is NAMED after the root. Deleted on the next save so
+        /// a renamed tree does not leave a stale layout behind forever. Private, so
+        /// it is not serialized into the file itself.</summary>
+        private readonly HashSet<string> _retired =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         private static string ConfigDir =>
             Path.Combine(
                 Path.GetDirectoryName(Application.dataPath) ?? ".",
@@ -99,7 +106,15 @@ namespace Ruitk.Builder
             {
                 Directory.CreateDirectory(ConfigDir);
                 SavedAt = DateTime.UtcNow.ToString("o");
-                File.WriteAllText(PathFor(RootPath), JsonConvert.SerializeObject(this, Formatting.Indented));
+                string target = PathFor(RootPath);
+                File.WriteAllText(target, JsonConvert.SerializeObject(this, Formatting.Indented));
+                foreach (string stale in _retired)
+                {
+                    if (!string.Equals(stale, target, StringComparison.OrdinalIgnoreCase)
+                        && File.Exists(stale))
+                        File.Delete(stale);
+                }
+                _retired.Clear();
             }
             catch (Exception ex)
             {
@@ -138,6 +153,94 @@ namespace Ruitk.Builder
             {
                 Members.Add(node.FilePath);
                 Positions[RelKey(node.FilePath)] = new[] { node.X, node.Y };
+            }
+        }
+
+        /// <summary>Follows a module, or a whole folder, to a new location so a
+        /// rename does not throw the layout away.
+        ///
+        /// Positions are keyed RELATIVE to the tree root and the config file is
+        /// NAMED after the root, so a rename can move the keys and the file name at
+        /// once - which is why renaming a folder-owning component used to lose the
+        /// whole layout: every member path changed, so neither the by-root lookup
+        /// nor the by-member scan could find the config again. Each key is resolved
+        /// back to an absolute path, moved, and re-keyed against the new root.</summary>
+        public void Repath(string oldPath, string newPath, bool isFolder)
+        {
+            string from = SafeFull(oldPath);
+            string to = SafeFull(newPath);
+            if (from == null || to == null
+                || string.Equals(from, to, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // Resolved against the OLD root, before it moves out from under them.
+            var carried = new List<(string Abs, float[] Pos)>();
+            foreach (var pair in Positions)
+                carried.Add((Moved(AbsoluteOf(pair.Key), from, to, isFolder), pair.Value));
+
+            string previousRoot = SafeFull(RootPath);
+            string movedRoot = Moved(previousRoot, from, to, isFolder);
+            if (movedRoot != null
+                && !string.Equals(movedRoot, previousRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                _retired.Add(PathFor(RootPath));
+                RootPath = movedRoot;
+            }
+
+            Positions.Clear();
+            foreach (var (abs, pos) in carried)
+                if (!string.IsNullOrEmpty(abs))
+                    Positions[RelKey(abs)] = pos;
+
+            for (int i = 0; i < Members.Count; i++)
+            {
+                string moved = Moved(SafeFull(Members[i]), from, to, isFolder);
+                if (!string.IsNullOrEmpty(moved))
+                    Members[i] = moved;
+            }
+        }
+
+        private static string Moved(string path, string from, string to, bool isFolder)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+            if (!isFolder)
+                return string.Equals(path, from, StringComparison.OrdinalIgnoreCase) ? to : path;
+            string prefix = from + Path.DirectorySeparatorChar;
+            return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(to, path.Substring(prefix.Length))
+                : path;
+        }
+
+        /// <summary>A stored key back to the absolute path it names. Keys are
+        /// root-relative for members of the tree and absolute for anything else,
+        /// which is exactly what RelKey produces.</summary>
+        private string AbsoluteOf(string key)
+        {
+            try
+            {
+                if (Path.IsPathRooted(key))
+                    return Path.GetFullPath(key);
+                string rootDir = Path.GetDirectoryName(Path.GetFullPath(RootPath)) ?? "";
+                return Path.GetFullPath(Path.Combine(rootDir, key));
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string SafeFull(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return null;
+            try
+            {
+                return Path.GetFullPath(path);
+            }
+            catch
+            {
+                return null;
             }
         }
 

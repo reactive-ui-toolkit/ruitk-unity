@@ -108,6 +108,25 @@ namespace Ruitk.EditorSupport.HMR
         /// </summary>
         internal Func<string, string> SourceOverlay { get; set; }
 
+        /// <summary>Hands the unsaved-buffer overlay to the language lib, which
+        /// resolves import targets of its own when it computes the using aliases an
+        /// import implies. Done per compile rather than once, so it cannot depend on
+        /// whether the overlay was set before or after initialisation.</summary>
+        private void PublishSourceOverlay()
+        {
+            if (_importScopeOverlay == null)
+                return;
+            try
+            {
+                _importScopeOverlay.SetValue(null, SourceOverlay);
+            }
+            catch (Exception)
+            {
+                // An older Language.dll, or a field of another shape: the compile
+                // still runs, it just cannot see unsaved import targets.
+            }
+        }
+
         private string ReadUitkxText(string path)
         {
             string overlay = SourceOverlay?.Invoke(path);
@@ -142,6 +161,7 @@ namespace Ruitk.EditorSupport.HMR
         // the using lines a file's imports imply (cross-folder hook containers + module/component
         // type aliases with EFFECTIVE namespaces). Optional (older Language.dll → skip).
         private MethodInfo _importScopePayloads;
+        private FieldInfo _importScopeOverlay;
         // U-03 bridges — ImportScopeFacts.ComputeImportedMemberBridgeLines(DirectiveSet, string):
         // rendered `internal static …` forwarding lines for aliased/default member imports,
         // byte-identical to the SG's ExportsEmitter shapes. Optional (older Language.dll → skip).
@@ -313,6 +333,7 @@ namespace Ruitk.EditorSupport.HMR
         {
             var result = new HmrCompileResult();
             var sw = Stopwatch.StartNew();
+            PublishSourceOverlay();
 
             try
             {
@@ -1712,6 +1733,14 @@ namespace Ruitk.EditorSupport.HMR
             _importScopePayloads = _languageAsm
                 .GetType("Ruitk.Language.ImportScopeFacts")
                 ?.GetMethod("ComputeInjectedUsingPayloads", BindingFlags.Public | BindingFlags.Static);
+            // ImportScopeFacts resolves each import TARGET itself to work out the
+            // using alias it implies, and it read those targets straight off disk -
+            // so a module held only as an editor buffer could not be an import
+            // target and no alias was emitted for it. Optional: an older
+            // Language.dll simply has no such field.
+            _importScopeOverlay = _languageAsm
+                .GetType("Ruitk.Language.ImportScopeFacts")
+                ?.GetField("SourceOverlay", BindingFlags.Public | BindingFlags.Static);
             _importedMemberBridgeLines = _languageAsm
                 .GetType("Ruitk.Language.ImportScopeFacts")
                 ?.GetMethod("ComputeImportedMemberBridgeLines", BindingFlags.Public | BindingFlags.Static);

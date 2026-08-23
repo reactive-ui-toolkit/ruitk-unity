@@ -73,8 +73,14 @@ screen-space overlay so stroke weight is constant at every zoom.
 
 ## 3. Reading a tree
 
-- The tree is discovered from the focus file by walking imports through the
-  language server's module graph.
+- The tree is discovered from the focus file by walking imports. The language
+  server supplies the inventory of modules on disk and, for a module the builder
+  has not touched, what it imports — its answer is derived from the same text,
+  so it is a cache and a cheap one. For anything the builder holds differently
+  from disk — created, renamed, or merely edited — the server is stale by
+  definition and that module's own buffer is parsed instead. A module is
+  therefore wired into the tree the moment its import is typed, with no file
+  behind it.
 - Every card's content is parsed from the real language AST, not by regex: the
   signature, exports, imports, hook calls, markup structure and all five
   directives (`@if`/`@else if`/`@else`, `@foreach`, `@for`, `@while`,
@@ -120,13 +126,33 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
   the source pane.
 - **Add style/util export**, and **add style entry** with searchable keys and
   value helpers (Px/Pct/Hex/Rgba/flex/justify/align/font/text/display/position).
+- **Apply a style module** by dragging it onto an ELEMENT row: the element's
+  `style` attribute is set to the chosen export and the import is added if the
+  file lacks it, as one undoable action. A module with several exports asks
+  which. Dropped on the card rather than a row it adds the import alone.
 - **Rename module** — from the card menu. Renames the export, the file, the
   folder when the module owns one, and every importer's specifier and
-  binding across the tree. Like every edit it is pending: Save applies it,
-  Abort drops it, and one undo reverses the whole rename.
+  binding across the tree — including importers the user has never opened.
+  Like every edit it is pending: Save applies it, Abort drops it, and one
+  undo reverses the whole rename. The module keeps its identity across the
+  rename, so its buffer, its undo history and the line-ending flavour of the
+  file it came from all survive; Save projects the move as one operation
+  rather than a new file plus a deletion.
+  A component that owns its folder takes the **whole folder** with it —
+  sub-components, companion modules, and files the builder does not manage —
+  as a single move, so child GUIDs survive and nothing is left behind. The
+  saved card layout follows the rename, out and back again through undo.
+- **Import .uxml** — one-way conversion to a `.uitkx` module, from the
+  toolbar or from a `.uxml` asset's context menu. The result arrives as a
+  pending module like anything else the builder creates: Save writes it,
+  Abort drops it, Ctrl+Z takes it back.
 - **Create module** — component / style / hook / util, from the canvas
   right-click or the library's "+ new", named through a validating prompt
-  (PascalCase components, camelCase style/util, `use…` hooks, no duplicates).
+  (PascalCase components, camelCase style/util, `use…` hooks). A name is taken
+  only when the FILE it would produce is taken, so `SomeComponent` the component
+  and `someComponent` the style module coexist — they are
+  `SomeComponent.uitkx` and `someComponent.style.uitkx`, which is the pairing
+  the folder convention is built around.
   A new COMPONENT gets its own folder under the current component's
   `components/` directory; a style, hook or util module lands beside the
   component it belongs to. Suffixes: `.style.uitkx`, `.hooks.uitkx`, plain
@@ -171,11 +197,17 @@ re-created, so file identity is never churned.
 
 ## 5. Undo / redo
 
-An action ledger records every builder action as one entry holding every
-`(file, before, after)` triple the gesture produced — so a change touching two
-files undoes as a single step, from whichever file is in focus. A History panel
-lists all actions with the live cursor; clicking any row walks the buffers to
-that point. Redo is truncated by new work.
+An action ledger records every builder action as one entry holding every change
+the gesture produced — text edits, and the structural ones: a creation, a
+deletion, a module move, a folder move. A change touching two files undoes as a
+single step, from whichever file is in focus, and each change remembers which
+MODULE it belongs to rather than only which path, so a replay still finds it
+after a rename has moved that path.
+
+A History panel lists all actions with the live cursor; clicking any row replays
+whole entries to that point — the same path undo and redo use, so a jump across
+a rename or a delete moves the tree and not just the text. Redo is truncated by
+new work.
 
 ## 6. Source pane
 

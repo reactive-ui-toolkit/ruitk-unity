@@ -11,7 +11,7 @@ export VirtualNode CanvasView(
   Action onLayoutChanged = null,
   Action<int> onSelect = null,
   Action<float, float, float> onCameraChanged = null,
-  Action<int> onCardContext = null,
+  Action<string> onCardContext = null,
   Action<string, int> onRowClick = null,
   Action<string, int, int> onRowSelect = null,
   Action<string, int, int, string> onLineSelect = null,
@@ -21,6 +21,7 @@ export VirtualNode CanvasView(
   Action<string> onAddHook = null,
   Action<string> onAddCode = null,
   Action<string> onCopyImportAlias = null,
+  Action<string, string> onImportContext = null,
   Action<string> onRowNavigate = null,
   Action<string, int, int, string, VisualElement> onEditAttrValue = null,
   Action<string, int, string, VisualElement> onEditDirective = null,
@@ -274,7 +275,11 @@ export VirtualNode CanvasView(
                 if (e.Button == 1) {
                   BuilderCanvasDrawing.RememberMenuPointer(e);
                   if (onCardContext != null) {
-                    onCardContext(index);
+                    // The MODULE, never its index. This lambda lives on a keyed
+                    // element that survives re-renders, so a captured index goes
+                    // stale the moment the node order changes - and then the menu
+                    // acted on a different card than the one clicked.
+                    onCardContext(node.FilePath);
                   }
                   e.StopPropagation();
                   return;
@@ -416,7 +421,19 @@ export VirtualNode CanvasView(
                                 key={$"imp-{x}"}
                                 tooltip={imp.Text + " - double-click copies the name"}
                                 onPointerDown={e => {
-                                  if (e.Button == 1 || imp.SourceLine <= 0) {
+                                  if (e.Button == 1) {
+                                    if (onImportContext != null && imp.SourceLine > 0) {
+                                      // Every menu opens AT the click, and it only
+                                      // does so if the gesture records where that
+                                      // was - this one did not, so the popup landed
+                                      // wherever the previous menu gesture had been.
+                                      BuilderCanvasDrawing.RememberMenuPointer(e);
+                                      onImportContext(node.FilePath, imp.AttrsText);
+                                      e.StopPropagation();
+                                    }
+                                    return;
+                                  }
+                                  if (imp.SourceLine <= 0) {
                                     return;
                                   }
                                   // the alias is the name every reference spells

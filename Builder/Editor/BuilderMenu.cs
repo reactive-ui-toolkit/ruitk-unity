@@ -59,11 +59,12 @@ namespace Ruitk.Builder
                     "Overwrite?", componentName + ".uitkx already exists.", "Overwrite", "Cancel"))
                 return;
 
-            System.IO.File.WriteAllText(target, result.UitkxText);
-            AssetDatabase.Refresh();
             foreach (string warning in result.Warnings)
                 UnityEngine.Debug.LogWarning("[RUITK Builder] UXML import: " + warning);
-            BuilderWindow.OpenFor(target);
+            // The conversion produces a MODULE, not a file. Handing it to the
+            // builder as a pending buffer keeps the one rule the builder has -
+            // nothing reaches disk until Save - which writing here broke.
+            BuilderWindow.OpenFor(target, result.UitkxText);
         }
 
         [MenuItem(ImportItem, validate = true)]

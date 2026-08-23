@@ -49,6 +49,9 @@ namespace Ruitk.Builder
 
         /// <summary>UB-123: double-clicking an import row copies its alias.</summary>
         public Action<string> OnCopyImportAlias;
+
+        /// <summary>Right-click on an import row: (importer path, specifier).</summary>
+        public Action<string, string> OnImportContext;
         /// <summary>UB-124: rename the module a card stands for - its export,
         /// its file, its folder when it owns one, and every importer.</summary>
         public Action<string> OnRenameCard;
@@ -58,121 +61,15 @@ namespace Ruitk.Builder
         /// still on disk — deletions the user has made but not yet saved.</summary>
         public Func<string, bool> IsFileHidden;
 
-        /// <summary>UB-111: modules that exist only as unsaved buffers, which the
-        /// disk-built module graph cannot know about.</summary>
+        /// <summary>Modules that exist only as unsaved buffers, which the language
+        /// server cannot know about because it reads disk.</summary>
         public Func<IEnumerable<string>> PendingNewFiles;
 
-        private void AppendPendingNewNodes(BuilderGraph graph, Func<string, string> readText)
-        {
-            if (graph == null || PendingNewFiles == null)
-                return;
-            foreach (string path in PendingNewFiles())
-            {
-                if (string.IsNullOrEmpty(path))
-                    continue;
-                string full = System.IO.Path.GetFullPath(path);
-                if (graph.IndexOf(full) >= 0)
-                    continue;
-                string title = System.IO.Path.GetFileName(full);
-                foreach (string suffix in s_moduleSuffixes)
-                {
-                    if (!title.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    title = title.Substring(0, title.Length - suffix.Length);
-                    break;
-                }
-                var node = new BuilderCanvasNode
-                {
-                    FilePath = full,
-                    Title = title,
-                    Kind = BuilderGraphService.KindFromFileName(full),
-                };
-                graph.Nodes.Add(node);
-                try
-                {
-                    BuilderGraphService.PopulateCardDetail(node, readText);
-                }
-                catch (Exception)
-                {
-                    // A half-typed new module still gets its card; the source
-                    // pane and diagnostics are where the error belongs.
-                }
-            }
-        }
+        /// <summary>True when the builder holds a module differently from the file
+        /// on disk, so the server's view of what it imports is stale and its own
+        /// text has to be parsed instead.</summary>
+        public Func<string, bool> IsFileOverridden;
 
-        private static readonly string[] s_moduleSuffixes =
-        {
-            ".style.uitkx", ".hooks.uitkx", ".uitkx",
-        };
-
-        /// <summary>UB-121: edges came ONLY from the language server's module
-        /// graph, which is built from files on disk — so an import pointing at a
-        /// module that is still an unsaved buffer produced no edge, and the card
-        /// showed an anchor DOT with no line leaving it. The dots are painted per
-        /// import ROW, which is why one appeared without the other. Any import
-        /// whose specifier resolves to a node on this canvas now gets an edge,
-        /// whatever the server knew about it.</summary>
-        private static void AppendMissingImportEdges(BuilderGraph graph)
-        {
-            if (graph == null)
-                return;
-            for (int i = 0; i < graph.Nodes.Count; i++)
-            {
-                var node = graph.Nodes[i];
-                string dir = System.IO.Path.GetDirectoryName(node.FilePath);
-                if (string.IsNullOrEmpty(dir))
-                    continue;
-                foreach (var import in node.Imports)
-                {
-                    string spec = import.AttrsText;
-                    if (string.IsNullOrEmpty(spec) || !spec.StartsWith(".", StringComparison.Ordinal))
-                        continue;
-                    int target = ResolveSpecifier(graph, dir, spec);
-                    if (target < 0 || target == i)
-                        continue;
-                    bool known = false;
-                    foreach (var edge in graph.Edges)
-                        if (edge.FromIndex == i && edge.ToIndex == target)
-                        {
-                            known = true;
-                            break;
-                        }
-                    if (known)
-                        continue;
-                    graph.Edges.Add(new BuilderCanvasEdge
-                    {
-                        FromIndex = i,
-                        ToIndex = target,
-                        Specifier = spec,
-                        TargetKind = graph.Nodes[target].Kind,
-                    });
-                }
-            }
-        }
-
-        /// <summary>A relative import specifier to a node index. The specifier
-        /// carries no extension, so each module suffix is tried in turn — the
-        /// same set the pending-node titles are stripped with.</summary>
-        private static int ResolveSpecifier(BuilderGraph graph, string fromDir, string specifier)
-        {
-            foreach (string suffix in s_moduleSuffixes)
-            {
-                string candidate;
-                try
-                {
-                    candidate = System.IO.Path.GetFullPath(
-                        System.IO.Path.Combine(fromDir, specifier + suffix));
-                }
-                catch (Exception)
-                {
-                    return -1;
-                }
-                int index = graph.IndexOf(candidate);
-                if (index >= 0)
-                    return index;
-            }
-            return -1;
-        }
         public Action<string, int, int, string, VisualElement> OnEditAttrValue;
         public Action<string, int, string, VisualElement> OnEditDirective;
         public Action<string, int, string, string, VisualElement> OnEditLine;
@@ -193,31 +90,39 @@ namespace Ruitk.Builder
             _container = container;
             ShowMessage("Loading tree…");
 
-            BuilderGraph graph;
+            // The two failures below are NOT the same and must not read the same.
+            // One catch reported everything as "LSP unavailable", so a bug in the
+            // graph build - an empty tree indexing a zero-length array - surfaced as
+            // a language-server problem and sent the search in the wrong direction
+            // entirely. A build failure now names itself and logs its stack.
+            BuilderLspClient client;
             try
             {
-                var client = await BuilderLspService.GetOrStartAsync();
-                graph = await BuilderGraphService.LoadTreeAsync(
-                    client, focusFile, readText, IsFileHidden,
-                    PendingNewFiles?.Invoke());
-                await CheckSchemaDrift(client);
+                client = await BuilderLspService.GetOrStartAsync();
             }
             catch (Exception ex)
             {
                 ShowMessage("LSP unavailable: " + ex.Message);
                 return;
             }
+
+            BuilderGraph graph;
+            try
+            {
+                graph = await BuilderGraphService.LoadTreeAsync(
+                    client, focusFile, readText, IsFileHidden,
+                    PendingNewFiles?.Invoke(), IsFileOverridden);
+                await CheckSchemaDrift(client);
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogException(ex);
+                ShowMessage("Could not build the tree: " + ex.Message);
+                return;
+            }
             if (_container == null || _container.panel == null)
                 return;
 
-            // UB-111: the module graph is built from files on DISK, so a module
-            // that exists only as an unsaved buffer has no node and would show
-            // no card at all — which is why creation used to write immediately.
-            // Each pending new module gets a synthesised node, parsed from its
-            // buffer through the same PopulateCardDetail every other card uses,
-            // so a never-saved component is a real card until Save makes it one.
-            AppendPendingNewNodes(graph, readText);
-            AppendMissingImportEdges(graph);
             _graph = graph;
             onGraphLoaded?.Invoke(graph);
             _config = BuilderCanvasConfig.LoadForMember(focusFile)
@@ -382,10 +287,13 @@ namespace Ruitk.Builder
             ZoomChanged?.Invoke(_zoom);
         }
 
-        /// <summary>POC commitNode(): a model edit rebuilds ONE card and redraws
-        /// the edges — it never reloads the tree. Re-parses the changed file
-        /// into the live graph node and re-renders in place, so zoom, camera,
-        /// card selection and row selection all survive the commit.</summary>
+        /// <summary>POC commitNode(): a model edit rebuilds ONE card and its edges
+        /// — it never reloads the tree. Re-parses the changed file into the live
+        /// graph node and re-renders in place, so zoom, camera, card selection and
+        /// row selection all survive the commit.
+        ///
+        /// It used to redraw the edges without rebuilding them, so an import added
+        /// since the last full load drew its anchor dot and no line.</summary>
         public void RefreshGraph(string filePath, Func<string, string> readText)
         {
             if (_graph == null || _container == null)
@@ -407,6 +315,9 @@ namespace Ruitk.Builder
                 // managed to populate and the canvas always redraws; diagnostics
                 // are where a broken buffer is reported, not a frozen card.
             }
+            // The card's imports may have changed, and an import is structure:
+            // rebuild what this node points at before the canvas redraws.
+            BuilderGraphService.RefreshEdgesFor(_graph, index);
             RenderCanvas();
         }
 
@@ -600,7 +511,7 @@ namespace Ruitk.Builder
                             if (lodChanged)
                                 ZoomChanged?.Invoke(z);
                         },
-                        OnCardContext = ShowCardMenu,
+                        OnCardContext = ShowCardMenuFor,
                         OnRowClick = (path, line) => OnRowClick?.Invoke(path, line),
                         OnRowSelect = (path, rowIdx, line) =>
                         {
@@ -625,6 +536,7 @@ namespace Ruitk.Builder
                         OnAddHook = path => OnAddHook?.Invoke(path),
                         OnAddCode = path => OnAddCode?.Invoke(path),
                         OnCopyImportAlias = text => OnCopyImportAlias?.Invoke(text),
+                        OnImportContext = (path, spec) => OnImportContext?.Invoke(path, spec),
                         OnEditAttrValue = (path, line, ai, seed, anchor) =>
                             OnEditAttrValue?.Invoke(path, line, ai, seed, anchor),
                         OnEditDirective = (path, line, seed, anchor) =>
@@ -778,22 +690,36 @@ namespace Ruitk.Builder
         /// <summary>POC openCardMenu: exactly ONE item under the node-id title —
         /// "Delete &lt;file&gt;" — guarded by a non-blocking toast when anything
         /// still references the file.</summary>
+        private void ShowCardMenuFor(string filePath)
+        {
+            int index = _graph?.IndexOf(System.IO.Path.GetFullPath(filePath ?? "")) ?? -1;
+            if (index < 0)
+                return;
+            ShowCardMenu(index);
+        }
+
         private void ShowCardMenu(int index)
         {
             if (_graph == null || index < 0 || index >= _graph.Nodes.Count)
                 return;
             var node = _graph.Nodes[index];
+            // The menu acts on the MODULE, not on the index it happened to have
+            // when the menu opened. A pick runs later - the graph can be rebuilt in
+            // between - and RequestDeleteCard silently returned false for an index
+            // that no longer addressed anything, so delete did nothing at all and
+            // said nothing about why.
+            string targetPath = node.FilePath;
             var items = new List<BuilderSearchMenu.Item>
             {
                 new BuilderSearchMenu.Item
                 {
                     Label = "Rename " + node.Title + "…",
-                    OnPick = () => OnRenameCard?.Invoke(node.FilePath),
+                    OnPick = () => OnRenameCard?.Invoke(targetPath),
                 },
                 new BuilderSearchMenu.Item
                 {
-                    Label = "Delete " + System.IO.Path.GetFileName(node.FilePath),
-                    OnPick = () => RequestDeleteCard(index),
+                    Label = "Delete " + System.IO.Path.GetFileName(targetPath),
+                    OnPick = () => OnDeleteFile?.Invoke(targetPath),
                 },
             };
             BuilderSearchMenu.ShowSimple(node.Title, items);
@@ -806,19 +732,17 @@ namespace Ruitk.Builder
         public bool RequestDeleteCard(int index)
         {
             if (_graph == null || index < 0 || index >= _graph.Nodes.Count)
-                return false;
-            var node = _graph.Nodes[index];
-            var referencedBy = new List<string>();
-            foreach (var edge in _graph.Edges)
-                if (edge.ToIndex == index && edge.FromIndex >= 0
-                    && !referencedBy.Contains(_graph.Nodes[edge.FromIndex].Title))
-                    referencedBy.Add(_graph.Nodes[edge.FromIndex].Title);
-            if (referencedBy.Count > 0)
             {
-                OnToast?.Invoke(
-                    "Can't delete: still referenced by " + string.Join(", ", referencedBy) + ".");
+                // The keyboard path can outlive the selection it was aiming at.
+                // Saying so beats returning false into silence.
+                OnToast?.Invoke("Nothing selected to delete.");
                 return false;
             }
+            var node = _graph.Nodes[index];
+            // Being referenced is no longer a refusal. It used to be, which left
+            // the user to unpick every import by hand first - and since an import
+            // row had no delete of its own, a child component could not be removed
+            // at all. The delete now takes its references with it.
             OnDeleteFile?.Invoke(node.FilePath);
             return true;
         }
@@ -831,6 +755,19 @@ namespace Ruitk.Builder
                 _container = null;
             }
             _graph = null;
+        }
+
+        /// <summary>Carries the saved layout across a rename, and writes it
+        /// immediately: the canvas remounts straight after a rename and reloads the
+        /// config from disk, so an in-memory re-keying alone would be thrown away.
+        /// This is UserSettings state, not project content, so it is outside the
+        /// save-only contract - the same reason dragging a card writes at once.</summary>
+        public void RepathLayout(string oldPath, string newPath, bool isFolder)
+        {
+            if (_config == null)
+                return;
+            _config.Repath(oldPath, newPath, isFolder);
+            _config.Save();
         }
 
         private void SaveLayout()

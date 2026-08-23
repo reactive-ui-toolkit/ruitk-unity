@@ -30,6 +30,15 @@ namespace Ruitk.Builder
         private static bool s_refreshProviderRegistered;
 
         private readonly BuilderRenderScheduler _scheduler = new BuilderRenderScheduler();
+
+        /// <summary>The type the LIVE fiber tree was built for. A swap assembly
+        /// gives a new Type object for the same file, and the tree must not
+        /// outlive the types it holds.</summary>
+        private Type _renderedType;
+
+        /// <summary>The swap assembly the live build came from. Held so a remount
+        /// with no hint resolves the SAME types instead of an older swap.</summary>
+        private Assembly _currentAssembly;
         private VisualElement _container;
         private VisualElement _previewHost;
         private VisualElement _knobsHost;
@@ -621,6 +630,19 @@ namespace Ruitk.Builder
 
         public void ShowFile(string uitkxPath, string bufferText, Assembly assemblyHint)
         {
+            // Every hot swap LOADS ANOTHER assembly, and they all carry the same
+            // [UitkxSource] path, so resolving with no hint can pick any of them -
+            // usually the oldest. A remount with no hint (selecting a row, or the
+            // canvas rebuilding) therefore resolved a DIFFERENT Type object than
+            // the live tree was built for, which now tears that tree down and
+            // clears the stage: the preview vanished on the first click. The pane
+            // remembers the assembly its current build came from and keeps
+            // resolving against it until a newer one arrives.
+            if (assemblyHint == null && !string.Equals(_filePath, uitkxPath, System.StringComparison.OrdinalIgnoreCase))
+                _currentAssembly = null;
+            assemblyHint ??= _currentAssembly;
+            if (assemblyHint != null)
+                _currentAssembly = assemblyHint;
             _filePath = uitkxPath;
             CollectStateNames(bufferText);
 
@@ -857,6 +879,25 @@ namespace Ruitk.Builder
         {
             if (_previewHost == null || _renderDelegate == null)
                 return;
+
+            // A recompile hands back a NEW type from a NEW swap assembly, and a
+            // different FILE hands back a different component entirely. The live
+            // fiber tree holds the old types, so re-rendering into it kept showing
+            // the previous build - an edit to a style module changed nothing on
+            // screen, and opening a fresh component left the previous one
+            // rendered. A tree built for one type is torn down when that type
+            // changes, and the stage is cleared with it, because Unmount tears
+            // down FIBERS and the host keeps whatever elements it was given.
+            if (_renderer != null && !ReferenceEquals(_renderedType, _componentType))
+            {
+                _scheduler.PumpNow();
+                _renderer.Unmount();
+                _scheduler.PumpNow();
+                _renderer = null;
+                _hostContext = null;
+                _previewHost.Clear();
+            }
+            _renderedType = _componentType;
             if (_renderer == null)
             {
                 _hostContext = RuitkBootstrap.CreateHostContext(
@@ -866,6 +907,18 @@ namespace Ruitk.Builder
             try
             {
                 _renderer.Render(V.Func(_renderDelegate, _knobProps));
+                // Drain the render HERE. The scheduler time-slices off
+                // EditorApplication.update, so a mount only became visible on some
+                // later frame - and if nothing ever ticks that scheduler, not at
+                // all, silently, because no work throws. UnmountPreview already
+                // pumps for the same reason on the way out.
+                _scheduler.PumpNow();
+                if (_previewHost.childCount == 0)
+                    UnityEngine.Debug.LogWarning(
+                        "[RUITK Builder] preview mounted "
+                        + (_componentType?.FullName ?? "?")
+                        + " from " + (_componentType?.Assembly?.GetName()?.Name ?? "?")
+                        + " but the render produced no elements.");
             }
             catch (Exception ex)
             {
@@ -892,6 +945,11 @@ namespace Ruitk.Builder
                 _renderer = null;
                 _hostContext = null;
             }
+            // Unmount tears down the fiber tree; the elements it produced belong
+            // to the host, and a stale one under a fresh render is what made the
+            // preview look frozen.
+            _previewHost?.Clear();
+            _renderedType = null;
             _renderDelegate = null;
             _componentType = null;
         }

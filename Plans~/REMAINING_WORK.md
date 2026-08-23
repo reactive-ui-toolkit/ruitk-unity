@@ -203,3 +203,4 @@ folder name when the module owns one, and EVERY importer's specifier and
 binding across the tree — with the save-only contract meaning all of it stays
 pending until Save. That is a real refactor feature, not a menu item, and it
 wants its own pass rather than being bolted onto a fix wave.
+

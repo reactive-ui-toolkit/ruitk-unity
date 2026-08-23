@@ -140,6 +140,10 @@ namespace Ruitk.Builder
                 float font = Mathf.Clamp(rowHeight * 0.55f, 11f, 26f);
                 _field.FontSize = font;
                 height = Mathf.Max(font * 1.65f + 8f, rowHeight);
+                // The box is at least as tall as the row it covers, which is often
+                // taller than one line of text; without this the glyphs sit at the
+                // top with the slack below them.
+                _field.CenterSingleLine(height);
             }
             // An island sits exactly where its display was; a single-line field
             // lifts 3px so its border does not clip the row's own baseline.

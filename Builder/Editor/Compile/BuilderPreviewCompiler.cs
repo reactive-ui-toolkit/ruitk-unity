@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using Ruitk.EditorSupport.HMR;
 
 namespace Ruitk.Builder
@@ -66,6 +67,45 @@ namespace Ruitk.Builder
         /// compile, and every outcome is reported in the summary instead of
         /// dying as a null return.
         /// </summary>
+        /// <summary>The buffer each module was last COMPILED from. Under the
+        /// save-only contract a module stays dirty until Save, so the dirty set only
+        /// grows as the user works - and every debounced keystroke was recompiling
+        /// all of it, whether or not that module had been touched. On Unity 6.5 each
+        /// of those is an external csc process, so the editor got measurably slower
+        /// with every module added to an unsaved tree.</summary>
+        private readonly Dictionary<string, string> _compiledFrom =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The assembly each module was last successfully BUILT into.
+        ///
+        /// The preview has to render the CURRENT build, and it cannot work out
+        /// which that is by scanning loaded assemblies: every hot swap loads
+        /// another one carrying the same [UitkxSource] path, so a scan finds an
+        /// arbitrary one - in practice the oldest still loaded. That is why leaving
+        /// a component and coming back showed an earlier render, and why it stuck:
+        /// the module needs no rebuild, so nothing came along to correct it.
+        ///
+        /// The compiler produced these assemblies, so it is the only thing that
+        /// knows which is current. It says so rather than letting the pane guess.</summary>
+        private readonly Dictionary<string, Assembly> _built =
+            new Dictionary<string, Assembly>(StringComparer.OrdinalIgnoreCase);
+
+        public Assembly BuiltAssemblyFor(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return null;
+            string full;
+            try
+            {
+                full = Path.GetFullPath(path);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+            return _built.TryGetValue(full, out var asm) ? asm : null;
+        }
+
         public BuilderCompileSummary CompileDirty(string focusFile)
         {
             if (_compiler == null || _workspace == null)
@@ -82,7 +122,15 @@ namespace Ruitk.Builder
 
             var summary = new BuilderCompileSummary();
             string focusFull = Path.GetFullPath(focusFile ?? "");
+
+            // The preview shows ONE component. Compiling every dirty module in the
+            // workspace meant the editor got slower with each module the user
+            // added - and under the save-only contract they are ALL dirty, for the
+            // whole session. Only the focused module and what it imports can affect
+            // what is on screen, so only those are built.
+            RestrictToFocusClosure(dirty, focusFull);
             var failedRoots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var recompiled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string path in OrderByImports(dirty, out var dependencies))
             {
                 string blockedBy = null;
@@ -105,7 +153,41 @@ namespace Ruitk.Builder
                         "skipped — depends on failed " + Path.GetFileName(blockedBy));
                     continue;
                 }
+                // Nothing to do for a module whose own text has not moved and none
+                // of whose imports were rebuilt this round: its swap assembly is
+                // still current. Walking in import order is what makes the second
+                // half of that test valid - every dependency has been decided
+                // before its dependents are.
+                bool textMoved = !_compiledFrom.TryGetValue(path, out string lastText)
+                    || !string.Equals(lastText, dirty[path].BufferText, StringComparison.Ordinal);
+                bool dependencyRebuilt = false;
+                if (!textMoved && dependencies.TryGetValue(path, out var upstream))
+                {
+                    foreach (string dep in upstream)
+                    {
+                        if (recompiled.Contains(dep))
+                        {
+                            dependencyRebuilt = true;
+                            break;
+                        }
+                    }
+                }
+                if (!textMoved && !dependencyRebuilt)
+                    continue;
+
                 var result = _compiler.Compile(path);
+                recompiled.Add(path);
+                if (result.Success)
+                {
+                    _compiledFrom[path] = dirty[path].BufferText;
+                    if (result.LoadedAssembly != null)
+                        _built[path] = result.LoadedAssembly;
+                }
+                else
+                {
+                    _compiledFrom.Remove(path);
+                    _built.Remove(path);
+                }
                 CompileFinished?.Invoke(path, result.Success, result.Error);
                 if (string.Equals(focusFull, path, StringComparison.OrdinalIgnoreCase))
                     summary.FocusResult = result;
@@ -118,17 +200,77 @@ namespace Ruitk.Builder
             return summary;
         }
 
+        /// <summary>Drops every dirty module the focused one cannot reach through
+        /// its imports. A module nobody in the preview refers to cannot change what
+        /// the preview shows, and building it is pure cost - paid on every debounced
+        /// keystroke, through an external csc process on Unity 6.5.</summary>
+        private void RestrictToFocusClosure(
+            Dictionary<string, BuilderDocumentSession> dirty, string focusFull)
+        {
+            if (dirty.Count <= 1 || !dirty.ContainsKey(focusFull))
+                return;
+
+            var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { focusFull };
+            var queue = new Queue<string>();
+            queue.Enqueue(focusFull);
+            while (queue.Count > 0)
+            {
+                string path = queue.Dequeue();
+                if (!dirty.TryGetValue(path, out var session))
+                    continue;
+                foreach (string dep in ResolveImports(path, session))
+                {
+                    if (dirty.ContainsKey(dep) && keep.Add(dep))
+                        queue.Enqueue(dep);
+                }
+            }
+
+            if (keep.Count == dirty.Count)
+                return;
+            var drop = new List<string>();
+            foreach (string path in dirty.Keys)
+                if (!keep.Contains(path))
+                    drop.Add(path);
+            foreach (string path in drop)
+                dirty.Remove(path);
+        }
+
         public void Dispose()
         {
             _compiler?.Dispose();
             _compiler = null;
             _workspace = null;
+            _compiledFrom.Clear();
+            _built.Clear();
         }
 
+        /// <summary>The unsaved-buffer overlay the HMR compiler reads every .uitkx
+        /// through. The path is CANONICALISED first, and that is the whole point.
+        ///
+        /// The compiler resolves an import target with
+        /// ImportResolver.MapSpecifierToPath, which builds its answer by joining
+        /// strings with FORWARD slashes; every session in the workspace is keyed by
+        /// a Path.GetFullPath path, which on Windows uses backslashes. The lookup
+        /// therefore missed for every import target, UitkxSourceExists fell through
+        /// to File.Exists, and that is false for a module the builder has never
+        /// saved. The import was silently dropped, no alias was emitted for it, and
+        /// the component failed to compile with CS0103 on the alias name - so a
+        /// component and a style module both created in the builder could not
+        /// preview together until they had been saved.</summary>
         private string ReadBuffer(string path)
         {
-            var session = _workspace?.TryGet(path);
-            return session?.BufferText;
+            if (string.IsNullOrEmpty(path))
+                return null;
+            string full;
+            try
+            {
+                full = Path.GetFullPath(path);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+            return _workspace?.TryGet(full)?.BufferText;
         }
 
         /// <summary>Topological order over the dirty set: imported peers first.
@@ -175,16 +317,17 @@ namespace Ruitk.Builder
             try
             {
                 var parsed = BuilderLanguage.Parse(session.BufferText, path);
-                string dir = Path.GetDirectoryName(path) ?? "";
                 foreach (var import in parsed.Directives.Imports)
                 {
                     string spec = import.Specifier;
                     if (string.IsNullOrEmpty(spec) || spec.StartsWith("@", StringComparison.Ordinal))
                         continue;
-                    if (!spec.StartsWith(".", StringComparison.Ordinal))
-                        continue;
-                    string candidate = Path.GetFullPath(Path.Combine(dir, spec + ".uitkx"));
-                    resolved.Add(candidate);
+                    // One resolver for the whole builder: compile order and the
+                    // edges the canvas draws must agree about what an import
+                    // points at, or a module compiles before what it depends on.
+                    string candidate = BuilderGraphService.MapSpecifier(path, spec);
+                    if (candidate != null)
+                        resolved.Add(candidate);
                 }
             }
             catch

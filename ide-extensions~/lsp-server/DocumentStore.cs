@@ -37,6 +37,12 @@ public sealed class DocumentStore
     /// </summary>
     public bool TryGetByPath(string localPath, out string text)
     {
+        // Both sides are canonicalised. A caller that built its path by joining
+        // strings hands over forward slashes, while Uri.LocalPath gives
+        // backslashes on Windows, so the raw comparison never matched for them -
+        // which silently made every open document invisible to anything that
+        // resolves a path itself rather than holding a DocumentUri.
+        string wanted = Canon(localPath);
         lock (_lock)
         {
             foreach (var kvp in _docs)
@@ -45,7 +51,7 @@ public sealed class DocumentStore
                 {
                     var uri = new System.Uri(kvp.Key);
                     if (uri.IsFile && string.Equals(
-                        uri.LocalPath, localPath, StringComparison.OrdinalIgnoreCase))
+                        Canon(uri.LocalPath), wanted, StringComparison.OrdinalIgnoreCase))
                     {
                         text = kvp.Value;
                         return true;
@@ -56,6 +62,20 @@ public sealed class DocumentStore
         }
         text = null!;
         return false;
+    }
+
+    private static string Canon(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return string.Empty;
+        try
+        {
+            return System.IO.Path.GetFullPath(path);
+        }
+        catch
+        {
+            return path;
+        }
     }
 
     /// <summary>Returns a snapshot of all currently open documents as (uriString, text) pairs.</summary>

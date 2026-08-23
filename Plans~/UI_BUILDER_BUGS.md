@@ -1917,3 +1917,880 @@ nothing is skipped, so a half-typed import cannot break the tree.
 
 This also fixes the same collapse for a NEWLY CREATED component that imports
 existing modules — it was always latent there; rename just made it obvious.
+
+### UB-134 — a rename destroyed the module it renamed `UNVERIFIED` `HIGH`
+
+Found while doing the project-model refactor (`Plans~/BUILDER_MODEL_REFACTOR.md`,
+Stage 1) rather than from a report, but it is a real defect with three separate
+symptoms.
+
+ROOT CAUSE: `BuilderWorkspace.Rename` expressed a move as a fresh session at the
+new path plus a deletion mark on the old one. The session object IS the module -
+it carries the undo history and the recorded line-ending flavour - so renaming a
+module silently threw both away: the user's undo stack for that file was gone,
+and a file that had been CRLF on disk would be rewritten LF at Save. The ledger
+recorded the same rename as an unrelated creation and deletion, which is why
+undoing it could put the module back without its history.
+
+FIX: identity now lives on the session (`Id`), and where the module lives on
+disk is recorded separately (`OriginalDiskPath`). A rename re-files the SAME
+session under a new path; the two fields disagreeing is precisely what a pending
+move is, and `Save` projects it as one operation - write the new file, retire the
+old - instead of inferring it from a create/delete pair. `AbortAll` points the
+path back. The ledger gained one `IsMove` change kind, so undo and redo walk the
+move rather than re-creating the module.
+
+Two further defects fell out of the same work:
+
+- `BuilderDocumentSession.Open` was also used for paths with NO file behind them
+  (the workspace opens a missing file with an empty buffer). Such a session would
+  have claimed a disk origin it did not have, so `Save` would write the file
+  without setting `createdAssets`, skip `AssetDatabase.Refresh`, and leave a
+  `.uitkx` on disk that Unity never imports or compiles - the UB-111 failure
+  again, from the other end. `Open` now takes the existence the caller already
+  computed.
+- The canvas hid a renamed module's old path only because the rename marked it
+  for deletion. With the move expressed properly there is no deletion mark, so
+  the disk-derived graph would have shown a ghost card at the old name and none
+  at the new one. `IsHiddenOnDisk` now owns both facts - marked for deletion, or
+  vacated by a move - and `PendingNewFiles` yields a moved module's new path,
+  which has no file behind it yet.
+
+Verified by compiling the builder editor assembly against the 6000.5.6f1
+reference set: 0 errors.
+
+### UB-135 — renaming a folder-owning component orphaned its children `UNVERIFIED` `CRITICAL`
+
+The bug the owner hit from two sides and the reason for the project-model
+refactor. Renaming a component that owns its folder moved ONLY its own file:
+`Showcase/Showcase.uitkx` became `Bowcase/Bowcase.uitkx` while
+`Showcase/components/Sub/Sub.uitkx` stayed exactly where it was. The parent's
+own import then read `./components/Sub/Sub` relative to `Bowcase/`, where
+nothing existed, so every sub-component silently detached.
+
+ROOT CAUSE: the rename computed a new folder path but nothing ever moved the
+folder. Only the module's file was expressed as a pending change, so the
+children were never part of the operation at all.
+
+FIX, at the layer the fault lives: a folder-owning rename is now a FOLDER move.
+Every module inside the folder is brought into the model first, the folder is
+recorded as a pending move like every other edit, and Save projects it as ONE
+`AssetDatabase.MoveAsset`. That matters beyond tidiness: moving the children
+one file at a time would write each anew and trash the original, churning every
+child GUID and stranding everything in the folder the builder does not manage -
+companion `.cs`, `.uss`, nested folders. Because the folder keeps its depth,
+every relative import inside the subtree, and every one pointing out of it,
+stays correct without being touched; imports from OUTSIDE into the subtree are
+rewritten by the existing reference pass.
+
+Two further defects fixed in the same pass:
+
+- Importers that were not already OPEN were skipped. Step 2 of the rename used
+  `TryGet` rather than `EditSession`, so any importer the user had not visited
+  kept pointing at the module's old name. A rename has to reach every importer,
+  not just the visited ones.
+- A folder that is not on disk is no longer queued for a move. Renaming a
+  module the user had only just created would otherwise have queued a move of a
+  directory that was never written, and the whole Save would have failed on it.
+
+### UB-136 — the canvas learned about buffers three separate times `UNVERIFIED` `HIGH`
+
+Not a new report; the shape behind UB-111, UB-121 and UB-133. The module graph
+came from the language server, which reads DISK, so anything the builder held
+as a buffer had no edges - and each symptom got its own patch:
+`AppendPendingNewNodes`, `AppendMissingImportEdges`, `LinkPendingImports`.
+Three patches teaching three consumers the same fact is the signature of a
+missing owner.
+
+FIX: the graph's structure now comes from the modules themselves. The server's
+answer is treated as what it actually is - a CACHE of the disk state, derived
+from the same text - and is used for any module the builder has not touched,
+which keeps the cost where it was; for a module the builder holds differently,
+created, renamed or merely edited, the server is stale by definition and that
+module's own text is parsed instead. All three patches are deleted.
+
+The three duplicate specifier resolvers went with them. The builder had one in
+the canvas host, one in the graph service and one in the preview compiler, each
+probing a different set of filename suffixes - which is why the same import
+could resolve in one place and not another - while the language's own
+`ImportResolver` sat unused. There is now one resolver, shared by the edges the
+canvas draws and the order the preview compiles in, and it needed no suffix
+probing at all: a style module is imported as `./Thing.style`, and the resolver
+appends `.uitkx` to exactly that.
+
+Also fixed here, found while tracing the same seam: `SyncLspBuffer` gated its
+`didOpen` on `open && _lspOpened.Add(path)`. `&&` short-circuits, so a file
+first synced by an EDIT rather than by a mount never entered the set and then
+received `didChange` forever for a document the server had never been told
+about. A rename makes that routine, since the module arrives at a path nothing
+has opened. A document is now opened before it is changed.
+
+### UB-139 — UXML import wrote to disk immediately `UNVERIFIED` `MED`
+
+Both import entry points - the toolbar's "Import .uxml..." and the asset-menu
+"Convert UXML to UITKX" - called `File.WriteAllText` and `AssetDatabase.Refresh`
+the moment the conversion finished, which is precisely the save-only contract
+(VE-D2) the rest of the builder obeys and the one the owner asked for in these
+words: nothing should be created, updated or deleted on disk until Save.
+
+A conversion produces a MODULE, not a file. Both paths now hand the builder a
+pending buffer - the asset-menu one through a new `OpenFor(path, pendingText)`
+overload - so Save writes it, Abort drops it, and Ctrl+Z takes it back like any
+other creation.
+
+### UB-140 — the canvas layout was thrown away by a rename `UNVERIFIED` `MED`
+
+Arrange the cards, rename a component, and the layout resets to the default
+fan-out.
+
+ROOT CAUSE: `BuilderCanvasConfig` names its file after a SHA-1 of the tree
+ROOT's full path and keys each card position by a path relative to that root.
+A rename changes member paths and, for the root or a folder-owning component,
+the file name too - so `LoadForRoot` missed and the by-member scan missed as
+well, because every member path had just changed. The layout was never
+corrupted, only unreachable, and the next save wrote a fresh config under the
+new key while the old one was left behind forever.
+
+FIX: the rename tells the layout where it went. `Repath(old, new, isFolder)`
+resolves every stored key back to an absolute path, moves it, and re-keys it
+against the new root; the config the tree has outgrown is deleted on the next
+save rather than orphaned. It is called for the folder move and the file move,
+and for both directions of undo and redo, so the layout follows a rename out
+and back.
+
+Worth recording why the obvious approach was NOT taken: keying positions by
+`BuilderDocumentSession.Id` looks right and is wrong. That id is stable within a
+session and across domain reloads, but a fresh window generates new ones, so
+identity-keyed layout would have survived renames and lost everything BETWEEN
+sessions - trading a visible annoyance for a worse invisible one.
+
+### UB-141 — a history jump moved the text but not the tree `UNVERIFIED` `MED`
+
+Clicking an entry in the History panel replayed only buffer writes. Structural
+changes - a creation, a deletion, a module move, a folder move - carry paths
+rather than text in their Before/After, so they were skipped; feeding them to
+the write path handed null to `ApplyEdit`, which rejects it. A jump across a
+rename therefore moved the text while leaving the module where it was.
+
+FIX at the layer the fault lives: the per-entry replay is now one method,
+`ApplyEntry(entry, undo, writes)`, and undo, redo and the history jump all go
+through it. A jump is simply N undos or N redos, so every change kind is
+honoured; buffer writes are still collected across the whole walk and applied
+once, so the model settles before anything redraws. `WalkTo`, which existed only
+to return the write list, is gone.
+
+### UB-142 — renaming a style companion would have moved its component's folder `UNVERIFIED` `CRITICAL`
+
+Caught in review of UB-135 rather than in use, and it only became destructive
+BECAUSE of UB-135: a folder-owning rename now really moves the folder.
+
+A card's title has `.style`/`.hooks` stripped, so `Showcase.style.uitkx` sitting
+in `Showcase/` reports its name as "Showcase" - exactly like the component that
+owns the folder. The folder-ownership test compared that title to the folder
+name and nothing else, so renaming the STYLE companion satisfied it. Before
+UB-135 that merely placed the renamed companion in a new folder; after it, the
+rename would have taken the entire component folder, every sub-component
+included, along with a companion.
+
+FIX: only a plain `.uitkx` module can own a folder. A companion never does.
+
+### UB-143 — an unsaved module could never be an import target `UNVERIFIED` `CRITICAL`
+
+Owner report 2026-08-21: a component and a style module, both created in the
+builder and neither saved, with `import * as SomeComponentStyle from
+"./someComponentStyle.style"`. No preview, and the console carried
+`hmr_SomeCompnent_1.cs(98,105): error CS0103: The name 'SomeComponentStyle'
+does not exist in the current context`.
+
+ROOT CAUSE, confirmed by running the resolver directly rather than by reading
+it: `ImportResolver.MapSpecifierToPath` builds its answer by joining strings
+with FORWARD slashes, so it returns a path whose separators are all `/` where
+every session in the workspace is keyed by a `Path.GetFullPath` path, which on
+Windows uses backslashes. The HMR compiler passes that raw forward-slash path
+straight into
+`UitkxSourceExists`, which consults the builder's `SourceOverlay` - and the
+overlay's dictionary lookup missed, every time, for every import target.
+`UitkxSourceExists` then fell through to `File.Exists`, which is false for a
+module that has never been saved. The import was dropped in silence, no alias
+was emitted, and the component failed to compile on the alias name.
+
+Only UNSAVED targets were affected: for a saved module the `File.Exists`
+fallback answers true, forward slashes and all, which is why this never showed
+up before the builder could hold a whole tree in memory.
+
+FIX: the overlay canonicalises its argument before looking up. That is the right
+layer - the overlay is the builder's adapter between "any path the compiler
+happens to hold" and "my canonically-keyed sessions", and owning that mismatch
+is its job. `File.Exists`, the retry reader and namespace derivation all already
+tolerate forward slashes, and have been receiving them for every saved import
+target all along, so nothing else needed changing.
+
+### UB-144 — a new import drew an anchor dot and no line `UNVERIFIED` `HIGH`
+
+Same report: the import row appeared on the card with its anchor dot, and no
+edge was ever drawn to the style card.
+
+ROOT CAUSE: `BuilderCanvasHost.RefreshGraph` - the commit path every canvas edit
+funnels through - re-parsed the changed file into its graph node and then called
+`RenderCanvas`. It rebuilt the card's CONTENT and never touched `graph.Edges`.
+The drawing code paints an anchor dot per import ROW, independent of any edge,
+so a freshly added import got its dot immediately while the edge list still knew
+nothing about it. The edge only appeared if something happened to remount the
+whole canvas. Its own doc comment claimed it "rebuilds ONE card and redraws the
+edges", and the gap between redrawing edges and rebuilding them is the bug.
+
+This is why the earlier UB-121 fix did not hold: `AppendMissingImportEdges` ran
+at mount, so it too only helped after a remount.
+
+FIX: imports are STRUCTURE, not card decoration, so re-parsing a module rebuilds
+what it points at. `BuilderGraphService.RefreshEdgesFor(graph, nodeIndex)`
+rebuilds that one node's import edges against the nodes already on the canvas,
+through the same single resolver a full load uses - no language-server round
+trip, so it can run on every commit.
+
+Also added, because the failure was invisible: an import that resolves to
+nothing now logs one warning naming the file, the specifier and the path it
+looked for. A dot with no line said nothing about why, and that silence is what
+made this take a screenshot to find.
+
+### UB-145 — a name was refused because another KIND used it `UNVERIFIED` `HIGH`
+
+Owner report 2026-08-21: creating a style module called `someComponent` was
+refused with "someComponent already exists" because a COMPONENT called
+`SomeComponent` was on the canvas. They produce `someComponent.style.uitkx` and
+`SomeComponent.uitkx` - two different files, and exactly the pairing the folder
+convention is built around.
+
+ROOT CAUSE: `ValidateNewName` compared the candidate against every card's
+DISPLAY TITLE, case-insensitively. A title has its `.style`/`.hooks` stripped,
+so a style module and its component report the same title by design, and the
+casing convention (PascalCase components, camelCase modules) was erased by the
+case-insensitive compare. The create flow's own commit step already had the
+right test - does the FILE this would produce already exist - so the live
+validation was both wrong and a duplicate of a correct check further down.
+
+FIX: a name collides only when the file it would produce collides. Both prompts
+now pass the mapping from name to path, so the validation and the commit ask the
+same question. `RenameTargetPath` is that mapping for a rename, shared with
+`RenameModule` so the prompt and the rename can never disagree about what a name
+would produce.
+
+### UB-146 — dropping a style module on an element did not style it `UNVERIFIED` `MED`
+
+Owner report 2026-08-21: a style module with `Height = Px(200)` and a dark
+background, imported into a component, and the preview showed nothing but an
+empty stage. The markup was `<VisualElement>` with no attributes: the import had
+been added and nothing used it.
+
+ROOT CAUSE: the drop handler ignored `rowIdx` for style modules entirely. Every
+style-module drop added the IMPORT and stopped, whether it landed on a card or
+on a specific element - and an import styles nothing. The card gained a line,
+the preview looked identical, and the actual styling had to be typed by hand.
+
+FIX: a style module dropped ON AN ELEMENT is applied to it - the style attribute
+is set and the import added if the file lacks it, as one undoable action. A
+module with several exports asks which. Dropped on the card rather than a row it
+still adds the import alone, which remains the right answer there.
+
+The write order is load-bearing: the attribute is written first, against the
+row's current source line, because inserting the import at the top shifts every
+line below it by one.
+
+### UB-147 — the style alias collided with the component it was imported into `UNVERIFIED` `CRITICAL`
+
+Owner report 2026-08-21, immediately after UB-145 made the name pair legal:
+`CS0117: 'SomeComponent' does not contain a definition for 'container'`.
+
+ROOT CAUSE, and it is UB-145's direct consequence: a star import's alias was the
+module name PascalCased. A style module called `someComponent` therefore bound
+the alias `SomeComponent` - the importing component's OWN name - so
+`SomeComponent.container` resolved to the component type, which has no such
+member. Allowing the pair was right; deriving the alias by capitalising it was
+not, because the two conventions (PascalCase components, camelCase modules)
+collapse onto the same identifier by construction.
+
+FIX: `ImportAliasFor` chooses a name that cannot collide with something the file
+already means - the importing component's own name and every binding its
+existing imports introduce - falling back to `NameStyle`, then a counter. A
+module that is ALREADY imported keeps whatever alias it was given, so styling a
+second element from the same module references the name the file actually binds
+rather than inventing a fresh one.
+
+### UB-148 — every keystroke recompiled every unsaved module `UNVERIFIED` `HIGH`
+
+Owner report 2026-08-21: "it all feels much much slower".
+
+ROOT CAUSE, and it is an interaction with the save-only contract rather than a
+plain bug: `CompileDirty` compiled EVERY dirty session on every debounced edit.
+Nothing is saved until the user says so, so the dirty set only grows as they
+work - and on Unity 6.5 in-process Roslyn is unavailable (HMR-ROSLYN-65), so
+each of those compiles spawns an external csc process. The editor therefore got
+measurably slower with every module added to an unsaved tree, which is exactly
+the state the builder is designed to keep you in.
+
+FIX: a module is rebuilt only when its own text has moved since it last
+compiled, or when something it imports was rebuilt this round. Walking in import
+order is what makes the second test valid - every dependency is decided before
+its dependents. A successful compile records the text it was built from; a
+failure forgets it, so a broken module keeps retrying.
+
+### UB-149 — a module the user had just created reported itself broken `UNVERIFIED` `LOW`
+
+`UITKX2105: 'someComponent.style.uitkx' does not contain a valid top-level
+declaration`, the moment a style module was created.
+
+ROOT CAUSE: a style or util module is created EMPTY by design (UB-112 - only
+what the user adds is exported), and an empty file genuinely has no valid
+top-level declaration. The builder was manufacturing an invalid file every time
+and then reporting it back to the user about a file they had not started
+writing.
+
+FIX: a blank buffer reports nothing. It is not broken, it is unstarted.
+
+### UB-150 — the using alias for an unsaved import target was never emitted `UNVERIFIED` `CRITICAL`
+
+Owner report 2026-08-21, after UB-147 fixed the alias NAME:
+`CS0103: The name 'SomeComponentStyle' does not exist in the current context`,
+with the import and the style usage both correct on screen.
+
+ROOT CAUSE, and it is NOT in the builder: `ImportScopeFacts` - the language-lib
+code that works out which `using` lines a file's imports imply - resolves every
+import TARGET itself, and read those targets straight off the filesystem:
+`File.Exists(target)` then `File.ReadAllText(target)`, at four separate sites. A
+module that has never been written fails the existence test, so the import is
+skipped, no alias is emitted for it, and every reference to that alias fails to
+compile.
+
+This is the same hole as UB-143 one layer further in. UB-143 fixed the overlay
+lookup inside `UitkxHmrCompiler`; this is a SECOND, independent disk read, in
+the shared language library, which no overlay reached.
+
+FIX at the layer the fault lives: all four sites now go through one
+`ReadTargetDirectives` accessor with an injectable `SourceOverlay`. A null
+overlay - which is what the source generator and the language server pass -
+falls through to disk and behaves exactly as before, so their behaviour is
+unchanged by construction. `UitkxHmrCompiler` publishes its own unsaved-buffer
+overlay into that hook before every compile, so ordering between setting the
+overlay and initialising the reflection handles cannot matter.
+
+SG suite 1879/1879, LSP suite 180/180.
+
+DEPLOY NOTE: the fix ships in `Analyzers/Ruitk.Language.dll`, which HMR loads
+with `Assembly.LoadFrom`. That locks the file for the life of the Unity process,
+so this one DLL cannot be replaced while the editor is running - unlike every
+other payload file. Unity has to be closed for it to land.
+
+### UB-151 — the inline editor's text sat at the top of its box `UNVERIFIED` `LOW`
+
+The single-line inline editor takes the HEIGHT of the canvas row it covers, and
+the compact chrome pins the text 2px from the top - so whenever the row was
+taller than one line of text, the glyphs sat at the top with all the slack
+underneath. `CenterSingleLine` splits the surplus evenly instead.
+
+### UB-152 — the CS0103 the owner kept seeing came from the LANGUAGE SERVER `UNVERIFIED` `CRITICAL`
+
+Owner report 2026-08-21, after UB-150 shipped and Unity was closed, reopened and
+all assets reimported: still `CS0103: The name 'SomeComponentStyle' does not
+exist in the current context`.
+
+WHAT WAS ACTUALLY TRUE at that moment, established from the artefacts rather
+than from reading code: HMR's temp directory held BOTH
+`hmr_SomeComponent_11.dll` and
+`hmr_Ruitk.Uitkx.__RuitkBuilderUnsaved___.SomeComponent.someComponent_style.__Exports_8.dll`,
+timestamped three minutes earlier, and a string scan of the component assembly
+showed it referencing `someComponent_style`, `__Exports` and `container`. A DLL
+is only written on success. The Editor log carried no `preview compile` failure
+and no `Render failed`. **The compile was already fixed by UB-150.**
+
+ROOT CAUSE of the message that remained: it was never the compiler's. The
+builder's source pane shows `OnLspDiagnosticsPublished`, and the language server
+is a SEPARATE PROCESS that runs Roslyn over a virtual document. It holds the
+focus file's buffer because the builder pushes it, but `ImportScopeFacts` -
+which it also uses - resolved the IMPORT TARGET off the filesystem, where an
+unsaved module does not exist. So the server reported a genuine-looking CS0103
+about code that compiles perfectly well.
+
+This is the fourth of the parallel layers CLAUDE.md names, and the one UB-150
+did not reach: SG and HMR were fixed by the overlay, the IDE virtual doc was
+not, because nothing set the overlay in the server process.
+
+FIX: the server sets `ImportScopeFacts.SourceOverlay` to its own `DocumentStore`
+at startup, so a module that is OPEN IN THE EDITOR is visible as an import
+target. Editor content wins; anything not open falls through to disk exactly as
+before, so a normal IDE session is unaffected.
+
+LESSON, and the reason this entry is long: I twice declared CS0103 fixed after
+fixing ONE resolver, without checking whether anything else resolved import
+targets. There were four, in three processes. The check that finally settled it
+was reading the compiler's own output artefacts instead of reasoning about the
+code - the DLLs on disk said the compile had been working for some time while I
+was still looking for a compile bug.
+
+### UB-153 — the preview only ever compiled in response to an EDIT `UNVERIFIED` `CRITICAL`
+
+This is the "no render", and it is why restarting Unity never helped: restarting
+is the one thing guaranteed to reproduce it.
+
+`MountPreview` calls `ShowFile(_focusFile, buffer, assemblyHint: null)` and
+triggers no compile. `ResolveComponentType` then looks for a type carrying a
+matching `[UitkxSource]` among the assemblies ALREADY LOADED. A compile only
+ever ran from `NotifyBufferChanged`, which fires on an edit.
+
+A builder tree that has not been edited in the CURRENT process therefore has no
+compiled type to resolve, and the stage renders empty - no error, because
+nothing failed. And that is every unsaved tree after a domain reload or an
+editor restart: the buffers survive with the window's serialized state while the
+compiled assemblies do not. The owner restarted Unity and reimported repeatedly,
+each time landing back in exactly the state that cannot render.
+
+Confirmed from artefacts before changing anything: `%TEMP%/UitkxHmr` did not
+exist at all in the fresh session, and the Editor log contained no builder
+output whatsoever - no compile had been attempted since Unity started, despite a
+tree being open with two dirty buffers.
+
+FIX: mounting the preview asks for the compile. It is the same debounced request
+an edit makes, and UB-148 means it skips every module whose text has not moved,
+so remounting is cheap.
+
+WHY IT HID FOR SO LONG: during active editing the very next keystroke produced a
+compile, so the preview worked. It only failed on a freshly opened session -
+which is the state a frustrated user reaches for first.
+
+### UB-154 — the preview render was never pumped `UNVERIFIED` `CRITICAL`
+
+The stage stayed empty while the compile succeeded, the type resolved and
+nothing threw. The reconciler time-slices its work onto a scheduler driven by
+EditorApplication.update, and `Mount` enqueued the render and returned.
+`UnmountPreview` already pumped that scheduler on the way OUT; nothing pumped it
+on the way IN, so a mount became visible only if something else happened to tick
+it - and when nothing did, the failure was completely silent, because no work
+had run to throw. `Mount` now drains the render, and a mount that produces no
+elements says so in the console naming the type and its assembly.
+
+### UB-155 — the fiber tree outlived the types it was built for `UNVERIFIED` `CRITICAL`
+
+Once the render was pumped, a second failure surfaced underneath it, and the
+owner's repro is the clearest possible statement of it: they aborted, started a
+fresh tree, added a new component and a new style module, changed NOTHING - and
+the preview showed the PREVIOUS component's render, label and all. Editing a
+style module's colour or height also changed nothing on screen.
+
+ROOT CAUSE: `Mount` created its `VNodeHostRenderer` once and reused it forever.
+A recompile hands back a new Type from a new swap assembly, and opening another
+file hands back a different component entirely, but the live fiber tree kept
+holding the ORIGINAL types - so re-rendering into it re-rendered the old build.
+On top of that, `UnmountPreview` tore down the FIBERS and left the elements they
+had produced in the host, so whatever was on screen stayed on screen underneath
+the next render.
+
+FIX: the renderer is torn down whenever the component TYPE object changes -
+which is every hot swap and every file switch - and the host is cleared with it,
+in both the teardown path and the type-change path. Knob values still survive,
+because they are carried across separately by `CarryOver`.
+
+### UB-156 — open documents were invisible to path lookups in the LSP `UNVERIFIED` `HIGH`
+
+The third appearance of one bug. `DocumentStore.TryGetByPath` compared
+`Uri.LocalPath` - backslashes on Windows - against the caller's path with an
+ordinal comparison. Anything that resolved a path by JOINING STRINGS, which is
+what `ImportResolver.MapSpecifierToPath` does, therefore never matched a single
+open document, so the overlay added in UB-152 could never fire and the server
+kept publishing CS0103 for an unsaved import target.
+
+Both sides are canonicalised now. Same root as UB-143 (the HMR overlay) and the
+same shape as UB-119 (the unsaved-root prefix test): a path built by
+concatenation is compared against one produced by the platform, and on Windows
+those never agree.
+
+### UB-157 — the preview vanished on the first click `UNVERIFIED` `HIGH`
+
+Owner report 2026-08-22: a new component with a label renders, and disappears
+the moment anything in it is clicked.
+
+ROOT CAUSE, and it is UB-155's fix meeting an older weakness: every hot swap
+LOADS ANOTHER assembly, and they all carry the same `[UitkxSource]` path, so
+`ResolveComponentType` with no assembly hint can return a type from ANY of them
+- in practice the oldest still loaded. A remount with no hint, which is what a
+selection or a canvas rebuild produces, therefore resolved a DIFFERENT Type
+object than the live tree had been built for. UB-155 now treats a changed type
+as a hot swap and tears the tree down, clearing the stage - so the preview went
+blank. It could not recover either, because UB-148 correctly skips recompiling a
+module whose text has not moved, so no new assembly arrived to rebuild from.
+
+The three changes are each right on their own; together they exposed that the
+pane never knew which assembly it was currently showing.
+
+FIX: the pane remembers the assembly its live build came from and resolves
+against it whenever no newer hint is supplied. Switching to a different file
+forgets it, because a different component has nothing to do with that build.
+
+### UB-158 — every debounced edit built modules the preview cannot show `UNVERIFIED` `HIGH`
+
+Owner 2026-08-22: "this entire process is freaking slow. doing anything is
+freaking slow."
+
+ROOT CAUSE: `CompileDirty` built every DIRTY module in the workspace, and under
+the save-only contract every module is dirty for the whole session - so the cost
+of one keystroke grew with the size of the tree, and on Unity 6.5 each of those
+builds is an external csc process (in-process Roslyn is unavailable,
+HMR-ROSLYN-65). UB-148 already stopped rebuilding modules whose TEXT had not
+moved; this is the other half.
+
+FIX: only the focused module and what it imports, transitively, are built. A
+module the preview cannot reach cannot change what is on screen.
+
+LIKELY ALSO FIXES the owner's second report in the same message - a style module
+linked to a component had no visual effect until an unrelated edit to the
+component. A style module is created EMPTY, and as a dirty module it was
+compiled immediately, loading an assembly that defines its `__Exports` with no
+entries. Types are resolved by NAME across the swap assemblies, so the component
+could keep binding to that first, empty one. With this change an unimported
+module is never built, so the empty version never gets loaded, and the style is
+first compiled as a DEPENDENCY of the component that imports it. NOT VERIFIED -
+recorded as the mechanism that fits, not as a confirmed fix.
+
+OPEN, owner ask in the same message: the preview should refresh deterministically
+after every action rather than on a 300 ms debounce. The debounce exists because
+a compile is expensive; that is the thing to make cheap first, and
+HMR-ROSLYN-65 (external csc per compile) is the real ceiling.
+
+### UB-159 — nothing owned "which assembly is the current build" `UNVERIFIED` `CRITICAL`
+
+This is the root cause behind a run of symptoms I chased separately and patched
+one at a time. Recording it as one entry, because it is one bug.
+
+Every hot swap LOADS ANOTHER assembly, and each carries the same
+`[UitkxSource]` path for the module it was built from. `ResolveComponentType`
+resolved a component by SCANNING loaded assemblies for that stamp - so once a
+session had produced more than one swap, the scan returned an arbitrary one, in
+practice the oldest still loaded. Nothing in the system held the answer to
+"which assembly is the current build of this module"; the pane guessed, every
+time, from data that could not distinguish them.
+
+Symptoms this produced, all of which I previously attributed to other causes:
+
+- Leaving a component and coming back rendered an EARLIER build (owner,
+  2026-08-22). `MountPreview` passed no assembly hint, so the scan chose.
+- It STUCK that way, because UB-148 correctly skips rebuilding a module whose
+  text has not moved - so no fresh assembly arrived to displace the stale one.
+  Before UB-148 the constant rebuilding hid this.
+- A style module linked to a component had no visual effect until an unrelated
+  edit: the component's own build was current, but the pane was rendering an
+  older component assembly compiled before the style had any entries.
+- The preview vanishing on a click (UB-157), which I fixed by having the PANE
+  remember an assembly - a patch at the wrong layer, treating the symptom.
+
+FIX at the layer that has the answer: `BuilderPreviewCompiler` produced these
+assemblies, so it records which one each module was last built into and exposes
+`BuiltAssemblyFor(path)`. The window hands the pane an explicit assembly on
+every path - after a compile, after a SKIPPED compile, and on mount - so the
+pane never scans and never guesses. A failed build forgets the entry, so a
+broken module does not keep serving its last good one.
+
+LESSON: I fixed four symptoms of this across four rounds without asking who was
+supposed to own the fact. The question that would have found it in one step is
+"which component knows this, and is it being asked?" - not "what could make this
+particular render wrong".
+
+### UB-160 — typing ran a full analyzer pass and rebuilt the element set per keystroke `UNVERIFIED` `MED`
+
+Owner 2026-08-22: typing a component or attribute name produces spikes.
+
+Two costs sat directly on the keystroke path, both measured against what the
+user can actually perceive rather than guessed at:
+
+1. `CodeField.Recolor` ran `BuilderLanguage.Diagnose` - the whole diagnostics
+   analyzer - on every character. Colouring genuinely has to be synchronous,
+   because the user is looking at it; nothing about DIAGNOSTICS has to be true
+   this keystroke. They now run 250 ms after typing settles, sharing nothing
+   with the colouring pass but one extra parse per settle instead of one full
+   analyze per character.
+
+2. `KnownElementsOrNull` rebuilt its set - schema element names plus every
+   runtime-registered element plus the graph's exports - on EVERY call, and it
+   is passed to `SetContent` on every programmatic edit. Worse than the
+   allocation: `SetKnownElements` skips its re-colour when handed the SAME
+   INSTANCE, so a fresh set each time forced a SECOND full re-colour of the
+   source pane per edit. It is now built once per graph and invalidated where
+   the graph changes.
+
+NOT ADDRESSED, and the next thing to look at if spikes remain: `RecolorRows`
+rebuilds the rich text of every visible line on each keystroke. That is real
+work and it is on the synchronous path by necessity, but it could be limited to
+the lines that actually changed. Left alone deliberately - it is a correctness-
+sensitive path and the two cheap wins above should be measured first.
+
+### UB-161 — the preview compiled on keystrokes instead of on actions `UNVERIFIED` `MED`
+
+Owner ask 2026-08-22: compile when an ACTION happens, on the same rule the
+history uses - not while typing, where a name typed and abandoned costs a build
+of half-written code that can only fail.
+
+RESEARCH FIRST, because the rule is only as good as the trigger list. Every way
+a rendered result can change was enumerated from the mutation sites, not from
+memory: `ApplyEdit` (8 call sites), direct `BufferText` assignment, `Undo`/`Redo`,
+`AdoptDiskText`, `MarkClean`, session creation and removal, and the path changes
+a rename produces. That collapses to four triggers:
+
+1. an action commits - every canvas gesture, an applied or cancelled source
+   edit, undo, redo, a history jump, a rename, a format-on-save
+2. the preview mounts - opening, switching file, canvas remount, abort
+3. the source pane's edit finishes - focus leaves the field
+4. a buffer is adopted from disk - an external change
+
+TWO GAPS THE RESEARCH FOUND, both pre-existing:
+
+- Trigger 4 did not exist. An external file change refreshed the CARD and never
+  rebuilt, so the preview silently kept showing the pre-change build. Rare
+  enough that nobody hit it; wrong all the same.
+- `RefreshEditedBuffer` has no callers at all, not even a delegate reference.
+  Dead code that looked like a fifth trigger.
+
+AND THE FINDING THAT DECIDED THE DESIGN: `Record` with no open scope commits
+IMMEDIATELY, so the source pane was already creating one history entry PER
+CHARACTER - a hundred rows for typing a name, and a Ctrl+Z that walked back one
+letter at a time. Compiling "on history commit" would therefore have changed
+nothing. Typing now goes through `RecordTyping`, which merges consecutive
+keystrokes in the same file into one entry, at the tip of the history only and
+never inside a gesture scope.
+
+The CARD still re-parses per keystroke - that is a cheap local parse and it is
+what makes the canvas feel live. Only the COMPILE waits for a boundary.
+
+NOT FIXED, and it is the other half of what the owner feels: a single compile
+still spawns an external csc process on Unity 6.5 (HMR-ROSLYN-65), so the pause
+AFTER committing an edit is unchanged. Fewer compiles, not faster ones.
+
+### UB-162 — undoing the only module left a card that could not be deleted `UNVERIFIED` `HIGH`
+
+Owner report 2026-08-22: create a component in a fresh builder, Ctrl+Z, and the
+card stays - emptied rather than removed - and right-click delete does nothing to
+it. The title bar reads "1 file(s), 0 dirty", which is the tell: there was no
+session at all, so nothing was dirty and nothing could be deleted.
+
+TWO causes, both needed for the symptom:
+
+1. `RebindFocusIfMissing` walked the sessions looking for a new focus and, when
+   there were NONE left, simply returned - leaving `_focusFile` naming the module
+   that had just been discarded. `MountCanvas` mounts whatever `_focusFile`
+   names, so it mounted a module with no session behind it. An empty workspace
+   now clears the focus, which is what makes `MountCanvas` show the empty state.
+
+2. `LoadTreeAsync` added the focus file to its inventory UNCONDITIONALLY, after
+   the hidden-file filter had been applied to everything else. So a focused
+   module that was deleted - or whose path a move had vacated - still got a node,
+   and deleting it again changed nothing, because the card was never coming from
+   a session in the first place. The focus is now filtered like every other file,
+   and if it is hidden it is left out of the member set too.
+
+Also removed here: `RefreshEditedBuffer`, which had no callers at all, not even
+a delegate reference. It was found while enumerating the compile triggers for
+UB-161, where it looked like a fifth trigger.
+
+### UB-163 — an empty workspace threw on every focus lookup `UNVERIFIED` `HIGH`
+
+Introduced by UB-162 and reported immediately: after Ctrl+Z removed the only
+module the card finally went away, and the console filled with
+`ArgumentNullException: Value cannot be null. Parameter name: key` from
+`ApplyLedgerWrites`, `RecompileWhenQuiet` and `RequestServerTokensWhenQuiet`.
+
+ROOT CAUSE: UB-162 made `_focusFile` null when nothing is left to focus, which
+is correct - and exposed that NOTHING tolerated it. `Dictionary.TryGetValue`
+throws on a null key, so `BuilderWorkspace.TryGet(null)` threw rather than
+answering "nothing"; and nine separate `Path.GetFullPath(_focusFile)`
+comparisons threw for the same reason. Only one of the ten had guarded itself.
+
+FIX at both layers rather than at the ten call sites:
+
+- `TryGet` treats a null path as NOT FOUND. A lookup asked about nothing should
+  answer "nothing"; every caller already handles a null result.
+- A single `FocusFull` accessor returns the focused full path or empty, and all
+  ten comparisons go through it. An empty string simply never equals a real
+  path, so "there is no focus" reads as "this is not the focused file" - which
+  is what each of those comparisons actually wants.
+
+This also explains the second half of the report - right-click delete doing
+nothing. The delete DID mark the file, then threw on its way to remounting the
+canvas, so the card never went away. One exception, two symptoms.
+
+### UB-164 — "read-only" was blamed for a refusal that had nothing to do with permissions `UNVERIFIED` `MED`
+
+Owner report 2026-08-22: delete refuses with "Can't delete NewerComp.uitkx
+(read-only)" on a module the builder itself created under Assets, which is
+writable by definition.
+
+ROOT CAUSE: `MarkForDeletion` returns false for TWO unrelated reasons - the
+location is read-only, or the module is ALREADY marked - and the window reported
+both as read-only. A module that had been marked by an earlier attempt therefore
+reported a permissions problem that did not exist, and repeating the delete
+could never have helped: it was already deleted as far as the model was
+concerned, and the CARD was the thing that was stale.
+
+That staleness came from UB-163: the first delete marked the file and then threw
+on its way to remounting the canvas, so the card survived. Every attempt after
+that hit the already-marked branch and blamed permissions.
+
+FIX: the handler names each case. An already-marked module re-syncs the canvas
+instead of complaining, which self-heals exactly the state UB-163 produced, and
+a genuine read-only refusal names the DIRECTORY so the claim can be checked
+rather than taken on faith.
+
+### UB-165 — deleting the last visible module crashed the tree build `UNVERIFIED` `CRITICAL`
+
+Owner report 2026-08-22: "delete still doesnt work at all, its broken
+completely."
+
+ROOT CAUSE, and it is UB-162's fix reaching a state that was never reachable
+before: `SeedDefaultPositions` opens with `depth[rootIndex] = 0` over an array
+sized by the node count. UB-162 correctly stopped a hidden focus from being
+forced into the member set, which made an EMPTY member set possible for the
+first time - delete the last visible module and there is genuinely nothing left
+to lay out. Indexing a zero-length array threw, inside `LoadTreeAsync`.
+
+WHY IT LOOKED LIKE DELETE DID NOTHING: `BuilderCanvasHost.Mount` wrapped the LSP
+call and the graph build in ONE catch that reported everything as "LSP
+unavailable". So an IndexOutOfRangeException in the layout surfaced as a
+language-server problem, the canvas never updated, and the delete - which had
+already marked the file correctly - appeared to be ignored.
+
+FIXED, three things:
+
+- An empty tree lays out as empty. A root index outside the node list falls back
+  to 0 rather than throwing.
+- The two failures are separated. An LSP failure still says so; a build failure
+  says "Could not build the tree" AND logs its stack, so the next one names
+  itself instead of pointing at the wrong subsystem.
+- The import context menu uses `ShowSimple`, like the card menu, so it opens at
+  the row that was right-clicked instead of away from it. One action does not
+  need a search field either.
+
+### UB-168 — the card menu deleted an INDEX, not a module `UNVERIFIED` `CRITICAL`
+
+Owner report 2026-08-23: delete silently does nothing, with no toast, no error
+and nothing in the Unity log - verified, the log is clean.
+
+ROOT CAUSE: `ShowCardMenu` built its items as `OnPick = () => RequestDeleteCard(index)`,
+capturing the node's INDEX at the moment the menu opened. A pick runs later, and
+by then the graph may have been rebuilt - a compile finishing, a canvas refresh -
+so the index no longer addresses the module it was aimed at. `RequestDeleteCard`
+then hit its bounds guard and returned false INTO SILENCE: no toast, no log,
+nothing. That is why it read as "completely broken" rather than as a failure.
+
+This is the same index-as-identity fragility the project-model refactor was
+about, surviving in a menu closure.
+
+FIX: the menu captures the module's PATH and calls `OnDeleteFile` directly, so a
+pick cannot address the wrong module or a missing one. The keyboard path still
+resolves by index - it acts immediately, on the live selection - but now says
+"Nothing selected to delete" instead of returning false quietly.
+
+### UB-169 — the import menu opened wherever the last menu had `UNVERIFIED` `MED`
+
+Owner report 2026-08-23: right-clicking an import row on the COMPONENT opened
+the menu over the STYLE card.
+
+ROOT CAUSE: every menu opens at the click only because the GESTURE records where
+that was, via `RememberMenuPointer`. Two gestures do it - the canvas right-click
+and the library. The import row added in UB-166 did not, so `Place` fell back to
+the STALE remembered point, which was wherever the previous menu had been opened
+from. Not a placement bug so much as a missing handshake.
+
+FIX: the import right-click records its pointer like every other menu gesture.
+
+### UB-170 — deleting one card deleted a different one `UNVERIFIED` `CRITICAL`
+
+Owner report 2026-08-23, and the repro names the bug exactly: create a
+component, create a style module, link NOTHING. Delete the style - nothing
+happens, just a blink. Delete the COMPONENT - and the STYLE disappears.
+
+TWO causes, compounding:
+
+1. NODE ORDER WAS NONDETERMINISTIC. The member set is a `HashSet<string>`, and
+   the nodes were built by iterating it. HashSet order is unspecified and shifts
+   as the set changes, so adding or deleting a module could RENUMBER every card.
+   Anything holding a card index from a previous render then addressed a
+   different module than the one it was built for.
+
+2. THE CARD MENU CARRIED AN INDEX. `onCardContext(index)` is a lambda living on
+   a KEYED element - keyed by file path, so the element survives re-renders by
+   design. When the numbering shifted underneath it, the element kept a lambda
+   closed over the OLD index. Right-clicking one card opened the menu for
+   another, and the delete followed the menu.
+
+That is the full explanation of the repro: the two cards had swapped numbering,
+so each delete acted on the other card - and deleting the style "did nothing"
+because it marked the component, which was then hidden and re-added by the
+pending-new pass on the same load.
+
+FIX, both halves:
+
+- Nodes are built from a SORTED list, so numbering changes only when membership
+  genuinely does.
+- The card menu carries the module PATH and the host resolves it when the menu
+  opens. UB-168 fixed this one layer up - the menu ITEM - while the number
+  reaching the menu was already wrong. This is the same lesson one layer deeper:
+  an index is a position, not an identity, and a position is not safe to carry
+  across a render.
+
+STILL INDEX-BASED, and left alone deliberately: `onSelect` and `setSelected`
+carry indices through the same keyed lambdas. With ordering now deterministic
+the window for staleness is much smaller, and the consequence is cosmetic - the
+wrong card highlights - rather than destructive. Worth converting, not worth
+churning the whole view for in the same pass as a data-loss bug.
+
+### UB-171 — the focused module could never be deleted `UNVERIFIED` `CRITICAL`
+
+Owner report 2026-08-23: the toast reads "Deleted someNew.style.uitkx - applies
+on Save" - the RIGHT module, correctly marked - and the card stays on the canvas.
+
+ROOT CAUSE: `ConnectedComponent` seeds its result with the start node
+(`seen.Add(start)`), so the FOCUS is always in the member set. UB-162 added
+`if (focusVisible) member.Add(focus)` to keep a hidden focus out - and that guard
+was a NO-OP, because the walk had already put it in one line earlier. A deleted
+module that happened to be the focused one therefore kept its card forever, and
+since the builder focuses a module the moment you create it, that is the normal
+case rather than an edge one.
+
+FIX at the layer that matters: ONE gate, where the cards are built. Guarding each
+ROUTE into the member set is what failed - there were three, and the walk's own
+seeding was invisible from the call site. Every contributor now passes the same
+hidden check before a node exists.
+
+Also fixed here: a module marked for deletion is no longer a valid FOCUS. Its
+session lives until Save, so the missing-session test alone left the window
+pointed at a module the user had just deleted, with the preview still describing
+it and the source pane still showing it.
+
+LESSON, and it is the third time in this campaign: I guarded the CALLERS instead
+of the place the decision is finally made. UB-162 guarded two routes into the
+member set and missed the one inside a helper; the fix is a single gate at the
+point of use, which cannot be bypassed by a route nobody remembered.
+
+### UB-172 — a deleted module kept its NAME reserved `UNVERIFIED` `HIGH`
+
+Owner report 2026-08-23: delete a style module (which now works), then create it
+again with the same name - "already exists".
+
+ROOT CAUSE: a deletion is PENDING until Save, so the session goes on occupying
+its path. `CreateNew` refused on `_sessions.ContainsKey`, and `ValidateNewName`
+refused on `TryGet != null`, both of which are true for a module that is deleted
+as far as the user is concerned. The name was reserved by something invisible.
+
+FIX: one rule - `IsPathAvailable` - used by the prompt, by the creation guard and
+by `CreateNew` itself, so they cannot disagree. A path whose deletion is pending
+counts as AVAILABLE, and creating there REVIVES that session: the deletion is
+taken back and the buffer replaced, rather than a second session being added for
+the same path.
+
+Reviving rather than adding also avoids a save-ordering hazard that would
+otherwise have been introduced here: `SaveAll` writes before it deletes, so a
+fresh session at a path already queued for deletion would have been written and
+then immediately trashed.
+
+KNOWN ASYMMETRY, recorded rather than papered over: undoing the re-creation
+discards the revived session but does not restore the deletion MARK, so undo
+lands on "absent" rather than on "deleted, pending". For a never-saved module -
+the reported case - those are the same state. For a SAVED module they differ, and
+the module would come back at Save. Deleting a saved module and re-creating it
+under the same name inside one session is the only way to reach that, and the
+right fix is for the ledger to model a revive as its own change kind.
