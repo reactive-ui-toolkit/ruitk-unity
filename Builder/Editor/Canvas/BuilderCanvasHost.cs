@@ -50,6 +50,12 @@ namespace Ruitk.Builder
         /// <summary>UB-123: double-clicking an import row copies its alias.</summary>
         public Action<string> OnCopyImportAlias;
 
+        /// <summary>Right-click on a style row: (file, first line, last line,
+        /// what it is). One entry has the same line twice; a whole export spans
+        /// its block. There was no gesture here at all, so a style entry - or the
+        /// export wrapping a group of them - could be added and never removed.</summary>
+        public Action<string, int, int, string> OnStyleRowContext;
+
         /// <summary>Right-click on an import row: (importer path, specifier).</summary>
         public Action<string, string> OnImportContext;
         /// <summary>UB-124: rename the module a card stands for - its export,
@@ -66,6 +72,36 @@ namespace Ruitk.Builder
 
         /// <summary>One module of that tree, for a card rebuild.</summary>
         public Func<string, BuilderModule> ModuleAt;
+
+        /// <summary>The style whose "+ entry" row the keyboard is pointed at,
+        /// as (file, style name). Empty when nothing is armed.</summary>
+        private string _armedAddFile = "";
+        private string _armedAddStyle = "";
+
+        /// <summary>Points the keyboard at a style's "+ entry" row, or clears
+        /// it. Re-renders, because the row has to show that Enter will hit it -
+        /// an armed affordance nobody can see is a trap, not an affordance.</summary>
+        public void ArmStyleAdd(string filePath, string styleName)
+        {
+            string file = filePath ?? "";
+            string style = styleName ?? "";
+            if (_armedAddFile == file && _armedAddStyle == style)
+                return;
+            _armedAddFile = file;
+            _armedAddStyle = style;
+            if (_graph != null && _container != null)
+                RenderCanvas();
+        }
+
+        /// <summary>The row element a card drew for one source line, so an
+        /// editor can be opened over the NEXT row without waiting for a click.</summary>
+        public VisualElement RowElement(string filePath, int sourceLine)
+        {
+            int index = NodeIndexOf(filePath);
+            if (index < 0 || _container == null)
+                return null;
+            return _container.Q("ruitk-row-" + index + "-" + sourceLine);
+        }
 
         public Action<string, int, int, string, VisualElement> OnEditAttrValue;
         public Action<string, int, string, VisualElement> OnEditDirective;
@@ -536,6 +572,10 @@ namespace Ruitk.Builder
                         OnCanvasContext = (wx, wy) => ShowCreateMenu(wx, wy),
                         OnStyleAddEntry = (path, styleName, closeLine) =>
                             OnStyleAddEntry?.Invoke(path, styleName, closeLine),
+                        OnStyleRowContext = (path, from, to, label) =>
+                            OnStyleRowContext?.Invoke(path, from, to, label),
+                        ArmedAddFile = _armedAddFile,
+                        ArmedAddStyle = _armedAddStyle,
                         OnAddHook = path => OnAddHook?.Invoke(path),
                         OnAddCode = path => OnAddCode?.Invoke(path),
                         OnCopyImportAlias = text => OnCopyImportAlias?.Invoke(text),

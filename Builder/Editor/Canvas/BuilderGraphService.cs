@@ -920,14 +920,17 @@ namespace Ruitk.Builder
                         continue;
                     open = k;
                 }
-                node.ExportDetail.Add(new BuilderCardLine
+                // The head carries the whole block's extent, so deleting the
+                // export is one range rather than a walk the caller repeats.
+                var head = new BuilderCardLine
                 {
                     Text = styleName + " = new Style {",
                     Kind = BuilderCardLineKind.Export,
                     BadgeKind = 13,
                     AttrsText = styleName,
                     SourceLine = i + 1,
-                });
+                };
+                node.ExportDetail.Add(head);
                 int j = open + 1;
                 for (; j < lines.Length; j++)
                 {
@@ -953,6 +956,7 @@ namespace Ruitk.Builder
                     AttrsText = styleName,
                     SourceLine = j + 1,
                 });
+                head.EndLine = j + 1;
                 node.ExportDetail.Add(new BuilderCardLine
                 {
                     Text = "}",

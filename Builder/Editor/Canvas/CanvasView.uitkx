@@ -18,6 +18,9 @@ export VirtualNode CanvasView(
   Action<string, int, int> onRowContext = null,
   Action<float, float> onCanvasContext = null,
   Action<string, string, int> onStyleAddEntry = null,
+  Action<string, int, int, string> onStyleRowContext = null,
+  string armedAddFile = "",
+  string armedAddStyle = "",
   Action<string> onAddHook = null,
   Action<string> onAddCode = null,
   Action<string> onCopyImportAlias = null,
@@ -781,6 +784,12 @@ export VirtualNode CanvasView(
                                 : "add an exported function or value")
                               : editableLine ? "click to edit" : "";
                             string entryKey = $"entry:{index}:{x}";
+                            // The "+ entry" row the last Enter armed: pressing
+                            // Enter again adds another entry, so it has to LOOK
+                            // like the thing the keyboard is pointed at.
+                            bool armedAdd = detail.BadgeKind == 9
+                              && armedAddFile == node.FilePath
+                              && armedAddStyle == detail.AttrsText;
                             bool detailVisible = detail.Kind == BuilderCardLineKind.Export
                               || detail.Text == "}"
                               || detail.BadgeKind == 10
@@ -848,6 +857,7 @@ export VirtualNode CanvasView(
                                     <Label
                                       text={detail.BadgeKind == 13 ? BuilderCanvasDrawing.ExportRichText(detail.Text) : detail.Text}
                                       enableRichText={true}
+                                      name={$"ruitk-row-{index}-{detail.SourceLine}"}
                                       tooltip={entryTip}
                                       onPointerEnter={e => { if (isAdd || editableLine) { setHoverChipKey(entryKey); } }}
                                       onPointerLeave={e => { if (isAdd || editableLine) { setHoverChipKey(""); } }}
@@ -878,12 +888,32 @@ export VirtualNode CanvasView(
                                         WhiteSpace = WsNormal,
                                         TextAlign = TextMiddleLeft,
                                         BorderRadius = Px(4),
-                                        BackgroundColor = editableLine && hoverChipKey == entryKey
-                                          ? (isUtilSig ? Rgba(255, 183, 77, 31) : Rgba(206, 147, 216, 31))
-                                          : Rgba(0, 0, 0, 0),
+                                        BackgroundColor = armedAdd
+                                          ? Rgba(255, 213, 79, 46)
+                                          : editableLine && hoverChipKey == entryKey
+                                            ? (isUtilSig ? Rgba(255, 183, 77, 31) : Rgba(206, 147, 216, 31))
+                                            : Rgba(0, 0, 0, 0),
+                                        BorderRadius = Px(4),
+                                        BorderTopWidth = armedAdd ? 1 : 0,
+                                        BorderRightWidth = armedAdd ? 1 : 0,
+                                        BorderBottomWidth = armedAdd ? 1 : 0,
+                                        BorderLeftWidth = armedAdd ? 1 : 0,
+                                        BorderTopColor = Hex("#ffd54f"),
+                                        BorderRightColor = Hex("#ffd54f"),
+                                        BorderBottomColor = Hex("#ffd54f"),
+                                        BorderLeftColor = Hex("#ffd54f"),
                                       }}
                                       onPointerDown={e => {
                                         if (e.Button == 1) {
+                                          if (onStyleRowContext != null && detail.SourceLine > 0) {
+                                            BuilderCanvasDrawing.RememberMenuPointer(e);
+                                            if (detail.BadgeKind == 13) {
+                                              onStyleRowContext(node.FilePath, detail.SourceLine, detail.EndLine, $"style {detail.AttrsText}");
+                                            } else if (editableLine && !isUtilSig) {
+                                              onStyleRowContext(node.FilePath, detail.SourceLine, detail.SourceLine, "entry");
+                                            }
+                                            e.StopPropagation();
+                                          }
                                           return;
                                         }
                                         BuilderCanvasDrawing.RememberMenuPointer(e);

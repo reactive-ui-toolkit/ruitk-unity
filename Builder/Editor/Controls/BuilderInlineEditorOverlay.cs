@@ -25,6 +25,7 @@ namespace Ruitk.Builder
         private Action<string> _commit;
         private Action _closed;
         private Action _cancelled;
+        private Action _advance;
         private bool _done;
 
         public bool IsOpen => _panel != null;
@@ -51,7 +52,8 @@ namespace Ruitk.Builder
             Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>> completionProvider,
             Action<string> commit,
             Action closed = null,
-            Action cancelled = null)
+            Action cancelled = null,
+            Action advance = null)
         {
             if (_root == null)
                 return;
@@ -61,6 +63,7 @@ namespace Ruitk.Builder
             _seed = seed ?? "";
             _commit = commit;
             _closed = closed;
+            _advance = advance;
             _done = false;
 
             _field = new CodeField
@@ -71,7 +74,7 @@ namespace Ruitk.Builder
             };
             _field.SetContent(_seed, "fragment.uitkx", null);
             _field.SetEditable(true);
-            _field.ApplyRequested += () => Close(commitIfChanged: true);
+            _field.ApplyRequested += () => Close(commitIfChanged: true, applied: true);
             _field.CancelRequested += () => Close(commitIfChanged: false);
 
             _panel = new VisualElement
@@ -238,7 +241,13 @@ namespace Ruitk.Builder
             return null;
         }
 
-        public void Close(bool commitIfChanged)
+        public void Close(bool commitIfChanged) => Close(commitIfChanged, applied: false);
+
+        /// <summary>Closes the editor. <paramref name="applied"/> is true only
+        /// when the user pressed ENTER, which is the one exit that means "done,
+        /// next" rather than "done" - a blur or a click elsewhere finishes the
+        /// edit just the same but is not a request to keep going.</summary>
+        private void Close(bool commitIfChanged, bool applied)
         {
             if (_panel == null || _done)
             {
@@ -250,7 +259,9 @@ namespace Ruitk.Builder
             var commit = _commit;
             var closed = _closed;
             var cancelled = _cancelled;
+            var advance = _advance;
             _cancelled = null;
+            _advance = null;
             bool changed = !string.Equals(text, _seed, StringComparison.Ordinal);
             RemovePanel();
             if (commitIfChanged && changed)
@@ -261,6 +272,8 @@ namespace Ruitk.Builder
             else if (!commitIfChanged)
                 cancelled?.Invoke();
             closed?.Invoke();
+            if (applied)
+                advance?.Invoke();
         }
 
         /// <summary>Closing the editor destroys the focused element, and Unity

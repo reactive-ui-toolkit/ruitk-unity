@@ -21,6 +21,11 @@ namespace Ruitk.Builder
         public static readonly Color Text = new Color(0.839f, 0.839f, 0.863f);
         public static readonly Color Dim = new Color(0.545f, 0.545f, 0.588f);
         public static readonly Color Accent = new Color(0.310f, 0.765f, 0.969f);
+
+        /// <summary>The selection gold, the same one the canvas rings a selected
+        /// card with (#ffd54f). Defined once so the canvas and the library cannot
+        /// disagree about what "selected" looks like.</summary>
+        public static readonly Color Select = new Color(1.000f, 0.835f, 0.310f);
         public static readonly Color Ground = new Color(0.090f, 0.090f, 0.106f);
         public static readonly Color Transparent = new Color(0f, 0f, 0f, 0f);
 

@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -66,9 +67,65 @@ namespace Ruitk.Builder
         /// list from a new graph must not close a drawer the user just opened.</summary>
         private readonly HashSet<string> _expanded = new HashSet<string>(StringComparer.Ordinal);
 
+        /// <summary>What the canvas has selected, mirrored here. The library is
+        /// the index of everything the tree can hold, so it is the natural place
+        /// to see WHAT the selected thing is - a custom component, a hook, a
+        /// style module, or one of the native elements.</summary>
+        private string _selectedPath = "";
+        private string _selectedName = "";
+
         /// <summary>Fires once the LSP schema has been parsed into
         /// BuilderSchemaCache — the window re-pushes knownElements then.</summary>
         public Action SchemaLoaded;
+
+        /// <summary>Mirrors the canvas selection. A workspace entry is matched by
+        /// its FILE, which survives a rename; anything else - a native tag, an
+        /// ambient hook - by name, because that is all a markup row carries. A
+        /// selection that names a folded row OPENS its section, since a highlight
+        /// nobody can see is not a highlight.</summary>
+        public void SetSelected(string filePath, string name)
+        {
+            string path = string.IsNullOrEmpty(filePath) ? "" : Path.GetFullPath(filePath);
+            string bare = (name ?? "").Trim('<', '>');
+            if (_selectedPath == path && _selectedName == bare)
+                return;
+            _selectedPath = path;
+            _selectedName = bare;
+            RevealSelected();
+            Rebuild();
+            ApplyRowWidth();
+        }
+
+        private bool IsSelected(Entry entry)
+        {
+            if (_selectedPath.Length > 0 && !string.IsNullOrEmpty(entry.FilePath))
+                return string.Equals(
+                    Path.GetFullPath(entry.FilePath), _selectedPath,
+                    StringComparison.OrdinalIgnoreCase);
+            return _selectedName.Length > 0
+                && string.IsNullOrEmpty(entry.FilePath)
+                && string.Equals(
+                    entry.Name.Trim('<', '>'), _selectedName, StringComparison.Ordinal);
+        }
+
+        /// <summary>Opens the section holding the selected row when the fold
+        /// would otherwise hide it.</summary>
+        private void RevealSelected()
+        {
+            int seen = 0;
+            string section = null;
+            foreach (var entry in _entries)
+            {
+                if (entry.Section != section)
+                {
+                    section = entry.Section;
+                    seen = 0;
+                }
+                seen++;
+                if (IsSelected(entry) && seen > CollapsedRows)
+                    _expanded.Add(entry.Section);
+            }
+        }
 
         /// <summary>UB-80: double-clicking a workspace entry focuses its card on
         /// the canvas. Only the workspace sections carry a file path, so schema
@@ -123,8 +180,10 @@ namespace Ruitk.Builder
                         backgroundColor = BuilderPalette.Panel2,
                         borderTopWidth = 1f, borderBottomWidth = 1f,
                         borderLeftWidth = 1f, borderRightWidth = 1f,
-                        borderTopColor = BuilderPalette.Line, borderBottomColor = BuilderPalette.Line,
-                        borderLeftColor = BuilderPalette.Line, borderRightColor = BuilderPalette.Line,
+                        borderTopColor = BuilderPalette.Line,
+                        borderBottomColor = BuilderPalette.Line,
+                        borderLeftColor = BuilderPalette.Line,
+                        borderRightColor = BuilderPalette.Line,
                         borderTopLeftRadius = 3f, borderTopRightRadius = 3f,
                         borderBottomLeftRadius = 3f, borderBottomRightRadius = 3f,
                         paddingLeft = 7f, paddingRight = 7f,
@@ -597,6 +656,7 @@ namespace Ruitk.Builder
                 shown++;
                 if (folding && shown > CollapsedRows && !_expanded.Contains(section))
                     continue;
+                bool selected = IsSelected(entry);
                 var row = new Label(entry.Name)
                 {
                     tooltip = entry.Description,
@@ -604,11 +664,15 @@ namespace Ruitk.Builder
                     {
                         fontSize = 12f,
                         color = entry.Tint,
-                        backgroundColor = BuilderPalette.Panel2,
+                        backgroundColor = selected
+                            ? new Color(1f, 0.835f, 0.310f, 0.15f)
+                            : BuilderPalette.Panel2,
                         borderTopWidth = 1f, borderBottomWidth = 1f,
                         borderLeftWidth = 1f, borderRightWidth = 1f,
-                        borderTopColor = BuilderPalette.Line, borderBottomColor = BuilderPalette.Line,
-                        borderLeftColor = BuilderPalette.Line, borderRightColor = BuilderPalette.Line,
+                        borderTopColor = selected ? BuilderPalette.Select : BuilderPalette.Line,
+                        borderBottomColor = selected ? BuilderPalette.Select : BuilderPalette.Line,
+                        borderLeftColor = selected ? BuilderPalette.Select : BuilderPalette.Line,
+                        borderRightColor = selected ? BuilderPalette.Select : BuilderPalette.Line,
                         borderTopLeftRadius = 5f, borderTopRightRadius = 5f,
                         borderBottomLeftRadius = 5f, borderBottomRightRadius = 5f,
                         paddingLeft = 9f, paddingRight = 9f,
@@ -674,10 +738,11 @@ namespace Ruitk.Builder
                 });
                 row.RegisterCallback<MouseLeaveEvent>(_ =>
                 {
-                    row.style.borderTopColor = BuilderPalette.Line;
-                    row.style.borderBottomColor = BuilderPalette.Line;
-                    row.style.borderLeftColor = BuilderPalette.Line;
-                    row.style.borderRightColor = BuilderPalette.Line;
+                    var rest = selected ? BuilderPalette.Select : BuilderPalette.Line;
+                    row.style.borderTopColor = rest;
+                    row.style.borderBottomColor = rest;
+                    row.style.borderLeftColor = rest;
+                    row.style.borderRightColor = rest;
                 });
                 _listHost.Add(row);
             }

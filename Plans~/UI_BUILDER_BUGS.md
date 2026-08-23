@@ -2936,3 +2936,49 @@ re-laid-out every card that had never been dragged.
 
 FIX: `AdoptUnplaced` records the slots the default layout hands out, the first
 time it hands them out. A slot is decided once and then remembered.
+
+### UB-181 — the library did not follow the selection `SHIPPED` `LOW`
+
+Owner ask 2026-08-23: "If a component is selected, it should be selected on the
+menu too, including custom components/hooks/styles/and native components."
+
+The library is the index of everything a tree can hold, so it is the natural
+place to see WHAT the selected thing is. A card selection matches its library
+entry by FILE, which survives a rename; a markup row matches by tag name unless
+that tag names a module the tree holds, in which case the module wins. A folded
+section opens when the selection lands inside it - a highlight nobody can see is
+not a highlight. The ring colour is `BuilderPalette.Select`, defined once, so the
+canvas and the library cannot disagree about what "selected" looks like.
+
+### UB-175 — style entries do not chain `SHIPPED` `MEDIUM`
+
+Specified by the owner 2026-08-23, which settled the two readings recorded
+earlier: "when you write styles, it should go to the next property when you are
+done editing - so when you are on last style, and done editing click enter, it
+should select the + entry and the next enter should open the context like you
+clicked it with the mouse."
+
+Writing a style is a RUN of entries, and committing each by hand - click, type,
+Enter, click - made the keyboard useless for the one thing on this card that is
+nothing but typing. Enter now commits and opens the next entry. On the LAST one
+there is nothing to advance to, so the "+ entry" row is ARMED and lights up in
+the selection gold; Enter again opens its key menu exactly as clicking does.
+
+Deliberately two presses. A menu that opened by itself after every entry would
+be a trap, and the owner asked for the pause explicitly.
+
+The seam is `BuilderInlineEditorOverlay.Show(advance:)`, which fires only when
+the editor was closed by ENTER - a blur or a click elsewhere finishes the edit
+just the same but is not a request to keep going. Anything that is not "add
+another entry" disarms, so the highlight never outlives its meaning.
+
+### UB-183 — no way to delete a style entry or its export `SHIPPED` `MEDIUM`
+
+Owner report 2026-08-23: "in style editing there's no way to delete a style or
+the object wrapping the group of styles."
+
+Right-click did nothing on style rows - the handler returned on button 1 before
+reaching anything. It now offers "Delete entry" on an entry line and "Delete
+style <name>" on the export head, which needed the head to carry its block's
+EXTENT: `ParseStyleDetail` now records where the export closes, so deleting it is
+one range rather than a walk each caller repeats.

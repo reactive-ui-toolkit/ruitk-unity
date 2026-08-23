@@ -445,12 +445,15 @@ namespace Ruitk.Builder
             _canvasHost.OnRowContext = OnCanvasRowContext;
             _canvasHost.OnRowDrop = OnCanvasRowDrop;
             _canvasHost.OnStyleAddEntry = OnStyleAddEntry;
+            _canvasHost.OnStyleRowContext = OnStyleRowContext;
             _canvasHost.OnToast = Toast;
             _canvasHost.OnSelect = index =>
             {
                 var nodes = _canvasHost?.Nodes;
-                if (nodes != null && index >= 0 && index < nodes.Count)
-                    OpenFileFromCanvas(nodes[index].FilePath);
+                if (nodes == null || index < 0 || index >= nodes.Count)
+                    return;
+                OpenFileFromCanvas(nodes[index].FilePath);
+                _libraryPane?.SetSelected(nodes[index].FilePath, null);
             };
             _canvasHost.OnAddHook = path =>
             {
@@ -1469,6 +1472,43 @@ namespace Ruitk.Builder
             if (!string.Equals(full, FocusFull, System.StringComparison.OrdinalIgnoreCase))
                 OpenFileFromCanvas(full);
             _codeField?.FocusLine(sourceLine);
+            // A markup row names an element - a native tag, or a custom
+            // component the tree owns. The library says which of the two it is,
+            // so pointing at the row points at its entry there.
+            SyncLibrarySelection(full, sourceLine);
+        }
+
+        /// <summary>Mirrors a selected ROW into the library. A row that names a
+        /// module the tree holds matches on that module's FILE; anything else
+        /// matches on the tag name, which is what a native element is.</summary>
+        private void SyncLibrarySelection(string full, int sourceLine)
+        {
+            if (_libraryPane == null)
+                return;
+            var node = NodeFor(full);
+            var row = node?.Markup?.Find(r => r.SourceLine == sourceLine);
+            if (row == null)
+            {
+                _libraryPane.SetSelected(full, null);
+                return;
+            }
+            string tag = (row.Text ?? "").Trim().TrimStart('<').TrimEnd('>', '/', ' ');
+            int cut = tag.IndexOfAny(new[] { ' ', '/', '>' });
+            if (cut > 0)
+                tag = tag.Substring(0, cut);
+            if (tag.Length == 0)
+            {
+                _libraryPane.SetSelected(full, null);
+                return;
+            }
+            // A tag that names a module in the tree points at that module.
+            foreach (var other in _workspace.Modules)
+                if (string.Equals(other.Name, tag, System.StringComparison.Ordinal))
+                {
+                    _libraryPane.SetSelected(other.FilePath, null);
+                    return;
+                }
+            _libraryPane.SetSelected(null, tag);
         }
 
         /// <summary>POC 6.4A: the row context menu — typed attributes from the
@@ -2714,10 +2754,102 @@ namespace Ruitk.Builder
             string path, int sourceLine, string seed, string suffix, VisualElement anchor)
         {
             string full = Path.GetFullPath(path);
+            DisarmStyleAdd();
             _inlineEditor.Show(anchor, seed, multiline: false,
                 FragmentCompletion(full, (text, l0, c0) => MapLineFragment(full, sourceLine, text, suffix, c0)),
                 text => OnLineRewritten(full, sourceLine, text + (suffix ?? "")),
-                () => ResyncLspBuffer(full));
+                () => ResyncLspBuffer(full),
+                advance: () => AdvanceStyleEntry(full, sourceLine));
+        }
+
+        /// <summary>The style entry the keyboard would add to next, as (file,
+        /// style name). Empty when Enter means nothing in particular.</summary>
+        [System.NonSerialized] private string _armedAddFile = "";
+        [System.NonSerialized] private string _armedAddStyle = "";
+        [System.NonSerialized] private int _armedAddLine;
+
+        /// <summary>Enter finished a style entry, so move to the next one.
+        /// Writing a style is a RUN of entries, and committing each by hand -
+        /// click, type, Enter, click - made the keyboard useless for the one
+        /// task on this card that is nothing but typing.
+        ///
+        /// On the LAST entry there is nothing to advance to, so the "+ entry"
+        /// row is armed instead and lights up: Enter again opens its key menu,
+        /// exactly as clicking it does. Deliberately two presses, not one - a
+        /// menu that opened by itself after every entry would be a trap.</summary>
+        private void AdvanceStyleEntry(string full, int sourceLine)
+        {
+            var node = NodeFor(full);
+            if (node == null)
+                return;
+            int at = -1;
+            for (int i = 0; i < node.ExportDetail.Count; i++)
+            {
+                if (node.ExportDetail[i].SourceLine == sourceLine
+                    && node.ExportDetail[i].BadgeKind == 0
+                    && node.ExportDetail[i].Depth == 1)
+                {
+                    at = i;
+                    break;
+                }
+            }
+            if (at < 0 || at + 1 >= node.ExportDetail.Count)
+                return;
+
+            var next = node.ExportDetail[at + 1];
+            if (next.BadgeKind == 9)
+            {
+                _armedAddFile = full;
+                _armedAddStyle = next.AttrsText ?? "";
+                _armedAddLine = next.SourceLine;
+                _canvasHost?.ArmStyleAdd(_armedAddFile, _armedAddStyle);
+                return;
+            }
+            if (next.BadgeKind != 0 || next.Depth != 1)
+                return;
+
+            // The card re-rendered on the commit, so the row element for the
+            // next line exists only after that render has landed.
+            int line = next.SourceLine;
+            rootVisualElement?.schedule.Execute(() =>
+            {
+                var anchor = _canvasHost?.RowElement(full, line);
+                if (anchor == null)
+                    return;
+                var row = NodeFor(full)?.ExportDetail.Find(r => r.SourceLine == line);
+                if (row == null)
+                    return;
+                string suffix = row.Text.EndsWith(",", System.StringComparison.Ordinal) ? "," : "";
+                string seed = suffix.Length > 0
+                    ? row.Text.Substring(0, row.Text.Length - suffix.Length)
+                    : row.Text;
+                ShowLineEditor(full, line, seed, suffix, anchor);
+            }).ExecuteLater(1);
+        }
+
+        /// <summary>Takes the keyboard off a "+ entry" row. Anything that is not
+        /// "add another entry" ends the run, so the highlight never outlives the
+        /// meaning it stands for.</summary>
+        private void DisarmStyleAdd()
+        {
+            if (_armedAddFile.Length == 0)
+                return;
+            _armedAddFile = "";
+            _armedAddStyle = "";
+            _armedAddLine = 0;
+            _canvasHost?.ArmStyleAdd("", "");
+        }
+
+        private BuilderCanvasNode NodeFor(string full)
+        {
+            var nodes = _canvasHost?.Nodes;
+            if (nodes == null)
+                return null;
+            foreach (var node in nodes)
+                if (string.Equals(Path.GetFullPath(node.FilePath), full,
+                        System.StringComparison.OrdinalIgnoreCase))
+                    return node;
+            return null;
         }
 
         private void ShowIslandEditor(
@@ -3362,6 +3494,30 @@ namespace Ruitk.Builder
                 @"\b" + System.Text.RegularExpressions.Regex.Escape(oldName) + @"\b");
             return binding.Replace(updated, newName);
         }
+        /// <summary>Right-click on a style row. Deleting was the one thing a
+        /// style card could not do: entries and whole exports could be added and
+        /// never removed, so a mistyped key stayed until the user opened the
+        /// source pane.</summary>
+        private void OnStyleRowContext(string filePath, int fromLine, int toLine, string what)
+        {
+            var module = _workspace.TryGet(filePath);
+            if (module == null || module.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+            int last = System.Math.Max(fromLine, toLine);
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>
+            {
+                new BuilderSearchMenu.Item
+                {
+                    Label = "Delete " + what,
+                    OnPick = () => DeleteLinesInFile(filePath, fromLine, last, "delete " + what),
+                },
+            };
+            BuilderSearchMenu.Show(what, "filter…", items);
+        }
+
         private void OnStyleAddEntry(string filePath, string styleName, int closeLine)
         {
             var used = UsedStyleKeys(filePath, styleName);
@@ -4857,6 +5013,19 @@ namespace Ruitk.Builder
                 // Delete still deletes CHARACTERS inside an editor.
                 if (TypingTargetFocused())
                     return;
+                if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+                {
+                    if (_armedAddFile.Length == 0)
+                        return;
+                    string file = _armedAddFile;
+                    string style = _armedAddStyle;
+                    int line = _armedAddLine;
+                    DisarmStyleAdd();
+                    OnStyleAddEntry(file, style, line);
+                    ConsumeKey(evt);
+                    return;
+                }
+                DisarmStyleAdd();
                 if (evt.keyCode == KeyCode.Delete)
                 {
                     DeleteSelection();
