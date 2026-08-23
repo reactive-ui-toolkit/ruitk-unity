@@ -3065,3 +3065,36 @@ rather than two copies of the handler body. It returns whether it armed, so a
 chip that cannot drag (a module with no resolvable name) leaves the press to
 bubble and the header underneath still moves the card - one press, two gestures,
 and only one of them may have it.
+
+### UB-187 — the naming convention, as a birth-time default `SHIPPED` `MEDIUM`
+
+Agreed with the owner 2026-08-23. Placement used ONE rule - "next to whatever is
+focused" - so where a module landed depended on what the user happened to be
+looking at, not on what the module IS.
+
+The convention: a component and the style and hook modules named after it are one
+FAMILY and share a folder. `NewComponent`, `newComponent.style` and
+`useNewComponent.hooks` all resolve to the family `newComponent` - a hook drops
+its `use` prefix, a component lowers its first letter, and the compare is
+case-insensitive. A companion is born in its family's folder wherever that
+component lives, not wherever the focus is.
+
+A companion matching nothing, and every UTIL module, is born at the tree ROOT.
+That is the closest shared parent of the modules that will import it, which at
+birth is none of them - so the two readings the owner offered ("top parent" and
+"closest shared root") agree here, and neither needs a file to move on its own
+later. Utils are outside the family rule by decision: a util is a plain `.uitkx`
+with no suffix to key off, and a util named for its component would collide with
+the component's own file on a case-insensitive filesystem.
+
+A family name appearing in more than one subtree resolves to the NEAREST
+component to the focus, ties broken by ordinal-smallest path so the answer does
+not depend on load order.
+
+A DEFAULT, not an invariant: nothing re-places a module afterwards, which is what
+lets the folder view (next) move anything anywhere without the convention arguing
+with it. The toast names the folder, because a file that appears silently
+somewhere the user is not looking is the same as a file that did not appear.
+
+`BuilderNaming` is pure and linked into `Builder~/ModelTests` - 11 checks
+including the prefix trap (`useful` is not a hook for "ful") and nearest-wins.

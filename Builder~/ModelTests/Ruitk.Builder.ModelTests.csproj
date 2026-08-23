@@ -36,6 +36,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderModule.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderTree.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderSpecifiers.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderNaming.cs" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)..\..\ide-extensions~\language-lib\UitkxLanguage.csproj" />
   </ItemGroup>
 

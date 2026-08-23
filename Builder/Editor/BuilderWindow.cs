@@ -5391,6 +5391,80 @@ namespace Ruitk.Builder
                 ["Utils"] = ("new util module", "camelCaseName"),
             };
 
+        /// <summary>Where a new module is BORN.
+        ///
+        /// A COMPONENT nests under the focus, which is the tree the user is
+        /// building. A COMPANION - a style or hook module - joins the component it
+        /// is named after, wherever that component lives: NewComponent,
+        /// newComponent.style and useNewComponent.hooks are one family and share
+        /// one folder. A companion that matches nothing, and every util module, is
+        /// shared until proven otherwise and is born at the tree ROOT - the closest
+        /// shared parent of the modules that will import it, which at birth is
+        /// none of them.
+        ///
+        /// A DEFAULT, not a rule: nothing re-places a module afterwards, so the
+        /// folder view can put anything anywhere and the convention will not argue
+        /// with it.</summary>
+        private string BirthPathFor(string kind, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return null;
+            // No focus means no tree to infer from: the first module of a new tree
+            // owns its folder rather than nesting under a "components" directory
+            // that has nothing above it.
+            if (string.IsNullOrEmpty(_focusFile))
+                return Full(BuilderNewFileDialog.PathFor(
+                    BuilderWorkspace.UnsavedRoot, kind, name, asRoot: true));
+
+            string focusDir = Path.GetDirectoryName(_focusFile) ?? "";
+            if (kind == "Component")
+                return Full(BuilderNewFileDialog.PathFor(focusDir, kind, name));
+
+            var family = FamilyOwnerFor(kind, name);
+            string folder = family?.Folder
+                ?? BuilderTree.ResolveRoot(_focusFile)
+                ?? focusDir;
+            return Full(BuilderNewFileDialog.PathFor(folder, kind, name));
+        }
+
+        private static string Full(string path) =>
+            string.IsNullOrEmpty(path) ? null : Path.GetFullPath(path);
+
+        /// <summary>The component a new companion belongs to, or null. When more
+        /// than one in the tree carries the family name the NEAREST to the focus
+        /// wins, and an exact tie falls to the ordinal-smallest path so the answer
+        /// does not depend on the order the tree was loaded in.</summary>
+        private BuilderModule FamilyOwnerFor(string kind, string name)
+        {
+            var kindOf = kind == "Hooks" ? BuilderNodeKind.Hook
+                : kind == "Style" ? BuilderNodeKind.Style
+                : BuilderNodeKind.Util;
+            // A util has no name to match on - it is a plain .uitkx - so it takes
+            // the shared-until-proven-otherwise branch.
+            if (kindOf == BuilderNodeKind.Util)
+                return null;
+
+            string focusDir = Path.GetDirectoryName(_focusFile) ?? "";
+            BuilderModule best = null;
+            int bestShared = -1;
+            foreach (var module in _workspace.Modules)
+            {
+                if (module.Kind != BuilderNodeKind.Component
+                    || !BuilderNaming.SameFamily(
+                        kindOf, name, BuilderNodeKind.Component, module.Name))
+                    continue;
+                int shared = BuilderNaming.SharedPrefixLength(focusDir, module.Folder);
+                if (best == null || shared > bestShared
+                    || (shared == bestShared
+                        && string.CompareOrdinal(module.FilePath, best.FilePath) < 0))
+                {
+                    best = module;
+                    bestShared = shared;
+                }
+            }
+            return best;
+        }
+
         /// <summary>POC openCreateMenu → openNameMenu: an at-cursor popup with a
         /// title, a placeholder-only input, an inline error row and a "Create"
         /// row. An invalid or duplicate name shows the error IN PLACE.</summary>
@@ -5405,32 +5479,16 @@ namespace Ruitk.Builder
         /// file, which has no folder to be inferred from.</summary>
         private void CreateModule(string kind, float worldX, float worldY)
         {
-            bool rooted = !string.IsNullOrEmpty(_focusFile);
-            string dir = rooted
-                ? Path.GetDirectoryName(_focusFile)
-                : BuilderWorkspace.UnsavedRoot;
-            if (dir == null)
-            {
-                Toast("Could not resolve a location for the new module");
-                return;
-            }
             var prompt = s_createPrompts.TryGetValue(kind, out var found)
                 ? found
                 : ("new file", "Name");
             BuilderSearchMenu.ShowNamePrompt(
                 prompt.Item1,
                 prompt.Item2,
-                name => ValidateNewName(
-                    kind, name,
-                    n => BuilderNewFileDialog.PathFor(dir, kind, n, asRoot: !rooted) is string made
-                        ? Path.GetFullPath(made)
-                        : null),
+                name => ValidateNewName(kind, name, n => BirthPathFor(kind, n)),
                 name =>
                 {
-                    // A brand-new tree has no parent component, so its first
-                    // component owns its folder rather than nesting under a
-                    // "components" directory that has nothing above it.
-                    string created = BuilderNewFileDialog.PathFor(dir, kind, name, asRoot: !rooted);
+                    string created = BirthPathFor(kind, name);
                     if (created == null
                         || !_workspace.IsPathAvailable(Path.GetFullPath(created)))
                     {
@@ -5453,7 +5511,13 @@ namespace Ruitk.Builder
                     _ledger.End();
                     RefreshHistoryPanel();
                     _canvasHost?.PlaceNewCard(full, worldX, worldY);
-                    Toast("Created " + Path.GetFileName(created) + " - applies on Save");
+                    // The convention can put a module somewhere other than where
+                    // the user is looking, so the toast NAMES the folder. A file
+                    // that appears silently in a folder you are not in is the same
+                    // as a file that did not appear.
+                    string where = Path.GetFileName(Path.GetDirectoryName(full) ?? "");
+                    Toast("Created " + Path.GetFileName(created)
+                        + (where.Length > 0 ? " in " + where : "") + " - applies on Save");
                     RefreshChrome();
                     OpenAdditionalFile(full);
                 });

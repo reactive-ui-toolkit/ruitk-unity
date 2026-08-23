@@ -381,6 +381,47 @@ static class Program
               && string.Equals(hookBeside.Folder, moved, StringComparison.OrdinalIgnoreCase),
               "renaming a companion moves only itself");
 
+        // ---- the naming convention -------------------------------------------
+        Console.WriteLine("family names");
+        Check(BuilderNaming.FamilyOf(BuilderNodeKind.Component, "NewComponent") == "newComponent",
+              "a component's family is its own name, first letter lowered");
+        Check(BuilderNaming.FamilyOf(BuilderNodeKind.Style, "newComponent") == "newComponent",
+              "a style already carries the family name");
+        Check(BuilderNaming.FamilyOf(BuilderNodeKind.Hook, "useNewComponent") == "newComponent",
+              "a hook drops its use prefix");
+        Check(BuilderNaming.SameFamily(
+                  BuilderNodeKind.Style, "newComponent",
+                  BuilderNodeKind.Component, "NewComponent"),
+              "style and component are one family");
+        Check(BuilderNaming.SameFamily(
+                  BuilderNodeKind.Hook, "useNewComponent",
+                  BuilderNodeKind.Component, "NewComponent"),
+              "hook and component are one family");
+        Check(!BuilderNaming.SameFamily(
+                  BuilderNodeKind.Style, "buttonStyle",
+                  BuilderNodeKind.Component, "NewComponent"),
+              "an unrelated name is not family");
+
+        // "use" is only a prefix when a NAME follows it: a component called
+        // Useful must not be read as a hook for "ful".
+        Check(BuilderNaming.FamilyOf(BuilderNodeKind.Hook, "useful") == "useful",
+              "lowercase after use is not a stripped prefix");
+        Check(BuilderNaming.FamilyOf(BuilderNodeKind.Hook, "use") == "use",
+              "bare use keeps its name");
+        Check(BuilderNaming.FamilyOf(BuilderNodeKind.Style, "") == "",
+              "an empty name has no family");
+        Check(!BuilderNaming.SameFamily(
+                  BuilderNodeKind.Style, "", BuilderNodeKind.Component, ""),
+              "two empty names are not a family match");
+
+        // Nearest-wins, for a family name that appears in more than one subtree.
+        string near = Path.Combine(Root, "Page", "components", "Card");
+        string far = Path.Combine(Root, "Page");
+        string focus = Path.Combine(Root, "Page", "components", "Card", "components", "Row");
+        Check(BuilderNaming.SharedPrefixLength(focus, near)
+              > BuilderNaming.SharedPrefixLength(focus, far),
+              "the nearer component shares more of the path");
+
         // ---- import specifiers, both directions ------------------------------
         // A move re-spells every specifier it invalidated, so these two have to
         // agree exactly: whatever Relative writes, Map must read back to the same
