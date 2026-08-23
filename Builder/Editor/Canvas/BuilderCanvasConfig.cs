@@ -143,6 +143,28 @@ namespace Ruitk.Builder
             Positions[RelKey(filePath)] = new[] { x, y };
         }
 
+        /// <summary>Writes down the slot of every node that does not have one
+        /// yet, and reports whether any were new.
+        ///
+        /// A layout that is never recorded is RECOMPUTED on every mount, and the
+        /// default layout is a breadth-first walk over the whole graph - so its
+        /// answer depends on the node SET. Adding one module therefore moved
+        /// every card the user had never dragged, which is not a layout, it is a
+        /// reshuffle. A slot is decided once and then remembered.</summary>
+        public bool AdoptUnplaced(BuilderGraph graph)
+        {
+            bool added = false;
+            foreach (var node in graph.Nodes)
+            {
+                string key = RelKey(node.FilePath);
+                if (Positions.ContainsKey(key))
+                    continue;
+                Positions[key] = new[] { node.X, node.Y };
+                added = true;
+            }
+            return added;
+        }
+
         public void CaptureFrom(BuilderGraph graph, float cameraX, float cameraY, float zoom)
         {
             CameraX = cameraX;

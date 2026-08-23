@@ -99,10 +99,14 @@ namespace Ruitk.Builder
         public bool RemoveByPath(string path) => Remove(ByPath(path));
 
         /// <summary>Re-files a module and, when it owns its folder, everything
-        /// inside that folder with it. The subtree moves because the folder
-        /// moves: children keep their position relative to their parent, so
-        /// every relative import inside the subtree stays correct without being
-        /// touched.</summary>
+        /// inside that folder with it. The subtree moves because the FOLDER
+        /// moves: every module keeps its position relative to the folder, so
+        /// every relative import inside it stays correct without being touched.
+        ///
+        /// "Inside" means IN the folder as well as under it. Only the nested
+        /// case was carried, so a component's own companions - the style and
+        /// hook modules sitting beside it, which are the whole reason the folder
+        /// exists - were left behind at a path their folder had vacated.</summary>
         public void MoveTo(BuilderModule module, string newFolder, string newName)
         {
             if (module == null)
@@ -115,12 +119,18 @@ namespace Ruitk.Builder
 
             if (ownsFolder && !string.IsNullOrEmpty(oldFolder))
             {
-                string prefix = Canon(oldFolder) + System.IO.Path.DirectorySeparatorChar;
+                string from = Canon(oldFolder);
+                string prefix = from + System.IO.Path.DirectorySeparatorChar;
                 foreach (var other in _modules)
                 {
                     if (ReferenceEquals(other, module) || string.IsNullOrEmpty(other.Folder))
                         continue;
                     string folder = Canon(other.Folder);
+                    if (string.Equals(folder, from, StringComparison.OrdinalIgnoreCase))
+                    {
+                        other.Folder = newFolder;
+                        continue;
+                    }
                     if (!folder.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                         continue;
                     other.Folder = System.IO.Path.Combine(

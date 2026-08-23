@@ -55,10 +55,6 @@ namespace Ruitk.Builder
         /// bytes matching what was there before.</summary>
         public bool UsedCrlf;
 
-        /// <summary>A tree begun from the empty state has no folder to infer, so
-        /// its modules sit at a provisional path until the first Save asks for
-        /// one. Save REFUSES to write these, whoever calls.</summary>
-        public bool NeedsLocation;
 
         /// <summary>Where this module sits on disk RIGHT NOW, or empty when it
         /// has never been written.

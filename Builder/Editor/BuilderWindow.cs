@@ -5002,30 +5002,6 @@ namespace Ruitk.Builder
             _canvasHost?.ClearRowSelection();
         }
 
-        /// <summary>The in-memory home of a tree started from the empty state.
-        /// Nothing is ever written here — Save relocates every session under it
-        /// into the folder the user picks, and refuses to write until it has
-        /// one. It sits under Assets deliberately: `IsReadOnlyLocation` treats
-        /// anything outside the project as immutable, so a provisional path in
-        /// the temp directory would open the first card READ-ONLY and refuse
-        /// every edit.</summary>
-        /// <para>GetFullPath, not Combine: `Application.dataPath` comes back with
-        /// FORWARD slashes on Windows and Combine only inserts a separator
-        /// without rewriting the ones already there, so the root kept forward
-        /// slashes in its prefix while every session path had been through
-        /// GetFullPath and was all backslashes. The prefix test never matched,
-        /// the relocation was skipped, and Save wrote the module at its
-        /// PROVISIONAL path (UB-119).</para>
-        /// <para>UB-120: the folder name ends in '~', which Unity's Asset
-        /// Database ignores wholesale. If a provisional path ever reaches disk
-        /// again, Unity will not import it, will not generate a .meta, and the
-        /// source generator will not compile it — instead of what happened
-        /// once: a stray module became a real asset whose single bad token
-        /// failed Assembly-CSharp and cascaded into Burst assembly-resolution
-        /// errors across the whole project.</para>
-        private static string UnsavedRoot =>
-            Path.GetFullPath(Path.Combine(Application.dataPath, "__RuitkBuilderUnsaved__~"));
-
         /// <summary>UB-113: a tree begun from the empty state has no folder to
         /// infer, so Save asks for one, once, and moves the pending sessions
         /// there before writing. Returns false when the user cancels or picks
@@ -5059,15 +5035,16 @@ namespace Ruitk.Builder
             // Planned in full before anything moves, so a collision cancels the
             // whole relocation instead of leaving half the tree in the new folder
             // and half at the provisional path.
-            string root = UnsavedRoot;
+            string root = BuilderWorkspace.UnsavedRoot;
             var plan = new System.Collections.Generic.List<(BuilderModule Module, string Folder)>();
             foreach (var module in pending)
             {
+                // Every pending module is under the provisional root by
+                // definition - that is what makes it pending - so the relative
+                // path is always there to take.
                 string folder = Path.GetFullPath(module.Folder ?? "");
-                string target = folder.StartsWith(root, System.StringComparison.OrdinalIgnoreCase)
-                    ? Path.GetFullPath(Path.Combine(
-                        chosen, folder.Substring(root.Length).TrimStart('\\', '/')))
-                    : folder;
+                string target = Path.GetFullPath(Path.Combine(
+                    chosen, folder.Substring(root.Length).TrimStart('\\', '/')));
                 string to = Path.Combine(target, Path.GetFileName(module.FilePath));
                 if (!_workspace.IsPathAvailable(to))
                 {
@@ -5080,9 +5057,9 @@ namespace Ruitk.Builder
 
             foreach (var step in plan)
             {
-                // A module whose parent owned its folder has already been carried
-                // home by that parent's move; placing it again at the same folder
-                // is a no-op, and the flag still has to be cleared either way.
+                // A module the folder move already carried home is placed where
+                // it now is, which changes nothing - so the walk does not care
+                // what order the tree hands it back.
                 string from = step.Module.FilePath;
                 if (!_workspace.PlaceAt(step.Module, step.Folder))
                     continue;
@@ -5238,7 +5215,7 @@ namespace Ruitk.Builder
             bool rooted = !string.IsNullOrEmpty(_focusFile);
             string dir = rooted
                 ? Path.GetDirectoryName(_focusFile)
-                : UnsavedRoot;
+                : BuilderWorkspace.UnsavedRoot;
             if (dir == null)
             {
                 Toast("Could not resolve a location for the new module");
@@ -5273,8 +5250,7 @@ namespace Ruitk.Builder
                     // every other edit already obeyed.
                     string full = Path.GetFullPath(created);
                     if (_workspace.CreateNew(
-                            full, BuilderNewFileDialog.TemplateFor(kind, name),
-                            needsLocation: !rooted) == null)
+                            full, BuilderNewFileDialog.TemplateFor(kind, name)) == null)
                     {
                         Toast("Could not create " + name);
                         return;

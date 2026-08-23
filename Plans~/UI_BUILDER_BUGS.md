@@ -2873,3 +2873,66 @@ that owns a module named after itself.
 FIX: the guard, plus the resolution moved to `BuilderTree.ResolveRoot` where it
 has no Unity dependency and `Builder~/ModelTests` can build the real folder
 shapes on disk and assert against them. Six checks, including this exact layout.
+
+### UB-178 — the styles "didn't save" `FIXED` `CRITICAL`
+
+Owner report 2026-08-23: built a tree in a fresh builder, saved, and the
+component files landed but the style modules did not. The console named it
+exactly: `unresolved import in SomeNew.uitkx: "./someNew.style"` and, from the
+compiler, `CS1029 no file at ./someNew.style(.uitkx)`.
+
+The style files WERE written. They went to
+`Assets/__RuitkBuilderUnsaved__~/SomeNew/someNew.style.uitkx` - the provisional
+root, whose name ends in "~", which the Asset Database ignores wholesale. So the
+bytes were on disk, Unity never imported them, and the component's import
+compiled to nothing. Worse than not writing them at all, because nothing said so.
+
+ROOT CAUSE, and it is the same disease one level up: `NeedsLocation` was a FLAG
+each caller set. `CreateModule` passed `needsLocation: !rooted` - true for the
+first module of a new tree, and FALSE for every module created afterwards,
+because by then a focus file exists. So the component asked for a location and
+the style module beside it never did: it was not in `UnlocatedModules()`, was
+never re-homed, and `SaveAll` saw no flag and wrote it where it stood.
+
+A SECOND defect kept it from self-correcting. `BuilderTree.MoveTo` carries the
+subtree when a module owns its folder, but "inside" only meant BELOW: modules
+sitting IN the folder - the style and hook companions, the whole reason the
+folder exists - were left behind at a path their folder had just vacated. So
+even re-homing the component would not have taken its styles along.
+
+FIX, both at the point of decision. `BuilderWorkspace.IsUnlocated` DERIVES the
+answer from where the module sits, so no caller can forget it and Save refuses
+the provisional root whoever asks; the flag is deleted. And `MoveTo` carries
+what is in the folder as well as under it. Six model checks pin the carry,
+including that a COMPANION renaming does not take the folder with it.
+
+### UB-179 — NullReferenceException from inside the canvas unmount `FIXED` `HIGH`
+
+Same report, same console: `AppendToEffectList` threw during
+`BuilderCanvasHost.Unmount` on the Save path. Not a builder bug - a reconciler
+one, in `Shared/`, reachable by any host that tears a tree down.
+
+ROOT CAUSE: `UnmountRoot` nulls the root but left `_nextUnitOfWork` pointing
+into the tree it had just deleted. Unmount then drains the scheduler so effect
+cleanups run before the host goes away - and that drain resumed a render slice
+queued against the dead tree. `CompleteWork` appends to the root's effect list;
+the root was null.
+
+FIX: a teardown abandons its in-flight render (`UnmountRoot` and `AbandonRoot`
+both), and `ProcessWorkUntilDeadline` returns immediately when the root is gone.
+Both are needed: the scheduler holds the closure and cannot be made to forget
+it, so the reconciler has to be able to say the slice is void. Two tests in
+`SharedTests~` reproduce it - verified failing without the fix.
+
+### UB-180 — adding a component rearranged the canvas `FIXED` `MEDIUM`
+
+Owner report 2026-08-23: "when you add new component, it rearranges the canvas,
+need to stop."
+
+ROOT CAUSE: card slots were only ever WRITTEN DOWN when the user dragged one.
+Everything else was recomputed on each mount by `SeedDefaultPositions`, a
+breadth-first walk whose answer depends on the node SET - so gaining one module
+re-laid-out every card that had never been dragged.
+
+FIX: `AdoptUnplaced` records the slots the default layout hands out, the first
+time it hands them out. A slot is decided once and then remembered.

@@ -281,6 +281,43 @@ static class Program
         Check(i1.FilePath + "|" + i2.FilePath == after1,
               "repeating a move changes nothing, subtree included");
 
+        // ---- a folder that moves takes what is IN it ------------------------
+        // UB-178: only the NESTED case was carried, so a component's own style
+        // and hook companions - the whole reason the folder exists - stayed at a
+        // path their folder had vacated. Save then wrote them where nothing
+        // would ever look for them.
+        Console.WriteLine("companions ride along");
+        var cc = new BuilderTree();
+        string home = Path.Combine(Root, "Panel");
+        var owner = Make(home, "Panel", BuilderNodeKind.Component, "x", true);
+        var styleBeside = Make(home, "panelStyle", BuilderNodeKind.Style, "y", true);
+        var hookBeside = Make(home, "usePanel", BuilderNodeKind.Hook, "z", true);
+        var nested = Make(Path.Combine(home, "components", "Leaf"), "Leaf",
+                          BuilderNodeKind.Component, "w", true);
+        var stranger = Make(Path.Combine(Root, "Other"), "Other",
+                            BuilderNodeKind.Component, "v", true);
+        cc.Add(owner); cc.Add(styleBeside); cc.Add(hookBeside); cc.Add(nested); cc.Add(stranger);
+
+        string moved = Path.Combine(Root, "Renamed");
+        cc.MoveTo(owner, moved, "Renamed");
+        Check(string.Equals(styleBeside.Folder, moved, StringComparison.OrdinalIgnoreCase),
+              "the style companion beside it moved with the folder");
+        Check(string.Equals(hookBeside.Folder, moved, StringComparison.OrdinalIgnoreCase),
+              "the hook companion beside it moved with the folder");
+        Check(nested.Folder.EndsWith(Path.Combine("Renamed", "components", "Leaf")),
+              "the nested child still keeps its position under the folder");
+        Check(string.Equals(stranger.Folder, Path.Combine(Root, "Other"),
+                  StringComparison.OrdinalIgnoreCase),
+              "a module in a DIFFERENT folder is not dragged along");
+        Check(cc.ByPath(Path.Combine(moved, "panelStyle.style.uitkx")) == styleBeside,
+              "and the index followed it");
+
+        // A COMPANION renaming must not take the folder with it.
+        cc.MoveTo(styleBeside, moved, "otherStyle");
+        Check(string.Equals(owner.Folder, moved, StringComparison.OrdinalIgnoreCase)
+              && string.Equals(hookBeside.Folder, moved, StringComparison.OrdinalIgnoreCase),
+              "renaming a companion moves only itself");
+
         // ---- where a tree starts, against real folders on disk --------------
         Console.WriteLine("tree root");
         RootChecks();

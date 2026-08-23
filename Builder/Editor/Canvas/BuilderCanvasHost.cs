@@ -108,6 +108,11 @@ namespace Ruitk.Builder
             _config = BuilderCanvasConfig.LoadForMember(focusFile)
                 ?? BuilderCanvasConfig.LoadForRoot(_graph.RootPath);
             _config.ApplyTo(_graph);
+            // Freeze whatever slots the default layout just handed out, so the
+            // next mount reproduces them exactly instead of recomputing a layout
+            // that depends on how many cards there are (UB-180).
+            if (_config.AdoptUnplaced(_graph))
+                _config.Save();
             _camX = _config.CameraX;
             _camY = _config.CameraY;
             // A layout persisted under a different range loads outside the live

@@ -224,8 +224,7 @@ namespace Ruitk.Builder
 
         // ── Manipulation ─────────────────────────────────────────────────────
 
-        public BuilderModule CreateNew(
-            string filePath, string initialBuffer, bool needsLocation = false)
+        public BuilderModule CreateNew(string filePath, string initialBuffer)
         {
             string full = BuilderTree.Canon(filePath);
             if (!IsPathAvailable(full))
@@ -233,36 +232,64 @@ namespace Ruitk.Builder
             var module = BuilderModule.Fresh(
                 Path.GetDirectoryName(full) ?? string.Empty,
                 NameOf(full), KindOf(full), initialBuffer);
-            module.NeedsLocation = needsLocation;
             _tree.Add(module);
             Changed?.Invoke();
             return module;
         }
 
-        /// <summary>Every module still waiting to be told where it lives. THE
-        /// question Save asks, answered by a flag on the module rather than by
-        /// testing its path against the provisional root: the prefix test is
-        /// exactly what silently skipped the relocation and wrote a module at its
-        /// provisional path (UB-119).</summary>
+        /// <summary>The in-memory home of a tree started from the empty state.
+        /// Nothing is ever written here: Save re-homes every module under it into
+        /// the folder the user picks, and refuses to write one that is still here.
+        ///
+        /// It sits under Assets deliberately - IsReadOnlyLocation treats anything
+        /// outside the project as immutable, so a provisional path in the temp
+        /// directory would open the first card READ-ONLY and refuse every edit -
+        /// and its name ends in "~", which the Asset Database ignores wholesale,
+        /// so a module that reaches disk here is never imported and never
+        /// compiled.</summary>
+        public static string UnsavedRoot => BuilderTree.Canon(
+            Path.Combine(Application.dataPath, "__RuitkBuilderUnsaved__~"));
+
+        /// <summary>Whether a module is still at the provisional location.
+        ///
+        /// DERIVED from where the module sits. It was a flag each caller set, and
+        /// the caller that did not was the create flow for the SECOND module in a
+        /// new tree: with a focus file present it passed false, so a style module
+        /// created beside its component never asked for a location, was never
+        /// re-homed, and Save happily wrote it under the provisional root - which
+        /// the Asset Database ignores. The file existed, Unity never saw it, and
+        /// the component's import compiled to "no file at ./x.style" (UB-178).
+        /// A fact about the tree cannot be forgotten by a caller.</summary>
+        public static bool IsUnlocated(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return false;
+            string full = BuilderTree.Canon(filePath);
+            string root = UnsavedRoot;
+            return full.Length > root.Length
+                && full.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                && (full[root.Length] == Path.DirectorySeparatorChar
+                    || full[root.Length] == Path.AltDirectorySeparatorChar);
+        }
+
+        /// <summary>Every module still waiting to be told where it lives.</summary>
         public List<BuilderModule> UnlocatedModules()
         {
             var pending = new List<BuilderModule>();
             foreach (var module in _tree.Modules)
-                if (module.NeedsLocation)
+                if (IsUnlocated(module.FilePath))
                     pending.Add(module);
             return pending;
         }
 
-        /// <summary>Gives a module its real home. The ONLY door from provisional
-        /// to writable - Save refuses every module that still needs a location,
-        /// whoever calls and however the paths compare - so clearing the flag and
-        /// setting the folder happen in one place and cannot drift apart.</summary>
+        /// <summary>Gives a module its real home. A module carried along by a
+        /// parent that owned its folder is already there, and moving it to where
+        /// it already is changes nothing, so the walk is order-independent.</summary>
         public bool PlaceAt(BuilderModule module, string newFolder)
         {
             if (module == null || _tree.ByPath(module.FilePath) != module)
                 return false;
             _tree.MoveTo(module, newFolder, module.Name);
-            module.NeedsLocation = false;
             Changed?.Invoke();
             return true;
         }
@@ -373,7 +400,11 @@ namespace Ruitk.Builder
 
                 foreach (var module in _tree.Modules)
                 {
-                    if (module.IsReadOnly || module.NeedsLocation)
+                    // The provisional root is checked HERE, at the write, so no
+                    // route into Save can put a module there - the Asset Database
+                    // ignores that folder, so a file written to it exists and is
+                    // invisible, which is worse than not writing it at all.
+                    if (module.IsReadOnly || IsUnlocated(module.FilePath))
                         continue;
                     string target = module.FilePath;
                     if (string.IsNullOrEmpty(target))
