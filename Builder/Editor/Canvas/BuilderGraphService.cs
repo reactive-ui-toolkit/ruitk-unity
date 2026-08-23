@@ -56,15 +56,14 @@ namespace Ruitk.Builder
             }
 
             var adjacency = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-            var importedBy = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             var edgeList = new List<(string From, string To, string Specifier, List<string> Names)>();
-            BuildStructure(inventory, textByPath, adjacency, importedBy, edgeList);
+            BuildStructure(inventory, textByPath, adjacency, edgeList);
 
             // EVERY module in the tree gets a card. Membership used to be the
             // component connected to the focus, so a module whose only import had
             // just been broken - or which had not been wired up yet - vanished
             // from the canvas while the user was building it.
-            string root = ResolveRoot(importedBy, inventory, focus);
+            string root = ResolveRootModule(modules, focus, inventory);
 
             var graph = new BuilderGraph { RootPath = root };
             var indexByFile = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -128,7 +127,6 @@ namespace Ruitk.Builder
             HashSet<string> inventory,
             Dictionary<string, string> textByPath,
             Dictionary<string, HashSet<string>> adjacency,
-            Dictionary<string, HashSet<string>> importedBy,
             List<(string From, string To, string Specifier, List<string> Names)> edges)
         {
             foreach (string from in inventory)
@@ -196,7 +194,6 @@ namespace Ruitk.Builder
                         continue;
                     Link(adjacency, from, to);
                     Link(adjacency, to, from);
-                    Link(importedBy, to, from);
                 }
             }
         }
@@ -1264,44 +1261,47 @@ namespace Ruitk.Builder
             set.Add(value);
         }
 
-        /// <summary>
-        /// The tree root = a module nobody in the tree imports, reachable from the
-        /// focus by walking importers upward. Multi-root trees pick
-        /// deterministically (ordinal-smallest path) so the per-root config key is
-        /// stable across sessions.
-        /// </summary>
-        private static string ResolveRoot(
-            Dictionary<string, HashSet<string>> importedBy,
-            HashSet<string> member,
-            string focus)
+        /// <summary>The module the tree is IDENTIFIED by: the one that owns the
+        /// tree's root folder.
+        ///
+        /// It used to be "a module nobody in the tree imports, found by walking
+        /// importers up from the focus", which makes the root a property of the
+        /// FOCUS - and a module nothing imports yet is every module the moment it
+        /// is created. So creating a style module made that module its own root.
+        /// The saved layout is keyed on the root, so the key changed, every stored
+        /// position missed, and the whole tree re-laid itself out (UB-185).
+        ///
+        /// The folder walk gives the same answer from any module in the tree,
+        /// which is what a tree's identity has to mean.</summary>
+        private static string ResolveRootModule(
+            IReadOnlyList<BuilderModule> modules, string focus, HashSet<string> inventory)
         {
+            string folder = BuilderTree.ResolveRoot(focus);
             string best = null;
-            var current = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { focus };
-            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            while (current.Count > 0)
+            if (modules != null && !string.IsNullOrEmpty(folder))
             {
-                var next = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (string file in current)
+                string wanted = BuilderTree.Canon(folder);
+                foreach (var module in modules)
                 {
-                    if (!visited.Add(file))
+                    if (module == null || string.IsNullOrEmpty(module.FilePath))
                         continue;
-                    bool hasImporter = importedBy.TryGetValue(file, out var importers)
-                        && importers.Count > 0;
-                    if (!hasImporter)
-                    {
-                        if (best == null || string.CompareOrdinal(file, best) < 0)
-                            best = file;
-                    }
-                    else
-                    {
-                        foreach (string importer in importers)
-                            if (member.Contains(importer))
-                                next.Add(importer);
-                    }
+                    if (!string.Equals(BuilderTree.Canon(module.Folder), wanted,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    // The component named after the folder IS the tree.
+                    if (module.OwnsFolder)
+                        return Path.GetFullPath(module.FilePath);
+                    string path = Path.GetFullPath(module.FilePath);
+                    if (best == null || string.CompareOrdinal(path, best) < 0)
+                        best = path;
                 }
-                current = next;
             }
-            return best ?? focus;
+            if (best != null)
+                return best;
+            // A tree with nothing at its root folder still needs one stable name.
+            var ordered = new List<string>(inventory);
+            ordered.Sort(StringComparer.OrdinalIgnoreCase);
+            return ordered.Count > 0 ? ordered[0] : focus;
         }
 
         private static readonly Regex s_exportComponentDecl = new Regex(

@@ -3015,3 +3015,53 @@ which is pure and linked into `Builder~/ModelTests`: 14 checks drive the round
 trip over every shape the house layout produces, in both directions. They are
 only correct as a PAIR, and a disagreement would not produce one bad import - it
 would rewrite every import in the tree to something that does not resolve.
+
+### UB-185 — a new style module became its own tree `FIXED` `HIGH`
+
+Owner report 2026-08-23, with a screenshot: creating a style module re-stacked
+the whole canvas. UB-180 had already frozen card slots, so this was a SECOND
+cause, and the freeze made it worse - it persisted the wrong arrangement.
+
+ROOT CAUSE: `ResolveRoot` derived the tree root by walking import edges upward
+FROM THE FOCUS and taking a module nobody imports. That makes the root a
+property of the focus, and a module nothing imports yet is EVERY module the
+moment it is created. Creating a style module and focusing it made that style
+its own root. The saved layout is keyed on the root path, so the key changed, no
+stored position matched, every card got a fresh breadth-first slot - and
+`AdoptUnplaced` then wrote that arrangement down under the new key.
+
+The owner's UserSettings shows the history plainly: 35 layout files, most keyed
+on a STYLE MODULE as "root" - one phantom tree per style module ever created,
+going back weeks.
+
+FIX: the root is the module that owns the tree's ROOT FOLDER, found with
+`BuilderTree.ResolveRoot` - the same folder walk the loader uses, which gives the
+same answer from any module in the tree. The import-walk version is deleted, and
+with it the second, conflicting definition of "root". A model check asserts the
+property that broke: every module in a fixture tree, imported or not, resolves to
+the same root.
+
+Also: the layout lookup now tries the deterministic root key FIRST and falls back
+to the member scan, which returns whichever file lists the focus first in
+directory order.
+
+NOT migrated, and deliberately: the 35 stale configs are left alone. Layouts
+saved under a style-module key are not found again, so a tree whose arrangement
+lived in one of those comes back with default slots once. These are throwaway
+test trees; re-keying them is speculative work on data nobody needs.
+
+### UB-186 — the chip drag was wired to the wrong element `FIXED` `MED`
+
+Owner report 2026-08-23: "dragging from the chip doesnt add the component to
+another". Shipped in UB-182 and it did nothing.
+
+ROOT CAUSE: two Labels render a kind chip - the L0 PILL and the L1/L2 card
+header badge - and both are built from `KindLabel(node.Kind)`. The edit landed on
+the first, which is the L0 pill. At Layer 2, where the owner works, the chip has
+no handlers at all.
+
+FIX: both chips arm the drag, through one `BuilderCanvasDrawing.BeginCardDrag`
+rather than two copies of the handler body. It returns whether it armed, so a
+chip that cannot drag (a module with no resolvable name) leaves the press to
+bubble and the header underneath still moves the card - one press, two gestures,
+and only one of them may have it.

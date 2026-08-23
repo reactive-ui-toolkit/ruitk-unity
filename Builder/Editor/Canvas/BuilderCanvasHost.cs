@@ -141,7 +141,12 @@ namespace Ruitk.Builder
 
             _graph = graph;
             onGraphLoaded?.Invoke(graph);
-            _config = BuilderCanvasConfig.LoadForMember(focusFile)
+            // Root FIRST. It is derived from the tree, so every module in the tree
+            // gives the same answer; the member scan is a fallback for a layout
+            // saved before that was true, and it returns whichever file lists the
+            // focus first in directory order.
+            _config = BuilderCanvasConfig.TryLoadForRoot(_graph.RootPath)
+                ?? BuilderCanvasConfig.LoadForMember(focusFile)
                 ?? BuilderCanvasConfig.LoadForRoot(_graph.RootPath);
             _config.ApplyTo(_graph);
             // Freeze whatever slots the default layout just handed out, so the

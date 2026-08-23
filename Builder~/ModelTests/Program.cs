@@ -128,6 +128,30 @@ static class Program
 
         Check(BuilderTree.ResolveRoot(null) == null, "no focus resolves to no root");
 
+        // UB-185: the root is what the saved layout is KEYED on, so it has to be
+        // the same answer from every module in the tree - including one nothing
+        // imports yet, which is every module the moment it is created. The old
+        // rule walked import edges up from the focus, so a fresh style module
+        // became its own root and the whole canvas re-laid itself out.
+        Module("Samples", "Components", "ShowcaseDemoPage", "loose.style.uitkx");
+        Module("Samples", "Components", "ShowcaseDemoPage", "components",
+               "ShowcaseTopBar", "topBar.style.uitkx");
+        string[] everyModule =
+        {
+            Path.Combine(page, "ShowcaseDemoPage.uitkx"),
+            Path.Combine(page, "loose.style.uitkx"),
+            child,
+            Path.Combine(page, "components", "ShowcaseTopBar", "ShowcaseTopBar.uitkx"),
+            Path.Combine(page, "components", "ShowcaseTopBar", "topBar.style.uitkx"),
+        };
+        bool sameEverywhere = true;
+        foreach (string module in everyModule)
+            if (!string.Equals(BuilderTree.ResolveRoot(module), page,
+                    StringComparison.OrdinalIgnoreCase))
+                sameEverywhere = false;
+        Check(sameEverywhere,
+              "every module in the tree resolves to the SAME root, imported or not");
+
         Directory.Delete(sandbox, true);
     }
 

@@ -49,6 +49,29 @@ namespace Ruitk.Builder
             return Path.Combine(ConfigDir, key + ".json");
         }
 
+        /// <summary>The layout stored under this exact root, or null. The tree
+        /// root is derived from the folder walk and is the same answer from every
+        /// module in the tree, which makes it the only DETERMINISTIC key - the
+        /// member scan below returns whichever file happens to list the focus
+        /// first in directory order, and this project has accumulated a config per
+        /// style module from the days when a style module could be its own root
+        /// (UB-185).</summary>
+        public static BuilderCanvasConfig TryLoadForRoot(string rootFullPath)
+        {
+            try
+            {
+                string path = PathFor(rootFullPath);
+                if (!File.Exists(path))
+                    return null;
+                return JsonConvert.DeserializeObject<BuilderCanvasConfig>(File.ReadAllText(path));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RUITK Builder] canvas config load failed: {ex.Message}");
+                return null;
+            }
+        }
+
         public static BuilderCanvasConfig LoadForRoot(string rootFullPath)
         {
             try

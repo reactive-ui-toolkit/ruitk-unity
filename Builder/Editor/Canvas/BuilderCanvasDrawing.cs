@@ -455,6 +455,22 @@ namespace Ruitk.Builder
                 : BuilderDragService.PayloadFor(node.Kind, name);
         }
 
+        /// <summary>Arms a module drag from a card's kind chip. Returns whether
+        /// it took: when it does not, the event is left to bubble so the header
+        /// underneath can start MOVING the card instead - the two gestures share
+        /// one press and only one of them may have it.</summary>
+        public static bool BeginCardDrag(BuilderCanvasNode node, Ruitk.Core.ReactivePointerEvent e)
+        {
+            if (e == null || e.Button != 0 || e.ClickCount >= 2)
+                return false;
+            string payload = CardDragPayload(node);
+            if (payload == null)
+                return false;
+            BuilderDragService.Begin(payload, node.Title, e);
+            e.StopPropagation();
+            return true;
+        }
+
         public static string KindLabel(BuilderNodeKind kind)
         {
             switch (kind)

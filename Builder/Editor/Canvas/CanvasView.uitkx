@@ -319,15 +319,8 @@ export VirtualNode CanvasView(
                       text={BuilderCanvasDrawing.KindLabel(node.Kind)}
                       tooltip="drag onto another card to use this module"
                       onPointerDown={e => {
-                        if (e.Button == 0 && e.ClickCount < 2) {
-                          string payload = BuilderCanvasDrawing.CardDragPayload(node);
-                          if (payload != null) {
-                            // StopPropagation, or the header underneath starts
-                            // MOVING the card and the two gestures fight.
-                            BuilderDragService.Begin(payload, node.Title, e);
-                            setSelected(index);
-                            e.StopPropagation();
-                          }
+                        if (BuilderCanvasDrawing.BeginCardDrag(node, e)) {
+                          setSelected(index);
                         }
                       }}
                       onPointerMove={e => {
@@ -394,6 +387,21 @@ export VirtualNode CanvasView(
                   >
                     <Label
                       text={BuilderCanvasDrawing.KindLabel(node.Kind)}
+                      tooltip="drag onto another card to use this module"
+                      onPointerDown={e => {
+                        if (BuilderCanvasDrawing.BeginCardDrag(node, e)) {
+                          setSelected(index);
+                        }
+                      }}
+                      onPointerMove={e => {
+                        BuilderDragService.PointerMove(e);
+                      }}
+                      onPointerUp={e => {
+                        if (BuilderCanvasDrawing.DragActive) {
+                          BuilderDragService.PointerUp(e);
+                          e.StopPropagation();
+                        }
+                      }}
                       style={new Style {
                         FontSize = Px(10),
                         UnityFontStyle = FontBold,
