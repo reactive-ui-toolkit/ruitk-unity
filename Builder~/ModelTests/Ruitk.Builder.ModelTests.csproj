@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The builder's tree model, tested OUTSIDE Unity.
+
+    BuilderModule and BuilderTree are pure managed data - no Unity APIs, so
+    their logic is testable in the ordinary dotnet loop rather than only by
+    driving the editor. The two Unity shapes they do reference (SerializeField,
+    ISerializationCallbackReceiver) are declared in Shims.cs, which exists ONLY
+    here; the real sources are Compile-Include linked, never copied, so this
+    tests the shipped code and cannot drift from it.
+
+    What this deliberately does NOT test: Unity's own serializer. That needs a
+    real domain reload with an unsaved tree open, which is the exit gate in
+    Plans~/BUILDER_TREE_MODEL.md. What it DOES cover is everything that gate
+    would leave ambiguous: indexing, orphan computation, subtree moves, the
+    null-vs-empty DiskPath hazard, and validation.
+
+      dotnet run (project) Builder~/ModelTests
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Ruitk.Builder.ModelTests</AssemblyName>
+    <RootNamespace>Ruitk.Builder.ModelTests</RootNamespace>
+    <DefineConstants>$(DefineConstants);UNITY_EDITOR</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Shims.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderModule.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderTree.cs" />
+  </ItemGroup>
+
+</Project>
