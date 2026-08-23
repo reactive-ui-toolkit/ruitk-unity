@@ -27,6 +27,20 @@ namespace Ruitk.Builder
     /// </summary>
     internal static class BuilderLanguage
     {
+        /// <summary>The parse memo. Parsing is a pure function of (text, path)
+        /// over immutable results, and the builder asks the same question
+        /// repeatedly: a mount parses every module for its imports and again for
+        /// its card, and a keystroke parses the focused buffer for its tokens and
+        /// again for its diagnostics.
+        ///
+        /// Keyed on the buffer's REFERENCE, not its contents. A builder buffer is
+        /// replaced wholesale on every edit, so a new reference means new text,
+        /// and comparing references costs nothing where hashing the contents would
+        /// cost the very scan the memo exists to save. A stale hit is impossible:
+        /// the same reference IS the same string.</summary>
+        private static readonly Dictionary<string, (string Text, ParseResult Result)> s_memo =
+            new Dictionary<string, (string, ParseResult)>(StringComparer.OrdinalIgnoreCase);
+
         public static ParseResult Parse(string bufferLf, string filePath)
         {
             if (bufferLf == null)
@@ -34,10 +48,21 @@ namespace Ruitk.Builder
             if (bufferLf.IndexOf('\r') >= 0)
                 throw new ArgumentException("builder buffers are LF-normalized", nameof(bufferLf));
 
+            string key = filePath ?? string.Empty;
+            if (s_memo.TryGetValue(key, out var memo) && ReferenceEquals(memo.Text, bufferLf))
+                return memo.Result;
+
             var diags = new List<ParseDiagnostic>();
             var directives = DirectiveParser.Parse(bufferLf, filePath, diags);
             var nodes = UitkxParser.Parse(bufferLf, filePath, directives, diags);
-            return new ParseResult(directives, nodes, ImmutableArray.CreateRange(diags));
+            var result = new ParseResult(directives, nodes, ImmutableArray.CreateRange(diags));
+
+            // One entry per file, and the builder holds one tree at a time, so the
+            // table stays small; the cap is for a session that has opened many.
+            if (s_memo.Count > 256)
+                s_memo.Clear();
+            s_memo[key] = (bufferLf, result);
+            return result;
         }
 
         /// <summary>

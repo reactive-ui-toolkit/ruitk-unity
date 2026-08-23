@@ -8,460 +8,406 @@ using UnityEngine;
 
 namespace Ruitk.Builder
 {
-    /// <summary>One pending folder move. Serialized with the window, so a domain
-    /// reload cannot lose a rename the user has not saved yet.</summary>
-    [Serializable]
-    public sealed class BuilderFolderMove
-    {
-        public string From;
-        public string To;
-    }
-
     /// <summary>
-    /// The builder's document set for one open tree: per-file sessions, the
-    /// save/abort orchestration, and the read-only policy. Owns the save-only
-    /// disk contract (VE-D2): during editing nothing here writes; Save batches
-    /// all dirty buffers under a reload suppressor (none when HMR is active —
-    /// it already holds the locks) and lets the normal UitkxChangeWatcher
-    /// pipeline run once for the batch.
+    /// The builder's document layer for one open tree: it owns the
+    /// <see cref="BuilderTree"/>, loads it, and projects it back to disk at Save.
     ///
-    /// Serialization: Unity's window serializer cannot round-trip dictionaries,
-    /// so sessions serialize through a parallel list (ISerializationCallbackReceiver)
-    /// — external domain reloads (a user editing .cs in the IDE) must not lose
-    /// unsaved buffers.
+    /// Owns the save-only disk contract (VE-D2): during editing nothing here
+    /// writes. Save walks the tree once and batches every write under a reload
+    /// suppressor (none when HMR is active - it already holds the locks), then
+    /// lets the normal UitkxChangeWatcher pipeline run for the batch.
+    ///
+    /// The shape this replaced kept a flat, path-keyed session store plus two
+    /// side lists of INTENT - pending deletes and pending folder moves - and
+    /// every consumer had to join the data against them. Delete now means the
+    /// module is gone from the tree, and Save works out what that implies by
+    /// diffing against the paths that were on disk last time. See
+    /// Plans~/BUILDER_TREE_MODEL.md.
     /// </summary>
-
     [Serializable]
-    public sealed class BuilderWorkspace : ISerializationCallbackReceiver
+    public sealed class BuilderWorkspace
     {
-        [NonSerialized]
-        private Dictionary<string, BuilderDocumentSession> _sessions =
-            new Dictionary<string, BuilderDocumentSession>(StringComparer.OrdinalIgnoreCase);
+        [SerializeField] private BuilderTree _tree = new BuilderTree();
 
-        [SerializeField] private List<BuilderDocumentSession> _serializedSessions = new List<BuilderDocumentSession>();
+        public BuilderTree Tree => _tree;
 
-        /// <summary>UB-88: files the user has deleted in the builder but which
-        /// are still on disk. Deleting used to hit `AssetDatabase` the instant
-        /// it was asked for, which broke the save-only contract this class owns
-        /// (VE-D2) in the one direction that could not be taken back — the owner
-        /// lost two sample files to it. A deletion is now a PENDING intent like
-        /// every other edit: the card leaves the canvas, nothing leaves the
-        /// disk, and Save is what makes it real. Abort forgets it, and undo is
-        /// just un-marking, so no asset is ever re-created and no GUID
-        /// churns.</summary>
-        [SerializeField] private List<string> _pendingDeletes = new List<string>();
-
-        /// <summary>Folders that are moving. A component that owns its folder
-        /// takes the folder with it when renamed, and that is ONE operation on
-        /// disk, not one per file: moving the children individually would write
-        /// each anew and trash the original, churning every child GUID and
-        /// stranding everything in the folder the builder does not manage -
-        /// companion .cs, .uss, sub-folders. Pending like every other edit.</summary>
-        [SerializeField] private List<BuilderFolderMove> _pendingFolderMoves =
-            new List<BuilderFolderMove>();
+        /// <summary>Adopts a tree recovered from the reload journal. The only way
+        /// in besides a load, and it exists because a tree that has never been
+        /// written is otherwise gone the moment the process is.</summary>
+        public void AdoptTree(BuilderTree tree)
+        {
+            if (tree == null)
+                return;
+            _tree = tree;
+            Changed?.Invoke();
+        }
 
         public event Action Changed;
 
-        public IReadOnlyCollection<BuilderDocumentSession> Sessions => _sessions.Values;
+        public IReadOnlyList<BuilderModule> Modules => _tree.Modules;
 
-        public IReadOnlyList<string> PendingDeletes => _pendingDeletes;
+        /// <summary>Looks a module up by path. A null or unknown path is NOT
+        /// FOUND, never an error - an empty tree has no focus, and asking about
+        /// nothing should answer nothing.</summary>
+        public BuilderModule TryGet(string filePath) => _tree.ByPath(filePath);
 
-        public bool IsPendingDelete(string filePath) =>
-            filePath != null && _pendingDeletes.Contains(Path.GetFullPath(filePath));
+        public BuilderModule ById(string id) => _tree.ById(id);
 
-        /// <summary>True when a file that is still ON DISK must not be shown: it
-        /// is either marked for deletion, or it is the location a module has
-        /// MOVED out of. Both are pending intents, so the file is really there
-        /// and anything built from disk - the module graph above all - would
-        /// otherwise render a card for a module that is no longer at that
-        /// path.</summary>
-        public bool IsHiddenOnDisk(string filePath)
+        public bool HasUnsavedChanges => _tree.HasUnsavedWork();
+
+        /// <summary>Whether a module can live at this path. THE one rule, so the
+        /// name prompt and the creation itself cannot disagree. Nothing needs an
+        /// exception for "deleted but not saved yet": a deleted module is not in
+        /// the tree, so its name is free the instant it goes.</summary>
+        public bool IsPathAvailable(string filePath)
         {
             if (string.IsNullOrEmpty(filePath))
                 return false;
-            if (IsPendingDelete(filePath))
-                return true;
-            string full = Path.GetFullPath(filePath);
-            foreach (var s in _sessions.Values)
-                if (s.IsMoved && string.Equals(
-                        Path.GetFullPath(s.OriginalDiskPath), full,
-                        StringComparison.OrdinalIgnoreCase))
-                    return true;
-            foreach (var move in _pendingFolderMoves)
-                if (full.StartsWith(move.From + Path.DirectorySeparatorChar,
-                        StringComparison.OrdinalIgnoreCase))
-                    return true;
-            return false;
+            return _tree.ByPath(filePath) == null && !File.Exists(filePath);
         }
 
-        public IReadOnlyList<BuilderFolderMove> PendingFolderMoves => _pendingFolderMoves;
+        // ── Loading ──────────────────────────────────────────────────────────
 
-        /// <summary>Records a folder moving and re-paths every open session inside
-        /// it. Callers open the folder's modules first, so the model holds the
-        /// whole subtree and the canvas follows it across the move; Save projects
-        /// the move itself as a single directory operation.</summary>
-        public bool MoveFolder(string oldDir, string newDir)
+        /// <summary>Reads the whole tree that <paramref name="focusFullPath"/>
+        /// belongs to, once. Everything after this reads from memory: what the
+        /// canvas shows no longer depends on which files happen to be open, and
+        /// no mount touches the filesystem again.</summary>
+        public void LoadTree(string focusFullPath)
         {
-            if (string.IsNullOrEmpty(oldDir) || string.IsNullOrEmpty(newDir))
-                return false;
-            string from = Path.GetFullPath(oldDir);
-            string to = Path.GetFullPath(newDir);
-            if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase))
-                return false;
-            if (IsReadOnlyLocation(from))
-                return false;
+            var modules = new List<BuilderModule>();
+            var projection = new List<string>();
+            // Ordinal comparison would let the same file in twice: a specifier
+            // spells a path in whatever case the user typed, and the filesystem
+            // does not care.
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // A folder already on its way somewhere is REDIRECTED rather than
-            // moved again, so undoing a rename cancels the move instead of
-            // queueing a second one back the other way. This is also what lets a
-            // move be taken back at all: the destination is the folder's own
-            // original location, which of course still exists on disk.
-            BuilderFolderMove existing = null;
-            foreach (var move in _pendingFolderMoves)
+            string root = ResolveTreeRoot(focusFullPath);
+            if (!string.IsNullOrEmpty(root) && Directory.Exists(root))
             {
-                if (string.Equals(move.To, from, StringComparison.OrdinalIgnoreCase))
+                string[] files;
+                try
                 {
-                    existing = move;
+                    files = Directory.GetFiles(root, "*.uitkx", SearchOption.AllDirectories);
+                }
+                catch (Exception)
+                {
+                    files = Array.Empty<string>();
+                }
+                Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+                foreach (string file in files)
+                {
+                    string full = BuilderTree.Canon(file);
+                    string raw;
+                    try
+                    {
+                        raw = File.ReadAllText(full);
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
+                    if (!seen.Add(full))
+                        continue;
+                    modules.Add(BuilderModule.FromFile(full, raw, IsReadOnlyLocation(full)));
+                    projection.Add(full);
+                }
+            }
+
+            // Imports that leave the root pull their targets in, transitively.
+            // A tree is what the focus can REACH; the folder scan is only its
+            // seed. A shared module one folder over was outside the scan, so it
+            // was missing from the model entirely and the import that named it
+            // resolved to nothing - an anchor dot with no line, on a module that
+            // was sitting on disk the whole time.
+            for (int i = 0; i < modules.Count; i++)
+            {
+                foreach (string target in ImportTargetsOf(modules[i]))
+                {
+                    if (seen.Contains(target) || !File.Exists(target))
+                        continue;
+                    string raw;
+                    try
+                    {
+                        raw = File.ReadAllText(target);
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
+                    seen.Add(target);
+                    modules.Add(BuilderModule.FromFile(target, raw, IsReadOnlyLocation(target)));
+                    projection.Add(target);
+                }
+            }
+
+            _tree.Reset(modules, projection);
+            Changed?.Invoke();
+        }
+
+        /// <summary>The absolute paths a module imports. Parsing is the only way
+        /// to know: an import is text, and the module holding it may never have
+        /// been written. A module that does not parse contributes nothing, which
+        /// is the right answer for a file that is half-typed.</summary>
+        private static IEnumerable<string> ImportTargetsOf(BuilderModule module)
+        {
+            Ruitk.Language.Parser.ParseResult parsed;
+            try
+            {
+                parsed = BuilderLanguage.Parse(module.BufferText, module.FilePath);
+            }
+            catch (Exception)
+            {
+                yield break;
+            }
+            foreach (var import in parsed.Directives.Imports)
+            {
+                string spec = import.Specifier ?? string.Empty;
+                if (spec.Length == 0 || spec.StartsWith("@", StringComparison.Ordinal))
+                    continue;
+                string mapped = BuilderGraphService.MapSpecifier(module.FilePath, spec);
+                if (!string.IsNullOrEmpty(mapped))
+                    yield return BuilderTree.Canon(mapped);
+            }
+        }
+
+        /// <summary>The outermost folder of the tree the focus belongs to,
+        /// following the house layout: a component owns the folder it is named
+        /// after, and children nest under a "components" folder inside it. The
+        /// walk stops at the first ancestor that is neither, which is the tree's
+        /// own root.</summary>
+        public static string ResolveTreeRoot(string focusFullPath)
+        {
+            if (string.IsNullOrEmpty(focusFullPath))
+                return null;
+            string dir;
+            try
+            {
+                dir = Path.GetDirectoryName(BuilderTree.Canon(focusFullPath));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+            if (string.IsNullOrEmpty(dir))
+                return null;
+
+            while (true)
+            {
+                DirectoryInfo parent;
+                try
+                {
+                    parent = Directory.GetParent(dir);
+                }
+                catch (Exception)
+                {
                     break;
                 }
-            }
-            // Only the way BACK is exempt from the collision check - that folder
-            // is the one this move came from, so of course it is still there.
-            bool returningHome = existing != null &&
-                string.Equals(existing.From, to, StringComparison.OrdinalIgnoreCase);
-            if (!returningHome && Directory.Exists(to))
-                return false;
+                if (parent == null)
+                    break;
 
-            string prefix = from + Path.DirectorySeparatorChar;
-            var inside = new List<BuilderDocumentSession>();
-            foreach (var session in _sessions.Values)
-                if (Path.GetFullPath(session.FilePath)
-                        .StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    inside.Add(session);
-            foreach (var session in inside)
-            {
-                string rel = Path.GetFullPath(session.FilePath).Substring(prefix.Length);
-                Reindex(session.FilePath, Path.Combine(to, rel), session);
+                // "components" is a nesting level, never a tree root, so step
+                // over it to the component that owns it.
+                if (string.Equals(parent.Name, "components", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (parent.Parent == null)
+                        break;
+                    dir = parent.Parent.FullName;
+                    continue;
+                }
+                // A folder that owns a module named after itself is still inside
+                // the tree, so keep climbing.
+                if (File.Exists(Path.Combine(parent.FullName, parent.Name + ".uitkx")))
+                {
+                    dir = parent.FullName;
+                    continue;
+                }
+                break;
             }
+            return dir;
+        }
 
+        /// <summary>Brings a single file into the tree - opening a module from
+        /// outside the loaded tree, or one the loader could not see. A file that
+        /// is already present is returned as-is.</summary>
+        public BuilderModule Open(string filePath)
+        {
+            string full = BuilderTree.Canon(filePath);
+            var existing = _tree.ByPath(full);
             if (existing != null)
             {
-                existing.To = to;
-                if (string.Equals(existing.From, existing.To, StringComparison.OrdinalIgnoreCase))
-                    _pendingFolderMoves.Remove(existing);
-            }
-            else if (Directory.Exists(from))
-            {
-                _pendingFolderMoves.Add(new BuilderFolderMove { From = from, To = to });
-            }
-            // A folder that is not on disk has nothing to move: a module the user
-            // has only just created lives in a directory no one has written yet.
-            // Re-pathing its sessions is the whole job - Save creates the
-            // directory when it writes them. Queueing a move for it would fail
-            // the whole save on a directory that never existed.
-            Changed?.Invoke();
-            return true;
-        }
-
-        /// <summary>Returns false when the file is read-only or already marked.</summary>
-        public bool MarkForDeletion(string filePath)
-        {
-            if (string.IsNullOrEmpty(filePath) || IsReadOnlyLocation(filePath))
-                return false;
-            string full = Path.GetFullPath(filePath);
-            if (_pendingDeletes.Contains(full))
-                return false;
-            _pendingDeletes.Add(full);
-            Changed?.Invoke();
-            return true;
-        }
-
-        public bool UnmarkForDeletion(string filePath)
-        {
-            if (string.IsNullOrEmpty(filePath))
-                return false;
-            if (!_pendingDeletes.Remove(Path.GetFullPath(filePath)))
-                return false;
-            Changed?.Invoke();
-            return true;
-        }
-
-        public bool HasUnsavedChanges
-        {
-            get
-            {
-                if (_pendingDeletes.Count > 0 || _pendingFolderMoves.Count > 0)
-                    return true;
-                foreach (var s in _sessions.Values)
-                    if ((s.IsDirty || s.IsMoved) && !s.IsReadOnly)
-                        return true;
-                return false;
-            }
-        }
-
-        /// <summary>Looks a session up by path. A null path is NOT FOUND, not an
-        /// error - Dictionary throws ArgumentNullException on a null key, and with
-        /// an empty workspace the focus is legitimately null, so every caller that
-        /// passed it straight through blew up on a lookup whose honest answer is
-        /// simply "nothing".</summary>
-        public BuilderDocumentSession TryGet(string filePath) =>
-            string.IsNullOrEmpty(filePath) ? null
-                : _sessions.TryGetValue(filePath, out var s) ? s : null;
-
-        /// <summary>Lookup by STABLE identity. The path map above is an index
-        /// that a rename rewrites; this is the handle that never moves.</summary>
-        public BuilderDocumentSession ById(string id)
-        {
-            if (string.IsNullOrEmpty(id))
-                return null;
-            foreach (var s in _sessions.Values)
-                if (string.Equals(s.Id, id, StringComparison.Ordinal))
-                    return s;
-            return null;
-        }
-
-        /// <summary>Re-files a session under a new path. The session OBJECT is
-        /// preserved - that is the whole point: its id, undo history and
-        /// recorded line-ending flavor belong to the module, not to its
-        /// location.</summary>
-        private void Reindex(string oldPath, string newPath, BuilderDocumentSession session)
-        {
-            _sessions.Remove(oldPath);
-            session.FilePath = newPath;
-            _sessions[newPath] = session;
-        }
-
-        /// <summary>
-        /// Immutable-package detection done RIGHT (plan §4.3c): PackageInfo source,
-        /// never the asmdef walk — its null return also means "default assembly",
-        /// which would mark every Assets/ file read-only.
-        /// </summary>
-        public static bool IsReadOnlyLocation(string filePath)
-        {
-            string projectRoot = Path.GetDirectoryName(Application.dataPath);
-            string full = Path.GetFullPath(filePath).Replace('\\', '/');
-            string assetsRoot = Application.dataPath.Replace('\\', '/');
-            if (full.StartsWith(assetsRoot, StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            foreach (var pkg in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
-            {
-                if (string.IsNullOrEmpty(pkg.resolvedPath))
-                    continue;
-                string pkgRoot = Path.GetFullPath(pkg.resolvedPath).Replace('\\', '/');
-                if (full.StartsWith(pkgRoot + "/", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(full, pkgRoot, StringComparison.OrdinalIgnoreCase))
-                {
-                    return pkg.source != UnityEditor.PackageManager.PackageSource.Embedded
-                        && pkg.source != UnityEditor.PackageManager.PackageSource.Local;
-                }
-            }
-            return true;
-        }
-
-        public BuilderDocumentSession Open(string filePath)
-        {
-            if (_sessions.TryGetValue(filePath, out var existing))
-            {
-                // Sessions survive domain reloads by design (unsaved buffers),
-                // which also means they survive EXTERNAL file changes — a clean
-                // session must re-check the disk or it serves stale text
-                // forever (owner report 2026-08-16: repaired samples still
-                // showed their old mojibake on open cards).
-                if (!existing.IsDirty && File.Exists(filePath)
-                    && existing.AdoptDiskText(File.ReadAllText(filePath)))
+                // Modules survive domain reloads by design (unsaved buffers),
+                // which also means they survive EXTERNAL file changes. A clean
+                // module re-checks disk or it serves stale text forever.
+                if (!existing.IsDirty && File.Exists(full)
+                    && existing.AdoptDiskText(File.ReadAllText(full)))
                     Changed?.Invoke();
                 return existing;
             }
 
-            bool onDisk = File.Exists(filePath);
-            string raw = onDisk ? File.ReadAllText(filePath) : string.Empty;
-            var session = BuilderDocumentSession.Open(
-                filePath, raw, IsReadOnlyLocation(filePath), onDisk);
-            _sessions[filePath] = session;
+            bool onDisk = File.Exists(full);
+            var module = onDisk
+                ? BuilderModule.FromFile(full, File.ReadAllText(full), IsReadOnlyLocation(full))
+                : BuilderModule.Fresh(
+                    Path.GetDirectoryName(full) ?? string.Empty,
+                    NameOf(full), KindOf(full), string.Empty);
+            _tree.Add(module);
             Changed?.Invoke();
-            return session;
+            return module;
         }
 
-        /// <summary>External-change sweep (asset imports): clean sessions adopt
-        /// the new disk text; dirty sessions keep the user's unsaved buffer.
-        /// Returns the full paths whose buffers changed.</summary>
+        /// <summary>External-change sweep (asset imports): clean modules adopt
+        /// the new disk text; dirty ones keep the user's unsaved buffer. Returns
+        /// the paths whose text changed.</summary>
         public List<string> ReloadCleanFromDisk(IEnumerable<string> fullPaths)
         {
             var changed = new List<string>();
+            if (fullPaths == null)
+                return changed;
             foreach (string path in fullPaths)
             {
-                var session = TryGet(path);
-                if (session == null || session.IsDirty || session.IsReadOnly || !File.Exists(path))
+                var module = _tree.ByPath(path);
+                if (module == null || module.IsDirty || module.IsReadOnly)
                     continue;
-                if (session.AdoptDiskText(File.ReadAllText(path)))
-                    changed.Add(path);
+                if (!File.Exists(path))
+                    continue;
+                if (module.AdoptDiskText(File.ReadAllText(path)))
+                    changed.Add(BuilderTree.Canon(path));
             }
             if (changed.Count > 0)
                 Changed?.Invoke();
             return changed;
         }
 
-        /// <summary>Opens a never-saved session for a module that does not exist
-        /// on disk yet (UB-111). Returns null when something already claims the
-        /// path — a redo replaying a create must not throw.</summary>
-        /// <summary>Whether a module can be created at this path. THE one rule, so
-        /// the name prompt and the creation itself cannot disagree.
-        ///
-        /// A path whose deletion is still PENDING counts as available: the user
-        /// deleted it and is putting something back, and Save has not run, so
-        /// nothing is committed either way. Without this, deleting a module made its
-        /// NAME unusable for the rest of the session - the session went on occupying
-        /// the path invisibly, and the only symptom was "already exists" about a
-        /// module that was no longer on the canvas.</summary>
-        public bool IsPathAvailable(string filePath)
-        {
-            if (string.IsNullOrEmpty(filePath))
-                return false;
-            if (IsPendingDelete(filePath))
-                return true;
-            return !_sessions.ContainsKey(filePath) && !File.Exists(filePath);
-        }
+        // ── Manipulation ─────────────────────────────────────────────────────
 
-        public BuilderDocumentSession CreateNew(
+        public BuilderModule CreateNew(
             string filePath, string initialBuffer, bool needsLocation = false)
         {
-            if (!IsPathAvailable(filePath))
+            string full = BuilderTree.Canon(filePath);
+            if (!IsPathAvailable(full))
                 return null;
-
-            // Re-creating over a module whose deletion is still pending takes the
-            // deletion back and replaces the buffer, rather than adding a SECOND
-            // session for the same path. That also avoids a save ordering hazard:
-            // writes happen before deletions, so a fresh session at a path already
-            // queued for deletion would be written and then trashed.
-            if (_sessions.TryGetValue(filePath, out var revived))
-            {
-                UnmarkForDeletion(filePath);
-                revived.NeedsLocation = needsLocation;
-                if (!revived.IsReadOnly)
-                    revived.ApplyEdit(BuilderDocumentSession.NormalizeLf(initialBuffer));
-                Changed?.Invoke();
-                return revived;
-            }
-
-            var session = BuilderDocumentSession.CreateNew(filePath, initialBuffer);
-            session.NeedsLocation = needsLocation;
-            _sessions[filePath] = session;
+            var module = BuilderModule.Fresh(
+                Path.GetDirectoryName(full) ?? string.Empty,
+                NameOf(full), KindOf(full), initialBuffer);
+            module.NeedsLocation = needsLocation;
+            _tree.Add(module);
             Changed?.Invoke();
-            return session;
+            return module;
         }
 
-        /// <summary>Moves a never-saved session to its real path (UB-113: a tree
-        /// begun with no folder picks one at Save). Only never-saved sessions
-        /// move — a session with a disk file behind it would leave that file
-        /// orphaned.</summary>
-        public bool Relocate(string oldPath, string newPath)
+        /// <summary>Every module still waiting to be told where it lives. THE
+        /// question Save asks, answered by a flag on the module rather than by
+        /// testing its path against the provisional root: the prefix test is
+        /// exactly what silently skipped the relocation and wrote a module at its
+        /// provisional path (UB-119).</summary>
+        public List<BuilderModule> UnlocatedModules()
         {
-            var session = TryGet(oldPath);
-            if (session == null || !session.IsNewFile || _sessions.ContainsKey(newPath))
+            var pending = new List<BuilderModule>();
+            foreach (var module in _tree.Modules)
+                if (module.NeedsLocation)
+                    pending.Add(module);
+            return pending;
+        }
+
+        /// <summary>Gives a module its real home. The ONLY door from provisional
+        /// to writable - Save refuses every module that still needs a location,
+        /// whoever calls and however the paths compare - so clearing the flag and
+        /// setting the folder happen in one place and cannot drift apart.</summary>
+        public bool PlaceAt(BuilderModule module, string newFolder)
+        {
+            if (module == null || _tree.ByPath(module.FilePath) != module)
                 return false;
-            Reindex(oldPath, newPath, session);
-            // It has a home now, so it is writable.
-            session.NeedsLocation = false;
+            _tree.MoveTo(module, newFolder, module.Name);
+            module.NeedsLocation = false;
             Changed?.Invoke();
             return true;
         }
 
-
-        /// <summary>UB-124: moves a module to a new path as a PENDING change.
-        /// <para>A never-saved module has no file behind it, so it simply
-        /// relocates. A SAVED one cannot be moved on disk without breaking the
-        /// save-only contract, so the rename is expressed with the two pending
-        /// mechanisms that already exist: a new session carrying the text at the
-        /// new path, and a deletion mark on the old one. Save then writes the
-        /// new file and trashes the old in the same batch; Abort drops both, and
-        /// undo reverses both because the ledger records them as a creation and
-        /// a deletion.</para></summary>
-        public bool Rename(string oldPath, string newPath)
+        /// <summary>Deletes a module: it leaves the tree. Save works out that its
+        /// file is orphaned by diffing against the last projection, so there is
+        /// no mark to set, nothing to filter, and the name is free at once.</summary>
+        public bool Delete(string filePath)
         {
-            if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath))
+            var module = _tree.ByPath(filePath);
+            if (module == null || module.IsReadOnly)
                 return false;
-            if (_sessions.ContainsKey(newPath))
-                return false;
-            var session = TryGet(oldPath);
-            // A file at the destination normally means the rename would clobber
-            // something. The one exception is a move being taken BACK: the file
-            // never left its original location, because a move is only projected
-            // at Save - so the module returning to its own OriginalDiskPath is
-            // finding its file, not overwriting a stranger.
-            bool returningHome = session != null &&
-                string.Equals(session.OriginalDiskPath, newPath, StringComparison.OrdinalIgnoreCase);
-            if (!returningHome && File.Exists(newPath))
-                return false;
-            if (session == null || session.IsReadOnly)
-                return false;
-            if (session.IsNewFile)
-                return Relocate(oldPath, newPath);
-
-            // The module MOVES. Replacing it with a fresh session at the new
-            // path threw away its undo history and its recorded line-ending
-            // flavor, and made a rename look like an unrelated creation plus
-            // deletion to everything downstream. The session IS the module;
-            // only its path changes, and OriginalDiskPath still names the file
-            // Save has to retire.
-            Reindex(oldPath, newPath, session);
+            _tree.Remove(module);
             Changed?.Invoke();
             return true;
         }
 
-        /// <summary>Drops a never-saved session — undoing a create. Refuses to
-        /// touch a session that has been saved, which is a real file and belongs
-        /// to the deletion path instead.</summary>
-        public bool DiscardNew(string filePath)
+        /// <summary>Puts a removed module back, for undo. It keeps its identity
+        /// and its DiskPath, so a module that had a file still owns that file.</summary>
+        public BuilderModule Restore(BuilderModule module)
         {
-            var session = TryGet(filePath);
-            if (session == null || !session.IsNewFile)
+            if (module == null || _tree.ByPath(module.FilePath) != null)
+                return null;
+            _tree.Add(module);
+            Changed?.Invoke();
+            return module;
+        }
+
+        /// <summary>Moves a module, carrying its folder's contents when it owns
+        /// the folder. Nothing happens on disk - Save sees DiskPath disagree with
+        /// the derived path and projects the move.</summary>
+        public bool MoveTo(string filePath, string newFolder, string newName)
+        {
+            var module = _tree.ByPath(filePath);
+            if (module == null || module.IsReadOnly)
                 return false;
-            _sessions.Remove(filePath);
+            _tree.MoveTo(module, newFolder, newName);
             Changed?.Invoke();
             return true;
         }
 
-        /// <summary>Paths with no file behind them YET - a module the user has
-        /// created, and the new location of one they have moved. The canvas needs
-        /// them because its inventory of what exists still starts from disk, even
-        /// though the structure it draws comes from the modules themselves.</summary>
-        public IEnumerable<string> PendingNewFiles
+        /// <summary>Moves a module to a target PATH, splitting the folder, name
+        /// and kind out of it. What the ledger replays: an entry records where a
+        /// module went, and walking it back is the same operation the other way.</summary>
+        public bool MoveToPath(string fromPath, string toPath)
         {
-            get
-            {
-                foreach (var s in _sessions.Values)
-                    if (s.IsNewFile || s.IsMoved)
-                        yield return s.FilePath;
-            }
+            string to = BuilderTree.Canon(toPath);
+            if (string.IsNullOrEmpty(to))
+                return false;
+            return MoveTo(fromPath, Path.GetDirectoryName(to) ?? string.Empty, NameOf(to));
         }
 
         public void ApplyEdit(string filePath, string newBufferLf)
         {
-            var session = TryGet(filePath)
-                ?? throw new InvalidOperationException($"no session for '{filePath}'");
-            session.ApplyEdit(newBufferLf);
+            var module = _tree.ByPath(filePath);
+            if (module == null)
+                throw new InvalidOperationException(
+                    $"no module open for '{filePath}' - open it before editing.");
+            module.ApplyEdit(newBufferLf);
             Changed?.Invoke();
         }
 
+        public void Close(string filePath)
+        {
+            if (_tree.RemoveByPath(filePath))
+                Changed?.Invoke();
+        }
+
+        // ── Projection ───────────────────────────────────────────────────────
+
         /// <summary>
-        /// Writes every dirty buffer. HMR inactive: bracket the batch in a reload
-        /// suppressor via <c>using</c> (a leaked lock freezes the domain — the
-        /// bracket is not optional) so the deferred refresh imports everything in
-        /// one pass → one trigger set → one script compilation. HMR active: no
-        /// suppressor at all — HMR already holds both locks, and its FSW hot-swaps
-        /// the saved files; the SG catch-up happens at HMR Stop (existing
-        /// mechanism, untouched).
+        /// Writes the tree to disk. A pure diff, so running it twice is a no-op:
+        /// nothing is dirty, no DiskPath disagrees with its derived path, and
+        /// nothing is orphaned.
+        ///
+        /// Moves go through AssetDatabase.MoveAsset rather than write-then-trash,
+        /// so a renamed module keeps its GUID and its meta file. Deletions are
+        /// trashed rather than erased, so even a confirmed, saved removal stays
+        /// recoverable outside the builder.
         /// </summary>
         public int SaveAll()
         {
-            if (!HasPendingWork())
+            if (!_tree.HasUnsavedWork())
                 return 0;
 
-            List<BuilderDocumentSession> dirty = null;
-
-            bool hmrActive = UitkxHmrController.IsActive;
+            int written = 0;
+            int removed = 0;
             bool createdAssets = false;
+            bool hmrActive = UitkxHmrController.IsActive;
             AssemblyReloadSuppressor suppressor = null;
             try
             {
@@ -471,43 +417,40 @@ namespace Ruitk.Builder
                     suppressor.Lock();
                 }
 
-                // Folders move BEFORE anything is written. Each one carries its
-                // whole contents, so every session inside it is already at its new
-                // location on disk and only what the user actually edited still
-                // needs writing - which is why the dirty set is computed after.
-                createdAssets |= ApplyFolderMoves();
-
-                dirty = new List<BuilderDocumentSession>();
-                foreach (var s in _sessions.Values)
-                    if ((s.IsDirty || s.IsMoved) && !s.IsReadOnly && !s.NeedsLocation
-                        && !IsPendingDelete(s.FilePath))
-                        dirty.Add(s);
-
-                foreach (var s in dirty)
+                // Orphans FIRST: a module that moved out of a folder and one that
+                // was deleted from it can both be pending, and clearing the dead
+                // paths before writing keeps a stale file from shadowing a new one
+                // at the same location.
+                foreach (string orphan in _tree.OrphanedPaths())
                 {
-                    string dir = Path.GetDirectoryName(s.FilePath);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                        Directory.CreateDirectory(dir);
-                    // A never-saved module becomes a real asset in this batch,
-                    // and a plain File.WriteAllText is invisible to Unity until
-                    // something imports it (UB-111).
-                    createdAssets |= s.IsNewFile || s.IsMoved;
-                    string text = s.UsedCrlf ? s.BufferText.Replace("\n", "\r\n") : s.BufferText;
-                    File.WriteAllText(s.FilePath, text);
-                    // A move writes the new file and retires the old one in the
-                    // same batch, so the module is never present twice.
-                    if (s.IsMoved)
-                        RetireFile(s.OriginalDiskPath);
-                    s.MarkClean(s.BufferText);
+                    Retire(orphan);
+                    removed++;
                 }
 
-                // Deletions land in the same batch, and only here. The asset is
-                // moved to the trash rather than erased, so even a CONFIRMED and
-                // SAVED delete stays recoverable outside the builder.
-                foreach (string path in _pendingDeletes)
+                foreach (var module in _tree.Modules)
                 {
-                    _sessions.Remove(path);
-                    RetireFile(path);
+                    if (module.IsReadOnly || module.NeedsLocation)
+                        continue;
+                    string target = module.FilePath;
+                    if (string.IsNullOrEmpty(target))
+                        continue;
+
+                    if (module.HasMoved)
+                    {
+                        EnsureDirectory(target);
+                        MoveOnDisk(module.DiskPath, target);
+                        module.DiskPath = target;
+                        createdAssets = true;
+                    }
+
+                    if (!module.IsOnDisk || module.IsDirty)
+                    {
+                        EnsureDirectory(target);
+                        createdAssets |= !module.IsOnDisk;
+                        File.WriteAllText(target, ToDiskText(module));
+                        written++;
+                    }
+                    module.MarkProjected(target);
                 }
             }
             finally
@@ -515,89 +458,82 @@ namespace Ruitk.Builder
                 suppressor?.Dispose();
             }
 
-            int deleted = _pendingDeletes.Count;
-            _pendingDeletes.Clear();
-            int written = dirty?.Count ?? 0;
+            var projection = new List<string>();
+            foreach (var module in _tree.Modules)
+                if (module.IsOnDisk)
+                    projection.Add(module.DiskPath);
+            _tree.SetProjection(projection);
+
             // Outside the reload suppressor: importing is what makes a new file
             // an asset with a .meta, and it must not run while the lock is held.
-            if (createdAssets)
+            if (createdAssets || removed > 0)
                 AssetDatabase.Refresh();
             Changed?.Invoke();
-            return written + deleted;
+            return written + removed;
         }
 
-        /// <summary>True when Save has anything at all to do. Kept separate from
-        /// HasUnsavedChanges, which answers the window's prompt and does not care
-        /// about the NeedsLocation and pending-delete filters Save applies.</summary>
-        private bool HasPendingWork()
+        /// <summary>Discards every pending change by re-reading the tree. Abort
+        /// IS Load re-run, which is why it needs no bookkeeping of its own.</summary>
+        public int AbortAll()
         {
-            if (_pendingDeletes.Count > 0 || _pendingFolderMoves.Count > 0)
-                return true;
-            foreach (var s in _sessions.Values)
-                if ((s.IsDirty || s.IsMoved) && !s.IsReadOnly && !s.NeedsLocation
-                    && !IsPendingDelete(s.FilePath))
-                    return true;
-            return false;
-        }
-
-        /// <summary>Projects the pending folder moves. One directory operation per
-        /// folder, through the AssetDatabase where there is one, so every child
-        /// keeps its GUID and its meta file. Afterwards each session inside a moved
-        /// folder is told where its file went, which is what stops the write loop
-        /// below from treating a child as relocated and rewriting it.</summary>
-        private bool ApplyFolderMoves()
-        {
-            if (_pendingFolderMoves.Count == 0)
-                return false;
-            bool any = false;
-            // Each move leaves the queue AS IT LANDS. Clearing the whole queue at
-            // the end would, if a later move failed, leave an earlier one that had
-            // already happened on disk queued for a retry that could only fail -
-            // its source is gone.
-            while (_pendingFolderMoves.Count > 0)
+            if (!_tree.HasUnsavedWork())
+                return 0;
+            int reverted = _tree.OrphanedPaths().Count;
+            string anchor = null;
+            foreach (var module in _tree.Modules)
             {
-                var move = _pendingFolderMoves[0];
-                if (Directory.Exists(move.From))
-                {
-                    string fromAsset = ToAssetPath(move.From);
-                    string toAsset = ToAssetPath(move.To);
-                    if (fromAsset != null && toAsset != null)
-                    {
-                        string error = AssetDatabase.MoveAsset(fromAsset, toAsset);
-                        if (!string.IsNullOrEmpty(error))
-                            throw new IOException(
-                                "could not move " + fromAsset + " to " + toAsset + ": " + error);
-                    }
-                    else
-                    {
-                        Directory.Move(move.From, move.To);
-                    }
-                    RebaseDiskPaths(move.From, move.To);
-                    any = true;
-                }
-                _pendingFolderMoves.RemoveAt(0);
+                if (module.IsDirty || !module.IsOnDisk || module.HasMoved)
+                    reverted++;
+                if (anchor == null && module.IsOnDisk)
+                    anchor = module.DiskPath;
             }
-            return any;
+
+            if (anchor == null)
+            {
+                // Nothing was ever written, so there is nothing to go back to.
+                _tree.Reset(Array.Empty<BuilderModule>(), Array.Empty<string>());
+                Changed?.Invoke();
+            }
+            else
+            {
+                LoadTree(anchor);
+            }
+            return reverted;
         }
 
-        private void RebaseDiskPaths(string from, string to)
+        private static string ToDiskText(BuilderModule module) =>
+            module.UsedCrlf ? module.BufferText.Replace("\n", "\r\n") : module.BufferText;
+
+        private static void EnsureDirectory(string filePath)
         {
-            string prefix = Path.GetFullPath(from) + Path.DirectorySeparatorChar;
-            foreach (var s in _sessions.Values)
+            string dir = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+        }
+
+        /// <summary>Moves a file, through the AssetDatabase where there is one so
+        /// the GUID and the meta file follow it.</summary>
+        private static void MoveOnDisk(string from, string to)
+        {
+            if (!File.Exists(from))
+                return;
+            string fromAsset = ToAssetPath(from);
+            string toAsset = ToAssetPath(to);
+            if (fromAsset != null && toAsset != null)
             {
-                if (string.IsNullOrEmpty(s.OriginalDiskPath))
-                    continue;
-                string origin = Path.GetFullPath(s.OriginalDiskPath);
-                if (!origin.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                s.OriginalDiskPath = Path.Combine(to, origin.Substring(prefix.Length));
+                string error = AssetDatabase.MoveAsset(fromAsset, toAsset);
+                if (string.IsNullOrEmpty(error))
+                    return;
+                throw new IOException(
+                    "could not move " + fromAsset + " to " + toAsset + ": " + error);
             }
+            File.Move(from, to);
         }
 
         /// <summary>Takes one file out of the project. Trash rather than erase,
-        /// so even a confirmed, saved removal stays recoverable outside the
-        /// builder; a path outside Assets/Packages has no asset to trash.</summary>
-        private static void RetireFile(string path)
+        /// so even a confirmed, saved removal stays recoverable; a path outside
+        /// Assets/Packages has no asset to trash.</summary>
+        private static void Retire(string path)
         {
             if (string.IsNullOrEmpty(path))
                 return;
@@ -608,83 +544,57 @@ namespace Ruitk.Builder
                 File.Delete(path);
         }
 
-        /// <summary>Discards every dirty buffer back to disk state; never-saved
-        /// sessions close. Pending deletions are discarded too — an aborted
-        /// session must leave the tree exactly as it found it.</summary>
-        public int AbortAll()
+        // ── Policy ───────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Immutable-package detection done RIGHT (plan §4.3c): PackageInfo source,
+        /// never the asmdef walk — its null return also means "default assembly",
+        /// which would mark every Assets/ file read-only.
+        /// </summary>
+        public static bool IsReadOnlyLocation(string filePath)
         {
-            int reverted = _pendingDeletes.Count + _pendingFolderMoves.Count;
-            _pendingDeletes.Clear();
-            _pendingFolderMoves.Clear();
-            var toRemove = new List<string>();
-            var moves = new List<BuilderDocumentSession>();
-            foreach (var s in _sessions.Values)
+            string full = BuilderTree.Canon(filePath).Replace('\\', '/');
+            string assetsRoot = Application.dataPath.Replace('\\', '/');
+            if (full.StartsWith(assetsRoot, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            foreach (var pkg in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
             {
-                bool moved = s.IsMoved;
-                if (moved)
+                if (string.IsNullOrEmpty(pkg.resolvedPath))
+                    continue;
+                string pkgRoot = BuilderTree.Canon(pkg.resolvedPath).Replace('\\', '/');
+                if (full.StartsWith(pkgRoot + "/", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(full, pkgRoot, StringComparison.OrdinalIgnoreCase))
                 {
-                    // The file never moved on disk, so undoing the move is just
-                    // pointing the session back at it.
-                    moves.Add(s);
+                    return pkg.source != UnityEditor.PackageManager.PackageSource.Embedded
+                        && pkg.source != UnityEditor.PackageManager.PackageSource.Local;
                 }
-                if (!s.IsDirty && !moved)
-                    continue;
-                reverted++;
-                if (!s.IsDirty)
-                    continue;
-                if (s.IsNewFile)
-                    toRemove.Add(s.FilePath);
-                else
-                    s.BufferText = s.DiskText;
             }
-            foreach (var s in moves)
-                Reindex(s.FilePath, s.OriginalDiskPath, s);
-            foreach (var path in toRemove)
-                _sessions.Remove(path);
-            if (reverted > 0)
-                Changed?.Invoke();
-            return reverted;
+            return true;
         }
 
-        public void Close(string filePath)
-        {
-            if (_sessions.Remove(filePath))
-                Changed?.Invoke();
-        }
-
-        /// <summary>Absolute path to the "Assets/…" or "Packages/…" form the
-        /// AssetDatabase understands, or null when the file lives outside both
-        /// (a tree opened from somewhere Unity does not index).</summary>
         private static string ToAssetPath(string fullPath)
         {
-            string normalized = fullPath.Replace('\\', '/');
-            int at = normalized.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
-            if (at < 0)
-                at = normalized.IndexOf("/Packages/", StringComparison.OrdinalIgnoreCase);
-            return at < 0 ? null : normalized.Substring(at + 1);
+            string normalized = BuilderTree.Canon(fullPath).Replace('\\', '/');
+            int assets = normalized.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
+            if (assets >= 0)
+                return normalized.Substring(assets + 1);
+            int packages = normalized.IndexOf("/Packages/", StringComparison.OrdinalIgnoreCase);
+            if (packages >= 0)
+                return normalized.Substring(packages + 1);
+            return null;
         }
 
-        // ── ISerializationCallbackReceiver ───────────────────────────────────
-
-        public void OnBeforeSerialize()
+        private static string NameOf(string fullPath)
         {
-            _serializedSessions.Clear();
-            foreach (var s in _sessions.Values)
-                _serializedSessions.Add(s);
+            BuilderModule.SplitFileName(Path.GetFileName(fullPath), out string name, out _);
+            return name;
         }
 
-        public void OnAfterDeserialize()
+        private static BuilderNodeKind KindOf(string fullPath)
         {
-            _sessions = new Dictionary<string, BuilderDocumentSession>(StringComparer.OrdinalIgnoreCase);
-            foreach (var s in _serializedSessions)
-            {
-                if (s == null || string.IsNullOrEmpty(s.FilePath))
-                    continue;
-                // Sessions serialized by an earlier build carry no identity.
-                if (string.IsNullOrEmpty(s.Id))
-                    s.Id = BuilderDocumentSession.NewId();
-                _sessions[s.FilePath] = s;
-            }
+            BuilderModule.SplitFileName(Path.GetFileName(fullPath), out _, out var kind);
+            return kind;
         }
     }
 }

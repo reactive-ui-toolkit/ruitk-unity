@@ -4,96 +4,67 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
 using Ruitk.Language.Nodes;
 
 namespace Ruitk.Builder
 {
     /// <summary>
-    /// Turns the LSP's <c>ruitk/workspaceGraph</c> answer into the canvas model
-    /// for ONE tree: resolve the clicked file to its tree root (walk usage edges
-    /// upward to a file nobody imports), extract the connected subgraph, classify
-    /// node kinds, seed default positions for files without persisted ones.
+    /// Projects the builder's tree into the canvas model: resolve the focus to
+    /// its tree root (walk usage edges upward to a module nobody imports),
+    /// classify node kinds, seed default positions for modules without persisted
+    /// ones. Every fact it needs is in the tree, so it reads no files and asks
+    /// the language server nothing.
     /// </summary>
     internal static class BuilderGraphService
     {
-        /// <summary>Builds the canvas model for ONE tree.
+        /// <summary>Projects the canvas model from the TREE.
         ///
-        /// The language server derives its graph from the same text, so for a file
-        /// the builder has not touched its answer is a CACHE of what parsing would
-        /// say - and a much cheaper one, since the alternative is re-parsing every
-        /// module in the project on every mount. For any module the builder holds
-        /// differently from disk - created, renamed, or simply edited - the server
-        /// is stale by definition, and that module's own text is parsed instead.
+        /// The tree is the inventory. Every module in it gets a card, its text
+        /// comes from its buffer, and its imports are parsed from that buffer -
+        /// so what the canvas shows is what the user has typed, always, with no
+        /// round trip and no file read.
         ///
-        /// It used to be the server alone, which is why a module the builder held
-        /// as a BUFFER had no edges at all: a new module, or either half of a
-        /// rename, dropped out of the reachability walk and took the rest of the
-        /// tree with it. UB-111, UB-121 and UB-133 are all that one hole, and the
-        /// three separate patches that taught individual consumers about pending
-        /// buffers are gone with it.
-        ///
-        /// <paramref name="isHidden"/> drops a file from the tree entirely - the
-        /// node and every edge touching it. A file marked for deletion uses it, and
-        /// so does the path a module has MOVED out of: both are still on disk, and
-        /// neither is where the module is now.</summary>
-        public static async Task<BuilderGraph> LoadTreeAsync(
-            BuilderLspClient client, string focusFile, Func<string, string> readText = null,
-            Func<string, bool> isHidden = null,
-            IEnumerable<string> pendingFiles = null,
-            Func<string, bool> isOverridden = null)
+        /// It used to ask the language server for the workspace graph and then
+        /// patch the answer: a hidden-file predicate to drop modules the user had
+        /// deleted, a pending-file list to add ones no file existed for yet, and
+        /// an overridden-file predicate to decide, per module, whether the server
+        /// was talking about text the builder had already changed. Three joins
+        /// against three side-channels, and a module that fell through any of them
+        /// lost its edges and took the rest of the tree out of the reachability
+        /// walk with it - UB-111, UB-121 and UB-133 were each one hole in one
+        /// join. A module is in the tree or it does not exist; there is nothing
+        /// left to join.</summary>
+        public static BuilderGraph LoadTree(
+            IReadOnlyList<BuilderModule> modules, string focusFile)
         {
-            string focus = Path.GetFullPath(focusFile);
-
-            var discovered = await DiscoverFromServer(client);
+            string focus = Path.GetFullPath(focusFile ?? string.Empty);
             var inventory = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string file in discovered.Files)
-                if (isHidden == null || !isHidden(file))
-                    inventory.Add(file);
-
-            // Modules that have no file behind them yet - one the user just
-            // created, and the new location of one they moved.
-            var pending = new List<string>();
-            if (pendingFiles != null)
+            var textByPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var byPath = new Dictionary<string, BuilderModule>(StringComparer.OrdinalIgnoreCase);
+            if (modules != null)
             {
-                foreach (string path in pendingFiles)
+                foreach (var module in modules)
                 {
+                    string path = module?.FilePath;
                     if (string.IsNullOrEmpty(path))
                         continue;
-                    string full = Path.GetFullPath(path);
-                    if (isHidden != null && isHidden(full))
-                        continue;
-                    inventory.Add(full);
-                    pending.Add(full);
+                    path = Path.GetFullPath(path);
+                    inventory.Add(path);
+                    textByPath[path] = module.BufferText ?? string.Empty;
+                    byPath[path] = module;
                 }
             }
-            // The focus is NOT exempt from the hidden filter. It used to be added
-            // unconditionally, so a focused module that had been deleted - or whose
-            // path a move had vacated - still got a card, and deleting it again
-            // changed nothing because the card did not come from a session.
-            bool focusVisible = isHidden == null || !isHidden(focus);
-            if (focusVisible)
-                inventory.Add(focus);
 
             var adjacency = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             var importedBy = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             var edgeList = new List<(string From, string To, string Specifier, List<string> Names)>();
-            var sourceCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            BuildStructure(
-                inventory, isOverridden, discovered.Edges, readText, sourceCache,
-                adjacency, importedBy, edgeList);
+            BuildStructure(inventory, textByPath, adjacency, importedBy, edgeList);
 
-            var member = ConnectedComponent(adjacency, focus);
-            if (focusVisible)
-                member.Add(focus);
-            // A module the user has just created is on the canvas whether or not
-            // anything imports it yet - otherwise it would vanish until they wired
-            // it up, which is the wrong way round for something they are building.
-            foreach (string path in pending)
-                member.Add(path);
-
-            string root = ResolveRoot(importedBy, member, focus);
+            // EVERY module in the tree gets a card. Membership used to be the
+            // component connected to the focus, so a module whose only import had
+            // just been broken - or which had not been wired up yet - vanished
+            // from the canvas while the user was building it.
+            string root = ResolveRoot(importedBy, inventory, focus);
 
             var graph = new BuilderGraph { RootPath = root };
             var indexByFile = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -102,18 +73,7 @@ namespace Ruitk.Builder
             // every card. Anything keyed on a card INDEX then addressed a different
             // module than the one it was built for. Sorted, the numbering only
             // changes when the membership genuinely does.
-            var ordered = new List<string>();
-            foreach (string file in member)
-            {
-                // ONE gate for hidden modules, at the point a card is built.
-                // Guarding each ROUTE into the member set does not work, and this
-                // is exactly how a deleted module kept its card: ConnectedComponent
-                // seeds itself with the focus, so the focused module was put back
-                // immediately after the focus check meant to keep it out. Every
-                // contributor now passes through here.
-                if (isHidden == null || !isHidden(file))
-                    ordered.Add(file);
-            }
+            var ordered = new List<string>(inventory);
             ordered.Sort(StringComparer.OrdinalIgnoreCase);
             foreach (string file in ordered)
             {
@@ -122,8 +82,8 @@ namespace Ruitk.Builder
                     FilePath = file,
                     Title = Path.GetFileNameWithoutExtension(file).Replace(".style", "").Replace(".hooks", ""),
                     Kind = ClassifyByPathAndExports(
-                        file, BuilderNodeKind.Unknown, ReadSource(file, readText, sourceCache)),
-                    IsReadOnly = BuilderWorkspace.IsReadOnlyLocation(file),
+                        file, BuilderNodeKind.Unknown, textByPath[file]),
+                    IsReadOnly = byPath[file].IsReadOnly,
                     Exports = new List<string>(),
                 };
                 indexByFile[file] = graph.Nodes.Count;
@@ -149,97 +109,32 @@ namespace Ruitk.Builder
             {
                 try
                 {
-                    PopulateCardDetail(node, readText);
+                    PopulateCardDetail(node, textByPath[node.FilePath]);
                 }
                 catch (Exception)
                 {
-                    // A file that cannot be read/parsed still gets its header card.
+                    // A module that cannot be parsed still gets its header card.
                 }
             }
 
             SeedDefaultPositions(graph, indexByFile.TryGetValue(root, out int rootIdx) ? rootIdx : 0);
             return graph;
         }
-
-        /// <summary>What the language server knows about the workspace: which
-        /// .uitkx files are on disk, and what they import. Both are statements
-        /// about DISK, and the caller decides per module whether the builder is
-        /// holding something newer.</summary>
-        private static async Task<(List<string> Files,
-                List<(string From, string To, string Specifier, List<string> Names)> Edges)>
-            DiscoverFromServer(BuilderLspClient client)
-        {
-            var files = new List<string>();
-            var edges = new List<(string, string, string, List<string>)>();
-            JToken raw = await RequestGraphWithRetry(client);
-            if ((raw?["nodes"] ?? raw?["Nodes"]) is JArray nodes)
-            {
-                foreach (var n in nodes)
-                {
-                    string file = Str(n, "file", "File");
-                    if (!string.IsNullOrEmpty(file))
-                        files.Add(Path.GetFullPath(file));
-                }
-            }
-            if ((raw?["edges"] ?? raw?["Edges"]) is JArray list)
-            {
-                foreach (var e in list)
-                {
-                    string from = Str(e, "fromFile", "FromFile");
-                    if (string.IsNullOrEmpty(from))
-                        continue;
-                    string to = Str(e, "toFile", "ToFile");
-                    var names = new List<string>();
-                    if ((e["names"] ?? e["Names"]) is JArray arr)
-                        foreach (var n in arr)
-                            names.Add(n.Value<string>());
-                    edges.Add((
-                        Path.GetFullPath(from),
-                        string.IsNullOrEmpty(to) ? "" : Path.GetFullPath(to),
-                        Str(e, "specifier", "Specifier"),
-                        names));
-                }
-            }
-            return (files, edges);
-        }
-
-        /// <summary>Adjacency and edges. A module the builder is not holding takes
-        /// its imports from the server's answer, which is derived from the same
-        /// text and costs nothing; one the builder IS holding is parsed, because
-        /// the server is looking at a file that no longer says what the user sees.
-        /// A module is therefore connected the moment the user types the import,
-        /// whether or not any file exists for it yet.</summary>
+        /// <summary>Adjacency and edges, parsed from the modules themselves. One
+        /// path for every module, because there is only one source of truth for
+        /// what a module imports: its buffer. A module is connected the moment the
+        /// user types the import, whether or not a file exists for it yet.</summary>
         private static void BuildStructure(
             HashSet<string> inventory,
-            Func<string, bool> isOverridden,
-            List<(string From, string To, string Specifier, List<string> Names)> serverEdges,
-            Func<string, string> readText,
-            Dictionary<string, string> sourceCache,
+            Dictionary<string, string> textByPath,
             Dictionary<string, HashSet<string>> adjacency,
             Dictionary<string, HashSet<string>> importedBy,
             List<(string From, string To, string Specifier, List<string> Names)> edges)
         {
-            foreach (var edge in serverEdges)
-            {
-                if (!inventory.Contains(edge.From))
-                    continue;
-                if (isOverridden != null && isOverridden(edge.From))
-                    continue;
-                string target = edge.To.Length > 0 && inventory.Contains(edge.To) ? edge.To : "";
-                edges.Add((edge.From, target, edge.Specifier, edge.Names));
-                if (target.Length == 0)
-                    continue;
-                Link(adjacency, edge.From, target);
-                Link(adjacency, target, edge.From);
-                Link(importedBy, target, edge.From);
-            }
-
             foreach (string from in inventory)
             {
-                if (isOverridden == null || !isOverridden(from))
-                    continue;
-                string text = ReadSource(from, readText, sourceCache);
-                if (string.IsNullOrEmpty(text))
+                if (!textByPath.TryGetValue(from, out string text)
+                    || string.IsNullOrEmpty(text))
                     continue;
                 Ruitk.Language.Parser.ParseResult parsed;
                 try
@@ -279,9 +174,9 @@ namespace Ruitk.Builder
                         }
                     }
 
-                    // An unresolved specifier still produces an edge with no target,
-                    // exactly as the server-built list did: the import row is real
-                    // even when what it points at is not there yet.
+                    // An unresolved specifier still produces an edge with no
+                    // target: the import row is real even when what it points at
+                    // is not there yet.
                     string to = ResolveSpecifier(from, spec, inventory) ?? "";
                     if (to.Length == 0)
                     {
@@ -305,7 +200,6 @@ namespace Ruitk.Builder
                 }
             }
         }
-
         /// <summary>Rebuilds the import edges that START at one node, after its
         /// text changed.
         ///
@@ -416,33 +310,6 @@ namespace Ruitk.Builder
             }
         }
 
-        /// <summary>OmniSharp cancels in-flight requests with -32801 (Content
-        /// Modified) whenever a didOpen/didChange lands — which the builder's
-        /// own preview didOpen does while the graph request waits out the
-        /// initial scan. The error is transient BY DEFINITION, so retry with
-        /// backoff instead of surfacing an empty window.</summary>
-        private static async Task<JToken> RequestGraphWithRetry(BuilderLspClient client)
-        {
-            Exception last = null;
-            for (int attempt = 0; attempt < 8; attempt++)
-            {
-                try
-                {
-                    return await client.RequestWorkspaceGraph();
-                }
-                catch (Exception ex)
-                {
-                    string text = ex.ToString();
-                    bool transient = text.Contains("-32801") || text.Contains("Content Modified");
-                    last = ex;
-                    if (!transient)
-                        throw;
-                    await Task.Delay(400 * (attempt + 1));
-                }
-            }
-            throw last ?? new InvalidOperationException("workspace graph request failed");
-        }
-
         private static readonly Regex s_hookCall = new Regex(
             @"(?:var\s*\(([^)]*)\)\s*=\s*|var\s+(\w+)\s*=\s*)?\b(use[A-Z][A-Za-z0-9]*)\s*(?:<[^>\n]*>)?\s*\(",
             RegexOptions.Compiled);
@@ -477,13 +344,10 @@ namespace Ruitk.Builder
         }
 
         /// <summary>Fills the POC-card sections: imports, hooks-and-state lines,
-        /// and the flattened return-markup tree, from the live buffer when one
-        /// is open (readText) or disk otherwise.</summary>
-        public static void PopulateCardDetail(BuilderCanvasNode node, Func<string, string> readText)
+        /// and the flattened return-markup tree. The text is the module's buffer,
+        /// passed in: a card is a view of the tree, never of a file.</summary>
+        public static void PopulateCardDetail(BuilderCanvasNode node, string text)
         {
-            string text = readText?.Invoke(node.FilePath);
-            if (text == null && File.Exists(node.FilePath))
-                text = File.ReadAllText(node.FilePath);
             if (text == null)
                 return;
             text = text.Replace("\r\n", "\n").Replace("\r", "\n");
@@ -1409,30 +1273,11 @@ namespace Ruitk.Builder
             set.Add(value);
         }
 
-        private static HashSet<string> ConnectedComponent(
-            Dictionary<string, HashSet<string>> adjacency, string start)
-        {
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var queue = new Queue<string>();
-            queue.Enqueue(start);
-            seen.Add(start);
-            while (queue.Count > 0)
-            {
-                string current = queue.Dequeue();
-                if (!adjacency.TryGetValue(current, out var neighbors))
-                    continue;
-                foreach (string n in neighbors)
-                    if (seen.Add(n))
-                        queue.Enqueue(n);
-            }
-            return seen;
-        }
-
         /// <summary>
-        /// The tree root = a member file nobody in the member set imports,
-        /// reachable from the focus by walking importers upward. Multi-root
-        /// subgraphs pick deterministically (ordinal-smallest path) so the
-        /// per-root config key is stable across sessions.
+        /// The tree root = a module nobody in the tree imports, reachable from the
+        /// focus by walking importers upward. Multi-root trees pick
+        /// deterministically (ordinal-smallest path) so the per-root config key is
+        /// stable across sessions.
         /// </summary>
         private static string ResolveRoot(
             Dictionary<string, HashSet<string>> importedBy,
@@ -1466,26 +1311,6 @@ namespace Ruitk.Builder
                 current = next;
             }
             return best ?? focus;
-        }
-
-        private static string ReadSource(
-            string file, Func<string, string> readText, Dictionary<string, string> cache)
-        {
-            if (cache.TryGetValue(file, out string cached))
-                return cached;
-            string text = null;
-            try
-            {
-                text = readText?.Invoke(file);
-                if (text == null && File.Exists(file))
-                    text = File.ReadAllText(file);
-            }
-            catch (Exception)
-            {
-                text = null;
-            }
-            cache[file] = text ?? "";
-            return cache[file];
         }
 
         private static readonly Regex s_exportComponentDecl = new Regex(
@@ -1692,8 +1517,6 @@ namespace Ruitk.Builder
             return height;
         }
 
-        private static string Str(JToken token, string camel, string pascal) =>
-            token?.Value<string>(camel) ?? token?.Value<string>(pascal) ?? "";
     }
 }
 #endif

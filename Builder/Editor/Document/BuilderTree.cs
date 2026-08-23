@@ -45,10 +45,6 @@ namespace Ruitk.Builder
 
         public IReadOnlyList<string> LastProjection => _lastProjection;
 
-        public event Action Changed;
-
-        public void NotifyChanged() => Changed?.Invoke();
-
         // ── Lookup ───────────────────────────────────────────────────────────
 
         public BuilderModule ById(string id)
@@ -81,11 +77,10 @@ namespace Ruitk.Builder
                 return null;
             if (string.IsNullOrEmpty(module.Id))
                 module.Id = BuilderModule.NewId();
-            module.Text ??= string.Empty;
-            module.ProjectedText ??= module.IsOnDisk ? module.Text : string.Empty;
+            module.BufferText ??= string.Empty;
+            module.ProjectedText ??= module.IsOnDisk ? module.BufferText : string.Empty;
             _modules.Add(module);
             Reindex();
-            Changed?.Invoke();
             return module;
         }
 
@@ -98,7 +93,6 @@ namespace Ruitk.Builder
             if (module == null || !_modules.Remove(module))
                 return false;
             Reindex();
-            Changed?.Invoke();
             return true;
         }
 
@@ -134,7 +128,6 @@ namespace Ruitk.Builder
                 }
             }
             Reindex();
-            Changed?.Invoke();
         }
 
         /// <summary>Replaces the whole contents - used by Load and by Abort,
@@ -165,7 +158,6 @@ namespace Ruitk.Builder
                 }
             }
             Reindex();
-            Changed?.Invoke();
         }
 
         /// <summary>Records the projection Save just performed: every path a
@@ -244,7 +236,7 @@ namespace Ruitk.Builder
                 if (string.IsNullOrEmpty(module.Id))
                     module.Id = BuilderModule.NewId();
                 _byId[module.Id] = module;
-                string path = Canon(module.Path);
+                string path = Canon(module.FilePath);
                 if (path.Length > 0)
                     _byPath[path] = module;
             }
@@ -272,18 +264,18 @@ namespace Ruitk.Builder
                     continue;
                 }
                 if (string.IsNullOrEmpty(module.Id))
-                    problems.Add("module at " + module.Path + " lost its id");
+                    problems.Add("module at " + module.FilePath + " lost its id");
                 else if (!seenIds.Add(module.Id))
                     problems.Add("duplicate module id " + module.Id);
 
-                string path = Canon(module.Path);
+                string path = Canon(module.FilePath);
                 if (path.Length == 0)
                     problems.Add("module " + module.Id + " has no derivable path");
                 else if (!seenPaths.Add(path))
                     problems.Add("two modules claim " + path);
 
-                if (module.Text == null)
-                    problems.Add("module at " + module.Path + " lost its text");
+                if (module.BufferText == null)
+                    problems.Add("module at " + module.FilePath + " lost its text");
             }
 
             if (_byId.Count != seenIds.Count || _byPath.Count != seenPaths.Count)

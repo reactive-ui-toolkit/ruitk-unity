@@ -85,7 +85,7 @@ namespace Ruitk.Builder
             {
                 var session = window._workspace.Open(uitkxFilePath);
                 if (session != null && !session.IsReadOnly)
-                    session.ApplyEdit(BuilderDocumentSession.NormalizeLf(pendingText));
+                    session.ApplyEdit(BuilderModule.NormalizeLf(pendingText));
             }
             window.MountCanvas();
             window.RefreshChrome();
@@ -105,12 +105,26 @@ namespace Ruitk.Builder
             BuilderLspService.DiagnosticsPublished += OnLspDiagnosticsPublished;
             BuilderAssetEvents.UitkxImported -= OnUitkxImported;
             BuilderAssetEvents.UitkxImported += OnUitkxImported;
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload -= JournalTree;
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += JournalTree;
+            // The tree has just come back through Unity's serializer. If anything
+            // did not survive it, THIS is where it has to be said: a broken round
+            // trip that goes unreported resurfaces later as an inexplicable bug in
+            // whatever trusted it (Plans~/BUILDER_TREE_MODEL.md, mitigation 3).
+            foreach (string problem in _workspace.Tree.Validate())
+                Debug.LogError(
+                    "[RUITK Builder] tree invariant broken after reload: " + problem);
+            // Deferred: the window may be opening ON a file, and that load runs
+            // after this. Asking then would offer to restore over a tree the user
+            // just asked for; by the delayed call the tree is either there or the
+            // window really did come up empty.
+            UnityEditor.EditorApplication.delayCall += OfferJournalRestore;
             // Sessions just deserialized across the domain reload; any file
             // that changed externally WHILE the old domain was alive missed its
             // import event, so sweep once — the panes mount after this and
             // read the adopted buffers.
             var openPaths = new System.Collections.Generic.List<string>();
-            foreach (var session in _workspace.Sessions)
+            foreach (var session in _workspace.Modules)
                 openPaths.Add(session.FilePath);
             if (openPaths.Count > 0)
                 _workspace.ReloadCleanFromDisk(openPaths);
@@ -150,7 +164,7 @@ namespace Ruitk.Builder
                 NotifyBufferChanged();
             foreach (string path in changed)
             {
-                _canvasHost?.RefreshGraph(path, ReadBufferOrDisk);
+                _canvasHost?.RefreshGraph(path);
                 if (string.Equals(path, focusFull, System.StringComparison.OrdinalIgnoreCase))
                     focusChanged = true;
             }
@@ -525,53 +539,35 @@ namespace Ruitk.Builder
             // only marks the intent, so Abort forgets it and Ctrl+Z un-marks it —
             // the asset is never re-created, so no GUID ever churns.
             _canvasHost.OnRenameCard = ShowRenamePrompt;
+            _canvasHost.Modules = () => _workspace.Modules;
+            _canvasHost.ModuleAt = path => _workspace.TryGet(path);
             _canvasHost.OnDeleteFile = path =>
             {
-                // MarkForDeletion refuses for two unrelated reasons and the toast
-                // blamed both on read-only, which sent the owner looking for a
-                // permissions problem that was not there. Each case is now named,
-                // and a module that is ALREADY marked simply re-syncs the canvas -
-                // if its card is still on screen the canvas is what is stale, and
-                // repeating the delete could never have helped.
-                if (_workspace.IsPendingDelete(path))
+                string full = Path.GetFullPath(path);
+                if (BuilderWorkspace.IsReadOnlyLocation(full))
                 {
-                    RefreshChrome();
-                    MountCanvas();
+                    Toast("Can't delete " + Path.GetFileName(full)
+                        + " - read-only location: " + Path.GetDirectoryName(full));
                     return;
                 }
-                if (BuilderWorkspace.IsReadOnlyLocation(path))
+                var module = _workspace.TryGet(full);
+                if (module == null)
                 {
-                    Toast("Can't delete " + Path.GetFileName(path)
-                        + " - read-only location: " + Path.GetDirectoryName(path));
+                    Toast("Nothing to delete at " + Path.GetFileName(full));
                     return;
                 }
-                if (!_workspace.MarkForDeletion(path))
-                {
-                    Toast("Could not delete " + Path.GetFileName(path));
-                    return;
-                }
-                _ledger.Begin("delete " + Path.GetFileName(path));
+                _ledger.Begin("delete " + Path.GetFileName(full));
                 // One entry covers the module AND every reference to it, so a
                 // single undo puts the tree back exactly as it was.
-                StripReferencesTo(Path.GetFullPath(path));
-                _ledger.RecordDeletion(path);
+                StripReferencesTo(full);
+                _ledger.RecordDeletion(full, module);
+                _workspace.Delete(full);
                 _ledger.End();
                 RefreshHistoryPanel();
-                Toast("Deleted " + Path.GetFileName(path) + " - applies on Save");
+                Toast("Deleted " + Path.GetFileName(full) + " - applies on Save");
                 RebindFocusIfMissing();
                 RefreshChrome();
                 MountCanvas();
-            };
-            _canvasHost.IsFileHidden = path => _workspace.IsHiddenOnDisk(path);
-            _canvasHost.PendingNewFiles = () => _workspace.PendingNewFiles;
-            // The server reads disk. Anything the builder has created, moved or
-            // edited is newer than the file it is looking at, so that module gets
-            // parsed from its buffer instead of trusted from the server answer.
-            _canvasHost.IsFileOverridden = path =>
-            {
-                var session = _workspace.TryGet(path);
-                return session != null
-                    && (session.IsDirty || session.IsNewFile || session.IsMoved);
             };
             _canvasHost.OnCreateRequested = ShowCreatePrompt;
             _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
@@ -586,7 +582,7 @@ namespace Ruitk.Builder
             MountPreview();
             MountLibrary();
             _canvasHost.Mount(
-                container, _focusFile, OpenFileFromCanvas, ReadBufferOrDisk,
+                container, _focusFile, OpenFileFromCanvas,
                 graph =>
                 {
                     _libraryPane?.SetWorkspaceEntries(graph);
@@ -1057,24 +1053,29 @@ namespace Ruitk.Builder
                 var change = entry.Changes[undo ? count - 1 - n : n];
                 if (change.IsDeletion)
                 {
-                    // The file never left the disk, so a delete is only ever an
-                    // intent being dropped or re-taken.
-                    remounted |= undo
-                        ? _workspace.UnmarkForDeletion(change.FilePath)
-                        : _workspace.MarkForDeletion(change.FilePath);
+                    // Undo puts the SAME module back - identity, buffer and
+                    // DiskPath intact - so a module that had a file still owns it.
+                    if (undo)
+                    {
+                        remounted |= _workspace.Restore(change.Removed) != null;
+                    }
+                    else
+                    {
+                        change.Removed = _workspace.TryGet(change.FilePath);
+                        remounted |= _workspace.Delete(change.FilePath);
+                    }
                     continue;
                 }
                 if (change.IsCreation)
                 {
-                    // Nothing was written, so undoing a create closes the
-                    // never-saved session. Its text is kept on the entry so redo
-                    // can re-open it unchanged.
+                    // Nothing was written, so undoing a create removes the module.
+                    // Its text rides on the entry so redo can put it back unchanged.
                     if (undo)
                     {
                         var pending = _workspace.TryGet(change.FilePath);
                         if (pending != null)
                             change.After = pending.BufferText;
-                        remounted |= _workspace.DiscardNew(change.FilePath);
+                        remounted |= _workspace.Delete(change.FilePath);
                     }
                     else
                     {
@@ -1085,30 +1086,12 @@ namespace Ruitk.Builder
                 }
                 if (change.IsMove)
                 {
-                    // Nothing on disk moved, so walking a move is just pointing the
-                    // session at the other path.
+                    // ONE change covers the module and, when it owns its folder,
+                    // everything inside it: the tree carries the subtree. There is
+                    // no separate folder-move entry to keep in step any more.
                     string from = undo ? change.After : change.Before;
                     string to = undo ? change.Before : change.After;
-                    if (_workspace.Rename(from, to))
-                    {
-                        remounted = true;
-                        _canvasHost?.RepathLayout(from, to, isFolder: false);
-                        if (string.Equals(FocusFull, Path.GetFullPath(from),
-                                System.StringComparison.OrdinalIgnoreCase))
-                            _focusFile = to;
-                    }
-                    continue;
-                }
-                if (change.IsFolderMove)
-                {
-                    string from = undo ? change.After : change.Before;
-                    string to = undo ? change.Before : change.After;
-                    if (_workspace.MoveFolder(from, to))
-                    {
-                        remounted = true;
-                        _canvasHost?.RepathLayout(from, to, isFolder: true);
-                        RepointFocus(from, to);
-                    }
+                    remounted |= MoveModule(from, to);
                     continue;
                 }
                 writes.Add((change.ModuleId, change.FilePath,
@@ -1221,7 +1204,7 @@ namespace Ruitk.Builder
             {
                 foreach (var (moduleId, filePath, _) in writes)
                     _canvasHost?.RefreshGraph(
-                        _workspace.ById(moduleId)?.FilePath ?? filePath, ReadBufferOrDisk);
+                        _workspace.ById(moduleId)?.FilePath ?? filePath);
             }
 
             var focused = _workspace.TryGet(_focusFile);
@@ -1390,19 +1373,11 @@ namespace Ruitk.Builder
 
         private void RebindFocusIfMissing()
         {
-            // A module marked for deletion is not a valid focus either. Its session
-            // still exists until Save, so the missing-session test alone left the
-            // window pointed at a module the user had just deleted - the preview
-            // kept describing it and the source pane kept showing it.
-            if (!string.IsNullOrEmpty(_focusFile)
-                && _workspace.TryGet(_focusFile) != null
-                && !_workspace.IsPendingDelete(_focusFile))
+            if (!string.IsNullOrEmpty(_focusFile) && _workspace.TryGet(_focusFile) != null)
                 return;
-            foreach (var session in _workspace.Sessions)
+            foreach (var module in _workspace.Modules)
             {
-                if (_workspace.IsPendingDelete(session.FilePath))
-                    continue;
-                _focusFile = session.FilePath;
+                _focusFile = module.FilePath;
                 return;
             }
             // Nothing is left to focus. Undoing the creation of the ONLY module
@@ -1455,7 +1430,7 @@ namespace Ruitk.Builder
             EditorApplication.update -= RefreshCanvasWhenQuiet;
             _canvasRefreshScheduled = false;
             if (!string.IsNullOrEmpty(_canvasRefreshFile))
-                _canvasHost?.RefreshGraph(_canvasRefreshFile, ReadBufferOrDisk);
+                _canvasHost?.RefreshGraph(_canvasRefreshFile);
         }
 
         /// <summary>POC 6.2: clicking a JSX row focuses its file and scrolls the
@@ -3214,27 +3189,6 @@ namespace Ruitk.Builder
             return kind == BuilderNodeKind.Component ? "Component" : "Utils";
         }
 
-        /// <summary>Brings every module inside a folder into the model before the
-        /// folder moves. Without it the children are invisible to the builder: they
-        /// are on disk, so nothing re-paths them, and the canvas would keep drawing
-        /// them at a location the folder has left.</summary>
-        private void OpenModulesUnder(string dir)
-        {
-            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
-                return;
-            string[] files;
-            try
-            {
-                files = Directory.GetFiles(dir, "*.uitkx", SearchOption.AllDirectories);
-            }
-            catch (System.Exception)
-            {
-                return;
-            }
-            foreach (string file in files)
-                EditSession(Path.GetFullPath(file));
-        }
-
         /// <summary>Follows the focused file across a folder move.</summary>
         private void RepointFocus(string oldDir, string newDir)
         {
@@ -3246,14 +3200,44 @@ namespace Ruitk.Builder
                 _focusFile = Path.Combine(newDir, focus.Substring(prefix.Length));
         }
 
+        /// <summary>Moves a module and brings everything that TRACKS its path
+        /// along - the saved card layout and the window focus. One helper, so the
+        /// rename command and the ledger replaying that rename cannot disagree
+        /// about what a move implies. Carrying the module's SUBTREE is the tree's
+        /// business; this is the view's half of the same move.</summary>
+        private bool MoveModule(string fromPath, string toPath)
+        {
+            string from = Path.GetFullPath(fromPath);
+            string to = Path.GetFullPath(toPath);
+            var module = _workspace.TryGet(from);
+            if (module == null)
+                return false;
+            string fromDir = module.Folder;
+            bool ownsFolder = module.OwnsFolder;
+            string toDir = Path.GetDirectoryName(to) ?? "";
+            if (!_workspace.MoveToPath(from, to))
+                return false;
+            if (ownsFolder)
+            {
+                // The folder takes every card inside it along, this module's own
+                // included - and that one still carries the OLD file name, so the
+                // file repath below runs from where the card now sits.
+                _canvasHost?.RepathLayout(fromDir, toDir, isFolder: true);
+                RepointFocus(fromDir, toDir);
+                from = Path.GetFullPath(Path.Combine(toDir, Path.GetFileName(from)));
+            }
+            _canvasHost?.RepathLayout(from, to, isFolder: false);
+            if (string.Equals(FocusFull, from, System.StringComparison.OrdinalIgnoreCase))
+                _focusFile = to;
+            return true;
+        }
+
         private void RenameModule(string full, string oldName, string newName)
         {
             var nodes = _canvasHost?.Nodes;
             if (nodes == null)
                 return;
-            string dir = Path.GetDirectoryName(full) ?? "";
-            string file = Path.GetFileName(full);
-            string suffix = SuffixOf(file);
+            string suffix = SuffixOf(Path.GetFileName(full));
             string newFull = RenameTargetPath(
                 full, oldName, newName, out string newDir, out bool ownsFolder);
             if (File.Exists(newFull) || _workspace.TryGet(newFull) != null
@@ -3299,45 +3283,20 @@ namespace Ruitk.Builder
                 _ledger.Record(otherFull, before, updated);
             }
 
-            // 3. The folder first, when the module owns one. It carries its whole
-            //    contents - sub-components, companions, everything the builder does
-            //    not manage - so the children keep their position relative to their
-            //    parent and every relative import inside the subtree stays correct.
-            //    Only the module's own file used to move, which left every child
-            //    behind at the old location while the parent's imports pointed into
-            //    the new one.
-            string movedFull = full;
-            if (ownsFolder)
-            {
-                OpenModulesUnder(dir);
-                if (!_workspace.MoveFolder(dir, newDir))
-                {
-                    _ledger.End();
-                    Toast("Could not move " + Path.GetFileName(dir));
-                    return;
-                }
-                _ledger.RecordFolderMove(dir, newDir);
-                _canvasHost?.RepathLayout(dir, newDir, isFolder: true);
-                RepointFocus(dir, newDir);
-                movedFull = Path.GetFullPath(Path.Combine(newDir, file));
-            }
-
-            // 4. The module's own file inside it - a PENDING move, like every
-            //    other edit.
-            if (!_workspace.Rename(movedFull, newFull))
+            // 3. The move - ONE operation. The tree carries the folder's whole
+            //    contents when the module owns it, so sub-components, companions
+            //    and everything the builder does not manage keep their position
+            //    relative to their parent and every relative import inside the
+            //    subtree stays correct. It took two steps and two ledger entries
+            //    before, a folder move and a file move that had to be walked back
+            //    in the right order or the tree came apart.
+            if (!MoveModule(full, newFull))
             {
                 _ledger.End();
                 Toast("Could not rename " + oldName);
                 return;
             }
-            // One module in two places, recorded as one move: undo walks it back
-            // to where it was, with its buffer, undo history and card position
-            // intact, because the session object never changed.
-            _ledger.RecordMove(movedFull, newFull);
-            _canvasHost?.RepathLayout(movedFull, newFull, isFolder: false);
-            if (string.Equals(FocusFull, movedFull,
-                    System.StringComparison.OrdinalIgnoreCase))
-                _focusFile = newFull;
+            _ledger.RecordMove(full, newFull);
             _ledger.End();
             RefreshHistoryPanel();
             RefreshChrome();
@@ -3462,7 +3421,7 @@ namespace Ruitk.Builder
                 filePath, closeLine - 1, "  " + key + " = " + value + ",", styleName + "." + key);
         }
 
-        private BuilderDocumentSession OpenSession(string filePath)
+        private BuilderModule OpenSession(string filePath)
         {
             _workspace.Open(filePath);
             return _workspace.TryGet(filePath);
@@ -3476,7 +3435,7 @@ namespace Ruitk.Builder
         /// without selecting the component doesnt do anything"). Read-only
         /// sessions still refuse to mutate one layer down, which is where that
         /// decision belongs.</summary>
-        private BuilderDocumentSession EditSession(string filePath) =>
+        private BuilderModule EditSession(string filePath) =>
             _workspace.TryGet(filePath) ?? OpenSession(filePath);
 
         private void InsertBeforeLastReturn(string filePath, string line, string what = null)
@@ -3963,7 +3922,7 @@ namespace Ruitk.Builder
             NotifyBufferChanged();
             // POC commitNode(): rebuild ONLY the edited card and redraw the edges —
             // zoom, camera, card selection and row selection survive the commit.
-            _canvasHost?.RefreshGraph(filePath, ReadBufferOrDisk);
+            _canvasHost?.RefreshGraph(filePath);
             // POC commitNode(label): the toast names WHAT changed, not just the file.
             Toast(string.IsNullOrEmpty(what)
                 ? "Committed edit → " + Path.GetFileName(filePath)
@@ -3975,14 +3934,6 @@ namespace Ruitk.Builder
             string full = Path.GetFullPath(filePath);
             if (!string.Equals(full, FocusFull, System.StringComparison.OrdinalIgnoreCase))
                 OpenFileFromCanvas(full);
-        }
-
-        private string ReadBufferOrDisk(string filePath)
-        {
-            var session = _workspace.TryGet(filePath);
-            if (session != null)
-                return session.BufferText;
-            return File.Exists(filePath) ? File.ReadAllText(filePath) : null;
         }
 
         private void OpenFileFromCanvas(string filePath)
@@ -5053,12 +5004,7 @@ namespace Ruitk.Builder
         /// somewhere Unity cannot see.</summary>
         private bool ResolveUnsavedLocation()
         {
-            string root = UnsavedRoot;
-            var pending = new System.Collections.Generic.List<string>();
-            foreach (string path in _workspace.PendingNewFiles)
-                if (Path.GetFullPath(path)
-                    .StartsWith(root, System.StringComparison.OrdinalIgnoreCase))
-                    pending.Add(path);
+            var pending = _workspace.UnlocatedModules();
             if (pending.Count == 0)
                 return true;
 
@@ -5082,20 +5028,41 @@ namespace Ruitk.Builder
                 return false;
             }
 
-            foreach (string path in pending)
+            // Planned in full before anything moves, so a collision cancels the
+            // whole relocation instead of leaving half the tree in the new folder
+            // and half at the provisional path.
+            string root = UnsavedRoot;
+            var plan = new System.Collections.Generic.List<(BuilderModule Module, string Folder)>();
+            foreach (var module in pending)
             {
-                string relative = path.Substring(root.Length).TrimStart('\\', '/');
-                string moved = Path.GetFullPath(Path.Combine(chosen, relative));
-                if (File.Exists(moved))
+                string folder = Path.GetFullPath(module.Folder ?? "");
+                string target = folder.StartsWith(root, System.StringComparison.OrdinalIgnoreCase)
+                    ? Path.GetFullPath(Path.Combine(
+                        chosen, folder.Substring(root.Length).TrimStart('\\', '/')))
+                    : folder;
+                string to = Path.Combine(target, Path.GetFileName(module.FilePath));
+                if (!_workspace.IsPathAvailable(to))
                 {
                     UnityEditor.EditorUtility.DisplayDialog(
-                        "Already exists", Path.GetFileName(moved) + " is already there.", "OK");
+                        "Already exists", Path.GetFileName(to) + " is already there.", "OK");
                     return false;
                 }
-                if (!_workspace.Relocate(path, moved))
+                plan.Add((module, target));
+            }
+
+            foreach (var step in plan)
+            {
+                // A module whose parent owned its folder has already been carried
+                // home by that parent's move; placing it again at the same folder
+                // is a no-op, and the flag still has to be cleared either way.
+                string from = step.Module.FilePath;
+                if (!_workspace.PlaceAt(step.Module, step.Folder))
                     continue;
-                if (string.Equals(_focusFile, path, System.StringComparison.OrdinalIgnoreCase))
-                    _focusFile = moved;
+                string to = step.Module.FilePath;
+                _canvasHost?.RepathLayout(from, to, isFolder: false);
+                if (string.Equals(FocusFull, Path.GetFullPath(from),
+                        System.StringComparison.OrdinalIgnoreCase))
+                    _focusFile = to;
                 _relocatedOnSave = true;
             }
             return true;
@@ -5111,10 +5078,9 @@ namespace Ruitk.Builder
         /// results to write.</summary>
         private void FormatDirtyBuffers()
         {
-            foreach (var session in _workspace.Sessions)
+            foreach (var session in _workspace.Modules)
             {
-                if (session.IsReadOnly || !session.IsDirty
-                    || _workspace.IsPendingDelete(session.FilePath))
+                if (session.IsReadOnly || !session.IsDirty)
                     continue;
                 string before = session.BufferText;
                 string formatted;
@@ -5137,7 +5103,7 @@ namespace Ruitk.Builder
                         FocusFull, System.StringComparison.OrdinalIgnoreCase))
                     _codeField?.SetContent(formatted, _focusFile, KnownElementsOrNull());
                 SyncLspBuffer(session.FilePath, formatted);
-                _canvasHost?.RefreshGraph(session.FilePath, ReadBufferOrDisk);
+                _canvasHost?.RefreshGraph(session.FilePath);
             }
         }
 
@@ -5151,7 +5117,7 @@ namespace Ruitk.Builder
             // UB-88: Save is where a deletion stops being reversible, so it is
             // the only place worth asking — up to that moment the user can undo
             // it, abort, or simply never save. The list names every file.
-            var pending = _workspace.PendingDeletes;
+            var pending = _workspace.Tree.OrphanedPaths();
             if (pending.Count > 0)
             {
                 var names = new System.Text.StringBuilder();
@@ -5187,6 +5153,8 @@ namespace Ruitk.Builder
                 return;
             }
             BuilderSaveMetrics.RecordSaveBatch(written, hmrActive);
+            // The work is on disk, so the journal has nothing left to protect.
+            BuilderReloadJournal.Clear();
             if (written > 0)
                 Toast($"Saved {written} file(s)");
             RefreshChrome();
@@ -5360,23 +5328,25 @@ namespace Ruitk.Builder
             RefreshChrome();
         }
 
-        /// <summary>Discards every pending change. Abort now puts PATHS back as
-        /// well as text - a renamed module returns to its old name and a moved
-        /// folder to its old place - so the canvas has to be rebuilt rather than
-        /// merely repainted, and the saved layout has to follow the modules back
-        /// the same way it followed them out. What moved is read off the workspace
-        /// BEFORE the abort, because the abort is what forgets it.</summary>
+        /// <summary>Discards every pending change. Abort puts PATHS back as well
+        /// as text - a renamed module returns to its old name, and a module that
+        /// rode along inside a renamed folder returns with it - so the canvas has
+        /// to be rebuilt rather than merely repainted, and the saved layout has to
+        /// follow the modules back the same way it followed them out. What moved is
+        /// read off the tree BEFORE the abort, because the abort is what forgets
+        /// it: every module inside a moved folder reports the move itself, so there
+        /// is no folder-level move to capture separately any more.</summary>
         private void AbortAll()
         {
-            var folderMoves = new System.Collections.Generic.List<(string From, string To)>();
-            foreach (var move in _workspace.PendingFolderMoves)
-                folderMoves.Add((move.From, move.To));
             var moduleMoves = new System.Collections.Generic.List<(string From, string To)>();
-            foreach (var session in _workspace.Sessions)
-                if (session.IsMoved)
-                    moduleMoves.Add((session.FilePath, session.OriginalDiskPath));
+            foreach (var module in _workspace.Modules)
+                if (module.HasMoved)
+                    moduleMoves.Add((module.FilePath, module.DiskPath));
 
             int reverted = _workspace.AbortAll();
+            // Abort is the user throwing the work away deliberately; keeping a
+            // journal of it would offer it back on the next open.
+            BuilderReloadJournal.Clear();
             if (reverted <= 0)
             {
                 RefreshChrome();
@@ -5390,11 +5360,6 @@ namespace Ruitk.Builder
                         System.StringComparison.OrdinalIgnoreCase))
                     _focusFile = move.To;
             }
-            foreach (var move in folderMoves)
-            {
-                _canvasHost?.RepathLayout(move.To, move.From, isFolder: true);
-                RepointFocus(move.To, move.From);
-            }
 
             Toast($"Discarded {reverted} buffer(s)");
             RebindFocusIfMissing();
@@ -5402,7 +5367,58 @@ namespace Ruitk.Builder
             MountCanvas();
         }
 
-        private void OnWorkspaceChanged() => RefreshChrome();
+        [System.NonSerialized] private double _lastJournalAt;
+
+        private void OnWorkspaceChanged()
+        {
+            RefreshChrome();
+            // Crash cover. Throttled, so the journal can trail the tree by a few
+            // seconds - which is the honest cost of not writing the whole tree on
+            // every commit, and still the difference between losing a session and
+            // losing a moment of it.
+            double now = UnityEditor.EditorApplication.timeSinceStartup;
+            if (now - _lastJournalAt < 5.0)
+                return;
+            _lastJournalAt = now;
+            BuilderReloadJournal.Capture(_workspace);
+        }
+
+        /// <summary>Dumps the tree before the domain goes away. Unthrottled: this
+        /// is the moment the in-memory copy stops existing.</summary>
+        private void JournalTree() => BuilderReloadJournal.Capture(_workspace);
+
+        /// <summary>Offers unsaved work back after the builder came up with
+        /// nothing. The journal only exists when work was unsaved, so its presence
+        /// beside an empty tree IS the evidence something was lost - a reload that
+        /// went fine leaves a tree here, and a clean session leaves no journal.</summary>
+        private void OfferJournalRestore()
+        {
+            UnityEditor.EditorApplication.delayCall -= OfferJournalRestore;
+            if (this == null || _workspace.Modules.Count > 0)
+                return;
+            if (!BuilderReloadJournal.TryPeek(out int modules, out string savedAt))
+                return;
+            if (!UnityEditor.EditorUtility.DisplayDialog(
+                    "Restore unsaved work?",
+                    "The builder has " + modules + " module(s) from " + savedAt
+                    + " that were never written to disk.\n\nRestore them, or discard "
+                    + "and start clean?",
+                    "Restore",
+                    "Discard"))
+            {
+                BuilderReloadJournal.Clear();
+                return;
+            }
+            if (!BuilderReloadJournal.TryRestore(_workspace))
+            {
+                Toast("Could not restore - the journal did not read back");
+                return;
+            }
+            RebindFocusIfMissing();
+            RefreshChrome();
+            MountCanvas();
+            Toast("Restored " + modules + " unsaved module(s)");
+        }
 
         private void RefreshChrome()
         {
@@ -5410,7 +5426,7 @@ namespace Ruitk.Builder
             if (_statusLabel != null)
             {
                 int open = 0, dirty = 0;
-                foreach (var s in _workspace.Sessions)
+                foreach (var s in _workspace.Modules)
                 {
                     open++;
                     if (s.IsDirty)

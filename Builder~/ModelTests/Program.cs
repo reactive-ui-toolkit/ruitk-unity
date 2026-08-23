@@ -24,7 +24,7 @@ static class Program
             Folder = folder,
             Name = name,
             Kind = kind,
-            Text = text,
+            BufferText = text,
             ProjectedText = onDisk ? text : string.Empty,
             DiskPath = onDisk ? Path.Combine(folder, name + BuilderModule.SuffixFor(kind)) : null,
         };
@@ -41,9 +41,9 @@ static class Program
         var c = Make(comp, "Showcase", BuilderNodeKind.Component, "export VirtualNode Showcase() {}", true);
         var s = Make(comp, "showcaseStyle", BuilderNodeKind.Style, "", true);
         var h = Make(comp, "useThing", BuilderNodeKind.Hook, "", false);
-        Check(c.Path.EndsWith("Showcase.uitkx"), "component suffix");
-        Check(s.Path.EndsWith("showcaseStyle.style.uitkx"), "style suffix");
-        Check(h.Path.EndsWith("useThing.hooks.uitkx"), "hook suffix");
+        Check(c.FilePath.EndsWith("Showcase.uitkx"), "component suffix");
+        Check(s.FilePath.EndsWith("showcaseStyle.style.uitkx"), "style suffix");
+        Check(h.FilePath.EndsWith("useThing.hooks.uitkx"), "hook suffix");
 
         // ---- IsOnDisk survives the null-becomes-empty hazard ---------------
         Console.WriteLine("null vs empty DiskPath");
@@ -65,16 +65,16 @@ static class Program
         tree.Add(c); tree.Add(s);
         var sub = Make(child, "Sub", BuilderNodeKind.Component, "export VirtualNode Sub() {}", true);
         tree.Add(sub);
-        Check(tree.ByPath(c.Path) == c, "ByPath finds a module");
+        Check(tree.ByPath(c.FilePath) == c, "ByPath finds a module");
         Check(tree.ById(c.Id) == c, "ById finds a module");
         Check(tree.ByPath(null) == null, "ByPath(null) is not-found, not a throw");
         Check(tree.ByPath(Path.Combine(Root, "Nope.uitkx")) == null, "unknown path is not-found");
 
         // ---- delete is absence --------------------------------------------
         Console.WriteLine("delete is absence");
-        tree.SetProjection(new[] { c.Path, s.Path, sub.Path });
+        tree.SetProjection(new[] { c.FilePath, s.FilePath, sub.FilePath });
         Check(tree.OrphanedPaths().Count == 0, "nothing orphaned while all present");
-        string goneStyle = s.Path;
+        string goneStyle = s.FilePath;
         tree.Remove(s);
         Check(tree.ByPath(goneStyle) == null, "removed module is gone from the index");
         var orphans = tree.OrphanedPaths();
@@ -88,7 +88,7 @@ static class Program
         Console.WriteLine("folder-owning rename moves the subtree");
         string oldChildFolder = sub.Folder;
         tree.MoveTo(c, Path.Combine(Root, "Renamed"), "Renamed");
-        Check(c.Path.EndsWith(Path.Combine("Renamed", "Renamed.uitkx")), "the module moved");
+        Check(c.FilePath.EndsWith(Path.Combine("Renamed", "Renamed.uitkx")), "the module moved");
         Check(sub.Folder != oldChildFolder && sub.Folder.Contains("Renamed"),
               "the child moved with the folder");
         Check(sub.Folder.EndsWith(Path.Combine("components", "Sub")),
@@ -99,9 +99,9 @@ static class Program
         Console.WriteLine("dirtiness");
         var clean = Make(Root, "Clean", BuilderNodeKind.Component, "same", true);
         Check(!clean.IsDirty, "text equal to projected text is clean");
-        clean.SetText("different");
+        clean.ApplyEdit("different");
         Check(clean.IsDirty, "an edit makes it dirty");
-        clean.MarkProjected(clean.Path);
+        clean.MarkProjected(clean.FilePath);
         Check(!clean.IsDirty, "projecting makes it clean again");
 
         // ---- read-only is the last line of defence -------------------------
@@ -109,7 +109,7 @@ static class Program
         var ro = Make(Root, "Package", BuilderNodeKind.Component, "x", true);
         ro.IsReadOnly = true;
         bool threw = false;
-        try { ro.SetText("y"); } catch (InvalidOperationException) { threw = true; }
+        try { ro.ApplyEdit("y"); } catch (InvalidOperationException) { threw = true; }
         Check(threw, "a read-only module refuses an edit");
 
         // ---- the serialization shuttle -------------------------------------
@@ -118,11 +118,11 @@ static class Program
         var a1 = Make(Root, "A", BuilderNodeKind.Component, "textA", true);
         var b1 = Make(Root, "b", BuilderNodeKind.Style, "textB", false);   // DiskPath null
         round.Add(a1); round.Add(b1);
-        round.SetProjection(new[] { a1.Path });
+        round.SetProjection(new[] { a1.FilePath });
 
         round.OnBeforeSerialize();
         round.OnAfterDeserialize();            // indexes dropped, as after a reload
-        Check(round.ByPath(a1.Path) == a1, "path index rebuilt lazily after deserialize");
+        Check(round.ByPath(a1.FilePath) == a1, "path index rebuilt lazily after deserialize");
         Check(round.ById(b1.Id) == b1, "id index rebuilt lazily after deserialize");
         Check(!b1.IsOnDisk, "a never-written module stays never-written across the trip");
         Check(round.Validate().Count == 0, "a healthy tree validates clean");
@@ -140,6 +140,85 @@ static class Program
         noId.Add(n1);
         n1.Id = null;
         Check(noId.Validate().Count > 0, "a module that lost its id is reported");
+
+        // ---- a move is a move, not a delete plus a write --------------------
+        Console.WriteLine("moving does not orphan");
+        var mv = new BuilderTree();
+        var m1 = Make(Root, "Moved", BuilderNodeKind.Component, "x", true);
+        string wasAt = m1.DiskPath;
+        mv.Add(m1);
+        mv.SetProjection(new[] { m1.FilePath });
+        mv.MoveTo(m1, Path.Combine(Root, "Elsewhere"), "Moved");
+        Check(m1.HasMoved, "the module knows it has moved");
+        Check(mv.OrphanedPaths().Count == 0,
+              "its old file is NOT orphaned - Save moves the file, keeping its GUID and meta");
+        m1.MarkProjected(m1.FilePath);
+        mv.SetProjection(new[] { m1.FilePath });
+        Check(!m1.HasMoved && mv.OrphanedPaths().Count == 0 && !mv.HasUnsavedWork(),
+              "after the projection there is nothing left to do");
+        Check(wasAt != m1.DiskPath, "and DiskPath followed the module");
+
+        // ---- undoing a delete puts the SAME module back ---------------------
+        Console.WriteLine("restore");
+        var un = new BuilderTree();
+        var u1 = Make(Root, "Undone", BuilderNodeKind.Component, "x", true);
+        un.Add(u1);
+        un.SetProjection(new[] { u1.FilePath });
+        un.Remove(u1);
+        Check(un.OrphanedPaths().Count == 1, "the deleted file is orphaned");
+        un.Add(u1);
+        Check(un.OrphanedPaths().Count == 0 && un.ByPath(u1.FilePath) == u1,
+              "putting the module back un-orphans its file, identity and all");
+        Check(!un.HasUnsavedWork(), "and the tree is back to having nothing to save");
+
+        // ---- unsaved work is derived from the tree, never accumulated -------
+        Console.WriteLine("unsaved work");
+        var uw = new BuilderTree();
+        var w1 = Make(Root, "Work", BuilderNodeKind.Component, "x", true);
+        uw.Add(w1);
+        uw.SetProjection(new[] { w1.FilePath });
+        Check(!uw.HasUnsavedWork(), "a freshly loaded tree has nothing to save");
+        w1.ApplyEdit("y");
+        Check(uw.HasUnsavedWork(), "an edit is unsaved work");
+        w1.MarkProjected(w1.FilePath);
+        Check(!uw.HasUnsavedWork(), "projecting the edit settles it");
+        var w2 = Make(Root, "Fresh", BuilderNodeKind.Component, "z", false);
+        uw.Add(w2);
+        Check(uw.HasUnsavedWork(), "a module that has never been written is unsaved work");
+        var wro = Make(Root, "Locked", BuilderNodeKind.Component, "p", true);
+        wro.IsReadOnly = true;
+        uw.Remove(w2);
+        uw.Add(wro);
+        Check(!uw.HasUnsavedWork(),
+              "a read-only module is never unsaved work - the builder cannot write it");
+
+        // ---- abort is load re-run -------------------------------------------
+        Console.WriteLine("abort");
+        var ab = new BuilderTree();
+        var ab1 = Make(Root, "Abort", BuilderNodeKind.Component, "x", true);
+        ab.Add(ab1);
+        ab.SetProjection(new[] { ab1.FilePath });
+        ab.MoveTo(ab1, Path.Combine(Root, "Gone"), "Abort");
+        ab.Remove(ab1);
+        Check(ab.OrphanedPaths().Count == 1 && ab.HasUnsavedWork(), "the tree has pending work");
+        var reloaded = Make(Root, "Abort", BuilderNodeKind.Component, "x", true);
+        ab.Reset(new[] { reloaded }, new[] { reloaded.FilePath });
+        Check(!ab.HasUnsavedWork() && ab.OrphanedPaths().Count == 0,
+              "resetting from disk leaves nothing pending, whatever happened before");
+
+        // ---- the same operation twice lands in the same place ---------------
+        Console.WriteLine("idempotence");
+        var id = new BuilderTree();
+        var i1 = Make(Root, "Same", BuilderNodeKind.Component, "x", true);
+        var i2 = Make(Path.Combine(Root, "Same", "components", "Leaf"), "Leaf",
+                      BuilderNodeKind.Component, "y", true);
+        i1.Folder = Path.Combine(Root, "Same");
+        id.Add(i1); id.Add(i2);
+        id.MoveTo(i1, Path.Combine(Root, "Twice"), "Twice");
+        string after1 = i1.FilePath + "|" + i2.FilePath;
+        id.MoveTo(i1, Path.Combine(Root, "Twice"), "Twice");
+        Check(i1.FilePath + "|" + i2.FilePath == after1,
+              "repeating a move changes nothing, subtree included");
 
         Console.WriteLine();
         Console.WriteLine(failures == 0

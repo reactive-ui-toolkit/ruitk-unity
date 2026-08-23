@@ -8,13 +8,17 @@ namespace Ruitk.Builder
     /// UB-73: one ordered log of every builder action, with undo/redo that walks
     /// it atomically ACROSS files.
     ///
-    /// The per-file <see cref="BuilderDocumentSession"/> stacks are still the
-    /// buffer's own history, but they cannot express a user gesture: a drop that
-    /// inserts a tag in one file and an import line in another is two session
-    /// edits and one ACTION, and undoing it file-by-file leaves the tree in a
-    /// state the user never authored. An entry here owns the whole set of
-    /// (file, before, after) triples a single gesture produced, so one Ctrl+Z
-    /// reverts all of them or none.
+    /// A per-file history cannot express a user gesture: a drop that inserts a
+    /// tag in one file and an import line in another is two edits and one
+    /// ACTION, and undoing it file-by-file leaves the tree in a state the user
+    /// never authored. An entry here owns the whole set of (file, before, after)
+    /// triples a single gesture produced, so one Ctrl+Z reverts all of them or
+    /// none.
+    ///
+    /// The ledger is NOT serialized - the window holds it NonSerialized, so a
+    /// domain reload keeps the tree and drops the history. That is deliberate:
+    /// an undo whose other half was compiled away is worse than no undo, and it
+    /// is why an entry may hold a live module reference.
     ///
     /// Redo is the tail past the cursor. Recording a new action truncates it,
     /// which is the standard linear-history rule — a branch the user walked away
@@ -28,14 +32,14 @@ namespace Ruitk.Builder
             public string Before;
             public string After;
 
-            /// <summary>A pending-deletion mark rather than a buffer rewrite.
-            /// Undo un-marks it, redo re-marks it — nothing on disk moves either
-            /// way, because the deletion itself only happens at Save.</summary>
+            /// <summary>A module LEAVING the tree. Undo puts it back and redo
+            /// removes it again; nothing on disk moves either way, because the
+            /// file is only trashed at Save.</summary>
             public bool IsDeletion;
 
-            /// <summary>A pending NEW module. Undo closes the never-saved
-            /// session, redo re-opens it from <see cref="After"/>. Nothing on
-            /// disk moves either way — the file is only written at Save.</summary>
+            /// <summary>A NEW module. Undo removes it from the tree, redo puts it
+            /// back from <see cref="After"/>. Nothing on disk moves either way -
+            /// the file is only written at Save.</summary>
             public bool IsCreation;
 
             /// <summary>A pending MOVE. <see cref="Before"/> is the path the
@@ -44,9 +48,11 @@ namespace Ruitk.Builder
             /// moves either way - the projection happens at Save.</summary>
             public bool IsMove;
 
-            /// <summary>A pending FOLDER move, carrying its whole contents.
-            /// <see cref="Before"/> and <see cref="After"/> are the directories.</summary>
-            public bool IsFolderMove;
+            /// <summary>The module a deletion removed, held so undo can put the
+            /// SAME module back - its identity, its buffer and its DiskPath. A
+            /// deletion used to be a mark that undo cleared; now the module
+            /// genuinely leaves the tree, so undo needs the thing itself.</summary>
+            public BuilderModule Removed;
 
             /// <summary>The module's stable identity at record time. A ledger entry
             /// outlives the PATH it was recorded against - a rename moves the module,
@@ -225,30 +231,9 @@ namespace Ruitk.Builder
                 Commit();
         }
 
-        /// <summary>Records a FOLDER moving with everything in it. Distinct from a
-        /// module move: the directory operation is what preserves the GUIDs of the
-        /// children and carries the files the builder does not manage.</summary>
-        public void RecordFolderMove(string fromDir, string toDir)
-        {
-            if (Replaying || string.IsNullOrEmpty(fromDir) || string.IsNullOrEmpty(toDir))
-                return;
-            bool standalone = _open == null;
-            if (standalone)
-                _open = new Entry { Description = "move folder", At = DateTime.Now };
-            _open.Changes.Add(new Change
-            {
-                FilePath = toDir,
-                Before = fromDir,
-                After = toDir,
-                IsFolderMove = true,
-            });
-            if (standalone)
-                Commit();
-        }
-
         /// <summary>Records that a file was marked for deletion. Carries no text
         /// because none is needed: the file is still on disk until Save.</summary>
-        public void RecordDeletion(string filePath)
+        public void RecordDeletion(string filePath, BuilderModule removed = null)
         {
             if (Replaying || string.IsNullOrEmpty(filePath))
                 return;
@@ -257,7 +242,8 @@ namespace Ruitk.Builder
                 _open = new Entry { Description = "delete", At = DateTime.Now };
             _open.Changes.Add(new Change
             {
-                FilePath = filePath, ModuleId = IdOf?.Invoke(filePath), IsDeletion = true,
+                FilePath = filePath, ModuleId = IdOf?.Invoke(filePath),
+                IsDeletion = true, Removed = removed,
             });
             if (standalone)
                 Commit();

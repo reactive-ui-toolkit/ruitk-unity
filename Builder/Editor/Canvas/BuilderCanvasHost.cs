@@ -57,18 +57,15 @@ namespace Ruitk.Builder
         public Action<string> OnRenameCard;
         public Action<string> OnDeleteFile;
 
-        /// <summary>UB-88: files to leave out of the tree even though they are
-        /// still on disk — deletions the user has made but not yet saved.</summary>
-        public Func<string, bool> IsFileHidden;
+        /// <summary>The tree the canvas draws. The graph is a PROJECTION of it,
+        /// so the host reads modules, never files: nothing it draws can be stale
+        /// with respect to what the user has typed, and there is no set of
+        /// exceptions - hidden files, pending files, overridden files - to keep in
+        /// step with the tree.</summary>
+        public Func<IReadOnlyList<BuilderModule>> Modules;
 
-        /// <summary>Modules that exist only as unsaved buffers, which the language
-        /// server cannot know about because it reads disk.</summary>
-        public Func<IEnumerable<string>> PendingNewFiles;
-
-        /// <summary>True when the builder holds a module differently from the file
-        /// on disk, so the server's view of what it imports is stale and its own
-        /// text has to be parsed instead.</summary>
-        public Func<string, bool> IsFileOverridden;
+        /// <summary>One module of that tree, for a card rebuild.</summary>
+        public Func<string, BuilderModule> ModuleAt;
 
         public Action<string, int, int, string, VisualElement> OnEditAttrValue;
         public Action<string, int, string, VisualElement> OnEditDirective;
@@ -78,41 +75,26 @@ namespace Ruitk.Builder
         public Action<string> OnAddUtilExport;
         public Action<string> OnTraceStates;
 
-        public async void Mount(
+        /// <summary>Draws the tree. SYNCHRONOUS: the graph is a projection of
+        /// modules already in memory, so there is nothing to wait for. It used to
+        /// await the language server before the first card appeared - every mount
+        /// paid for starting a process, and a server that would not start left an
+        /// empty window reading "LSP unavailable" where the tree should have
+        /// been.</summary>
+        public void Mount(
             VisualElement container,
             string focusFile,
             Action<string> onOpenFile,
-            Func<string, string> readText = null,
             Action<BuilderGraph> onGraphLoaded = null)
         {
             if (container == null || string.IsNullOrEmpty(focusFile))
                 return;
             _container = container;
-            ShowMessage("Loading tree…");
-
-            // The two failures below are NOT the same and must not read the same.
-            // One catch reported everything as "LSP unavailable", so a bug in the
-            // graph build - an empty tree indexing a zero-length array - surfaced as
-            // a language-server problem and sent the search in the wrong direction
-            // entirely. A build failure now names itself and logs its stack.
-            BuilderLspClient client;
-            try
-            {
-                client = await BuilderLspService.GetOrStartAsync();
-            }
-            catch (Exception ex)
-            {
-                ShowMessage("LSP unavailable: " + ex.Message);
-                return;
-            }
 
             BuilderGraph graph;
             try
             {
-                graph = await BuilderGraphService.LoadTreeAsync(
-                    client, focusFile, readText, IsFileHidden,
-                    PendingNewFiles?.Invoke(), IsFileOverridden);
-                await CheckSchemaDrift(client);
+                graph = BuilderGraphService.LoadTree(Modules?.Invoke(), focusFile);
             }
             catch (Exception ex)
             {
@@ -120,8 +102,6 @@ namespace Ruitk.Builder
                 ShowMessage("Could not build the tree: " + ex.Message);
                 return;
             }
-            if (_container == null || _container.panel == null)
-                return;
 
             _graph = graph;
             onGraphLoaded?.Invoke(graph);
@@ -169,6 +149,23 @@ namespace Ruitk.Builder
             });
             ZoomChanged?.Invoke(_zoom);
             RenderCanvas();
+            CheckSchemaDriftDetached();
+        }
+
+        /// <summary>The schema check needs the language server; the CANVAS does
+        /// not. Detached, so a slow or absent server delays a warning rather than
+        /// the tree.</summary>
+        private async void CheckSchemaDriftDetached()
+        {
+            try
+            {
+                await CheckSchemaDrift(await BuilderLspService.GetOrStartAsync());
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning(
+                    "[RUITK Builder] schema check skipped: " + ex.Message);
+            }
         }
 
         private float _viewportW;
@@ -294,7 +291,7 @@ namespace Ruitk.Builder
         ///
         /// It used to redraw the edges without rebuilding them, so an import added
         /// since the last full load drew its anchor dot and no line.</summary>
-        public void RefreshGraph(string filePath, Func<string, string> readText)
+        public void RefreshGraph(string filePath)
         {
             if (_graph == null || _container == null)
                 return;
@@ -303,7 +300,8 @@ namespace Ruitk.Builder
                 return;
             try
             {
-                BuilderGraphService.PopulateCardDetail(_graph.Nodes[index], readText);
+                BuilderGraphService.PopulateCardDetail(
+                    _graph.Nodes[index], ModuleAt?.Invoke(filePath)?.BufferText);
             }
             catch (Exception)
             {

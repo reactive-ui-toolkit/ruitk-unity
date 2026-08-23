@@ -278,3 +278,43 @@ comes back identical, including a null `DiskPath` AND an empty one.
 **Honest limit:** none of this proves Unity's own serializer behaves as
 documented for these exact field shapes. That needs one real reload with an
 unsaved tree open, and it is stage 1's exit gate - before anything depends on it.
+
+## What shipped
+
+All four stages, 2026-08-23. `BuilderModule` + `BuilderTree` + a rewritten
+`BuilderWorkspace`; `BuilderDocumentSession` deleted; the graph projected from
+the tree; Save a pure diff against `LastProjection`; the ledger carrying the
+module a deletion removed.
+
+Deliberate deviations from the plan as written:
+
+- **The parse cache lives in `BuilderLanguage.Parse`, not on the module.** The
+  plan put a lazy `Parsed` property on `BuilderModule`. A memo at the parser
+  facade is the same idea one layer lower and is strictly better: it is keyed on
+  the buffer's REFERENCE (a builder buffer is replaced wholesale on every edit,
+  so a new reference means new text, and comparing references costs nothing
+  where hashing contents would cost the scan the memo exists to save), it serves
+  every caller rather than the graph alone - the mount's two parses per module
+  and the keystroke's two parses of the focused buffer all collapse - and it
+  keeps `BuilderModule` free of any language dependency, which is what lets
+  `Builder~/ModelTests` link the real source instead of a copy. It self-heals
+  across a reload for the same reason the plan wanted: an empty memo is
+  indistinguishable from a cold one.
+- **The canvas no longer touches the language server at all.** The plan only
+  removed the inventory round trip. With the graph projected from modules, the
+  mount had nothing left to await, so `Mount` is synchronous and the schema-drift
+  check runs detached. A server that will not start now delays a warning instead
+  of leaving an empty window reading "LSP unavailable".
+- **`LoadTree` closes over what the tree imports.** A folder scan alone is not
+  the tree: a module one folder over that the focus imports was outside the scan,
+  so its import resolved to nothing and the canvas drew an anchor with no line.
+  The scan is the seed; reachability through the one canonical `ImportResolver`
+  is the tree.
+- **The journal is never cleared by a load.** Writing it only when there is
+  unsaved work is not enough on its own - clearing it when there is none would
+  have destroyed a crashed session's only copy the moment the user opened the
+  builder on a different file. Clearing is a decision: saved, aborted, restored,
+  or explicitly discarded.
+
+Still open: the exit gate. One real domain reload with an unsaved tree open,
+which only the owner's editor can run.

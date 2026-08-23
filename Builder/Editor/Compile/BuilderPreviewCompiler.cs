@@ -111,8 +111,8 @@ namespace Ruitk.Builder
             if (_compiler == null || _workspace == null)
                 return null;
 
-            var dirty = new Dictionary<string, BuilderDocumentSession>(StringComparer.OrdinalIgnoreCase);
-            foreach (var session in _workspace.Sessions)
+            var dirty = new Dictionary<string, BuilderModule>(StringComparer.OrdinalIgnoreCase);
+            foreach (var session in _workspace.Modules)
             {
                 if (session.IsDirty)
                     dirty[Path.GetFullPath(session.FilePath)] = session;
@@ -205,7 +205,7 @@ namespace Ruitk.Builder
         /// the preview shows, and building it is pure cost - paid on every debounced
         /// keystroke, through an external csc process on Unity 6.5.</summary>
         private void RestrictToFocusClosure(
-            Dictionary<string, BuilderDocumentSession> dirty, string focusFull)
+            Dictionary<string, BuilderModule> dirty, string focusFull)
         {
             if (dirty.Count <= 1 || !dirty.ContainsKey(focusFull))
                 return;
@@ -279,7 +279,7 @@ namespace Ruitk.Builder
         /// dirty-set dependency edges are retained for the caller's
         /// skip-downstream-of-failure pass.</summary>
         private List<string> OrderByImports(
-            Dictionary<string, BuilderDocumentSession> dirty,
+            Dictionary<string, BuilderModule> dirty,
             out Dictionary<string, List<string>> dependencies)
         {
             var order = new List<string>(dirty.Count);
@@ -311,7 +311,7 @@ namespace Ruitk.Builder
             return order;
         }
 
-        private IEnumerable<string> ResolveImports(string path, BuilderDocumentSession session)
+        private IEnumerable<string> ResolveImports(string path, BuilderModule session)
         {
             var resolved = new List<string>();
             try

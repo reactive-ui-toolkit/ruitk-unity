@@ -30,7 +30,8 @@ namespace Ruitk.Builder
         /// <summary>Folder the module lives in. Authoritative and mutable:
         /// stored rather than derived from a parent link, because deriving it
         /// would want to MOVE every existing tree that does not follow the
-        /// ComponentName/ComponentName.uitkx convention.</summary>
+        /// ComponentName/ComponentName.uitkx convention. Change it through
+        /// <see cref="BuilderTree.MoveTo"/>, which carries the subtree.</summary>
         public string Folder;
 
         /// <summary>Module name without suffix - "ShowcasePage".</summary>
@@ -39,11 +40,11 @@ namespace Ruitk.Builder
         public BuilderNodeKind Kind;
 
         /// <summary>The live buffer. The only mutable content a module has.</summary>
-        public string Text;
+        public string BufferText;
 
         /// <summary>The text this module was last PROJECTED from - written to
         /// disk, or read from it at load. Dirtiness is the difference between
-        /// this and <see cref="Text"/>, so it needs no flag to maintain.</summary>
+        /// this and <see cref="BufferText"/>, so it needs no flag to maintain.</summary>
         public string ProjectedText;
 
         /// <summary>Immutable-package policy: a module inside a registered,
@@ -73,24 +74,25 @@ namespace Ruitk.Builder
         public bool IsOnDisk => !string.IsNullOrEmpty(DiskPath);
 
         /// <summary>Where this module BELONGS - derived from the model, every
-        /// time. Save compares it against <see cref="DiskPath"/>: they disagree
-        /// exactly when the module has moved.</summary>
-        public string Path =>
+        /// time, never stored. Save compares it against <see cref="DiskPath"/>:
+        /// they disagree exactly when the module has moved.</summary>
+        public string FilePath =>
             string.IsNullOrEmpty(Folder) || string.IsNullOrEmpty(Name)
                 ? string.Empty
                 : System.IO.Path.Combine(Folder, Name + SuffixFor(Kind));
 
         public bool IsDirty =>
-            !string.Equals(Text, ProjectedText, StringComparison.Ordinal);
+            !string.Equals(BufferText, ProjectedText, StringComparison.Ordinal);
 
         /// <summary>Moved since it was last projected: it has a file, and that
         /// file is not where the model says the module belongs.</summary>
         public bool HasMoved =>
-            IsOnDisk && !string.Equals(DiskPath, Path, StringComparison.OrdinalIgnoreCase);
+            IsOnDisk && !string.Equals(DiskPath, FilePath, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>A component owns the folder it is named after, and takes the
         /// folder with it when renamed. A COMPANION never does - a style module
-        /// beside its component shares that folder without owning it.</summary>
+        /// beside its component shares that folder without owning it, and a card
+        /// title has its .style/.hooks stripped, so the two report the same name.</summary>
         public bool OwnsFolder =>
             Kind != BuilderNodeKind.Style && Kind != BuilderNodeKind.Hook
             && !string.IsNullOrEmpty(Folder) && !string.IsNullOrEmpty(Name)
@@ -133,19 +135,58 @@ namespace Ruitk.Builder
                 : fileName;
         }
 
+        /// <summary>Builds a module for a file, splitting its name and kind and
+        /// recording the EOL flavor of the bytes it came from.</summary>
+        public static BuilderModule FromFile(string fullPath, string rawText, bool isReadOnly)
+        {
+            SplitFileName(System.IO.Path.GetFileName(fullPath), out string name, out var kind);
+            string lf = NormalizeLf(rawText);
+            return new BuilderModule
+            {
+                Id = NewId(),
+                Folder = System.IO.Path.GetDirectoryName(fullPath) ?? string.Empty,
+                Name = name,
+                Kind = kind,
+                BufferText = lf,
+                ProjectedText = lf,
+                DiskPath = fullPath,
+                IsReadOnly = isReadOnly,
+                UsedCrlf = rawText != null && rawText.Contains("\r\n"),
+            };
+        }
+
+        /// <summary>Builds a module that exists only in memory. It is dirty from
+        /// the moment it is made, and the first Save writes it.</summary>
+        public static BuilderModule Fresh(
+            string folder, string name, BuilderNodeKind kind, string initialText)
+        {
+            return new BuilderModule
+            {
+                Id = NewId(),
+                Folder = folder,
+                Name = name,
+                Kind = kind,
+                BufferText = NormalizeLf(initialText),
+                ProjectedText = string.Empty,
+                DiskPath = null,
+                IsReadOnly = false,
+                UsedCrlf = false,
+            };
+        }
+
         /// <summary>Replaces the buffer. Rejected on read-only modules - callers
         /// gate the UI, this is the last line of defense - and rejects CR,
         /// because every buffer in the builder is LF-normalized.</summary>
-        public void SetText(string newTextLf)
+        public void ApplyEdit(string newTextLf)
         {
             if (IsReadOnly)
                 throw new InvalidOperationException(
-                    $"'{Path}' is read-only (immutable package) - the builder must not edit it.");
+                    $"'{FilePath}' is read-only (immutable package) - the builder must not edit it.");
             if (newTextLf == null)
                 throw new ArgumentNullException(nameof(newTextLf));
             if (newTextLf.IndexOf('\r') >= 0)
                 throw new ArgumentException("builder buffers are LF-normalized", nameof(newTextLf));
-            Text = newTextLf;
+            BufferText = newTextLf;
         }
 
         /// <summary>Records that the module now matches what is on disk at
@@ -153,8 +194,23 @@ namespace Ruitk.Builder
         /// "clean" are set, so they cannot drift apart.</summary>
         public void MarkProjected(string projectedPath)
         {
-            ProjectedText = Text;
+            ProjectedText = BufferText;
             DiskPath = projectedPath;
+        }
+
+        /// <summary>External change under a CLEAN module: adopt the new disk text
+        /// so open cards never keep serving a stale buffer. The caller enforces
+        /// the dirty policy - unsaved edits are never clobbered. Returns true
+        /// when the text actually changed.</summary>
+        public bool AdoptDiskText(string rawText)
+        {
+            string lf = NormalizeLf(rawText);
+            UsedCrlf = rawText != null && rawText.Contains("\r\n");
+            if (string.Equals(lf, BufferText, StringComparison.Ordinal))
+                return false;
+            BufferText = lf;
+            ProjectedText = lf;
+            return true;
         }
     }
 }
