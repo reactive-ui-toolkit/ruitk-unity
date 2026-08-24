@@ -3297,3 +3297,39 @@ whether focus had landed, and a state test cannot see a closing window that has
 not taken focus back yet. It re-asserts instead, four times across ~120ms,
 stopping early only for a typing target - which means an editor the user has
 since moved into.
+
+### UB-200 — a new card still hung below the cursor `FIXED` `LOW`
+
+UB-195 centred a new card horizontally and lifted it a fixed 18px, which is a
+title bar's worth. A card is hundreds of pixels tall, so most of it still hung
+below the pointer. Centred on both axes now, against the height a fresh template
+draws.
+
+### UB-201 — the preview pipeline cannot be debugged from its symptoms `OPEN` `HIGH`
+
+Owner report 2026-08-24, third round on the same complaint: an edit to a style
+module does not reach the preview of the component that imports it.
+
+Three fixes have gone into this pipeline, each correct and each aimed at a real
+defect - UB-190 (the focus closure dropped importers), UB-194 (candidates keyed
+on unsaved rather than unbuilt), UB-198 (the set was not closed upward over
+importers). None of them was the one the owner is hitting.
+
+The reason the guessing continued is that the pipeline's failures are INVISIBLE
+and identical from outside: a module missing from the batch, a module that
+compiled and produced no change, and a module whose compile silently failed all
+look the same in the preview - nothing happens. Reading the code has now produced
+three plausible mechanisms and no evidence.
+
+What is RULED OUT by reading: import resolution (`ResolveImports` uses the same
+resolver the canvas draws its edges with, and the edge is drawn); the unsaved
+buffer overlay (`ReadUitkxText` prefers it, and imported modules are compiled
+from it into the same swap assembly); and batch ordering (dependencies before
+dependents, with `dependencyRebuilt` for the untouched dependent).
+
+A "Trace" toggle in the toolbar now logs one line per compile round: which
+modules were CONSIDERED after the focus closure, which rebuilt and why, which
+failed, and which were skipped for a failed dependency. The next report carries
+the answer instead of the symptom.
+
+NOT a fix. Left OPEN deliberately.

@@ -12,6 +12,18 @@ namespace Ruitk.Builder
     /// nothing about a compile round is silent (UB-15).</summary>
     internal sealed class BuilderCompileSummary
     {
+        /// <summary>Every module this round decided about, after the focus
+        /// closure trimmed the batch. What is NOT here was never a candidate -
+        /// which is the failure that cost three rounds of guessing, because a
+        /// module missing from the batch looks exactly like one that compiled and
+        /// changed nothing.</summary>
+        public readonly System.Collections.Generic.List<string> Considered =
+            new System.Collections.Generic.List<string>();
+
+        /// <summary>Why each rebuilt module was rebuilt.</summary>
+        public readonly System.Collections.Generic.Dictionary<string, string> Reasons =
+            new System.Collections.Generic.Dictionary<string, string>(
+                System.StringComparer.OrdinalIgnoreCase);
         public HmrCompileResult FocusResult;
         public readonly List<(string Path, string Error)> Failures =
             new List<(string, string)>();
@@ -146,6 +158,7 @@ namespace Ruitk.Builder
             // whole session. Only the focused module and what it imports can affect
             // what is on screen, so only those are built.
             RestrictToFocusClosure(dirty, focusFull);
+            summary.Considered.AddRange(dirty.Keys);
             var failedRoots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var recompiled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string path in OrderByImports(dirty, out var dependencies))
@@ -192,6 +205,7 @@ namespace Ruitk.Builder
                 if (!textMoved && !dependencyRebuilt)
                     continue;
 
+                summary.Reasons[path] = textMoved ? "text changed" : "dependency rebuilt";
                 var result = _compiler.Compile(path);
                 recompiled.Add(path);
                 if (result.Success)

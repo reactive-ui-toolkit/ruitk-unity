@@ -527,10 +527,20 @@ namespace Ruitk.Builder
                 x = (w * 0.5f - _camX) / zoom;
                 y = (h * 0.5f - _camY) / zoom;
             }
+            // Centred on BOTH axes. Lifting it by a fixed 18px left most of a card
+            // hanging below the cursor, because a card is hundreds of pixels tall
+            // and only its title bar was being aimed at. A module about to be
+            // created has no card yet, so its height is the one a fresh template
+            // draws - a header, a signature, and an empty body.
             float card = BuilderCanvasDrawing.CardWidthFor(LodOf(_zoom));
-            _config.SetPosition(filePath, x - card * 0.5f, y - 18f);
+            _config.SetPosition(filePath, x - card * 0.5f, y - NewCardHeight * 0.5f);
             _config.Save();
         }
+
+        /// <summary>What a just-created card stands about. Its real height is not
+        /// knowable until the card is built from a module that does not exist yet,
+        /// and being a little out is invisible - being a whole card out is not.</summary>
+        private const float NewCardHeight = 200f;
 
         public int NodeIndexOf(string filePath) =>
             _graph?.IndexOf(System.IO.Path.GetFullPath(filePath)) ?? -1;

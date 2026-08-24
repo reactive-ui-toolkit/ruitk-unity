@@ -306,6 +306,8 @@ namespace Ruitk.Builder
             toolbar.Add(Separator());
             toolbar.Add(ToolbarButton("Import .uxml…", ImportUxml));
             toolbar.Add(ToolbarButton("History", ToggleHistory));
+            _traceButton = ToolbarButton("Trace", TogglePreviewTrace);
+            toolbar.Add(_traceButton);
             _foldersButton = ToolbarButton("Folders", ToggleFolders);
             toolbar.Add(_foldersButton);
             toolbar.Add(ToolbarButton("? How to drive it", ToggleHelp));
@@ -4500,6 +4502,63 @@ namespace Ruitk.Builder
         /// <summary>Debounced buffer-edit entry point (CodeField/authoring call
         /// this): dirty buffers recompile in import order after 300 ms of quiet,
         /// then the preview re-resolves its delegate from the swap assembly.</summary>
+        /// <summary>Set from the toolbar: writes one line per preview compile
+        /// saying which modules were CONSIDERED, which rebuilt and why, and which
+        /// were skipped.
+        ///
+        /// It exists because three separate fixes to this pipeline each read
+        /// correctly and each failed, and the reason is that its failures are
+        /// invisible: a module missing from the batch looks exactly like a module
+        /// that compiled and changed nothing. The next report carries the answer
+        /// rather than the symptom.</summary>
+        [SerializeField] private bool _tracePreview;
+        [System.NonSerialized] private Button _traceButton;
+
+        private void TogglePreviewTrace()
+        {
+            _tracePreview = !_tracePreview;
+            if (_traceButton != null)
+                _traceButton.text = _tracePreview ? "Trace ON" : "Trace";
+            Toast(_tracePreview
+                ? "Preview trace ON - the console names what each edit rebuilds"
+                : "Preview trace off");
+        }
+
+        private void TracePreviewCompile(BuilderCompileSummary summary)
+        {
+            if (!_tracePreview)
+                return;
+            if (summary == null)
+            {
+                Debug.Log("[RUITK Builder] preview: nothing to build");
+                return;
+            }
+            var line = new System.Text.StringBuilder("[RUITK Builder] preview: focus ");
+            line.Append(Path.GetFileName(_focusFile));
+            line.Append("\n  considered: ");
+            line.Append(summary.Considered.Count == 0
+                ? "(none)"
+                : string.Join(", ", summary.Considered.ConvertAll(Path.GetFileName)));
+            line.Append("\n  rebuilt:    ");
+            line.Append(summary.Reasons.Count == 0 ? "(none)" : "");
+            foreach (var pair in summary.Reasons)
+                line.Append(Path.GetFileName(pair.Key)).Append(" (").Append(pair.Value).Append(") ");
+            if (summary.Failures.Count > 0)
+            {
+                line.Append("\n  FAILED:     ");
+                foreach (var (path, error) in summary.Failures)
+                    line.Append(Path.GetFileName(path)).Append(": ").Append(error).Append(" ");
+            }
+            if (summary.Skipped.Count > 0)
+            {
+                line.Append("\n  skipped:    ");
+                foreach (var (path, blockedBy) in summary.Skipped)
+                    line.Append(Path.GetFileName(path))
+                        .Append(" (needs ").Append(Path.GetFileName(blockedBy)).Append(") ");
+            }
+            Debug.Log(line.ToString());
+        }
+
         public void NotifyBufferChanged()
         {
             ScheduleServerTokens();
@@ -4524,6 +4583,7 @@ namespace Ruitk.Builder
                 return;
             }
             var summary = _previewCompiler.CompileDirty(_focusFile);
+            TracePreviewCompile(summary);
             var focusSession = _workspace.TryGet(_focusFile);
             // The pane is ALWAYS told which assembly to render, whether or not this
             // round rebuilt anything. A module that needs no rebuild still has a
