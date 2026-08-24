@@ -152,6 +152,32 @@ static class Program
         Check(sameEverywhere,
               "every module in the tree resolves to the SAME root, imported or not");
 
+        // UB-189: a tree that has never been saved has NO files, so the disk
+        // answer is "wherever the focus is" - and creating a nested component
+        // moves the focus deeper, which moved the root with it and re-keyed the
+        // whole saved layout. Asked of the MODULES, the answer holds.
+        string mem = Path.Combine(Path.GetTempPath(), "ruitk-unsaved", "Root");
+        var unsaved = new List<BuilderModule>
+        {
+            Make(mem, "Root", BuilderNodeKind.Component, "x", false),
+            Make(mem, "rootStyle", BuilderNodeKind.Style, "x", false),
+            Make(Path.Combine(mem, "components", "Mid"), "Mid",
+                 BuilderNodeKind.Component, "x", false),
+            Make(Path.Combine(mem, "components", "Mid", "components", "Leaf"), "Leaf",
+                 BuilderNodeKind.Component, "x", false),
+        };
+        Check(!Directory.Exists(mem), "the fixture really is unsaved - nothing on disk");
+        bool stable = true;
+        foreach (var module in unsaved)
+            if (!string.Equals(BuilderTree.ResolveRoot(unsaved, module.FilePath), mem,
+                    StringComparison.OrdinalIgnoreCase))
+                stable = false;
+        Check(stable, "an UNSAVED tree resolves to one root from every module in it");
+        Check(!string.Equals(
+                  BuilderTree.ResolveRoot(unsaved[3].FilePath), mem,
+                  StringComparison.OrdinalIgnoreCase),
+              "and the disk answer would have been wrong, which is the bug");
+
         Directory.Delete(sandbox, true);
     }
 

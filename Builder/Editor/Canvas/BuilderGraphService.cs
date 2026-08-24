@@ -1276,7 +1276,7 @@ namespace Ruitk.Builder
         private static string ResolveRootModule(
             IReadOnlyList<BuilderModule> modules, string focus, HashSet<string> inventory)
         {
-            string folder = BuilderTree.ResolveRoot(focus);
+            string folder = BuilderTree.ResolveRoot(modules, focus);
             string best = null;
             if (modules != null && !string.IsNullOrEmpty(folder))
             {

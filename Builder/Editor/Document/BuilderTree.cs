@@ -299,7 +299,44 @@ namespace Ruitk.Builder
         /// after, and children nest under a "components" folder inside it. The
         /// walk stops at the first ancestor that is neither, which is the tree's
         /// own root.</summary>
+        /// <summary>The tree root decided from the MODULES rather than from disk.
+        ///
+        /// The filesystem answer is wrong for a tree that has never been saved:
+        /// nothing exists yet, so the walk stops at the first folder and the root
+        /// is wherever the FOCUS happens to be. Creating a nested component then
+        /// moved the focus deeper, moved the root with it, and re-keyed the whole
+        /// saved layout - which is the canvas rearranging itself for no reason the
+        /// user could see (UB-189).</summary>
+        public static string ResolveRoot(IReadOnlyList<BuilderModule> modules, string focusFullPath)
+        {
+            return ResolveRootCore(focusFullPath, folder =>
+            {
+                if (modules == null)
+                    return false;
+                string wanted = Canon(folder);
+                foreach (var module in modules)
+                    if (module != null && module.OwnsFolder
+                        && string.Equals(Canon(module.Folder), wanted,
+                            StringComparison.OrdinalIgnoreCase))
+                        return true;
+                return false;
+            });
+        }
+
+        /// <summary>The same walk, answered from DISK. Used by the loader, which
+        /// runs before there is a tree to ask.</summary>
         public static string ResolveRoot(string focusFullPath)
+        {
+            return ResolveRootCore(focusFullPath, folder => System.IO.File.Exists(
+                System.IO.Path.Combine(folder, System.IO.Path.GetFileName(folder) + ".uitkx")));
+        }
+
+        /// <summary>Climbs to the outermost folder of the tree the focus belongs
+        /// to. <paramref name="ownsAModule"/> answers "is there a component named
+        /// after this folder" - the one question the walk asks, and the only thing
+        /// that differs between asking the tree and asking the disk.</summary>
+        private static string ResolveRootCore(
+            string focusFullPath, Func<string, bool> ownsAModule)
         {
             if (string.IsNullOrEmpty(focusFullPath))
                 return null;
@@ -337,15 +374,14 @@ namespace Ruitk.Builder
                 // root and loaded all of them into one canvas.
                 if (string.Equals(parent.Name, "components", StringComparison.OrdinalIgnoreCase)
                     && parent.Parent != null
-                    && System.IO.File.Exists(System.IO.Path.Combine(
-                        parent.Parent.FullName, parent.Parent.Name + ".uitkx")))
+                    && ownsAModule(parent.Parent.FullName))
                 {
                     dir = parent.Parent.FullName;
                     continue;
                 }
                 // A folder that owns a module named after itself is still inside
                 // the tree, so keep climbing.
-                if (System.IO.File.Exists(System.IO.Path.Combine(parent.FullName, parent.Name + ".uitkx")))
+                if (ownsAModule(parent.FullName))
                 {
                     dir = parent.FullName;
                     continue;

@@ -3135,3 +3135,77 @@ the first drag.
 The convention (UB-187) does not argue with any of it. It decides where a module
 is BORN and nothing re-places one afterwards, which is exactly why both features
 can exist.
+
+### UB-189 — an UNSAVED tree re-keyed its layout on every new component `FIXED` `HIGH`
+
+Owner report 2026-08-24, after UB-185 had already fixed the root for saved
+trees: creating a component still rearranged the canvas.
+
+ROOT CAUSE: `ResolveRoot` walks up asking "is there a component named after this
+folder", and it asked the FILESYSTEM. A tree that has never been saved has no
+files, so the walk stopped at the first folder and returned wherever the FOCUS
+was. Creating a nested component moves the focus into it, which moved the root
+with it, which re-keyed the whole saved layout - so every card took a fresh slot.
+
+UB-185 fixed the same class of bug for saved trees and could not have caught
+this: its model test builds real folders on disk, which is exactly the case that
+worked.
+
+FIX: the walk takes a predicate for its one question, and the graph projection
+answers it from the MODULES. Disk is still the answer for the loader, which runs
+before there is a tree to ask. Three model checks, including an assertion that
+the disk answer WOULD have been wrong for the same fixture - the test pins the
+bug, not just the fix.
+
+### UB-190 — editing a style did not update the component using it `FIXED` `MED`
+
+Owner report 2026-08-24: "when editing style when its connected to an element,
+sometimes the component its connected to will not update until many changes."
+
+ROOT CAUSE: clicking a style entry selects that card, which moves the FOCUS onto
+the style module. The preview compiler restricts its work to the focus and what
+the focus IMPORTS - a forward walk - so the component that imports the style was
+dropped from the batch and never rebuilt. It updated again only when something
+moved the focus back, which is the "until many changes".
+
+FIX: a module with no visual of its own is never what the preview is showing - a
+component that imports it is. When the focus is not a Component, the batch also
+takes the modules that reach it, transitively.
+
+### UB-191 — the style Enter chain lost a race `FIXED` `MED`
+
+Owner report 2026-08-24: "the whole write a style press enter move to the +
+entry - rarely works."
+
+ROOT CAUSE: committing an entry SCHEDULES the canvas refresh rather than doing it
+inline, so the row for the next line does not exist when the chain looks for it.
+It waited one deferred tick, which won sometimes.
+
+FIX: it retries for up to twelve ticks, the same shape the inline editor already
+uses to catch its own focus.
+
+### UB-192 — creating a component dropped the keyboard `FIXED` `LOW`
+
+Owner report 2026-08-24: "when you create a component the canvas loses focus and
+you have to refocus manually with mouse to be able to create another."
+
+The create prompt takes the keyboard and closing it hands it back to nothing, so
+the next shortcut went to Unity. The window takes it back, the same way every
+exit from the inline editor already does.
+
+### UB-193 — folders could not be moved or folded `SHIPPED` `MED`
+
+Owner ask 2026-08-24: "whole folders need to be able to move not just files, and
+i should be able to collapse folders."
+
+Dragging a folder moves everything under it. When a component OWNS the folder
+that is the same move by a shorter route - moving the component already carries
+its subtree - so that path is taken and the house layout is preserved. Otherwise
+every module underneath is re-filed individually, keeping its position relative
+to the folder that moved, with the imports captured ONCE around the whole batch:
+reconciling per move would re-spell specifiers against a half-moved tree, each
+pass correct about a state nobody ever sees.
+
+Clicking a folder folds it. A press that never TRAVELS is a click and one that
+does is a drag, so the whole row stays available to both rather than splitting it
+into hit areas. A folder refuses to be dropped into itself or its own descendant.

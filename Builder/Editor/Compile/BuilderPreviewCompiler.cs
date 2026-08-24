@@ -204,6 +204,35 @@ namespace Ruitk.Builder
         /// its imports. A module nobody in the preview refers to cannot change what
         /// the preview shows, and building it is pure cost - paid on every debounced
         /// keystroke, through an external csc process on Unity 6.5.</summary>
+        /// <summary>Every dirty module that reaches <paramref name="target"/>
+        /// through its imports, directly or not.</summary>
+        private List<string> ImportersOf(
+            Dictionary<string, BuilderModule> dirty, string target)
+        {
+            var found = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { target };
+            bool grew = true;
+            while (grew)
+            {
+                grew = false;
+                foreach (var pair in dirty)
+                {
+                    if (seen.Contains(pair.Key))
+                        continue;
+                    foreach (string dep in ResolveImports(pair.Key, pair.Value))
+                    {
+                        if (!seen.Contains(dep))
+                            continue;
+                        seen.Add(pair.Key);
+                        found.Add(pair.Key);
+                        grew = true;
+                        break;
+                    }
+                }
+            }
+            return found;
+        }
+
         private void RestrictToFocusClosure(
             Dictionary<string, BuilderModule> dirty, string focusFull)
         {
@@ -213,6 +242,19 @@ namespace Ruitk.Builder
             var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { focusFull };
             var queue = new Queue<string>();
             queue.Enqueue(focusFull);
+
+            // A module with no visual of its own is never what the preview is
+            // showing - a COMPONENT that imports it is. Clicking a style entry to
+            // edit it moves the focus onto that style, so a forward-only walk
+            // dropped the very component on screen and it stopped updating until
+            // something moved the focus back (UB-190).
+            if (dirty.TryGetValue(focusFull, out var focusModule)
+                && focusModule.Kind != BuilderNodeKind.Component)
+            {
+                foreach (string importer in ImportersOf(dirty, focusFull))
+                    if (keep.Add(importer))
+                        queue.Enqueue(importer);
+            }
             while (queue.Count > 0)
             {
                 string path = queue.Dequeue();

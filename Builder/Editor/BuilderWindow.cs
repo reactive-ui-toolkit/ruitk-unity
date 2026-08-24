@@ -483,6 +483,7 @@ namespace Ruitk.Builder
                 OnToast = Toast,
                 OnOpen = OpenFileFromCanvas,
                 OnMove = MoveModuleToFolder,
+                OnMoveFolder = MoveFolderToFolder,
             };
             // A reload rebuilds the visual tree but not the pane, so an empty
             // container means the rows it holds belong to a panel that is gone.
@@ -539,6 +540,79 @@ namespace Ruitk.Builder
             MountCanvas();
             _folderPane?.Rebuild();
             Toast("Moved " + Path.GetFileName(to) + " - applies on Save");
+        }
+
+        /// <summary>A folder dropped on another folder.
+        ///
+        /// A folder is not something the tree HOLDS - it is where its modules
+        /// sit - so moving one means moving everything under it. When a component
+        /// owns the folder, that is exactly what moving the component already
+        /// does, subtree and all; otherwise every module underneath is re-filed
+        /// individually, keeping its position relative to the folder that moved.
+        ///
+        /// The imports are captured ONCE around the whole batch. Reconciling per
+        /// move would re-spell specifiers against modules that are half-moved, and
+        /// each pass would be correct about a state nobody ever sees.</summary>
+        private void MoveFolderToFolder(string sourceFolder, string targetFolder)
+        {
+            string source = Path.GetFullPath(sourceFolder);
+            string leaf = Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar));
+            if (leaf.Length == 0)
+                return;
+            string destination = Path.GetFullPath(Path.Combine(targetFolder, leaf));
+            if (string.Equals(destination, source, System.StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // The component that owns the folder carries it, which is the same
+            // move by a shorter route - and the one that keeps the house layout.
+            foreach (var module in _workspace.Modules)
+                if (module.OwnsFolder
+                    && string.Equals(Path.GetFullPath(module.Folder), source,
+                        System.StringComparison.OrdinalIgnoreCase))
+                {
+                    MoveModuleToFolder(module.FilePath, targetFolder);
+                    return;
+                }
+
+            var movers = new System.Collections.Generic.List<(BuilderModule Module, string To)>();
+            foreach (var module in _workspace.Modules)
+            {
+                string folder = Path.GetFullPath(module.Folder ?? "");
+                if (!IsInside(folder, source)
+                    && !string.Equals(folder, source, System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (module.IsReadOnly)
+                {
+                    Toast("Can't move " + leaf + " - it holds a read-only module");
+                    return;
+                }
+                string relative = folder.Length > source.Length
+                    ? folder.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar)
+                    : string.Empty;
+                movers.Add((module, Path.Combine(destination, relative)));
+            }
+            if (movers.Count == 0)
+                return;
+
+            _ledger.Begin("move " + leaf);
+            var imports = _workspace.CaptureImports();
+            foreach (var (module, to) in movers)
+            {
+                string from = module.FilePath;
+                _workspace.MoveTo(from, to, module.Name);
+                _canvasHost?.RepathLayout(from, module.FilePath, isFolder: false);
+                if (string.Equals(FocusFull, Path.GetFullPath(from),
+                        System.StringComparison.OrdinalIgnoreCase))
+                    _focusFile = module.FilePath;
+            }
+            foreach (var rewrite in _workspace.ReconcileImports(imports))
+                _ledger.Record(rewrite.FilePath, rewrite.Before, rewrite.After);
+            _ledger.End();
+            RefreshHistoryPanel();
+            RefreshChrome();
+            MountCanvas();
+            _folderPane?.Rebuild();
+            Toast("Moved " + leaf + " - applies on Save");
         }
 
         /// <summary>Whether <paramref name="path"/> is at or below
@@ -2947,11 +3021,25 @@ namespace Ruitk.Builder
             // The card re-rendered on the commit, so the row element for the
             // next line exists only after that render has landed.
             int line = next.SourceLine;
+            OpenNextEntryWhenDrawn(full, line, 12);
+        }
+
+        /// <summary>Opens the editor on the next entry once the card has actually
+        /// re-drawn it. The commit schedules a canvas refresh rather than doing it
+        /// inline, so the row for the next line does not exist yet - and a single
+        /// deferred tick was a race the chain lost more often than it won.</summary>
+        private void OpenNextEntryWhenDrawn(string full, int line, int attempts)
+        {
+            if (attempts <= 0)
+                return;
             rootVisualElement?.schedule.Execute(() =>
             {
                 var anchor = _canvasHost?.RowElement(full, line);
                 if (anchor == null)
+                {
+                    OpenNextEntryWhenDrawn(full, line, attempts - 1);
                     return;
+                }
                 var row = NodeFor(full)?.ExportDetail.Find(r => r.SourceLine == line);
                 if (row == null)
                     return;
@@ -5656,6 +5744,10 @@ namespace Ruitk.Builder
                         + (where.Length > 0 ? " in " + where : "") + " - applies on Save");
                     RefreshChrome();
                     OpenAdditionalFile(full);
+                    // The create prompt took the keyboard and closing it hands it
+                    // back to nothing, so the next Ctrl+N - or any shortcut - went
+                    // to Unity until the user clicked the canvas.
+                    FocusExisting(focusRoot: true);
                 });
         }
 
