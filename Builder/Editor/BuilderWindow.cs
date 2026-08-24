@@ -631,9 +631,18 @@ namespace Ruitk.Builder
                 System.StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>Takes the keyboard back for the window, retrying while the
-        /// canvas remounts under it. Focus lands on an element that a remount is
-        /// about to replace, so one attempt is a coin toss.</summary>
+        /// <summary>Takes the keyboard back for the WINDOW after a popup closes.
+        ///
+        /// Two things are racing it. The canvas remounts, replacing the element
+        /// focus just landed on; and the create prompt is an EditorWindow that
+        /// takes focus back on its way out. Unity then leaves the builder merely
+        /// visible rather than active, which is why a right-click on the canvas
+        /// did nothing until the user left-clicked it first (UB-199) - a popup
+        /// cannot open from a window that is not the focused one.
+        ///
+        /// So it re-asserts rather than checking: a state test cannot see a
+        /// closing window that has not taken focus back YET. It stops early only
+        /// for a typing target, which means an editor the user is now in.</summary>
         private void ReclaimKeyboard(int attempts)
         {
             if (attempts <= 0)
@@ -643,10 +652,8 @@ namespace Ruitk.Builder
             {
                 if (this == null || TypingTargetFocused())
                     return;
-                var focused = rootVisualElement?.panel?.focusController?.focusedElement;
-                if (focused == null)
-                    ReclaimKeyboard(attempts - 1);
-            }).ExecuteLater(20);
+                ReclaimKeyboard(attempts - 1);
+            }).ExecuteLater(30);
         }
 
         private void MountCanvas()
@@ -5793,7 +5800,7 @@ namespace Ruitk.Builder
                     // the remount above rebuilds the element that would hold it,
                     // and the remount does not finish this tick - which is why
                     // doing it inline worked only sometimes.
-                    ReclaimKeyboard(6);
+                    ReclaimKeyboard(4);
                 });
         }
 

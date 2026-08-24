@@ -128,6 +128,15 @@ namespace Ruitk.Builder
             if (dirty.Count == 0)
                 return null;
 
+            // A module whose DEPENDENCY changed has to be rebuilt as well, and its
+            // own text has not moved - so it is never a candidate on its own. The
+            // loop below already knows this (see dependencyRebuilt) but can only
+            // act on modules that are IN the batch. Without closing the set upward
+            // first, editing a style rebuilt the style and nothing that uses it,
+            // so the preview kept rendering the component against the old one
+            // (UB-198).
+            AddImportersOfChanged(dirty);
+
             var summary = new BuilderCompileSummary();
             string focusFull = Path.GetFullPath(focusFile ?? "");
 
@@ -212,6 +221,36 @@ namespace Ruitk.Builder
         /// its imports. A module nobody in the preview refers to cannot change what
         /// the preview shows, and building it is pure cost - paid on every debounced
         /// keystroke, through an external csc process on Unity 6.5.</summary>
+        /// <summary>Pulls in every module that reaches something already in the
+        /// batch through its imports. Searched over the WHOLE tree, not over the
+        /// batch, because the modules being added are by definition the ones that
+        /// did not change and so are not in it yet.</summary>
+        private void AddImportersOfChanged(Dictionary<string, BuilderModule> candidates)
+        {
+            var all = new Dictionary<string, BuilderModule>(StringComparer.OrdinalIgnoreCase);
+            foreach (var module in _workspace.Modules)
+                all[Path.GetFullPath(module.FilePath)] = module;
+
+            bool grew = true;
+            while (grew)
+            {
+                grew = false;
+                foreach (var pair in all)
+                {
+                    if (candidates.ContainsKey(pair.Key))
+                        continue;
+                    foreach (string dep in ResolveImports(pair.Key, pair.Value))
+                    {
+                        if (!candidates.ContainsKey(dep))
+                            continue;
+                        candidates[pair.Key] = pair.Value;
+                        grew = true;
+                        break;
+                    }
+                }
+            }
+        }
+
         /// <summary>Every dirty module that reaches <paramref name="target"/>
         /// through its imports, directly or not.</summary>
         private List<string> ImportersOf(

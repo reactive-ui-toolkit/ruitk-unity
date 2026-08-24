@@ -3258,3 +3258,42 @@ one in the wrong place.
 The window took the keyboard back inline, but creating a module remounts the
 canvas and the remount does not finish that tick - so focus landed on an element
 that was about to be replaced. It retries while the remount settles.
+
+### UB-198 — a style edit rebuilt the style and nothing that USED it `FIXED` `HIGH`
+
+Owner report 2026-08-24, with the component focused: adding `Color = ColorBlue`
+to a style module did not render, while editing the component's own text
+rendered fine.
+
+ROOT CAUSE, and it is the third layer of the same onion. UB-194 made the batch
+"everything whose text changed since it was last BUILT" - which is the style. The
+component's own text did not change, so it was not a candidate. The loop already
+knows a module must rebuild when a dependency did (`dependencyRebuilt`) but it
+can only act on modules that are IN the batch, and the component never entered
+it. So the style rebuilt and the thing rendering it did not.
+
+UB-190 fixed the mirror case - focus ON the style - by seeding the KEEP set with
+its importers. That was the special case; this is the rule.
+
+FIX: the candidate set is closed UPWARD over importers before anything is
+restricted. Searched over the whole tree rather than over the batch, because the
+modules being added are by definition the ones that did not change.
+
+Three reports, three layers, one question asked wrongly: not "what is unsaved",
+not "what changed", but "what is no longer valid".
+
+### UB-199 — the canvas ignored a right-click after a create `FIXED` `MED`
+
+Owner report 2026-08-24: create a component from the canvas menu, then right-click
+the canvas - nothing. Left-click first, and right-click works.
+
+ROOT CAUSE: the create prompt is an EditorWindow, and it takes focus back on its
+way out. Unity leaves the builder VISIBLE but not ACTIVE, and a popup cannot open
+from a window that is not the focused one - so the right-click reached the canvas
+and the menu it asked for never appeared.
+
+UB-197 already tried to take the keyboard back and lost this race: it CHECKED
+whether focus had landed, and a state test cannot see a closing window that has
+not taken focus back yet. It re-asserts instead, four times across ~120ms,
+stopping early only for a typing target - which means an editor the user has
+since moved into.
