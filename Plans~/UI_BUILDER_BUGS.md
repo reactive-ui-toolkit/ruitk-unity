@@ -3471,3 +3471,40 @@ producer/consumer mismatch is readable instead of inferred.
 
 NOT fixed. Left OPEN rather than guessed at - four rounds on UB-203 were spent
 shipping mechanisms that read correctly and were not the cause.
+
+### UB-206 — Save wrote a 0-byte module and broke the project's compile `FIXED` `CRITICAL`
+
+Owner report 2026-08-24: saved, and the project stopped compiling with
+
+    componentTwo.style.uitkx(1,8): CS1029 #error: does not contain a valid
+      top-level declaration
+    ComponentTwo.uitkx(4,8): CS1029 #error: unused import `ComponentTwoStyle`
+
+The save itself was correct - 5 files, the nesting right, the provisional folder
+cleaned up. `componentTwo.style.uitkx` was written at 0 bytes because the BUFFER
+was empty, and the same UITKX2105 appears in the trace BEFORE the save, at the
+provisional path, so it was empty well before Save touched it.
+
+A style module starts empty by design (`TemplateFor` returns "" for Style and
+Utils - exports arrive via "+ style"), so emptiness is a legitimate state while
+editing. Writing it is not: the language requires a top-level declaration, so an
+empty .uitkx is not an empty file, it is a BROKEN one, and it takes the whole
+project's compile with it.
+
+FIX, at the point of decision. Save now settles empty modules before writing
+anything: it names them and offers delete / cancel / save anyway. Deleting goes
+through the same path as any other deletion, so the references go with it - which
+is what would have prevented the second error too.
+
+ALSO: "Delete style X" on a module's LAST export now offers to delete the MODULE
+instead of the lines. Removing the last export is how a module gets emptied in
+the first place, and at that point the module is what the user means to be rid
+of, not a file that stops the project compiling.
+
+The owner's project was repaired by hand: the 0-byte file removed and the now
+unused import stripped from ComponentTwo.
+
+NOT ESTABLISHED: which gesture emptied the buffer. The card still showed the
+export while the buffer was empty, so a canvas node outlived its module's text -
+worth watching, but the guard above is correct whatever the route, and it catches
+routes nobody has thought of yet.

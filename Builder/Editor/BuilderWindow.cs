@@ -3770,15 +3770,44 @@ namespace Ruitk.Builder
                 return;
             }
             int last = System.Math.Max(fromLine, toLine);
+            // Taking the last export out of a module leaves a file the language
+            // cannot parse. The module is what the user means to be rid of at that
+            // point, so offer THAT instead of a file that stops the project
+            // compiling (UB-206).
+            bool emptiesModule = IsWholeBuffer(module, fromLine, last);
             var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>
             {
-                new BuilderSearchMenu.Item
-                {
-                    Label = "Delete " + what,
-                    OnPick = () => DeleteLinesInFile(filePath, fromLine, last, "delete " + what),
-                },
+                emptiesModule
+                    ? new BuilderSearchMenu.Item
+                    {
+                        Label = "Delete " + Path.GetFileName(filePath) + " (its last export)",
+                        OnPick = () => _canvasHost?.OnDeleteFile?.Invoke(filePath),
+                    }
+                    : new BuilderSearchMenu.Item
+                    {
+                        Label = "Delete " + what,
+                        OnPick = () => DeleteLinesInFile(filePath, fromLine, last, "delete " + what),
+                    },
             };
             BuilderSearchMenu.Show(what, "filter…", items);
+        }
+
+        /// <summary>Whether a line range is everything the buffer has to say -
+        /// every line outside it being blank.</summary>
+        private static bool IsWholeBuffer(BuilderModule module, int fromLine, int toLine)
+        {
+            if (module == null)
+                return false;
+            string[] lines = module.BufferText.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                int line = i + 1;
+                if (line >= fromLine && line <= toLine)
+                    continue;
+                if (!string.IsNullOrWhiteSpace(lines[i]))
+                    return false;
+            }
+            return true;
         }
 
         private void OnStyleAddEntry(string filePath, string styleName, int closeLine)
@@ -5619,6 +5648,64 @@ namespace Ruitk.Builder
             return true;
         }
 
+        /// <summary>Stops Save writing a module with nothing in it.
+        ///
+        /// An empty .uitkx is not an empty file, it is a BROKEN one: the language
+        /// requires a top-level declaration, so the project stops compiling with
+        /// UITKX2105 the moment it is imported. Emptying a module while editing is
+        /// legitimate - clearing it to retype - but WRITING it is the point where
+        /// that becomes the project's problem, which makes Save the place to ask.
+        ///
+        /// The owner hit it by way of a style module whose last export went away:
+        /// the card still showed the export, Save wrote 0 bytes, and the file then
+        /// failed to compile with nothing anywhere naming the cause (UB-206).</summary>
+        private bool ResolveEmptyModules()
+        {
+            var empty = new System.Collections.Generic.List<BuilderModule>();
+            foreach (var module in _workspace.Modules)
+            {
+                if (module.IsReadOnly || BuilderWorkspace.IsUnlocated(module.FilePath))
+                    continue;
+                if (string.IsNullOrWhiteSpace(module.BufferText))
+                    empty.Add(module);
+            }
+            if (empty.Count == 0)
+                return true;
+
+            var names = new System.Text.StringBuilder();
+            foreach (var module in empty)
+                names.Append("  ").Append(Path.GetFileName(module.FilePath)).Append('\n');
+            int choice = UnityEditor.EditorUtility.DisplayDialogComplex(
+                "Empty module" + (empty.Count == 1 ? "" : "s"),
+                empty.Count + " module(s) have nothing in them:\n\n" + names
+                + "\nA .uitkx with no declaration does not compile, so saving one "
+                + "breaks the project until it is filled in or removed.",
+                "Delete them",
+                "Cancel save",
+                "Save anyway");
+            if (choice == 1)
+            {
+                Toast("Save cancelled");
+                return false;
+            }
+            if (choice == 2)
+                return true;
+
+            _ledger.Begin("delete empty module" + (empty.Count == 1 ? "" : "s"));
+            foreach (var module in empty)
+            {
+                string path = module.FilePath;
+                StripReferencesTo(Path.GetFullPath(path));
+                _ledger.RecordDeletion(path, module);
+                _workspace.Delete(path);
+            }
+            _ledger.End();
+            RefreshHistoryPanel();
+            RebindFocusIfMissing();
+            MountCanvas();
+            return true;
+        }
+
         /// <summary>UB-116: canvas edits splice LINES into the buffer, so an
         /// inserted tag carries the indentation the splice guessed rather than
         /// the file's canonical shape — the owner's "the formatting of the text
@@ -5668,6 +5755,8 @@ namespace Ruitk.Builder
             // UB-88: Save is where a deletion stops being reversible, so it is
             // the only place worth asking — up to that moment the user can undo
             // it, abort, or simply never save. The list names every file.
+            if (!ResolveEmptyModules())
+                return;
             var pending = _workspace.Tree.OrphanedPaths();
             if (pending.Count > 0)
             {
