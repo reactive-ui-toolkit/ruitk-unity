@@ -111,11 +111,19 @@ namespace Ruitk.Builder
             if (_compiler == null || _workspace == null)
                 return null;
 
+            // What needs rebuilding is what has changed since it was last BUILT -
+            // not what is unsaved. Those differ in a case the owner hit head-on:
+            // type a label, then type it back to what is on disk, and the module
+            // becomes CLEAN. Keyed on dirtiness it left the batch, nothing
+            // recompiled, and the preview went on showing the edit that had been
+            // taken back (UB-194).
             var dirty = new Dictionary<string, BuilderModule>(StringComparer.OrdinalIgnoreCase);
             foreach (var session in _workspace.Modules)
             {
-                if (session.IsDirty)
-                    dirty[Path.GetFullPath(session.FilePath)] = session;
+                string full = Path.GetFullPath(session.FilePath);
+                if (!_compiledFrom.TryGetValue(full, out string built)
+                    || !string.Equals(built, session.BufferText, StringComparison.Ordinal))
+                    dirty[full] = session;
             }
             if (dirty.Count == 0)
                 return null;

@@ -505,11 +505,30 @@ namespace Ruitk.Builder
 
         /// <summary>Seeds the persisted layout slot for a file about to be
         /// created, so the new card appears where the user right-clicked.</summary>
+        /// <summary>Seeds the layout slot for a card about to be created.
+        ///
+        /// A card is positioned by its TOP-LEFT, so placing it at the cursor put
+        /// the whole card down and to the right of where the user pointed. It
+        /// lands centred on the cursor instead, high enough that the pointer is
+        /// over its title bar - which is what "create it here" looks like.
+        ///
+        /// (0, 0) means there was no cursor - the library's "+ new" button - so
+        /// the card goes to the middle of what the user is currently looking at,
+        /// rather than to a fixed world point they may have panned away from.</summary>
         public void PlaceNewCard(string filePath, float x, float y)
         {
-            if (_config == null || (x == 0f && y == 0f))
+            if (_config == null)
                 return;
-            _config.SetPosition(filePath, x, y);
+            if (x == 0f && y == 0f)
+            {
+                float w = _container?.resolvedStyle.width ?? 0f;
+                float h = _container?.resolvedStyle.height ?? 0f;
+                float zoom = _zoom <= 0f ? 1f : _zoom;
+                x = (w * 0.5f - _camX) / zoom;
+                y = (h * 0.5f - _camY) / zoom;
+            }
+            float card = BuilderCanvasDrawing.CardWidthFor(LodOf(_zoom));
+            _config.SetPosition(filePath, x - card * 0.5f, y - 18f);
             _config.Save();
         }
 

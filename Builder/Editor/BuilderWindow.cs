@@ -631,6 +631,24 @@ namespace Ruitk.Builder
                 System.StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>Takes the keyboard back for the window, retrying while the
+        /// canvas remounts under it. Focus lands on an element that a remount is
+        /// about to replace, so one attempt is a coin toss.</summary>
+        private void ReclaimKeyboard(int attempts)
+        {
+            if (attempts <= 0)
+                return;
+            FocusExisting(focusRoot: true);
+            rootVisualElement?.schedule.Execute(() =>
+            {
+                if (this == null || TypingTargetFocused())
+                    return;
+                var focused = rootVisualElement?.panel?.focusController?.focusedElement;
+                if (focused == null)
+                    ReclaimKeyboard(attempts - 1);
+            }).ExecuteLater(20);
+        }
+
         private void MountCanvas()
         {
             if (string.IsNullOrEmpty(_focusFile))
@@ -929,7 +947,7 @@ namespace Ruitk.Builder
             foreach (var (kind, label) in s_startKinds)
             {
                 string captured = kind;
-                var button = ToolbarButton(label, () => CreateModule(captured, 60f, 40f));
+                var button = ToolbarButton(label, () => CreateModule(captured, 0f, 0f));
                 button.style.marginRight = 8f;
                 button.style.paddingTop = 5f;
                 button.style.paddingBottom = 5f;
@@ -2976,7 +2994,6 @@ namespace Ruitk.Builder
         /// style name). Empty when Enter means nothing in particular.</summary>
         [System.NonSerialized] private string _armedAddFile = "";
         [System.NonSerialized] private string _armedAddStyle = "";
-        [System.NonSerialized] private int _armedAddLine;
 
         /// <summary>Enter finished a style entry, so move to the next one.
         /// Writing a style is a RUN of entries, and committing each by hand -
@@ -3009,10 +3026,7 @@ namespace Ruitk.Builder
             var next = node.ExportDetail[at + 1];
             if (next.BadgeKind == 9)
             {
-                _armedAddFile = full;
-                _armedAddStyle = next.AttrsText ?? "";
-                _armedAddLine = next.SourceLine;
-                _canvasHost?.ArmStyleAdd(_armedAddFile, _armedAddStyle);
+                ArmStyleAdd(full, next.AttrsText ?? "");
                 return;
             }
             if (next.BadgeKind != 0 || next.Depth != 1)
@@ -3060,7 +3074,6 @@ namespace Ruitk.Builder
                 return;
             _armedAddFile = "";
             _armedAddStyle = "";
-            _armedAddLine = 0;
             _canvasHost?.ArmStyleAdd("", "");
         }
 
@@ -3844,6 +3857,35 @@ namespace Ruitk.Builder
             OpenSession(filePath);
             InsertLinesInFile(
                 filePath, closeLine - 1, "  " + key + " = " + value + ",", styleName + "." + key);
+            // Adding an entry is a run, the same as editing one: the key menu and
+            // the value menu are two Enters, and the third should start the next
+            // entry. Arming here is what makes the whole sequence keyboard-only.
+            ArmStyleAdd(filePath, styleName);
+        }
+
+        /// <summary>Points the keyboard at a style's "+ entry" row. The LINE is
+        /// looked up when Enter fires rather than stored: inserting an entry moves
+        /// the row down, and a remembered line would insert the next one in the
+        /// wrong place.</summary>
+        private void ArmStyleAdd(string filePath, string styleName)
+        {
+            _armedAddFile = Path.GetFullPath(filePath);
+            _armedAddStyle = styleName ?? "";
+            _canvasHost?.ArmStyleAdd(_armedAddFile, _armedAddStyle);
+        }
+
+        /// <summary>The line the armed style's "+ entry" row currently sits on,
+        /// or 0 when the card no longer has one.</summary>
+        private int ArmedAddLine()
+        {
+            var node = NodeFor(_armedAddFile);
+            if (node == null)
+                return 0;
+            foreach (var row in node.ExportDetail)
+                if (row.BadgeKind == 9
+                    && string.Equals(row.AttrsText, _armedAddStyle, System.StringComparison.Ordinal))
+                    return row.SourceLine;
+            return 0;
         }
 
         private BuilderModule OpenSession(string filePath)
@@ -5260,9 +5302,10 @@ namespace Ruitk.Builder
                         return;
                     string file = _armedAddFile;
                     string style = _armedAddStyle;
-                    int line = _armedAddLine;
+                    int line = ArmedAddLine();
                     DisarmStyleAdd();
-                    OnStyleAddEntry(file, style, line);
+                    if (line > 0)
+                        OnStyleAddEntry(file, style, line);
                     ConsumeKey(evt);
                     return;
                 }
@@ -5745,9 +5788,12 @@ namespace Ruitk.Builder
                     RefreshChrome();
                     OpenAdditionalFile(full);
                     // The create prompt took the keyboard and closing it hands it
-                    // back to nothing, so the next Ctrl+N - or any shortcut - went
-                    // to Unity until the user clicked the canvas.
-                    FocusExisting(focusRoot: true);
+                    // back to nothing, so the next shortcut went to Unity until the
+                    // user clicked the canvas. Taking it back has to happen AFTER
+                    // the remount above rebuilds the element that would hold it,
+                    // and the remount does not finish this tick - which is why
+                    // doing it inline worked only sometimes.
+                    ReclaimKeyboard(6);
                 });
         }
 

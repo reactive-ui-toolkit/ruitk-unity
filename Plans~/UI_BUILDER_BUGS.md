@@ -3209,3 +3209,52 @@ pass correct about a state nobody ever sees.
 Clicking a folder folds it. A press that never TRAVELS is a click and one that
 does is a drag, so the whole row stays available to both rather than splitting it
 into hit areas. A folder refuses to be dropped into itself or its own descendant.
+
+### UB-194 — an edit taken BACK stopped updating the preview `FIXED` `HIGH`
+
+Owner report 2026-08-24, and the sharpest repro in the campaign: change a label
+to "Left side a" - it updates - then change it back to "Left side", and the
+preview stays on "Left side a".
+
+ROOT CAUSE: the preview compiled what was DIRTY, meaning different from disk.
+Typing a value back to what is on disk makes the module CLEAN, so it left the
+batch, nothing recompiled, and the preview went on showing the edit that had
+just been taken back.
+
+Dirtiness answers "does this need saving". The preview needs "does this need
+BUILDING", and the compiler already tracked the answer - `_compiledFrom` holds
+the text each module was last built from. Candidates now come from THAT.
+
+Recorded as worse than before because UB-190 made the batch correct about which
+modules matter, which surfaced how wrong the candidate set had always been.
+
+### UB-195 — a new card landed below-right of the cursor `FIXED` `LOW`
+
+A card is positioned by its TOP-LEFT, so placing it at the click put the whole
+card down and to the right of where the user pointed. It is centred on the cursor
+now, lifted so the pointer is over its title bar.
+
+The library's "+ new" has no cursor at all and passed a fixed world point, which
+is wherever the user has panned away from. It now places the card in the middle
+of the viewport - the middle of what they are looking at.
+
+### UB-196 — the entry chain only covered HALF the gesture `FIXED` `MED`
+
+Owner correction 2026-08-24: "first enter makes you select the style name, second
+the style value, then the 3rd should do the +entry. it does work when you are
+just editing an existing text style because that's one stage."
+
+The chain was built for editing an EXISTING entry, which is one inline editor and
+one Enter. ADDING an entry is two menus - key, then value - and nothing armed the
+"+ entry" row afterwards, so the run stopped at the end of every new entry.
+
+Arming now happens where the entry is INSERTED, which is the end of both routes.
+The row's line is looked up when Enter fires rather than stored, because
+inserting an entry moves that row down and a remembered line would put the next
+one in the wrong place.
+
+### UB-197 — the keyboard came back only sometimes after a create `FIXED` `LOW`
+
+The window took the keyboard back inline, but creating a module remounts the
+canvas and the remount does not finish that tick - so focus landed on an element
+that was about to be replaced. It retries while the remount settles.
