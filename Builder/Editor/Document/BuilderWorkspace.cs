@@ -540,6 +540,7 @@ namespace Ruitk.Builder
 
             int written = 0;
             int removed = 0;
+            var vacatedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             bool createdAssets = false;
             bool hmrActive = UitkxHmrController.IsActive;
             AssemblyReloadSuppressor suppressor = null;
@@ -575,6 +576,13 @@ namespace Ruitk.Builder
 
                     if (module.HasMoved)
                     {
+                        // Where it came FROM, so a folder the move empties can be
+                        // taken out with it. A move that leaves the old folder
+                        // standing has not moved anything as far as the Project
+                        // window is concerned.
+                        string vacated = Path.GetDirectoryName(module.DiskPath);
+                        if (!string.IsNullOrEmpty(vacated))
+                            vacatedFolders.Add(vacated);
                         EnsureDirectory(target);
                         MoveOnDisk(module.DiskPath, target);
                         module.DiskPath = target;
@@ -601,6 +609,7 @@ namespace Ruitk.Builder
                 if (module.IsOnDisk)
                     projection.Add(module.DiskPath);
             _tree.SetProjection(projection);
+            PruneEmptyFolders(vacatedFolders);
 
             // Outside the reload suppressor: importing is what makes a new file
             // an asset with a .meta, and it must not run while the lock is held.
@@ -639,14 +648,94 @@ namespace Ruitk.Builder
             return reverted;
         }
 
+        /// <summary>Takes out folders a move emptied, and their parents, up to but
+        /// never including the tree they live in.
+        ///
+        /// A folder holding ANYTHING else stays - a .cs beside a component, a .uss,
+        /// a texture. Only .meta files are ignored, because a .meta is not content,
+        /// it is Unity's note about content that is no longer there.</summary>
+        private static void PruneEmptyFolders(HashSet<string> folders)
+        {
+            foreach (string folder in folders)
+            {
+                string walk = folder;
+                while (!string.IsNullOrEmpty(walk) && IsEmptyOfContent(walk))
+                {
+                    string parent = Path.GetDirectoryName(walk);
+                    string assetPath = ToAssetPath(walk);
+                    if (assetPath == null || !AssetDatabase.DeleteAsset(assetPath))
+                        break;
+                    walk = parent;
+                }
+            }
+        }
+
+        private static bool IsEmptyOfContent(string folder)
+        {
+            if (!Directory.Exists(folder))
+                return false;
+            try
+            {
+                foreach (string entry in Directory.GetFiles(folder, "*", SearchOption.AllDirectories))
+                    if (!entry.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                        return false;
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         private static string ToDiskText(BuilderModule module) =>
             module.UsedCrlf ? module.BufferText.Replace("\n", "\r\n") : module.BufferText;
 
+        /// <summary>Makes sure the folder a module is about to occupy exists - and,
+        /// inside the project, that the ASSET DATABASE knows it exists.
+        ///
+        /// Directory.CreateDirectory alone puts it on the filesystem, where
+        /// MoveAsset cannot see it: MoveAsset resolves the destination's parent by
+        /// GUID, and a folder Unity has never imported has none. Re-filing a module
+        /// into a folder that did not exist yet therefore failed the whole save
+        /// with "Could not find parent directory GUID: 000..." - which the folder
+        /// view makes an ordinary thing to do (UB-204).</summary>
         private static void EnsureDirectory(string filePath)
         {
             string dir = Path.GetDirectoryName(filePath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
+            if (string.IsNullOrEmpty(dir))
+                return;
+            string assetDir = ToAssetPath(dir);
+            if (assetDir == null)
+            {
+                // Outside Assets/ and Packages/ there is no asset database to tell.
+                if (!Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+                return;
+            }
+            EnsureAssetFolder(assetDir);
+        }
+
+        /// <summary>Creates a project folder and every missing ancestor THROUGH the
+        /// AssetDatabase, so each one gets a GUID and can be a move target.</summary>
+        private static void EnsureAssetFolder(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath) || AssetDatabase.IsValidFolder(assetPath))
+                return;
+            string parent = Path.GetDirectoryName(assetPath)?.Replace('\\', '/');
+            string name = Path.GetFileName(assetPath);
+            if (string.IsNullOrEmpty(parent) || string.IsNullOrEmpty(name))
+                return;
+            EnsureAssetFolder(parent);
+            if (AssetDatabase.IsValidFolder(assetPath))
+                return;
+            if (string.IsNullOrEmpty(AssetDatabase.CreateFolder(parent, name)))
+            {
+                // Already on disk without a GUID - what an earlier save that failed
+                // part way leaves behind. Importing gives it one; creating again
+                // would put a "Folder 1" beside it.
+                AssetDatabase.ImportAsset(
+                    assetPath, ImportAssetOptions.ForceSynchronousImport);
+            }
         }
 
         /// <summary>Moves a file, through the AssetDatabase where there is one so

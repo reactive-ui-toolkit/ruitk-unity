@@ -3411,3 +3411,31 @@ none of them this. UB-202 (the pane was handed the focus's assembly rather than
 the rendered file's) was also real and also not this. Four fixes, one bug, and
 the tell was there from the first report - "never applies" is a different
 question from "applies late".
+
+### UB-204 — saving a folder rearrangement failed on the destination `FIXED` `CRITICAL`
+
+Owner report 2026-08-24, first real use of the folder view: rearrange, Save, and
+
+    could not move .../LeftSide/leftSide.style.uitkx to .../components/LeftSide/...
+    Could not find parent directory GUID:00000000000000000000000000000000
+
+ROOT CAUSE: `EnsureDirectory` created the destination with
+`Directory.CreateDirectory`, which puts a folder on the FILESYSTEM.
+`AssetDatabase.MoveAsset` resolves the destination's parent by GUID, and a folder
+Unity has never imported has none. So the first module re-filed into a folder
+that did not exist yet failed the whole save - and the folder view makes moving
+into a new folder the ordinary case.
+
+FIX: inside the project, destination folders are created THROUGH the
+AssetDatabase, ancestors first, so each gets a GUID. A folder already on disk
+without one - what an earlier part-way save leaves behind - is imported rather
+than created again, which would have put a "Folder 1" beside it. Outside
+Assets/ and Packages/ there is no asset database to tell, and the plain
+directory create stands.
+
+ALSO FIXED, because the same save exposes it: a move now takes the folder it
+EMPTIED with it, and that folder's parents while they are empty too. A move that
+leaves the old folder standing has not moved anything as far as the Project
+window is concerned. A folder holding anything else stays - a .cs beside a
+component, a .uss, a texture - and only .meta files are ignored, since a .meta is
+not content, it is Unity's note about content that is no longer there.
