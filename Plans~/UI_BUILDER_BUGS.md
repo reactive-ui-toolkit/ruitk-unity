@@ -3305,7 +3305,7 @@ title bar's worth. A card is hundreds of pixels tall, so most of it still hung
 below the pointer. Centred on both axes now, against the height a fresh template
 draws.
 
-### UB-201 — the preview pipeline cannot be debugged from its symptoms `OPEN` `HIGH`
+### UB-201 — the preview pipeline cannot be debugged from its symptoms `RESOLVED` `HIGH`
 
 Owner report 2026-08-24, third round on the same complaint: an edit to a style
 module does not reach the preview of the component that imports it.
@@ -3333,3 +3333,40 @@ failed, and which were skipped for a failed dependency. The next report carries
 the answer instead of the symptom.
 
 NOT a fix. Left OPEN deliberately.
+
+### UB-202 — the preview was handed the FOCUS's assembly, not the one it renders `FIXED` `HIGH`
+
+Found by the UB-201 trace, first time out, after three wrong guesses:
+
+    preview: focus someNewComponent.style.uitkx
+    considered: leftSide.style.uitkx, LeftSide.uitkx, SomeNewComponent.uitkx
+    rebuilt:    leftSide.style.uitkx (text changed)
+                LeftSide.uitkx (dependency rebuilt)
+                SomeNewComponent.uitkx (dependency rebuilt)
+
+Everything rebuilt. Nothing failed, nothing was skipped. So the compile pipeline
+was correct - and had been made correct three times over - while the defect sat
+one layer downstream, and the trace also named it: the FOCUS is a style module
+while the preview is showing a component.
+
+ROOT CAUSE: the pane renders the file IT is showing, but the window handed it the
+assembly and the buffer text of `_focusFile`. Clicking a style entry to edit it
+moves the focus onto that style, so the pane was asked to render a component out
+of the STYLE's assembly with the STYLE's text. It could not, so it kept the last
+good render - which looks exactly like "the edit did nothing".
+
+It worked when editing the component's own text because then the focus and the
+rendered file are the same, which is why the asymmetry in the reports was real
+and kept pointing away from the answer.
+
+FIX: `BuilderPreviewPane.ShownFile`, and the compile anchor, the assembly and the
+buffer are all keyed on it. The batch is now built around what is on screen
+rather than around what is selected - which also makes UB-190's special case
+(seed the keep-set with the focus's importers) belt-and-braces rather than
+load-bearing.
+
+LESSON, recorded because it cost four rounds: UB-190, UB-194 and UB-198 were all
+real defects and all correctly fixed, and none of them was this. Every one was
+reasoned from the code and none from evidence, because the pipeline's failure
+modes are indistinguishable from outside. The trace paid for itself on its first
+run.

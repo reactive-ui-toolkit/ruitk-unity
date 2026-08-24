@@ -802,6 +802,12 @@ namespace Ruitk.Builder
 
         /// <summary>Called after a preview compile of the shown file — re-resolve
         /// from the freshly loaded assembly so remounts use the new body.</summary>
+        /// <summary>The file this pane is RENDERING, which is not always the
+        /// window's focus - clicking a style entry to edit it moves the focus onto
+        /// that style while the preview goes on showing the component. Anything
+        /// handed to OnRecompiled has to be about THIS file.</summary>
+        public string ShownFile => _filePath;
+
         public void OnRecompiled(Assembly loadedAssembly, string bufferText)
         {
             if (_filePath != null && loadedAssembly != null)

@@ -4524,7 +4524,7 @@ namespace Ruitk.Builder
                 : "Preview trace off");
         }
 
-        private void TracePreviewCompile(BuilderCompileSummary summary)
+        private void TracePreviewCompile(BuilderCompileSummary summary, string rendered)
         {
             if (!_tracePreview)
                 return;
@@ -4533,8 +4533,9 @@ namespace Ruitk.Builder
                 Debug.Log("[RUITK Builder] preview: nothing to build");
                 return;
             }
-            var line = new System.Text.StringBuilder("[RUITK Builder] preview: focus ");
-            line.Append(Path.GetFileName(_focusFile));
+            var line = new System.Text.StringBuilder("[RUITK Builder] preview: rendering ");
+            line.Append(Path.GetFileName(rendered));
+            line.Append(", focus ").Append(Path.GetFileName(_focusFile));
             line.Append("\n  considered: ");
             line.Append(summary.Considered.Count == 0
                 ? "(none)"
@@ -4582,9 +4583,19 @@ namespace Ruitk.Builder
                 _previewPane?.ShowError("Preview compiler unavailable: " + _previewCompiler.InitError);
                 return;
             }
-            var summary = _previewCompiler.CompileDirty(_focusFile);
-            TracePreviewCompile(summary);
-            var focusSession = _workspace.TryGet(_focusFile);
+            // What the PANE is rendering, which is not always the focus: clicking
+            // a style entry to edit it moves the focus onto that style while the
+            // preview goes on showing the component. The batch, the assembly and
+            // the buffer below were all keyed on the focus, so editing a style
+            // handed the pane the STYLE's assembly and the STYLE's text and asked
+            // it to render a component - which it could not, so it kept the last
+            // good render and the edit appeared to do nothing (UB-202).
+            string rendered = _previewPane?.ShownFile ?? _focusFile;
+            if (string.IsNullOrEmpty(rendered))
+                rendered = _focusFile;
+            var summary = _previewCompiler.CompileDirty(rendered);
+            TracePreviewCompile(summary, rendered);
+            var focusSession = _workspace.TryGet(rendered);
             // The pane is ALWAYS told which assembly to render, whether or not this
             // round rebuilt anything. A module that needs no rebuild still has a
             // current build, and leaving it to the pane to find one meant scanning
@@ -4594,7 +4605,7 @@ namespace Ruitk.Builder
             var focusAssembly =
                 summary?.FocusResult != null && summary.FocusResult.Success
                     ? summary.FocusResult.LoadedAssembly
-                    : _previewCompiler.BuiltAssemblyFor(_focusFile);
+                    : _previewCompiler.BuiltAssemblyFor(rendered);
             if (focusAssembly != null)
                 _previewPane?.OnRecompiled(focusAssembly, focusSession?.BufferText);
             if (summary == null)
