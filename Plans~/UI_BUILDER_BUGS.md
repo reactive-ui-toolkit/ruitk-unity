@@ -3370,3 +3370,44 @@ real defects and all correctly fixed, and none of them was this. Every one was
 reasoned from the code and none from evidence, because the pipeline's failure
 modes are indistinguishable from outside. The trace paid for itself on its first
 run.
+
+### UB-203 — the preview bound imports to the SAVED copy, never the live buffer `FIXED` `CRITICAL`
+
+The actual cause of four rounds of reports. Style edits never reached the
+preview - not staleness, never at all, at any value, which is the detail that
+should have redirected the search much earlier: `Px(500)`, `Px(80)`, `ColorBlue`,
+`ColorRed` and a `BackgroundColor` all rendered as an unstyled label.
+
+ROOT CAUSE, in `UitkxHmrCompiler`'s swap-unit builder. An imported module's
+`__Exports` is inlined into the hot unit only when the container exists in no
+referenceable assembly:
+
+    if (!TypeExistsInProjectAssemblies(exportsFqn) && !HotExportsAvailable(...))
+
+That is right for HMR, where the file on disk IS the truth. It is wrong for the
+BUILDER, which compiles unsaved buffers under the save-only contract: a style
+module saved once and edited ever since always exists in the project assembly, so
+it was never inlined and the component bound to the SAVED exports. Every unsaved
+edit was invisible by construction.
+
+It explains every observation at once: component text edits render (the
+component's own markup IS in the swap unit); style edits never do; removing and
+re-adding the import changes nothing; and it would all have worked after a Save,
+which was never done because nothing suggested it would matter.
+
+FIX: an OVERLAID companion - one the caller holds a live buffer for - is inlined
+regardless of the gate, because the project assembly's copy is then stale by
+construction. Only the builder sets `SourceOverlay`; the HMR controller's own
+instance leaves it null and keeps the original gate, so the change cannot reach
+HMR.
+
+The compiler also gained a `Trace` sink reporting what each swap unit inlines.
+That fact decides whether an edit to an imported module can be seen at all, and
+it was invisible from outside - which is what made this take four rounds.
+
+WRONG TURNS, recorded so the next reader does not repeat them: UB-190, UB-194 and
+UB-198 were each a real defect in the compile BATCH, each correctly fixed, and
+none of them this. UB-202 (the pane was handed the focus's assembly rather than
+the rendered file's) was also real and also not this. Four fixes, one bug, and
+the tell was there from the first report - "never applies" is a different
+question from "applies late".

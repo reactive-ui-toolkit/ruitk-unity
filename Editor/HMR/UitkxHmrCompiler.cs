@@ -108,6 +108,12 @@ namespace Ruitk.EditorSupport.HMR
         /// </summary>
         internal Func<string, string> SourceOverlay { get; set; }
 
+        /// <summary>Optional diagnostic sink. What a swap unit INLINES is the one
+        /// fact that decides whether an edit to an imported module can be seen,
+        /// and it was invisible from outside - which is what made UB-203 take four
+        /// rounds of guessing.</summary>
+        internal Action<string> Trace { get; set; }
+
         /// <summary>Hands the unsaved-buffer overlay to the language lib, which
         /// resolves import targets of its own when it computes the using aliases an
         /// import implies. Done per compile rather than once, so it cannot depend on
@@ -1428,9 +1434,23 @@ namespace Ruitk.EditorSupport.HMR
                     {
                         string newModeNs = ComputeEffectiveNs(companionDir, file);
                         string exportsFqn = newModeNs + ".__Exports";
+                        // An OVERLAID companion is one the caller is holding a live
+                        // buffer for, and then the project assembly's copy is stale
+                        // BY CONSTRUCTION - so the gate below, which asks whether the
+                        // container already exists somewhere referenceable, answers
+                        // the wrong question. For a style module saved once and
+                        // edited ever since, that answer is always yes: the importer
+                        // bound to the SAVED exports and every unsaved edit to the
+                        // style was invisible in the preview, at any value, which is
+                        // why it never looked like a staleness bug (UB-203).
+                        //
+                        // Only the builder sets an overlay; the HMR controller's own
+                        // instance leaves it null and keeps the original gate.
+                        bool overlaid = SourceOverlay?.Invoke(file) != null;
                         if (!string.IsNullOrEmpty(newModeNs)
-                            && !TypeExistsInProjectAssemblies(exportsFqn)
-                            && !HotExportsAvailable(exportsFqn))
+                            && (overlaid
+                                || (!TypeExistsInProjectAssemblies(exportsFqn)
+                                    && !HotExportsAvailable(exportsFqn))))
                         {
                             string inlined = HmrHookEmitter.EmitExports(
                                 companionDir, file,
@@ -1457,6 +1477,10 @@ namespace Ruitk.EditorSupport.HMR
                                     catch { }
                                 }
                                 sources.Add(inlined);
+                                Trace?.Invoke(
+                                    "inlined " + Path.GetFileName(file) + " into "
+                                    + Path.GetFileName(uitkxPath)
+                                    + (overlaid ? " (live buffer)" : " (not in any assembly)"));
                             }
                         }
                     }

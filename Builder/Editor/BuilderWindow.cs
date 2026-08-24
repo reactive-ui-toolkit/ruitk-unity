@@ -4577,7 +4577,15 @@ namespace Ruitk.Builder
             EditorApplication.update -= RecompileWhenQuiet;
             _recompileScheduled = false;
 
-            _previewCompiler ??= new BuilderPreviewCompiler();
+            if (_previewCompiler == null)
+            {
+                _previewCompiler = new BuilderPreviewCompiler();
+                _previewCompiler.Trace += message =>
+                {
+                    if (_tracePreview)
+                        Debug.Log("[RUITK Builder] preview: " + message);
+                };
+            }
             if (!_previewCompiler.EnsureReady(_workspace))
             {
                 _previewPane?.ShowError("Preview compiler unavailable: " + _previewCompiler.InitError);

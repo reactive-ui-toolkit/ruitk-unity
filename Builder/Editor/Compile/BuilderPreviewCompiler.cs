@@ -49,6 +49,11 @@ namespace Ruitk.Builder
 
         public event Action<string, bool, string> CompileFinished;
 
+        /// <summary>Diagnostics from the compiler itself - what each swap unit
+        /// inlined, which is what decides whether an edit to an imported module
+        /// can be seen at all.</summary>
+        public event Action<string> Trace;
+
         public string InitError => _initError;
 
         public bool EnsureReady(BuilderWorkspace workspace)
@@ -67,6 +72,7 @@ namespace Ruitk.Builder
                 return false;
             }
             compiler.SourceOverlay = ReadBuffer;
+            compiler.Trace = message => Trace?.Invoke(message);
             _compiler = compiler;
             return true;
         }
