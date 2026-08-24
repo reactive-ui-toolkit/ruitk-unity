@@ -214,6 +214,15 @@ namespace Ruitk.Builder
                 summary.Reasons[path] = textMoved ? "text changed" : "dependency rebuilt";
                 var result = _compiler.Compile(path);
                 recompiled.Add(path);
+                // The family key is what a PARENT looks its children up by. A
+                // consumer bakes the key from the child FQN it can see, and the
+                // child registers under its own; both are derived from FILE paths,
+                // so the two can disagree - and then the parent silently falls back
+                // to the child body in the saved assembly, which is a stale render
+                // that reports no error anywhere (UB-205).
+                if (!string.IsNullOrEmpty(result?.FamilyKey))
+                    Trace?.Invoke(
+                        "built " + Path.GetFileName(path) + " as family " + result.FamilyKey);
                 if (result.Success)
                 {
                     _compiledFrom[path] = dirty[path].BufferText;

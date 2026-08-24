@@ -3439,3 +3439,35 @@ leaves the old folder standing has not moved anything as far as the Project
 window is concerned. A folder holding anything else stays - a .cs beside a
 component, a .uss, a texture - and only .meta files are ignored, since a .meta is
 not content, it is Unity's note about content that is no longer there.
+
+### UB-205 — a parent renders its children from the SAVED assembly `OPEN` `HIGH`
+
+Owner question 2026-08-24, and it is a defect, not a misreading: with all three
+children emptied to a bare `<VisualElement />`, focusing each child previews
+nothing - correctly - while focusing the PARENT still shows "Right Side" and
+"Left side". Three things that render nothing cannot compose into something.
+
+This is UB-203's sibling one level up. An imported STYLE module is now inlined
+into the parent's hot unit when the builder holds a live buffer for it; an
+imported COMPONENT deliberately never is - component types resolve through the
+Family registry instead, so a rebuilt child reaches every consumer regardless of
+which DLL generation baked it.
+
+RULED OUT by reading: the families ARE registered - `ForceRunModuleInitializers`
+runs on both load paths, precisely so a synthetic companion type carrying
+`[ModuleInitializer]` cannot be skipped for never being touched.
+
+REMAINING SUSPECT: the family KEY. The consumer bakes `__fam_<FQN>` from the
+child FQN as the PARENT sees it, and the child registers under
+`effectiveNs + "." + componentName` computed from ITS OWN path. Both are derived
+from file paths, and namespaces here are FILE-KEYED - so a moved or renamed child
+can register under one key while its parent looks up another. On a miss the
+consumer falls back to `childFqn.Render`, which is the SAVED assembly's body:
+a stale render that reports no error anywhere. The owner had just rearranged
+folders, which is exactly the operation that changes those paths.
+
+The Trace now reports the family key each build registers under, so a
+producer/consumer mismatch is readable instead of inferred.
+
+NOT fixed. Left OPEN rather than guessed at - four rounds on UB-203 were spent
+shipping mechanisms that read correctly and were not the cause.
