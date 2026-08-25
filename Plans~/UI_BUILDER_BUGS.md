@@ -3578,11 +3578,8 @@ four create rows are now IN the card menu, labelled with what they do - "New
 component (child of X)", "New style module (beside X)". Four rows cost less than
 the ceremony of hiding them behind one.
 
-The owner asked for HOVER SUBMENUS generally, wherever a menu nests. Not built:
-each menu here is its own EditorWindow that closes on lost focus, so a child
-popup and its parent fight over focus, and it is not something to get right
-without being able to drive the editor. Flattening removes the reported problem
-outright; the general pattern is worth doing deliberately, not blind.
+SUPERSEDED the same day: the owner rejected flattening - "we can shove 30
+options eventually there" - and was right. See UB-214.
 
 ### UB-211 — two components could share a name `FIXED` `HIGH`
 
@@ -3608,3 +3605,25 @@ Owner ask 2026-08-26: more room to zoom out before a layer gives way. The LOD
 boundaries moved down - 0.45 to 0.32 and 1.05 to 0.80 - so reading a card at Edit
 detail and pulling back for context no longer costs the detail immediately. The
 toolbar presets still land one per layer.
+
+### UB-214 — submenus, without the focus fight `SHIPPED` `MED`
+
+Owner, rejecting the flattening in UB-210: "no i dont like that, submenus, find a
+way. its a needed feature anyway, flattening is bad we can shove 30 options
+eventually there." Correct - the create kinds will not stay at four.
+
+The obstacle was real: every menu here is an EditorWindow that closes on lost
+focus, so a child POPUP taking focus closes its own parent. The way around it is
+to stop making the submenu a window. `Item.Children` opens a SECOND COLUMN inside
+the same window - one window cannot fight itself for focus.
+
+- Hovering a parent row opens its column; hovering any other row of the LEFT
+  column closes it. Moving the pointer into the column itself is neither, so the
+  submenu survives the trip across.
+- Clicking a parent opens it too, for anyone who clicks rather than hovers.
+- Right arrow steps the keyboard in, Left steps out, Enter on a parent opens it.
+- The window is sized for both columns UP FRONT: growing it on hover would move
+  the rows out from under the pointer that opened them.
+
+The card menu is back to one "New" row with the four kinds behind it, and any
+menu can nest now by filling in `Children`.

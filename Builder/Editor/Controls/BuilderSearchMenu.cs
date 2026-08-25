@@ -26,6 +26,15 @@ namespace Ruitk.Builder
 
             /// <summary>POC ".ctx .mh" inline section header inside the list.</summary>
             public string Header;
+
+            /// <summary>A SUBMENU. The row shows an arrow and opens these in a
+            /// second column when the pointer rests on it.
+            ///
+            /// The column lives in the SAME window rather than in a popup of its
+            /// own, and that is the whole trick: every menu here is an EditorWindow
+            /// that closes on lost focus, so a child popup taking focus would close
+            /// its own parent. One window cannot fight itself.</summary>
+            public List<Item> Children;
         }
 
         private static Vector2 s_pointer;
@@ -68,6 +77,14 @@ namespace Ruitk.Builder
         private bool _searchable = true;
         private TextField _search;
         private ScrollView _list;
+        private ScrollView _submenu;
+
+        /// <summary>The row whose children the second column is showing.</summary>
+        private Item _openParent;
+
+        /// <summary>Which column the keyboard is walking. Right arrow steps into a
+        /// submenu, Left steps back out.</summary>
+        private bool _inSubmenu;
         private Func<string, string> _nameValidate;
         private Action<string> _nameSubmit;
 
@@ -87,19 +104,43 @@ namespace Ruitk.Builder
             FocusInvoker();
             int rows = 0;
             int widest = title?.Length ?? 0;
+            int widestChild = 0;
+            int deepestChild = 0;
             foreach (var item in items)
             {
                 rows++;
                 int length = item.IsSeparator ? 0
                     : item.Header != null ? item.Header.Length
                     : (item.Label?.Length ?? 0);
+                if (item.Children != null)
+                {
+                    // A submenu opens BESIDE the list, so the window is sized for
+                    // both columns up front. Growing it on hover would move the
+                    // rows out from under the pointer that opened them.
+                    length += 2;
+                    int deep = 0;
+                    foreach (var child in item.Children)
+                    {
+                        if (child.IsSeparator || child.Header != null)
+                            continue;
+                        deep++;
+                        if ((child.Label?.Length ?? 0) > widestChild)
+                            widestChild = child.Label.Length;
+                    }
+                    if (deep > deepestChild)
+                        deepestChild = deep;
+                }
                 if (length > widest)
                     widest = length;
             }
+            float listWidth = Mathf.Clamp(widest * 7.2f + 30f, 195f, 420f);
+            float childWidth = widestChild == 0
+                ? 0f
+                : Mathf.Clamp(widestChild * 7.2f + 34f, 150f, 360f);
             Open(
                 title, null, items, null, searchable: false,
-                width: Mathf.Clamp(widest * 7.2f + 30f, 195f, 420f),
-                height: 24f + rows * 21f + 10f);
+                width: listWidth + childWidth,
+                height: 24f + Mathf.Max(rows, deepestChild) * 21f + 10f);
         }
 
         public static void Show(
@@ -298,8 +339,22 @@ namespace Ruitk.Builder
                 root.Add(_errorLabel);
             }
 
+            var columns = new VisualElement
+            {
+                style = { flexDirection = FlexDirection.Row, flexGrow = 1f, minHeight = 0f },
+            };
             _list = new ScrollView { style = { flexGrow = 1f, maxHeight = 300f } };
-            root.Add(_list);
+            columns.Add(_list);
+            _submenu = new ScrollView
+            {
+                style =
+                {
+                    flexGrow = 1f, maxHeight = 300f, display = DisplayStyle.None,
+                    borderLeftWidth = 1f, borderLeftColor = BuilderPalette.Line,
+                },
+            };
+            columns.Add(_submenu);
+            root.Add(columns);
             Rebuild();
             if (_searchable)
             {
@@ -362,8 +417,27 @@ namespace Ruitk.Builder
                     MoveHighlight(-1);
                     evt.StopPropagation();
                     break;
+                case KeyCode.RightArrow:
+                    EnterSubmenu();
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.LeftArrow:
+                    if (_inSubmenu)
+                    {
+                        _inSubmenu = false;
+                        _highlight = -1;
+                        MoveHighlight(1);
+                    }
+                    evt.StopPropagation();
+                    break;
                 case KeyCode.Return:
                 case KeyCode.KeypadEnter:
+                    if (!_inSubmenu && HighlightedItem()?.Children != null)
+                    {
+                        EnterSubmenu();
+                        evt.StopPropagation();
+                        break;
+                    }
                     PickHighlighted();
                     evt.StopPropagation();
                     break;
@@ -380,9 +454,10 @@ namespace Ruitk.Builder
         private List<VisualElement> PickableRows()
         {
             var rows = new List<VisualElement>();
-            if (_list == null)
+            var column = _inSubmenu && _openParent != null ? _submenu : _list;
+            if (column == null)
                 return rows;
-            foreach (var child in _list.contentContainer.Children())
+            foreach (var child in column.contentContainer.Children())
                 if (child.userData is Item)
                     rows.Add(child);
             return rows;
@@ -399,7 +474,30 @@ namespace Ruitk.Builder
                 rows[i].style.backgroundColor = i == _highlight
                     ? new Color(0.31f, 0.76f, 0.97f, 0.14f)
                     : new Color(0f, 0f, 0f, 0f);
-            _list.ScrollTo(rows[_highlight]);
+            (_inSubmenu && _openParent != null ? _submenu : _list).ScrollTo(rows[_highlight]);
+        }
+
+        /// <summary>The item the keyboard is on, or null.</summary>
+        private Item HighlightedItem()
+        {
+            var rows = PickableRows();
+            if (rows.Count == 0 || _highlight < 0 || _highlight >= rows.Count)
+                return null;
+            return rows[_highlight].userData as Item;
+        }
+
+        /// <summary>Steps the keyboard into the highlighted row's submenu.</summary>
+        private void EnterSubmenu()
+        {
+            if (_inSubmenu)
+                return;
+            var item = HighlightedItem();
+            if (item?.Children == null || item.Children.Count == 0)
+                return;
+            OpenSubmenu(item);
+            _inSubmenu = true;
+            _highlight = -1;
+            MoveHighlight(1);
         }
 
         private void PickHighlighted()
@@ -501,8 +599,12 @@ namespace Ruitk.Builder
             }
         }
 
-        private void AddRow(Item item, Color color, bool submitsName = false)
+        private void AddRow(Item item, Color color, bool submitsName = false) =>
+            AddRow(item, color, submitsName, _list);
+
+        private void AddRow(Item item, Color color, bool submitsName, ScrollView into)
         {
+            bool hasChildren = item.Children != null && item.Children.Count > 0;
             var row = new VisualElement
             {
                 userData = item,
@@ -519,9 +621,21 @@ namespace Ruitk.Builder
                 {
                     style = { color = new Color(0.55f, 0.55f, 0.59f), fontSize = 10f },
                 });
+            if (hasChildren)
+                row.Add(new Label("›")
+                {
+                    style = { color = new Color(0.55f, 0.55f, 0.59f), marginLeft = 6f },
+                });
             row.RegisterCallback<PointerDownEvent>(evt =>
             {
                 evt.StopPropagation();
+                if (hasChildren)
+                {
+                    // A click on a parent row opens its column too, so the menu
+                    // works for someone who clicks rather than hovers.
+                    OpenSubmenu(item);
+                    return;
+                }
                 if (submitsName)
                 {
                     SubmitName();
@@ -532,10 +646,47 @@ namespace Ruitk.Builder
             });
             BuilderCursor.Set(row, MouseCursor.Link);
             row.RegisterCallback<MouseEnterEvent>(_ =>
-                row.style.backgroundColor = new Color(0.31f, 0.76f, 0.97f, 0.14f));
+            {
+                row.style.backgroundColor = new Color(0.31f, 0.76f, 0.97f, 0.14f);
+                // Resting on a parent opens its column; resting on any OTHER row
+                // of the same column closes it. Moving into the column itself is
+                // neither, so the submenu survives the trip across.
+                if (hasChildren)
+                    OpenSubmenu(item);
+                else if (into == _list)
+                    CloseSubmenu();
+            });
             row.RegisterCallback<MouseLeaveEvent>(_ =>
                 row.style.backgroundColor = StyleKeyword.Null);
-            _list.contentContainer.Add(row);
+            into.contentContainer.Add(row);
+        }
+
+        /// <summary>Fills the second column with one row's children.</summary>
+        private void OpenSubmenu(Item parent)
+        {
+            if (_submenu == null || parent?.Children == null)
+                return;
+            if (ReferenceEquals(_openParent, parent))
+                return;
+            _openParent = parent;
+            _submenu.contentContainer.Clear();
+            foreach (var child in parent.Children)
+            {
+                if (child.IsSeparator || child.Header != null)
+                    continue;
+                AddRow(child, BuilderPalette.Text, submitsName: false, into: _submenu);
+            }
+            _submenu.style.display = DisplayStyle.Flex;
+        }
+
+        private void CloseSubmenu()
+        {
+            if (_submenu == null || _openParent == null)
+                return;
+            _openParent = null;
+            _inSubmenu = false;
+            _submenu.contentContainer.Clear();
+            _submenu.style.display = DisplayStyle.None;
         }
     }
 }

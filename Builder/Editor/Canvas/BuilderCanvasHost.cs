@@ -868,25 +868,27 @@ namespace Ruitk.Builder
                     OnPick = () => OnDeleteFile?.Invoke(targetPath),
                 },
             };
-            // FLAT, not a submenu. Picking "Create..." used to open a second
-            // popup on top of the first, which reads as the menu having gone
-            // wrong rather than as a level of nesting. Four rows cost less than
-            // the ceremony of hiding them (UB-210).
+            // A real submenu, opening BESIDE the menu rather than on top of it.
+            // The kinds will not stay at four, so they belong behind one row.
             if (node.Kind == BuilderNodeKind.Component)
             {
-                items.Insert(0, BuilderSearchMenu.Separator);
-                int at = 0;
+                var kinds = new List<BuilderSearchMenu.Item>();
                 foreach (var kind in CreateKinds)
                 {
                     string captured = kind.Key;
-                    items.Insert(at++, new BuilderSearchMenu.Item
+                    kinds.Add(new BuilderSearchMenu.Item
                     {
-                        Label = kind.Value + (captured == "Component"
-                            ? "  (child of " + node.Title + ")"
-                            : "  (beside " + node.Title + ")"),
+                        Label = kind.Value,
+                        Detail = captured == "Component" ? "child" : "beside",
                         OnPick = () => OnCreateUnder?.Invoke(targetPath + "|" + captured),
                     });
                 }
+                items.Insert(0, BuilderSearchMenu.Separator);
+                items.Insert(0, new BuilderSearchMenu.Item
+                {
+                    Label = "New",
+                    Children = kinds,
+                });
             }
             BuilderSearchMenu.ShowSimple(node.Title, items);
         }
