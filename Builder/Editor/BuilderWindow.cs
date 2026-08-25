@@ -308,8 +308,6 @@ namespace Ruitk.Builder
             toolbar.Add(ToolbarButton("History", ToggleHistory));
             _traceButton = ToolbarButton("Trace", TogglePreviewTrace);
             toolbar.Add(_traceButton);
-            _foldersButton = ToolbarButton("Folders", ToggleFolders);
-            toolbar.Add(_foldersButton);
             toolbar.Add(ToolbarButton("? How to drive it", ToggleHelp));
             // DOCUMENTED DEVIATION (owner-decided, do not re-flag): the POC has no
             // Save/Abort because it never writes a file — every "commit" is mock.
@@ -333,42 +331,72 @@ namespace Ruitk.Builder
                 name = "builder-body",
                 style = { flexGrow = 1f, flexDirection = FlexDirection.Row, minHeight = 0f },
             };
-            body.Add(new VisualElement
+            // The left panel carries BOTH indexes of the tree: where modules live
+            // (the folder pane) above what can go in them (the library). Seeing
+            // structure is something you do WHILE working on the canvas, which is
+            // why this is not a canvas mode.
+            var leftPanel = new VisualElement
+            {
+                name = "builder-left",
+                style =
+                {
+                    flexGrow = 0f, flexShrink = 0f, width = 205f, minHeight = 0f,
+                    flexDirection = FlexDirection.Column,
+                    borderRightWidth = 1f, borderRightColor = BuilderPalette.Line,
+                },
+            };
+            var foldersHeader = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row, alignItems = Align.Center,
+                    paddingLeft = 8f, paddingRight = 6f, paddingTop = 6f, paddingBottom = 4f,
+                    flexShrink = 0f,
+                },
+            };
+            _foldersFold = new Label(_foldersCollapsed ? "▸  FOLDERS" : "▾  FOLDERS")
+            {
+                tooltip = "fold the tree away and give the library the height",
+                style =
+                {
+                    fontSize = 10f, color = BuilderPalette.Dim, letterSpacing = 1f,
+                    flexGrow = 1f, unityTextAlign = TextAnchor.MiddleLeft,
+                },
+            };
+            BuilderCursor.Set(_foldersFold, MouseCursor.Link);
+            _foldersFold.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.button != 0)
+                    return;
+                _foldersCollapsed = !_foldersCollapsed;
+                ApplyFoldersFold();
+                evt.StopPropagation();
+            });
+            foldersHeader.Add(_foldersFold);
+            leftPanel.Add(foldersHeader);
+            leftPanel.Add(new VisualElement
+            {
+                name = "builder-folders",
+                style = { flexGrow = 0f, flexShrink = 0f, height = 210f, minHeight = 0f },
+            });
+            leftPanel.Add(new VisualElement
             {
                 name = "builder-library",
                 style =
                 {
-                    flexGrow = 0f, flexShrink = 0f, width = 205f, minHeight = 0f,
-                    borderRightWidth = 1f, borderRightColor = BuilderPalette.Line,
+                    flexGrow = 1f, minHeight = 0f,
+                    borderTopWidth = 1f, borderTopColor = BuilderPalette.Line,
                 },
             });
+            body.Add(leftPanel);
             var innerSplit = new TwoPaneSplitView(1, 440f, TwoPaneSplitViewOrientation.Horizontal)
             {
                 style = { flexGrow = 1f },
             };
-            // The centre holds two projections of the same tree - the canvas, and
-            // the folders it lives in. One is visible at a time; both read the
-            // workspace, so neither can be stale with respect to the other.
-            var centerPane = new VisualElement
-            {
-                name = "builder-center",
-                style = { minWidth = 300f, flexGrow = 1f, minHeight = 0f },
-            };
-            var canvasPane = new VisualElement
-            {
-                name = "builder-canvas",
-                style = { flexGrow = 1f, minHeight = 0f },
-            };
+            var canvasPane = new VisualElement { name = "builder-canvas", style = { minWidth = 300f } };
             // POC "#canvasWrap { cursor: grab }".
             BuilderCursor.Set(canvasPane, MouseCursor.Pan);
-            var foldersPane = new VisualElement
-            {
-                name = "builder-folders",
-                style = { flexGrow = 1f, minHeight = 0f, display = DisplayStyle.None },
-            };
-            centerPane.Add(canvasPane);
-            centerPane.Add(foldersPane);
-            innerSplit.Add(centerPane);
+            innerSplit.Add(canvasPane);
             innerSplit.Add(new VisualElement { name = "builder-side", style = { minWidth = 280f } });
             body.Add(innerSplit);
             root.Add(body);
@@ -441,37 +469,26 @@ namespace Ruitk.Builder
                 }).ExecuteLater(60));
 
             MountCanvas();
-            // The choice of view survives a domain reload, so it has to be applied
-            // after one - the visual tree is rebuilt showing the canvas.
-            ApplyCenterView();
+            MountFolders();
+            ApplyFoldersFold();
             RefreshChrome();
         }
 
         [System.NonSerialized] private BuilderFolderPane _folderPane;
-        [System.NonSerialized] private Button _foldersButton;
-        [SerializeField] private bool _showFolders;
+        [System.NonSerialized] private Label _foldersFold;
+        [SerializeField] private bool _foldersCollapsed;
 
-        /// <summary>Swaps the centre between the canvas and the folder view. Both
-        /// are projections of the same tree, so this shows the other one rather
-        /// than loading anything.</summary>
-        private void ToggleFolders()
+        /// <summary>Folds the tree away so the library gets the height. Expanded
+        /// by default - structure is the thing you want in view - and the choice
+        /// is serialized, so it survives a reload like every other view state.</summary>
+        private void ApplyFoldersFold()
         {
-            _showFolders = !_showFolders;
-            ApplyCenterView();
-        }
-
-        private void ApplyCenterView()
-        {
-            var canvas = rootVisualElement?.Q("builder-canvas");
             var folders = rootVisualElement?.Q("builder-folders");
-            if (canvas == null || folders == null)
+            if (folders == null)
                 return;
-            canvas.style.display = _showFolders ? DisplayStyle.None : DisplayStyle.Flex;
-            folders.style.display = _showFolders ? DisplayStyle.Flex : DisplayStyle.None;
-            if (_foldersButton != null)
-                _foldersButton.text = _showFolders ? "Canvas" : "Folders";
-            if (_showFolders)
-                MountFolders();
+            folders.style.display = _foldersCollapsed ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_foldersFold != null)
+                _foldersFold.text = _foldersCollapsed ? "▸  FOLDERS" : "▾  FOLDERS";
         }
 
         private void MountFolders()
@@ -838,6 +855,25 @@ namespace Ruitk.Builder
                 MountCanvas();
             };
             _canvasHost.OnCreateRequested = ShowCreatePrompt;
+            _canvasHost.OnCreateUnder = parentPath =>
+            {
+                var parent = _workspace.TryGet(parentPath);
+                if (parent == null)
+                    return;
+                var kinds = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+                foreach (var pair in s_createPrompts)
+                {
+                    string captured = pair.Key;
+                    kinds.Add(new BuilderSearchMenu.Item
+                    {
+                        Label = captured == "Component"
+                            ? "Component (child of " + parent.Name + ")"
+                            : captured + " (beside " + parent.Name + ")",
+                        OnPick = () => CreateModule(captured, 0f, 0f, parent),
+                    });
+                }
+                BuilderSearchMenu.ShowSimple("create in " + parent.Name, kinds);
+            };
             _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
             // The side panes are built BEFORE the canvas mounts. Mount() is an
             // async method that only suspends at its first real await, so a warm
@@ -5858,15 +5894,23 @@ namespace Ruitk.Builder
                 return Full(BuilderNewFileDialog.PathFor(
                     BuilderWorkspace.UnsavedRoot, kind, name, asRoot: true));
 
+            // The tree ROOT, not the focus. A canvas right-click carries world
+            // coordinates and nothing else - it says "put a component in this
+            // tree", never "put one under X" - so taking the focus as a parent
+            // invented a relationship the gesture did not state. And creating a
+            // module moves the focus onto it, so three creates in a row nested
+            // three deep and the structure recorded the ORDER OF THE CLICKS
+            // (UB-207). Nesting is stated by creating from a card instead.
             string focusDir = Path.GetDirectoryName(_focusFile) ?? "";
+            string root = BuilderTree.ResolveRoot(_workspace.Modules, _focusFile) ?? focusDir;
             if (kind == "Component")
-                return Full(BuilderNewFileDialog.PathFor(focusDir, kind, name));
+                return Full(BuilderNewFileDialog.PathFor(root, kind, name));
 
+            // A companion named after a component still joins it, wherever that
+            // component lives - the family rule (UB-187), kept as the fallback for
+            // this path now that creating FROM a card states the parent outright.
             var family = FamilyOwnerFor(kind, name);
-            string folder = family?.Folder
-                ?? BuilderTree.ResolveRoot(_focusFile)
-                ?? focusDir;
-            return Full(BuilderNewFileDialog.PathFor(folder, kind, name));
+            return Full(BuilderNewFileDialog.PathFor(family?.Folder ?? root, kind, name));
         }
 
         private static string Full(string path) =>
@@ -5919,18 +5963,36 @@ namespace Ruitk.Builder
         /// and Save is where the builder asks which folder they belong in. That
         /// keeps "nothing on disk until Save" true even for the very first
         /// file, which has no folder to be inferred from.</summary>
-        private void CreateModule(string kind, float worldX, float worldY)
+        private void CreateModule(string kind, float worldX, float worldY) =>
+            CreateModule(kind, worldX, worldY, parent: null);
+
+        /// <summary>Creates a module. With a PARENT the placement is stated by the
+        /// gesture - a component becomes a child under the parent's components/
+        /// folder, a companion a sibling beside the parent - and with none it is a
+        /// canvas create, which means the tree root.
+        ///
+        /// Nothing is IMPORTED either way. Create states placement; wiring states
+        /// usage, and conflating them forces a choice between an unused import
+        /// (error-tier, so the project stops compiling on the next Save) and
+        /// guessing which element a style was meant for.</summary>
+        private void CreateModule(string kind, float worldX, float worldY, BuilderModule parent)
         {
             var prompt = s_createPrompts.TryGetValue(kind, out var found)
                 ? found
                 : ("new file", "Name");
+            string title = parent == null
+                ? prompt.Item1
+                : prompt.Item1 + " in " + parent.Name;
+            string Target(string n) => parent == null
+                ? BirthPathFor(kind, n)
+                : Full(BuilderNewFileDialog.PathFor(parent.Folder, kind, n));
             BuilderSearchMenu.ShowNamePrompt(
-                prompt.Item1,
+                title,
                 prompt.Item2,
-                name => ValidateNewName(kind, name, n => BirthPathFor(kind, n)),
+                name => ValidateNewName(kind, name, Target),
                 name =>
                 {
-                    string created = BirthPathFor(kind, name);
+                    string created = Target(name);
                     if (created == null
                         || !_workspace.IsPathAvailable(Path.GetFullPath(created)))
                     {
@@ -5952,7 +6014,10 @@ namespace Ruitk.Builder
                     _ledger.RecordCreation(full);
                     _ledger.End();
                     RefreshHistoryPanel();
-                    _canvasHost?.PlaceNewCard(full, worldX, worldY);
+                    if (parent != null)
+                        _canvasHost?.PlaceNewCardUnder(full, parent.FilePath);
+                    else
+                        _canvasHost?.PlaceNewCard(full, worldX, worldY);
                     // The convention can put a module somewhere other than where
                     // the user is looking, so the toast NAMES the folder. A file
                     // that appears silently in a folder you are not in is the same
@@ -6082,8 +6147,7 @@ namespace Ruitk.Builder
         private void OnWorkspaceChanged()
         {
             RefreshChrome();
-            if (_showFolders)
-                _folderPane?.Rebuild();
+            _folderPane?.Rebuild();
             // Crash cover. Throttled, so the journal can trail the tree by a few
             // seconds - which is the honest cost of not writing the whole tree on
             // every commit, and still the difference between losing a session and

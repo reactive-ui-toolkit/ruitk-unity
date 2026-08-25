@@ -89,10 +89,9 @@ namespace Ruitk.Builder
                 return;
             }
 
-            _list.Add(Hint(
-                "Drag a module or a folder onto another folder to move it. "
-                + "Click a folder to fold it. Double-click a module to open it.\n"
-                + "Nothing moves on disk until Save."));
+            // No standing instructions: this is a pane you live in beside the
+            // canvas, not a mode you enter, and three lines of them is most of a
+            // 200px column. The gestures ride on the rows as tooltips instead.
             Emit(BuildHierarchy(modules, out _), 0);
         }
 
@@ -162,7 +161,9 @@ namespace Ruitk.Builder
             string caret = !hasContents ? "   " : folded ? "▸  " : "▾  ";
             var row = Row(depth, FolderIcon,
                 caret + (node.Name.Length > 0 ? node.Name : node.Path),
-                BuilderPalette.Text, node.Path, bold: true);
+                BuilderPalette.Text,
+                node.Path + "\n\nClick to fold. Drag onto another folder to move it.",
+                bold: true);
             BuilderCursor.Set(row, UnityEditor.MouseCursor.Link);
             Register(row, node.Path, node.Path, isFolder: true);
             return row;
@@ -171,7 +172,11 @@ namespace Ruitk.Builder
         private VisualElement ModuleRow(BuilderModule module, int depth)
         {
             var row = Row(depth, ModuleIcon, "   " + Path.GetFileName(module.FilePath),
-                TintOf(module.Kind), module.FilePath, bold: false);
+                TintOf(module.Kind),
+                module.FilePath
+                    + "\n\nDouble-click to open. Drag onto a folder to move it."
+                    + "\nNothing moves on disk until Save.",
+                bold: false);
             BuilderCursor.Set(row, UnityEditor.MouseCursor.Pan);
             Register(row, Canon(module.Folder), Canon(module.FilePath), isFolder: false);
             return row;

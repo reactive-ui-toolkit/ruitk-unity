@@ -37,6 +37,11 @@ namespace Ruitk.Builder
         public Action<string, int> OnRowClick;
         public Action<string, int, int> OnRowContext;
         public Action<string, float, float> OnCreateRequested;
+
+        /// <summary>Right-click a COMPONENT card, "Create...": the gesture names
+        /// the parent, so the placement needs nothing inferred. Companion cards do
+        /// not offer it - a style module has no children.</summary>
+        public Action<string> OnCreateUnder;
         public Action<int> OnSelect;
         public Action<string> OnToast;
         public Action<string, int, int, string> OnRowDrop;
@@ -542,6 +547,28 @@ namespace Ruitk.Builder
         /// and being a little out is invisible - being a whole card out is not.</summary>
         private const float NewCardHeight = 200f;
 
+        /// <summary>Puts a new card under the one that spawned it, so a child
+        /// appears where the eye already is rather than wherever the pointer
+        /// happened to be when the menu opened.</summary>
+        public void PlaceNewCardUnder(string filePath, string parentPath)
+        {
+            if (_config == null || _graph == null)
+            {
+                PlaceNewCard(filePath, 0f, 0f);
+                return;
+            }
+            int index = _graph.IndexOf(System.IO.Path.GetFullPath(parentPath ?? ""));
+            if (index < 0)
+            {
+                PlaceNewCard(filePath, 0f, 0f);
+                return;
+            }
+            var parent = _graph.Nodes[index];
+            _config.SetPosition(
+                filePath, parent.X, parent.Y + BuilderCanvasDrawing.EstimatedCardHeight(parent) + 48f);
+            _config.Save();
+        }
+
         public int NodeIndexOf(string filePath) =>
             _graph?.IndexOf(System.IO.Path.GetFullPath(filePath)) ?? -1;
 
@@ -799,6 +826,12 @@ namespace Ruitk.Builder
                     OnPick = () => OnDeleteFile?.Invoke(targetPath),
                 },
             };
+            if (node.Kind == BuilderNodeKind.Component)
+                items.Insert(0, new BuilderSearchMenu.Item
+                {
+                    Label = "Create in " + node.Title + "…",
+                    OnPick = () => OnCreateUnder?.Invoke(targetPath),
+                });
             BuilderSearchMenu.ShowSimple(node.Title, items);
         }
 

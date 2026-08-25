@@ -3508,3 +3508,49 @@ NOT ESTABLISHED: which gesture emptied the buffer. The card still showed the
 export while the buffer was empty, so a canvas node outlived its module's text -
 worth watching, but the guard above is correct whatever the route, and it catches
 routes nobody has thought of yet.
+
+### UB-207 — three components in a row nested three deep `FIXED` `HIGH`
+
+Owner report 2026-08-25, traced through the code together: open a new builder,
+right-click the canvas three times to create three components, and get
+
+    First/components/A/components/B/components/C/
+
+instead of three siblings. The structure recorded the ORDER OF THE CLICKS.
+
+ROOT CAUSE: UB-187 placed a new module relative to the FOCUS, and creating one
+moves the focus onto it - so each create nested under the previous. A canvas
+right-click carries world coordinates and nothing else; it says "put a component
+in this tree", never "put one under X", so taking the focus as a parent invented
+a relationship the gesture never stated.
+
+FIX, and the rule the whole design now rests on: CREATE STATES PLACEMENT, WIRING
+STATES USAGE.
+
+- Canvas right-click creates at the tree ROOT. A companion still joins a
+  component whose family name it matches (UB-187), kept as this path's fallback.
+- Right-click a COMPONENT card, "Create in X...": a component becomes a child at
+  `X/components/New/`, a style, hook or util a sibling at `X/`. The prompt names
+  the parent, and the new card lands under X on the canvas. Companion cards do
+  not offer it - a style module has no children.
+- Nothing is auto-imported. Considered and rejected: an import with no usage is
+  `UITKX2304`, ERROR-tier since 0.9.1, so the project stops compiling on the next
+  Save; and adding a usage means guessing which element a style was meant for.
+  Wiring is a separate gesture and it is the one that knows.
+
+Also rejected, after being designed: a module CLIMBING to the closest shared
+parent of its importers as more things use it. Elegant, and unpredictable in a
+deep tree - a file moving because something elsewhere started using it.
+
+Companions as siblings is also what lets `Card/button.style.uitkx` and
+`Panel/button.style.uitkx` coexist, which the old root-only rule forbade.
+
+### UB-208 — the folder tree was a canvas mode `SHIPPED` `MED`
+
+Owner ask 2026-08-25. Seeing where modules live is something you do WHILE working
+on the canvas, not instead of it, so the tree moved to the LEFT panel above the
+library - fixed height, expanded by default, foldable for when the library needs
+the room. The "Folders" toolbar button and the centre-pane swap are gone.
+
+The standing hint went with it: three lines of instructions is most of a 200px
+column, so the gestures ride on the rows as tooltips.

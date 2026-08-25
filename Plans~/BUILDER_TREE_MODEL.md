@@ -318,3 +318,56 @@ Deliberate deviations from the plan as written:
 
 Still open: the exit gate. One real domain reload with an unsaved tree open,
 which only the owner's editor can run.
+
+## Placement, settled 2026-08-25
+
+The convention shipped in UB-187 placed a new module relative to the FOCUS, and
+creating a module moves the focus onto it - so three components created in a row
+nested three deep. The structure recorded the order of the clicks rather than
+anything about the UI.
+
+Two rules replace it, and the whole design follows from keeping them apart:
+
+**CREATE states placement. WIRING states usage.**
+
+Conflating them is what forces every bad option. If create adds the import it
+must also add a usage, or `UITKX2304 unused import` - which is ERROR-tier since
+0.9.1 - stops the whole project compiling the moment the file is saved. And to
+add a usage it has to guess WHERE a style applies, which is a decision only the
+author has. So create never imports anything.
+
+### Where a module is born
+
+- **Canvas right-click** (empty space): at the tree ROOT. A component goes to
+  `Root/components/Name/Name.uitkx`; a companion to `Root/`, unless its name
+  matches a component's family, which still redirects it into that component's
+  folder (UB-187's rule, kept as the fallback for this path).
+- **Card right-click** on a COMPONENT card, "Create...": a component becomes a
+  CHILD at `Parent/components/New/New.uitkx`; a style, hook or util becomes a
+  SIBLING at `Parent/`. The name prompt names the parent. Companion cards offer
+  no create - a style module has no children.
+- The new card is positioned under its parent on the canvas.
+
+Companions as siblings is also what makes `Card/button.style.uitkx` and
+`Panel/button.style.uitkx` able to coexist. Two ROOT-level creates can still
+collide on a name, which is the same thing that happens writing files by hand.
+
+### What moves a module
+
+Nothing, unless a gesture says so. Removing an import does NOT move a file, and
+nothing re-places itself - the "climbs to its closest shared parent as more
+things use it" rule was considered and rejected as unpredictable in a deep tree.
+
+A drag in the folder tree re-files by TYPE - a component into
+`Target/components/Name/`, a companion into `Target/` - and rewrites the
+specifiers of everything that already imports it, from each importer's own
+position. It adds and removes no imports: dragging X onto Y does not make Y use
+X (that would be an unused import, and an error), and the old parent keeps its
+import because its markup still references X.
+
+### Where the tree is shown
+
+The folder tree lives in the LEFT panel above the library, about 30% of the
+height, expanded by default and collapsible. The centre pane is always the
+canvas; the "Folders" toolbar button that swapped them is gone. Seeing structure
+is something you do WHILE working on the canvas, not instead of it.
