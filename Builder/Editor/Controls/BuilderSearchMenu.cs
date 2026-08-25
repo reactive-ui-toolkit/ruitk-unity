@@ -42,6 +42,20 @@ namespace Ruitk.Builder
             s_pointerValid = window != null;
         }
 
+        /// <summary>Makes the invoking window the ACTIVE one before a popup opens.
+        ///
+        /// A right-click reaches its element whatever Unity considers focused, but
+        /// a popup cannot open from a window that is not - so after any action that
+        /// left focus elsewhere (closing the previous menu, an inline editor), the
+        /// gesture landed and no menu appeared. It was chased with a timer that
+        /// re-asserted focus after the fact; taking it HERE, synchronously, is the
+        /// point of decision and needs no timing to be right (UB-209).</summary>
+        private static void FocusInvoker()
+        {
+            if (s_pointerWindow != null)
+                s_pointerWindow.Focus();
+        }
+
         public static Item Separator => new Item { IsSeparator = true };
 
         public static Item SectionHeader(string text) => new Item { Header = text };
@@ -70,6 +84,7 @@ namespace Ruitk.Builder
         /// content like the in-page ".ctx" menu.</summary>
         public static void ShowSimple(string title, List<Item> items)
         {
+            FocusInvoker();
             int rows = 0;
             int widest = title?.Length ?? 0;
             foreach (var item in items)

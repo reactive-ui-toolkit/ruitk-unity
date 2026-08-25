@@ -3554,3 +3554,57 @@ the room. The "Folders" toolbar button and the centre-pane swap are gone.
 
 The standing hint went with it: three lines of instructions is most of a 200px
 column, so the gestures ride on the rows as tooltips.
+
+### UB-209 — a popup needs its window ACTIVE, and chasing that with a timer lost `FIXED` `HIGH`
+
+Owner report 2026-08-26, the third time this symptom has come back: create a
+child component, then right-click - nothing happens.
+
+A right-click reaches its element whatever Unity considers focused, but a POPUP
+cannot open from a window that is not the active one. UB-197 and UB-199 both
+chased it after the fact with a timer that re-asserted focus, and a timer loses
+to anything slower than it guessed.
+
+FIX at the point of decision: a menu focuses its invoking window synchronously,
+in `BuilderSearchMenu`, immediately before it opens. Nothing has to be timed.
+
+### UB-210 — a menu that opens another menu reads as a mistake `FIXED` `MED`
+
+Owner report 2026-08-26: "the context menu opening another context menu is very
+confusing and annoying."
+
+The card menu's "Create in X..." opened a second popup on top of the first. The
+four create rows are now IN the card menu, labelled with what they do - "New
+component (child of X)", "New style module (beside X)". Four rows cost less than
+the ceremony of hiding them behind one.
+
+The owner asked for HOVER SUBMENUS generally, wherever a menu nests. Not built:
+each menu here is its own EditorWindow that closes on lost focus, so a child
+popup and its parent fight over focus, and it is not something to get right
+without being able to drive the editor. Flattening removes the reported problem
+outright; the general pattern is worth doing deliberately, not blind.
+
+### UB-211 — two components could share a name `FIXED` `HIGH`
+
+Owner report 2026-08-26: with NewComponent selected, created another
+NewComponent, and it was allowed - landing at
+`NewComponent/components/NewComponent/`.
+
+The name check asked whether the PATH was free, and it was. But a component's
+name is a name in the whole TREE: both export `NewComponent`, so every import of
+it is ambiguous, the library lists it twice and the canvas draws two identical
+cards. Component names are now checked against every component in the tree,
+whatever folder it sits in.
+
+### UB-212 — children stacked on one another `FIXED` `LOW`
+
+A second child created from the same parent landed on top of the first. Children
+of one parent belong side by side: the first free slot along the row is taken, so
+a second and third land beside the first however the row was arranged.
+
+### UB-213 — a layer dropped at the first notch of zoom-out `FIXED` `LOW`
+
+Owner ask 2026-08-26: more room to zoom out before a layer gives way. The LOD
+boundaries moved down - 0.45 to 0.32 and 1.05 to 0.80 - so reading a card at Edit
+detail and pulling back for context no longer costs the detail immediately. The
+toolbar presets still land one per layer.

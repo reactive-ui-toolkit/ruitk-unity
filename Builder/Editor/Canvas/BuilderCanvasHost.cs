@@ -38,10 +38,21 @@ namespace Ruitk.Builder
         public Action<string, int, int> OnRowContext;
         public Action<string, float, float> OnCreateRequested;
 
-        /// <summary>Right-click a COMPONENT card, "Create...": the gesture names
-        /// the parent, so the placement needs nothing inferred. Companion cards do
-        /// not offer it - a style module has no children.</summary>
+        /// <summary>Right-click a COMPONENT card and pick a create row: the
+        /// gesture names the parent, so the placement needs nothing inferred.
+        /// Carries "path|Kind". Companion cards offer none of it - a style module
+        /// has no children.</summary>
         public Action<string> OnCreateUnder;
+
+        /// <summary>The create rows a component card offers, in menu order.</summary>
+        private static readonly List<KeyValuePair<string, string>> CreateKinds =
+            new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("Component", "New component"),
+                new KeyValuePair<string, string>("Style", "New style module"),
+                new KeyValuePair<string, string>("Hooks", "New hook module"),
+                new KeyValuePair<string, string>("Utils", "New util module"),
+            };
         public Action<int> OnSelect;
         public Action<string> OnToast;
         public Action<string, int, int, string> OnRowDrop;
@@ -564,9 +575,33 @@ namespace Ruitk.Builder
                 return;
             }
             var parent = _graph.Nodes[index];
-            _config.SetPosition(
-                filePath, parent.X, parent.Y + BuilderCanvasDrawing.EstimatedCardHeight(parent) + 48f);
+            float row = parent.Y + BuilderCanvasDrawing.EstimatedCardHeight(parent) + 48f;
+            float step = BuilderCanvasDrawing.CardWidthFor(LodOf(_zoom)) + 40f;
+            // Children of one parent belong side by side, not on top of each
+            // other. The first free slot along the row is taken, so a second and
+            // third child land beside the first however the row was arranged.
+            float x = parent.X;
+            for (int guard = 0; guard < 64 && Occupied(x, row); guard++)
+                x += step;
+            _config.SetPosition(filePath, x, row);
             _config.Save();
+        }
+
+        /// <summary>Whether a card already sits at this slot. Compared loosely -
+        /// a card the user has nudged still counts as being in the way.</summary>
+        private bool Occupied(float x, float y)
+        {
+            if (_graph == null)
+                return false;
+            float w = BuilderCanvasDrawing.CardWidthFor(LodOf(_zoom));
+            foreach (var node in _graph.Nodes)
+            {
+                if (Mathf.Abs(node.Y - y) > 24f)
+                    continue;
+                if (Mathf.Abs(node.X - x) < w * 0.75f)
+                    return true;
+            }
+            return false;
         }
 
         public int NodeIndexOf(string filePath) =>
@@ -721,7 +756,14 @@ namespace Ruitk.Builder
         private static readonly object s_scrollWired = new object();
 
         /// <summary>POC LOD bands: &lt;0.45 = L0, &lt;1.05 = L1, else L2.</summary>
-        public static int LodOf(float zoom) => zoom < 0.45f ? 0 : zoom < 1.05f ? 1 : 2;
+        /// <summary>Which level of detail a zoom draws at.
+        ///
+        /// The boundaries sit LOW in each layer's range, so a layer can be zoomed
+        /// out a good way before it gives up and drops to the one below - reading
+        /// a card at Edit detail and pulling back for context should not cost you
+        /// the detail at the first notch. The toolbar presets (0.30 / 0.75 / 1.25)
+        /// still land one per layer.</summary>
+        public static int LodOf(float zoom) => zoom < 0.32f ? 0 : zoom < 0.80f ? 1 : 2;
 
         public BuilderCanvasNode FindNodeByTitle(string title)
         {
@@ -826,12 +868,26 @@ namespace Ruitk.Builder
                     OnPick = () => OnDeleteFile?.Invoke(targetPath),
                 },
             };
+            // FLAT, not a submenu. Picking "Create..." used to open a second
+            // popup on top of the first, which reads as the menu having gone
+            // wrong rather than as a level of nesting. Four rows cost less than
+            // the ceremony of hiding them (UB-210).
             if (node.Kind == BuilderNodeKind.Component)
-                items.Insert(0, new BuilderSearchMenu.Item
+            {
+                items.Insert(0, BuilderSearchMenu.Separator);
+                int at = 0;
+                foreach (var kind in CreateKinds)
                 {
-                    Label = "Create in " + node.Title + "…",
-                    OnPick = () => OnCreateUnder?.Invoke(targetPath),
-                });
+                    string captured = kind.Key;
+                    items.Insert(at++, new BuilderSearchMenu.Item
+                    {
+                        Label = kind.Value + (captured == "Component"
+                            ? "  (child of " + node.Title + ")"
+                            : "  (beside " + node.Title + ")"),
+                        OnPick = () => OnCreateUnder?.Invoke(targetPath + "|" + captured),
+                    });
+                }
+            }
             BuilderSearchMenu.ShowSimple(node.Title, items);
         }
 

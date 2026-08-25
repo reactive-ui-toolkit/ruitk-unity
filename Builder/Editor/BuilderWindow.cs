@@ -377,7 +377,7 @@ namespace Ruitk.Builder
             leftPanel.Add(new VisualElement
             {
                 name = "builder-folders",
-                style = { flexGrow = 0f, flexShrink = 0f, height = 210f, minHeight = 0f },
+                style = { flexGrow = 0f, flexShrink = 0f, height = 270f, minHeight = 0f },
             });
             leftPanel.Add(new VisualElement
             {
@@ -855,24 +855,14 @@ namespace Ruitk.Builder
                 MountCanvas();
             };
             _canvasHost.OnCreateRequested = ShowCreatePrompt;
-            _canvasHost.OnCreateUnder = parentPath =>
+            _canvasHost.OnCreateUnder = request =>
             {
-                var parent = _workspace.TryGet(parentPath);
-                if (parent == null)
+                int bar = request?.LastIndexOf('|') ?? -1;
+                if (bar <= 0)
                     return;
-                var kinds = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
-                foreach (var pair in s_createPrompts)
-                {
-                    string captured = pair.Key;
-                    kinds.Add(new BuilderSearchMenu.Item
-                    {
-                        Label = captured == "Component"
-                            ? "Component (child of " + parent.Name + ")"
-                            : captured + " (beside " + parent.Name + ")",
-                        OnPick = () => CreateModule(captured, 0f, 0f, parent),
-                    });
-                }
-                BuilderSearchMenu.ShowSimple("create in " + parent.Name, kinds);
+                var parent = _workspace.TryGet(request.Substring(0, bar));
+                if (parent != null)
+                    CreateModule(request.Substring(bar + 1), 0f, 0f, parent);
             };
             _canvasHost.OnTraceStates = states => _codeField?.SetTraceNames(states);
             // The side panes are built BEFORE the canvas mounts. Mount() is an
@@ -6064,6 +6054,18 @@ namespace Ruitk.Builder
             string target = targetPathFor?.Invoke(name);
             if (!string.IsNullOrEmpty(target) && !_workspace.IsPathAvailable(target))
                 return name + " already exists";
+            // A COMPONENT name is a name in the whole tree, not just in a folder.
+            // Two components called NewComponent in different folders both export
+            // NewComponent, so every import of it becomes ambiguous, the library
+            // lists it twice, and the canvas draws two identical cards - the path
+            // was free, so nothing refused it (UB-211).
+            if (pascal)
+            {
+                foreach (var module in _workspace.Modules)
+                    if (module.Kind == BuilderNodeKind.Component
+                        && string.Equals(module.Name, name, System.StringComparison.OrdinalIgnoreCase))
+                        return name + " already exists in this tree";
+            }
             return null;
         }
 
