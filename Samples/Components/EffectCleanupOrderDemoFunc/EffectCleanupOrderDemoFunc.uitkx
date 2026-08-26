@@ -29,7 +29,7 @@ export VirtualNode EffectCleanupOrderDemoFunc() {
 
   return (
     <VisualElement style={containerStyle}>
-      <Text text="Effect Cleanup Order â€” Step 2 Test" />
+      <Text text="Effect Cleanup Order — Step 2 Test" />
       <Label
         text="All CLEANUPS must appear before any SETUPS within the same generation."
         style={new Style { (StyleKeys.MarginTop, 4f), (StyleKeys.Color, new Color(0.75f, 0.75f, 0.75f, 1f)) }}
@@ -37,7 +37,7 @@ export VirtualNode EffectCleanupOrderDemoFunc() {
       <VisualElement style={sectionStyle}>
         <Button
           text="Next Generation (triggers both effects)"
-          onClick={_ => { logRef.Current.Add($"â”€â”€ generation {generation + 1} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€"); setGeneration(g => g + 1); }}
+          onClick={_ => { logRef.Current.Add($"── generation {generation + 1} ────────────"); setGeneration(g => g + 1); }}
         />
         <Button
           text="Clear Log"
@@ -62,7 +62,7 @@ export VirtualNode EffectCleanupOrderDemoFunc() {
       <VisualElement style={logBoxStyle}>
         @if (displayLog.Count == 0) {
           return (
-            <Text text="Log is empty â€” click 'Next Generation' to start." />
+            <Text text="Log is empty — click 'Next Generation' to start." />
           );
         } @else {
           return (

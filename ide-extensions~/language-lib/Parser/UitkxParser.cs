@@ -676,13 +676,19 @@ namespace Ruitk.Language.Parser
                             break;
                         case "break":
                             _diagnostics.Add(
-                                ErrUnexpectedToken("@break", atLine, "@for or @while loop block")
+                                ErrUnexpectedToken(
+                                    "@break", atLine,
+                                    "a @switch case as its optional terminator; loop bodies are raw C# — use a plain 'break;' statement there"
+                                )
                             );
                             SkipToEndOfLine();
                             break;
                         case "continue":
                             _diagnostics.Add(
-                                ErrUnexpectedToken("@continue", atLine, "@for or @while loop block")
+                                ErrUnexpectedToken(
+                                    "@continue", atLine,
+                                    "loop bodies are raw C# — use a plain 'continue;' statement there"
+                                )
                             );
                             SkipToEndOfLine();
                             break;
@@ -1794,7 +1800,7 @@ namespace Ruitk.Language.Parser
                 EndColumn = col > 0 ? col + 1 + keyword.Length : 0,
                 Message =
                     $"Unknown markup directive '@{keyword}' at line {line} in '{_filePath}'. "
-                    + "Valid directives are: if, else, foreach, for, while, switch, case, default, break, continue. "
+                    + "Valid directives are: if, else, foreach, for, while, switch, case, default. "
                     + "For a literal '@' in text, use {\"@\"}.",
             };
     }

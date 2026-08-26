@@ -18,12 +18,61 @@ public sealed class TextSyncHandler : TextDocumentSyncHandlerBase
     private readonly DocumentStore _store;
     private readonly DiagnosticsPublisher _diagnostics;
     private readonly RoslynHost _roslynHost;
+    private readonly WorkspaceIndex _index;
 
-    public TextSyncHandler(DocumentStore store, DiagnosticsPublisher diagnostics, RoslynHost roslynHost)
+    // Per-path debouncers for buffer-driven index refreshes (VE-07): didChange
+    // arrives per keystroke; the index re-parse rides a 300 ms trailing edge so
+    // typing never pays for it inline. IndexChanged only fires when the file's
+    // cross-file-visible surface actually changed (see ComputeFileSurface).
+    private static readonly object s_refreshLock = new();
+    private static readonly Dictionary<string, CancellationTokenSource> s_pendingRefresh =
+        new(StringComparer.OrdinalIgnoreCase);
+    private const int IndexRefreshDebounceMs = 300;
+
+    public TextSyncHandler(
+        DocumentStore store,
+        DiagnosticsPublisher diagnostics,
+        RoslynHost roslynHost,
+        WorkspaceIndex index
+    )
     {
         _store       = store;
         _diagnostics = diagnostics;
         _roslynHost  = roslynHost;
+        _index       = index;
+    }
+
+    private void ScheduleIndexRefresh(string path)
+    {
+        CancellationTokenSource cts;
+        lock (s_refreshLock)
+        {
+            if (s_pendingRefresh.TryGetValue(path, out var old))
+                old.Cancel();
+            cts = new CancellationTokenSource();
+            s_pendingRefresh[path] = cts;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(IndexRefreshDebounceMs, cts.Token);
+            }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
+            lock (s_refreshLock)
+            {
+                if (s_pendingRefresh.TryGetValue(path, out var current) && current == cts)
+                    s_pendingRefresh.Remove(path);
+                else
+                    return;
+            }
+            try { _index.Refresh(path); }
+            catch (Exception ex) { ServerLog.Log($"buffer index refresh failed for '{path}': {ex.Message}"); }
+        });
     }
 
     public override TextDocumentAttributes GetTextDocumentAttributes(DocumentUri uri)
@@ -62,6 +111,12 @@ public sealed class TextSyncHandler : TextDocumentSyncHandlerBase
         var path = request.TextDocument.Uri.GetFileSystemPath();
         if (path == null || !path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             _diagnostics.Publish(request.TextDocument.Uri, request.TextDocument.Text ?? string.Empty, _roslynHost);
+
+        // Buffer-first index (VE-07): an opened document — including one that has
+        // never been saved to disk — contributes its exports/props to menus and
+        // the workspace graph immediately.
+        if (path != null && path.EndsWith(".uitkx", StringComparison.OrdinalIgnoreCase))
+            _index.Refresh(path);
 
         return Unit.Task;
     }
@@ -102,6 +157,8 @@ public sealed class TextSyncHandler : TextDocumentSyncHandlerBase
                 var invalidated = _roslynHost.InvalidatePeerDependents(path);
                 if (invalidated.Count > 0)
                     _diagnostics.ScheduleRevalidation();
+
+                ScheduleIndexRefresh(path);
             }
         }
 
@@ -143,6 +200,12 @@ public sealed class TextSyncHandler : TextDocumentSyncHandlerBase
         // LSP small: evict cached diagnostics + clear the client's Problems panel for this
         // file (see DiagnosticsPublisher.Forget's doc comment).
         _diagnostics.Forget(request.TextDocument.Uri);
+
+        // Buffer-first index (VE-07): with the overlay gone the file re-indexes
+        // from disk — or, for a never-saved session file, evicts entirely.
+        if (localPath != null && localPath.EndsWith(".uitkx", StringComparison.OrdinalIgnoreCase))
+            _index.Refresh(localPath);
+
         return Unit.Task;
     }
 }

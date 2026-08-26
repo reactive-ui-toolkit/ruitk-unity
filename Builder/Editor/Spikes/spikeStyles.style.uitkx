@@ -1,0 +1,68 @@
+export Style Root = new Style {
+  FlexGrow = 1,
+  Overflow = OverflowHidden,
+  BackgroundColor = Hex("#1b1b1f"),
+};
+
+export Style Hud = new Style {
+  Position = PosAbsolute,
+  Top = Px(8),
+  Left = Px(8),
+  Padding = Px(6),
+  BackgroundColor = Rgba(0, 0, 0, 160),
+  Color = Hex("#d6d6dc"),
+};
+
+export Style World = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+};
+
+export Style Card = new Style {
+  Position = PosAbsolute,
+  Width = Px(150),
+  Height = Px(90),
+  BackgroundColor = Hex("#232329"),
+  BorderRadius = Px(8),
+  Padding = Px(8),
+};
+
+export Style CardTitle = new Style {
+  Color = Hex("#4fc3f7"),
+  UnityFontStyle = FontBold,
+};
+
+export Style CardBody = new Style {
+  Color = Hex("#8b8b96"),
+  FontSize = Px(10),
+};
+
+export Style EditorRoot = new Style {
+  FlexGrow = 1,
+  BackgroundColor = Hex("#17171b"),
+  Padding = Px(10),
+};
+
+export Style OverlayHost = new Style {
+  FlexGrow = 1,
+  Position = PosRelative,
+};
+
+export Style CodeInput = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Right = Px(0),
+  Bottom = Px(0),
+  Color = Rgba(255, 255, 255, 0),
+};
+
+export Style CodeOverlay = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Right = Px(0),
+  Bottom = Px(0),
+  Color = Hex("#d6d6dc"),
+};

@@ -1,3 +1,59 @@
+## [0.18.0] - 2026-08-26
+
+### RUITK UI Builder - structure, menus, and a settled placement model
+
+**The builder now has an opinion about where files go.** 0.17.0 shipped the canvas; this
+release ships the other half - a folder tree in the left panel, and a placement convention
+you can predict.
+
+A component owns a folder. Its children live in `components/` inside it. Its companions -
+`name.style.uitkx`, `useName.hooks.uitkx` - sit beside it. Right-click empty canvas to
+create at the tree ROOT; right-click a component card to create a CHILD component or a
+SIBLING companion. That replaces 0.17.0's focus-relative rule, under which three components
+created in a row nested three deep - the structure recorded the order of your clicks rather
+than your UI.
+
+**Create states placement. Wiring states usage.** Creating a module never adds an import. It
+cannot: an import with no usage is `UITKX2304`, which is error-tier, so a create that
+imported would also have to guess where a style applies. The builder places the file and
+stops; you wire it by dragging it in.
+
+**Menus rebuilt** as a layer in the builder's own panel: real submenus, the builder's styling,
+nothing to lose focus to, full keyboard drive. Long lists keep their search field.
+
+Also: named zoom layers (Architecture / Cards / Edit), a History panel with click-to-jump, a
+Trace toggle for the preview pipeline, and crash cover that offers unsaved work back.
+
+**Fixes - about seventy tracked defects.** The preview bound to the SAVED copy of a style
+module rather than your live buffer, so style edits never rendered. What USES a changed
+module now rebuilds, not just the module. A save no longer rearranges the canvas: relocating
+a module moves its folder and carries everything inside, and only the module that triggered
+each move was told, so every card that rode along lost its place. Escape reaches an open
+menu. A folder rearrangement can be saved.
+
+**Docs.** A full UI Builder section on the site, with screenshots.
+
+---
+## [0.17.0] - 2026-08-15
+
+### RUITK UI Builder - a visual editor inside Unity
+
+**The builder lands.** Right-click any `.uitkx` -> **Open in RUITK UI Builder** and the whole component tree opens as one workspace: a pannable canvas with a kind-colored card per file and import edges drawn between them, a live preview mounted through the real reconciler, the file's code with semantic coloring and live diagnostics, and a searchable palette of every element, hook, directive and style key.
+
+**Everything edits in memory.** Typing, palette inserts and outline reorders hit the buffer only; the preview hot-recompiles after a short debounce through the builder's own compiler instance - disk untouched, no reload, state preserved. **Save** writes every dirty buffer in one batch: one script reload total, or zero when HMR Mode is running. **Abort** discards. Undo/redo is per-file and never touches Unity's global undo. Files from immutable packages open read-only.
+
+**Wired for navigation.** Ctrl+Click an element in the preview jumps to the component that rendered it; double-click a canvas card focuses its file; card layout and camera persist per tree in `UserSettings/`. Double-clicking assets still opens your external editor - the builder never steals that route.
+
+**UXML import.** `Assets -> Convert UXML to UITKX` converts one-way, mapping inline USS to the typed `Style` initializer and warning about anything it had to drop.
+
+**Under the hood:** `Label` gains `enableRichText`; the LSP server gains `ruitk/schema`, `ruitk/hooks`, `ruitk/componentProps` and `ruitk/workspaceGraph` plus an unsaved-buffer index overlay; the language lib gains a public AST printer and the UXML converter. Known limitation: `@uss`/`Asset<T>` refs added since the last Save resolve after saving.
+
+**Tests.** 1878/1878 SG, 180/180 LSP.
+
+VS Code **1.10.0 -> 1.11.0** | VS 2022 **1.10.0 -> 1.11.0**.
+
+---
+
 ## [0.16.0] - 2026-08-10
 
 ### The wrapper keywords are gone - plain declarations only

@@ -58,9 +58,6 @@
       "include": "#control-flow-keyword"
     },
     {
-      "include": "#switch-arm-label"
-    },
-    {
       "include": "#tag-self-closing"
     },
     {
@@ -282,18 +279,6 @@
           "include": "#expression-content"
         }
       ]
-    },
-    "switch-arm-label": {
-      "comment": "Handles switch-arm label token before => (0, 1, _, identifier)",
-      "match": "^(\\s*)([_]|\\d+(?:\\.\\d+)?|[A-Za-z_][A-Za-z0-9_]*)(\\s*)(=>)",
-      "captures": {
-        "2": {
-          "name": "variable.other.uitkx"
-        },
-        "4": {
-          "name": "keyword.operator.uitkx"
-        }
-      }
     },
     "cs-paren-expression": {
       "begin": "\\(",

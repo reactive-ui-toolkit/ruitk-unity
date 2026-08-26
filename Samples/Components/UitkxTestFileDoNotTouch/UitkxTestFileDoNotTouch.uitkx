@@ -60,14 +60,14 @@ export VirtualNode UitkxTestFileDoNotTouch(
   var (mctvRows, setMctvRows) = useState(new List<MultiColumnTreeViewRowState>());
   var (mctvNextPid, setMctvNextPid) = useState(2);
 
-  // â”€â”€ useContext â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── useContext ─────────────────────────────────────────────────────────────
   var portalTarget = useContext<VisualElement>(PortalContextKeys.ModalRoot);
   var themeColor = useContext<Color>("context-demo-theme");
 
-  // â”€â”€ provideContext â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── provideContext ─────────────────────────────────────────────────────────
   provideContext("kitchen-sink-theme", themeColor);
 
-  // â”€â”€ useSignal / useMemo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── useSignal / useMemo ────────────────────────────────────────────────────
   var counterSignal = useMemo(() => SignalFactory.Get<int>("demo.counter", 0), Array.Empty<object>());
   var signalCount = useSignal(counterSignal);
   var doubleCount = useMemo(() => count * 2, new object[] { count });
@@ -77,12 +77,12 @@ export VirtualNode UitkxTestFileDoNotTouch(
     "Gamma",
   }, Array.Empty<object>());
 
-    // â”€â”€ useRef â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── useRef ─────────────────────────────────────────────────────────────────
   var renderCountRef = useRef<int>(0);
   renderCountRef.Current++;
   var renderCount = renderCountRef.Current;
 
-  // â”€â”€ useEffect: IDisposable subscription cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── useEffect: IDisposable subscription cleanup ────────────────────────────
   useEffect(() =>
   {
     bool captured = false;
@@ -102,24 +102,24 @@ export VirtualNode UitkxTestFileDoNotTouch(
     };
   }, new object[] { counterSignal });
 
-  // â”€â”€ useEffect: FiberReconciler event + null return â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── useEffect: FiberReconciler event + null return ─────────────────────────
   useEffect(() =>
   {
     setLog(prev => new List<string>(prev) { $"Mounted at {DateTime.Now:HH:mm:ss}" });
     return null;
   }, Array.Empty<object>());
 
-  // â”€â”€ useLayoutEffect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── useLayoutEffect ────────────────────────────────────────────────────────
   useLayoutEffect(() =>
   {
     setTrigger(t => t);
     return null;
   }, new object[] { count });
 
-  // â”€â”€ void method: single-statement body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── void method: single-statement body ────────────────────────────────────
   void Reset() { setCount(0); }
 
-  // â”€â”€ void method: multi-statement body with guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── void method: multi-statement body with guard ───────────────────────────
   void AppendLog(string message)
   {
     var next = new List<string>(log.Count + 1) {
@@ -133,7 +133,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     setLog(next);
   }
 
-  // â”€â”€ void method: for loop + tuple swap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── void method: for loop + tuple swap ────────────────────────────────────
   void ShuffleOptions()
   {
     if (options.Count == 0)
@@ -149,7 +149,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     AppendLog($"Shuffled {items.Count} items");
   }
 
-  // â”€â”€ void method: if / else-if / else chain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── void method: if / else-if / else chain ─────────────────────────────────
   void TripleIncrement()
   {
     setCount(v => v + 1);
@@ -158,7 +158,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     AppendLog("Queued +1 three times");
   }
 
-  // â”€â”€ void method: switch statement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── void method: switch statement ─────────────────────────────────────────
   void ApplyMode(string newMode)
   {
     switch (newMode)
@@ -176,7 +176,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     setMode(newMode);
   }
 
-  // â”€â”€ void method: event handler with is-pattern matching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── void method: event handler with is-pattern matching ───────────────────
   void HandleEvent(ReactiveEvent evt)
   {
     if (evt == null)
@@ -194,7 +194,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     }
   }
 
-  // â”€â”€ TreeView actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── TreeView actions ───────────────────────────────────────────────────────
   void TreeAddParent()
   {
     var pid = treeNextPid;
@@ -257,7 +257,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     });
   }
 
-   // â”€â”€ MultiColumnTreeView actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   // ── MultiColumnTreeView actions ────────────────────────────────────────────
   void MctvSetChild()
   {
     setMctvRows(prev =>
@@ -308,7 +308,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     </VisualElement>
   );
 
-  // â”€â”€ TabViewProps with TabDef closures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── TabViewProps with TabDef closures ──────────────────────────────────────
   var tabViewProps = new TabViewProps
   {
     SelectedIndex = tabIndex,
@@ -322,14 +322,14 @@ export VirtualNode UitkxTestFileDoNotTouch(
   };
 
 
-  // â”€â”€ var: simple Style initializer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── var: simple Style initializer ─────────────────────────────────────────
   var containerStyle = new Style {
     (StyleKeys.FlexGrow, 1f),
     (StyleKeys.Padding, 12f),
     (StyleKeys.FlexDirection, "column"),
   };
 
-    // â”€â”€ var: multi-line Style initializer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── var: multi-line Style initializer ─────────────────────────────────────
   var rowStyle = new Style {
     (StyleKeys.FlexDirection, "row"),
     (StyleKeys.FlexWrap, "wrap"),
@@ -362,7 +362,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     (StyleKeys.Color, syncColor),
   };
 
-  // â”€â”€ var: typed MenuBuilderHandler lambda â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── var: typed MenuBuilderHandler lambda ───────────────────────────────────
   MenuBuilderHandler buildMenu = dm =>
   {
     dm.AppendAction("Reset", _ => Reset());
@@ -371,7 +371,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     dm.AppendAction("Shuffle", _ => ShuffleOptions());
   };
 
-  // â”€â”€ var: inline JSX node â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── var: inline JSX node ───────────────────────────────────────────────────
   var inlineNode = (
     <Portal target={portalTarget}>
       @if (mounted) {
@@ -390,7 +390,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     </Portal>
   );
 
-  // â”€â”€ var: portalNode (setup-code JSX) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── var: portalNode (setup-code JSX) ──────────────────────────────────────
   var portalNode = portalTarget != null
     ? (
       <Portal target={portalTarget}>
@@ -411,16 +411,16 @@ export VirtualNode UitkxTestFileDoNotTouch(
     )
     : null;
 
-  // â”€â”€ bool helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── bool helper ───────────────────────────────────────────────────────────
   bool IsLoading() => trigger > 1000;
 
-  // â”€â”€ var: string.Join â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── var: string.Join ──────────────────────────────────────────────────────
   var optionsText = options.Count == 0
     ? "No options"
     : string.Join(", ", options);
 
 
-  // ── local function: JSX with @foreach + @if ────────────────────────────
+  // -- local function: JSX with @foreach + @if ----------------------------
   var deepCategories = new[] { "A", "B", "C" };
   var deepPills = new[] { "x", "y", "z" };
 
@@ -460,7 +460,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     );
   }
 
-  // ── local function: JSX with @if / @else ───────────────────────────────
+  // -- local function: JSX with @if / @else -------------------------------
   VirtualNode DeepStatusBadge() {
     return (
       <VisualElement style={new Style { (StyleKeys.MarginBottom, 6f) }}>
@@ -483,7 +483,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
     );
   }
 
-  // ── setup-code JSX from local function call ────────────────────────────
+  // -- setup-code JSX from local function call ----------------------------
   var deepStatusNode = DeepStatusBadge();
 
   return (
@@ -495,16 +495,16 @@ export VirtualNode UitkxTestFileDoNotTouch(
       @switch (mode) {
         @case "squared":
           return (
-            <Label text={$"Mode: Squared â€” CountÂ²: {count * count}"} />
+            <Label text={$"Mode: Squared — Count²: {count * count}"} />
           );
         @case "doubled":
           return (
-            <Label text={$"Mode: Doubled â€” Ã—2: {doubleCount}"} />
+            <Label text={$"Mode: Doubled — ×2: {doubleCount}"} />
           );
         @case "normal":
           return (
             <VisualElement>
-              <Label text={$"Mode: Normal â€” Count: {count}"} />
+              <Label text={$"Mode: Normal — Count: {count}"} />
               <Button text="-5" onClick={_ => setCount(count - 5)} />
             </VisualElement>
           );
@@ -592,7 +592,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
       </VisualElement>
       <VisualElement style={rowStyle}>
         <Button
-          text="Ã—3"
+          text="×3"
           onClick={_ => TripleIncrement()}
           style={new Style { (StyleKeys.MarginRight, 6f) }}
         />
@@ -673,7 +673,7 @@ export VirtualNode UitkxTestFileDoNotTouch(
         <Label text={$"Trigger value: {trigger}"} />
       </Suspense>
       <UitkxTestSubFileDoNotTouch
-        message="UitkxCounterFunc â€” Go-to-definition test"
+        message="UitkxCounterFunc — Go-to-definition test"
       />
       <Button
         text={mounted ? "Unmount Portal" : "Mount Portal"}
@@ -683,21 +683,21 @@ export VirtualNode UitkxTestFileDoNotTouch(
       {portalNode}
       {inlineNode}
       <UitkxTestSubFileDoNotTouch
-        message="UitkxCounterFunc â€” Go-to-definition test"
+        message="UitkxCounterFunc — Go-to-definition test"
       />
-      // â”€â”€ visualElementSafe: safe-area-aware wrapper â”€â”€
+      // ── visualElementSafe: safe-area-aware wrapper ──
       <visualElementSafe style={badgeStyle}>
         <Label text="Inside a visualElementSafe (safe-area padding applied)" />
       </visualElementSafe>
-      // â”€â”€ Route element with inline JSX (no V.Func / V.Text needed) â”€â”€
+      // ── Route element with inline JSX (no V.Func / V.Text needed) ──
       <Router>
-        <Route path="/" exact element={<Label text="JSX route â€” home" />} />
-        <Route path="/jsxDemo" element={<Label text="JSX route â€” demo" />} />
+        <Route path="/" exact element={<Label text="JSX route — home" />} />
+        <Route path="/jsxDemo" element={<Label text="JSX route — demo" />} />
       </Router>
       <UitkxTestSubFileDoNotTouch
-        message="UitkxCounterFunc â€” Go-to-definition test"
+        message="UitkxCounterFunc — Go-to-definition test"
       />
-      // ── deep nesting: @foreach → @for → @if/@else → @foreach (4 levels) ──
+      // -- deep nesting: @foreach ? @for ? @if/@else ? @foreach (4 levels) --
       {DeepPillBar(deepPills, mode)}
       {deepStatusNode}
       @foreach (var cat in deepCategories) {

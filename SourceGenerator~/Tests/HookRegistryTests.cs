@@ -125,6 +125,38 @@ public sealed class HookRegistryTests
                     HookRegistry.GenerateVirtualDocStubs(staticForm: true));
         Assert.Same(HookRegistry.GenerateVirtualDocStubs(staticForm: false),
                     HookRegistry.GenerateVirtualDocStubs(staticForm: false));
+        Assert.Same(HookRegistry.GetStateSlotArity(),     HookRegistry.GetStateSlotArity());
+        Assert.Same(HookRegistry.GetInsertionSnippets(),  HookRegistry.GetInsertionSnippets());
+    }
+
+    [Fact]
+    public void Registry_CallSiteTable_CoversEveryHookInBothCasings()
+    {
+        // The Builder's STATE panel indexes HookStates positionally from the
+        // arity table and its palette inserts from the snippet table — a hook
+        // missing from either silently truncates the panel or inserts the
+        // generic fallback call.
+        var arity = HookRegistry.GetStateSlotArity();
+        var snippets = HookRegistry.GetInsertionSnippets();
+        Assert.Equal(ExpectedHookCount * 2, arity.Count);
+        Assert.Equal(ExpectedHookCount * 2, snippets.Count);
+        foreach (var pascal in HookRegistry.CanonicalNames)
+        {
+            var camel = char.ToLower(pascal[0]) + pascal.Substring(1);
+            Assert.True(arity.ContainsKey(pascal), $"Arity missing '{pascal}'");
+            Assert.True(arity.ContainsKey(camel), $"Arity missing '{camel}'");
+            Assert.True(arity[pascal] == 0 || arity[pascal] == 1,
+                $"Fiber-path arity for '{pascal}' must be 0 or 1");
+            Assert.True(snippets.ContainsKey(pascal), $"Snippet missing '{pascal}'");
+            Assert.True(snippets.ContainsKey(camel), $"Snippet missing '{camel}'");
+            Assert.False(string.IsNullOrWhiteSpace(snippets[pascal]));
+        }
+        // The fiber path stores effects in separate lists and the metadata-gated
+        // hooks early-return with a null owner — pin the four load-bearing rows.
+        Assert.Equal(1, arity["useState"]);
+        Assert.Equal(0, arity["useEffect"]);
+        Assert.Equal(0, arity["useContext"]);
+        Assert.Equal(0, arity["useSafeArea"]);
     }
 
     [Fact]

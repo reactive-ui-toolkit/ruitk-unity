@@ -81,8 +81,8 @@ namespace Ruitk.Editor
                 if (!assetPath.EndsWith(".uitkx", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                string absPath = Path.Combine(projectRoot, assetPath);
-                if (!File.Exists(absPath)) continue;
+                string absPath = AssetPathToAbsolute(assetPath, projectRoot);
+                if (absPath == null || !File.Exists(absPath)) continue;
 
                 string content = File.ReadAllText(absPath);
                 string uitkxDir = Path.GetDirectoryName(assetPath)?.Replace('\\', '/');
@@ -107,50 +107,72 @@ namespace Ruitk.Editor
         }
 
         /// <summary>
-        /// Full atomic rebuild of the registry from all <c>.uitkx</c> files
-        /// under <c>Assets/</c>.
+        /// Full atomic rebuild of the registry from all <c>.uitkx</c> files under
+        /// <c>Assets/</c> and every writable (embedded/local) package root — GEN-2:
+        /// package-resident <c>Asset&lt;T&gt;()</c>/<c>@uss</c> references must register
+        /// exactly like <c>Assets/</c>-resident ones.
         /// </summary>
         public static void FullRescan()
         {
             WarnIfStaleRegistryExists();
 
+            var scanTargets = new List<(string absRoot, string assetRoot)>();
             string dataPath = Application.dataPath; // …/Assets
-            string[] uitkxFiles;
-            try
-            {
-                uitkxFiles = Directory.GetFiles(dataPath, "*.uitkx", SearchOption.AllDirectories);
-            }
-            catch (Exception)
-            {
-                return; // folder not accessible (rare)
-            }
+            scanTargets.Add((dataPath, "Assets"));
 
-            if (uitkxFiles.Length == 0)
+            foreach (var pkg in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
             {
-                ClearRegistryIfExists();
-                return;
+                if (pkg.source != UnityEditor.PackageManager.PackageSource.Embedded &&
+                    pkg.source != UnityEditor.PackageManager.PackageSource.Local)
+                    continue;
+                if (string.IsNullOrEmpty(pkg.resolvedPath) || !Directory.Exists(pkg.resolvedPath))
+                    continue;
+                scanTargets.Add((pkg.resolvedPath, "Packages/" + pkg.name));
             }
 
             var allEntries = new Dictionary<string, UnityEngine.Object>();
+            bool anyFile = false;
 
-            foreach (string absPath in uitkxFiles)
+            foreach (var (absRoot, assetRoot) in scanTargets)
             {
-                string assetPath = "Assets" + absPath
-                    .Substring(dataPath.Length)
-                    .Replace('\\', '/');
-                string content;
-                try { content = File.ReadAllText(absPath); }
-                catch { continue; }
-
-                string uitkxDir = Path.GetDirectoryName(assetPath)?.Replace('\\', '/');
-                var refs = ExtractAssetReferences(content, uitkxDir);
-
-                foreach (var (key, resolvedAssetPath, typeName) in refs)
+                string[] uitkxFiles;
+                try
                 {
-                    var asset = LoadAssetTyped(resolvedAssetPath, typeName);
-                    if (asset != null)
-                        allEntries[key] = asset;
+                    uitkxFiles = Directory.GetFiles(absRoot, "*.uitkx", SearchOption.AllDirectories);
                 }
+                catch (Exception)
+                {
+                    continue; // folder not accessible (rare)
+                }
+
+                foreach (string absPath in uitkxFiles)
+                {
+                    string rel = absPath.Substring(absRoot.Length).Replace('\\', '/').TrimStart('/');
+                    if (IsUnderTildeFolder(rel))
+                        continue;
+                    anyFile = true;
+
+                    string assetPath = assetRoot + "/" + rel;
+                    string content;
+                    try { content = File.ReadAllText(absPath); }
+                    catch { continue; }
+
+                    string uitkxDir = Path.GetDirectoryName(assetPath)?.Replace('\\', '/');
+                    var refs = ExtractAssetReferences(content, uitkxDir);
+
+                    foreach (var (key, resolvedAssetPath, typeName) in refs)
+                    {
+                        var asset = LoadAssetTyped(resolvedAssetPath, typeName);
+                        if (asset != null)
+                            allEntries[key] = asset;
+                    }
+                }
+            }
+
+            if (!anyFile)
+            {
+                ClearRegistryIfExists();
+                return;
             }
 
             if (allEntries.Count == 0)
@@ -333,6 +355,38 @@ namespace Ruitk.Editor
         private static string GetProjectRoot()
         {
             return Directory.GetParent(Application.dataPath).FullName;
+        }
+
+        /// <summary>
+        /// Maps a Unity asset path to an absolute OS path. <c>Packages/…</c> paths resolve
+        /// through <see cref="UnityEditor.PackageManager.PackageInfo"/> (embedded package
+        /// folders need not match the package name; local packages can live outside the
+        /// project). Returns <c>null</c> for package paths Unity cannot resolve.
+        /// </summary>
+        private static string AssetPathToAbsolute(string assetPath, string projectRoot)
+        {
+            if (assetPath.StartsWith("Packages/", StringComparison.Ordinal))
+            {
+                var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(assetPath);
+                if (info == null || string.IsNullOrEmpty(info.resolvedPath))
+                    return null;
+                string prefix = "Packages/" + info.name;
+                string rel = assetPath.Length > prefix.Length
+                    ? assetPath.Substring(prefix.Length).TrimStart('/')
+                    : string.Empty;
+                return Path.GetFullPath(Path.Combine(info.resolvedPath, rel));
+            }
+            return Path.Combine(projectRoot, assetPath);
+        }
+
+        private static bool IsUnderTildeFolder(string relativePath)
+        {
+            foreach (var segment in relativePath.Split('/'))
+            {
+                if (segment.EndsWith("~", StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
         }
     }
 }

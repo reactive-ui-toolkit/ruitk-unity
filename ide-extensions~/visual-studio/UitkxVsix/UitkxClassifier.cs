@@ -737,11 +737,6 @@ internal sealed class UitkxClassifier : IClassifier
                 continue;
             }
 
-            if (TryClassifySwitchArmLabel(snapshot, text, ref index, spans))
-            {
-                continue;
-            }
-
             if (TryClassifyBraceExpression(snapshot, text, ref index, spans))
             {
                 continue;
@@ -1156,56 +1151,6 @@ internal sealed class UitkxClassifier : IClassifier
             ClassifyExpressionSegment(snapshot, text, exprStart, text.Length - exprStart, spans);
         }
 
-        return true;
-    }
-
-    private bool TryClassifySwitchArmLabel(
-        ITextSnapshot snapshot,
-        string text,
-        ref int index,
-        List<ClassificationSpan> spans
-    )
-    {
-        if (!IsAtLineContentStart(text, index))
-        {
-            return false;
-        }
-
-        var tokenStart = index;
-        int tokenEnd;
-
-        if (char.IsDigit(text[index]))
-        {
-            tokenEnd = ParseNumber(text, index);
-        }
-        else if (IsIdentifierStart(text[index]))
-        {
-            tokenEnd = ParseIdentifier(text, index);
-        }
-        else
-        {
-            return false;
-        }
-
-        var probe = tokenEnd;
-        while (
-            probe < text.Length
-            && char.IsWhiteSpace(text[probe])
-            && text[probe] != '\r'
-            && text[probe] != '\n'
-        )
-        {
-            probe++;
-        }
-
-        if (probe + 1 >= text.Length || text[probe] != '=' || text[probe + 1] != '>')
-        {
-            return false;
-        }
-
-        AddSpan(snapshot, spans, tokenStart, tokenEnd - tokenStart, _identifier);
-        AddSpan(snapshot, spans, probe, 2, _operator);
-        index = probe + 2;
         return true;
     }
 

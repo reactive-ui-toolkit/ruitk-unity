@@ -5,6 +5,23 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>Ruitk.Language</RootNamespace>
     <AssemblyName>Ruitk.Language</AssemblyName>
+    <!--
+      RuitkEditorVariant=true builds the SAME sources as Ruitk.Language.Editor -
+      the copy the RUITK Builder asmdef references normally. Distinct assembly
+      identity is mandatory: the Analyzers/ copy is Assembly.LoadFrom'd by HMR
+      and a same-identity second load is nondeterministic. Invoked only by
+      scripts/build-generator.ps1 with redirected Base*OutputPath so the two
+      flavors never share obj/.
+    -->
+    <AssemblyName Condition="'$(RuitkEditorVariant)' == 'true'">Ruitk.Language.Editor</AssemblyName>
+    <!--
+      Keep the sibling flavor's obj/bin out of the source glob: the variant
+      build redirects its intermediates, and whichever flavor runs second
+      would otherwise glob the other's generated AssemblyInfo (CS0579 storm).
+      Set here (not via -p:) because global properties are immutable and
+      would discard the SDK's own appended excludes.
+    -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!--
       Define UNITY_EDITOR so the linked HookRegistry.cs (wrapped in
@@ -13,6 +30,16 @@
       editor / LSP contexts, so this constant is unconditionally true here.
     -->
     <DefineConstants>$(DefineConstants);UNITY_EDITOR</DefineConstants>
+    <!--
+      The Builder asmdef compile-references BOTH Ruitk.Language.Editor.dll and
+      the Ruitk.Shared assembly, which compiles the same linked HookRegistry.cs.
+      Two PUBLIC HookRegistry types are CS0433 at every Builder call site (this
+      killed the Builder assembly on 2026-08-16), so the editor variant keeps
+      its copy internal - its in-assembly consumers (DiagnosticsAnalyzer,
+      VirtualDocumentGenerator) are unaffected, and the Builder resolves the
+      single public type from Ruitk.Shared.
+    -->
+    <DefineConstants Condition="'$(RuitkEditorVariant)' == 'true'">$(DefineConstants);RUITK_EDITOR_VARIANT</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <!--

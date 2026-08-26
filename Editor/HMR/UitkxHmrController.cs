@@ -1164,6 +1164,23 @@ namespace Ruitk.EditorSupport.HMR
                         int lastSlash = normalized.LastIndexOf('/');
                         return lastSlash > 0 ? normalized.Substring(0, lastSlash) : "Assets";
                     }
+
+                    // BYTE-FOR-BYTE MIRROR of AssetPathUtil.GetAssetDir's package branch
+                    // (language-lib): package-resident files resolve to the Unity asset-path
+                    // form "Packages/<manifest name>/<dir>" — never the physical folder name.
+                    if (TryGetPackageContext(filePath, out string packageRootAbs, out string packageName))
+                    {
+                        string rootNorm = packageRootAbs.Replace('\\', '/').TrimEnd('/');
+                        string rel = normalized.Length > rootNorm.Length
+                            ? normalized.Substring(rootNorm.Length).TrimStart('/')
+                            : string.Empty;
+                        int relSlash = rel.LastIndexOf('/');
+                        string relDir = relSlash >= 0 ? rel.Substring(0, relSlash) : string.Empty;
+                        return relDir.Length == 0
+                            ? "Packages/" + packageName
+                            : "Packages/" + packageName + "/" + relDir;
+                    }
+
                     return Path.GetDirectoryName(filePath)?.Replace('\\', '/') ?? "";
                 }
 
@@ -1171,6 +1188,104 @@ namespace Ruitk.EditorSupport.HMR
                 int dirSlash = assetPath.LastIndexOf('/');
                 return dirSlash >= 0 ? assetPath.Substring(0, dirSlash) : "Assets";
             }
+
+            private static readonly Regex s_packageNameRe = new(
+                "\"name\"\\s*:\\s*\"([^\"]+)\"",
+                RegexOptions.Compiled);
+
+            private static readonly Dictionary<string, (string Root, string Name)?> s_packageCtxByDir =
+                new(StringComparer.OrdinalIgnoreCase);
+
+            public static bool TryGetPackageContext(string filePath, out string packageRootAbs, out string packageName)
+            {
+                packageRootAbs = string.Empty;
+                packageName = string.Empty;
+                if (string.IsNullOrEmpty(filePath))
+                    return false;
+
+                string dir;
+                try { dir = Path.GetDirectoryName(Path.GetFullPath(filePath)); }
+                catch { return false; }
+
+                string probe = dir;
+                while (!string.IsNullOrEmpty(probe))
+                {
+                    if (s_packageCtxByDir.TryGetValue(probe, out var cached))
+                    {
+                        if (cached == null)
+                            return false;
+                        packageRootAbs = cached.Value.Root;
+                        packageName = cached.Value.Name;
+                        CacheRange(dir, probe, cached);
+                        return true;
+                    }
+
+                    string manifest = Path.Combine(probe, "package.json");
+                    if (File.Exists(manifest))
+                    {
+                        string name;
+                        try
+                        {
+                            var m = s_packageNameRe.Match(File.ReadAllText(manifest));
+                            name = m.Success ? m.Groups[1].Value : string.Empty;
+                        }
+                        catch
+                        {
+                            name = string.Empty;
+                        }
+
+                        (string, string)? ctx = name.Length > 0 ? (probe, name) : ((string, string)?)null;
+                        CacheRange(dir, probe, ctx);
+                        if (ctx == null)
+                            return false;
+                        packageRootAbs = probe;
+                        packageName = name;
+                        return true;
+                    }
+
+                    probe = Path.GetDirectoryName(probe);
+                }
+
+                CacheRange(dir, null, null);
+                return false;
+            }
+
+            public static void InvalidatePackageContextCache() => s_packageCtxByDir.Clear();
+
+            private static void CacheRange(string fromDir, string foundAt, (string Root, string Name)? ctx)
+            {
+                string d = fromDir;
+                while (!string.IsNullOrEmpty(d))
+                {
+                    s_packageCtxByDir[d] = ctx;
+                    if (string.Equals(d, foundAt, StringComparison.OrdinalIgnoreCase))
+                        return;
+                    d = Path.GetDirectoryName(d);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Maps a resolved Unity asset path to an absolute OS path. <c>Packages/&lt;name&gt;/…</c>
+        /// paths resolve through <see cref="UnityEditor.PackageManager.PackageInfo"/> (the
+        /// physical folder of an embedded package need not match the package name, and local
+        /// packages can live outside the project); everything else joins the project root.
+        /// </summary>
+        private static string AssetPathToAbsolute(string assetPath, string projectRoot)
+        {
+            if (assetPath.StartsWith("Packages/", StringComparison.Ordinal))
+            {
+                var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(assetPath);
+                if (info != null && !string.IsNullOrEmpty(info.resolvedPath))
+                {
+                    string prefix = "Packages/" + info.name;
+                    string rel = assetPath.Length > prefix.Length
+                        ? assetPath.Substring(prefix.Length).TrimStart('/')
+                        : string.Empty;
+                    return Path.GetFullPath(Path.Combine(info.resolvedPath, rel));
+                }
+            }
+            return Path.GetFullPath(Path.Combine(projectRoot, assetPath));
         }
 
         private void RegisterUssDependencies(string uitkxPath)
@@ -1187,7 +1302,7 @@ namespace Ruitk.EditorSupport.HMR
                 {
                     string rawPath = m.Groups[1].Value;
                     string resolved = HmrAssetPathUtil.ResolveAssetPath(uitkxDir, rawPath);
-                    string absoluteUss = Path.GetFullPath(Path.Combine(projectRoot, resolved));
+                    string absoluteUss = AssetPathToAbsolute(resolved, projectRoot);
 
                     if (!_ussDependents.TryGetValue(absoluteUss, out var list))
                     {
@@ -1423,13 +1538,31 @@ namespace Ruitk.EditorSupport.HMR
             {
                 if (!File.Exists(uitkxPath))
                     return;
-                string content = File.ReadAllText(uitkxPath);
+                SyncAssetCacheForHmr(uitkxPath, File.ReadAllText(uitkxPath));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[HMR] Asset cache sync failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Source-text overload (VE-05): the RUITK Builder previews unsaved buffers,
+        /// so the referenced <c>@uss</c>/<c>Asset&lt;T&gt;()</c> entries must inject
+        /// from buffer content — the asset FILES are on disk, only the .uitkx text
+        /// is not. <paramref name="uitkxPath"/> is still the identity used for
+        /// asset-dir derivation.
+        /// </summary>
+        internal static void SyncAssetCacheForHmr(string uitkxPath, string sourceText)
+        {
+            try
+            {
                 string assetDir = HmrAssetPathUtil.GetAssetDir(uitkxPath);
 
-                foreach (Match m in s_ussDirectiveRe.Matches(content))
+                foreach (Match m in s_ussDirectiveRe.Matches(sourceText))
                     InjectIfResolved(assetDir, m.Groups[1].Value, "StyleSheet");
 
-                foreach (Match m in s_assetCallRe.Matches(content))
+                foreach (Match m in s_assetCallRe.Matches(sourceText))
                     InjectIfResolved(assetDir, m.Groups[2].Value, m.Groups[1].Value);
             }
             catch (Exception ex)

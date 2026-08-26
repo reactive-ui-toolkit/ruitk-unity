@@ -1,5 +1,5 @@
 <#
-Build script for Ruitk.SourceGenerator
+Build script for Ruitk.SourceGenerator + the Editor-referenced language variant
 
 Usage:
   .\scripts\build-generator.ps1           # Release build (default)
@@ -7,8 +7,14 @@ Usage:
 
 What this does:
   1) Builds SourceGenerator~/Ruitk.SourceGenerator.csproj.
-  2) The csproj builds to bin/; its PublishGeneratorToAnalyzers post-build target copies the DLLs into Assets/ReactiveUIToolkit/Analyzers/.
-  3) Unity picks up the updated analyzer on refresh/recompile.
+  2) The csproj builds to bin/; its PublishGeneratorToAnalyzers post-build target copies the DLLs into Analyzers/.
+  3) Builds language-lib a SECOND time as Ruitk.Language.Editor.dll (distinct
+     assembly identity - the analyzer copy is Assembly.LoadFrom'd by HMR and
+     must never collide with a normally-referenced copy) and copies it into
+     Editor/Plugins/ for the RUITK Builder assembly. Separate invocation on
+     UitkxLanguage.csproj with its own obj dir: passing -p:AssemblyName to the
+     SG csproj would rename the SG via ProjectReference property flow.
+  4) Unity picks up the updated DLLs on refresh/recompile.
 #>
 param(
     [switch] $Debug
@@ -50,6 +56,38 @@ try {
 finally {
     Pop-Location
 }
+
+$languageCsproj  = Join-Path $repoRoot "ide-extensions~/language-lib/UitkxLanguage.csproj"
+$editorPluginsDir = Join-Path $repoRoot "Editor/Plugins"
+$variantRoot      = Join-Path $repoRoot "ide-extensions~/.language-editor-variant"
+$editorVariantOut = Join-Path $variantRoot "bin"
+
+Write-Host "-- dotnet build (Ruitk.Language.Editor variant) ------------------" -ForegroundColor DarkCyan
+# Intermediates/outputs live OUTSIDE the project folder: a redirected obj/bin
+# INSIDE it would be globbed as source by the other build flavor (CS0579
+# duplicate-attribute storms in whichever build runs second).
+# -t:Rebuild: the variant's isolated obj/ has proven unreliable at detecting
+# source changes incrementally (a stale DLL shipped once, caught by the CI
+# pairing gate design); the project builds in ~1 s, forced rebuild is cheap.
+dotnet build $languageCsproj --configuration $configuration --verbosity minimal -t:Rebuild `
+    -p:RuitkEditorVariant=true `
+    -p:BaseIntermediateOutputPath="$variantRoot/obj/" `
+    -p:BaseOutputPath="$variantRoot/bin/"
+if ($LASTEXITCODE -ne 0) { throw "language editor-variant build failed (exit $LASTEXITCODE)" }
+
+if (-not (Test-Path $editorPluginsDir)) {
+    New-Item -ItemType Directory -Path $editorPluginsDir | Out-Null
+}
+$variantDll = Get-ChildItem -Path $editorVariantOut -Recurse -Filter "Ruitk.Language.Editor.dll" | Select-Object -First 1
+if ($null -eq $variantDll) {
+    throw "editor-variant build succeeded but Ruitk.Language.Editor.dll not found under $editorVariantOut"
+}
+Copy-Item $variantDll.FullName (Join-Path $editorPluginsDir "Ruitk.Language.Editor.dll") -Force
+$variantPdb = [System.IO.Path]::ChangeExtension($variantDll.FullName, ".pdb")
+if (Test-Path $variantPdb) {
+    Copy-Item $variantPdb (Join-Path $editorPluginsDir "Ruitk.Language.Editor.pdb") -Force
+}
+Write-Host "  Variant : $(Join-Path $editorPluginsDir "Ruitk.Language.Editor.dll")"
 
 $dll = Join-Path $analyzersDir "Ruitk.SourceGenerator.dll"
 if (Test-Path $dll) {

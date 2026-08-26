@@ -1,0 +1,2970 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>RUITK Visual Editor — POC</title>
+  <style>
+    :root {
+      --bg: #1b1b1f;
+      --panel: #232329;
+      --panel2: #2a2a31;
+      --line: #3a3a44;
+      --text: #d6d6dc;
+      --dim: #8b8b96;
+      --accent: #4fc3f7;
+      --comp: #4fc3f7;
+      --hook: #81c784;
+      --style: #ce93d8;
+      --warn: #ffb74d;
+      --sel: #ffd54f;
+      --edge: #5c8bb0;
+      --edgehook: #6da86f;
+      --edgestyle: #a577b3;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      flex: 0 0 auto;
+    }
+
+    #toolbar .logo {
+      font-weight: 700;
+      color: var(--accent);
+      margin-right: 8px;
+    }
+
+    #toolbar button {
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    #toolbar button:hover {
+      border-color: var(--accent);
+    }
+
+    #toolbar button.active {
+      background: var(--accent);
+      color: #10222c;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    #toolbar .sep {
+      width: 1px;
+      height: 20px;
+      background: var(--line);
+      margin: 0 4px;
+    }
+
+    #toolbar .legend {
+      margin-left: auto;
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--dim);
+    }
+
+    .dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: -1px;
+    }
+
+    /* ── Main split ──────────────────────────────────────── */
+    #main {
+      flex: 1 1 auto;
+      display: flex;
+      min-height: 0;
+    }
+
+    #library {
+      flex: 0 0 205px;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    #lib-body {
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .lib-sec {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--dim);
+      margin: 10px 0 5px;
+    }
+
+    .lib-sec:first-child {
+      margin-top: 0;
+    }
+
+    .lib-item {
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      margin-bottom: 4px;
+      cursor: grab;
+      background: var(--panel2);
+      color: var(--accent);
+    }
+
+    .lib-item.cu {
+      color: #7fdbca;
+    }
+
+    .lib-item.hk {
+      color: var(--hook);
+    }
+
+    .lib-item:hover {
+      border-color: var(--accent);
+    }
+
+    .lib-hint {
+      font-size: 10.5px;
+      color: var(--dim);
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .drop-hint {
+      outline: 2px dashed var(--accent);
+      outline-offset: -1px;
+      background: rgba(79, 195, 247, .08);
+    }
+
+    .mini {
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 3px;
+      font-size: 10px;
+      padding: 1px 7px;
+      cursor: pointer;
+    }
+
+    .mini:hover {
+      border-color: var(--accent);
+    }
+
+    #src-edit {
+      width: 100%;
+      height: 100%;
+      background: #17171b;
+      color: var(--text);
+      border: 0;
+      outline: none;
+      font: 12px Consolas, monospace;
+      padding: 8px 14px;
+      resize: none;
+      box-sizing: border-box;
+    }
+
+    #src-edit.err {
+      box-shadow: inset 0 0 0 2px rgba(240, 98, 146, .6);
+    }
+
+    #canvasWrap {
+      flex: 1 1 auto;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 1px 1px, #2c2c33 1px, transparent 1px) 0 0 / 26px 26px, var(--bg);
+      cursor: grab;
+    }
+
+    #canvasWrap.panning {
+      cursor: grabbing;
+    }
+
+    #edges {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #world {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform-origin: 0 0;
+      z-index: 1;
+    }
+
+    /* ── Cards ───────────────────────────────────────────── */
+    .card {
+      position: absolute;
+      width: 340px;
+      background: var(--panel);
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+      user-select: none;
+    }
+
+    .card.selected {
+      border-color: var(--sel);
+      box-shadow: 0 0 0 2px rgba(255, 213, 79, .25), 0 6px 18px rgba(0, 0, 0, .4);
+    }
+
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      border-radius: 9px 9px 0 0;
+      cursor: move;
+      background: var(--panel2);
+    }
+
+    .card-title .kind {
+      font-size: 10px;
+      padding: 1px 7px;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+
+    .kind-component {
+      background: rgba(79, 195, 247, .16);
+      color: var(--comp);
+    }
+
+    .kind-hook {
+      background: rgba(129, 199, 132, .16);
+      color: var(--hook);
+    }
+
+    .kind-style {
+      background: rgba(206, 147, 216, .16);
+      color: var(--style);
+    }
+
+    .kind-util {
+      background: rgba(255, 183, 77, .16);
+      color: var(--warn);
+    }
+
+    .card-title .name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .card-section {
+      padding: 7px 12px;
+      border-bottom: 1px solid rgba(58, 58, 68, .6);
+    }
+
+    .card-section:last-child {
+      border-bottom: none;
+    }
+
+    .sec-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--dim);
+      margin-bottom: 5px;
+    }
+
+    .props-row {
+      color: var(--dim);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .props-row b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .chip {
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 2px 9px;
+      font-family: Consolas, monospace;
+      font-size: 11.5px;
+      cursor: default;
+    }
+
+    .chip .hookname {
+      color: var(--hook);
+    }
+
+    .chip .st {
+      color: var(--warn);
+    }
+
+    .chip:hover {
+      border-color: var(--warn);
+    }
+
+    .code-island {
+      background: #17171b;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 9px;
+      font-family: Consolas, monospace;
+      font-size: 11.5px;
+      color: #bdbdc7;
+      white-space: pre;
+      overflow-x: auto;
+      cursor: text;
+    }
+
+    .code-island:hover {
+      border-color: var(--accent);
+    }
+
+    .jsx-attrs .expr {
+      cursor: text;
+    }
+
+    .jsx-attrs .expr:hover {
+      text-decoration: underline dotted;
+    }
+
+    .style-entry.entry {
+      cursor: text;
+      border-radius: 4px;
+    }
+
+    .style-entry.entry:hover {
+      background: rgba(206, 147, 216, .12);
+    }
+
+    .inline-edit,
+    .inline-edit-area {
+      background: #17171b;
+      border: 1px solid var(--accent);
+      color: var(--text);
+      font-family: Consolas, monospace;
+      font-size: 11.5px;
+      border-radius: 4px;
+      padding: 2px 6px;
+      outline: none;
+      max-width: 240px;
+    }
+
+    .inline-edit-area {
+      display: block;
+      width: 100%;
+      min-height: 84px;
+      white-space: pre;
+      resize: vertical;
+      max-width: none;
+    }
+
+    .editwrap {
+      color: var(--warn);
+      font-family: Consolas, monospace;
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+
+    .jsx-attrs.editing {
+      display: inline !important;
+      overflow: visible;
+      text-overflow: clip;
+      max-width: none !important;
+      white-space: normal;
+    }
+
+    .code-island.hl {
+      border-color: rgba(255, 183, 77, .6);
+      background: #221d12;
+    }
+
+    .chip-add {
+      color: var(--dim);
+      border-style: dashed;
+      cursor: pointer;
+    }
+
+    .chip-add:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .ctx {
+      position: fixed;
+      left: 0;
+      top: 0;
+      z-index: 60;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+      min-width: 195px;
+      padding: 4px;
+      font-size: 12px;
+    }
+
+    .ctx .mi {
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .ctx .mi:hover {
+      background: rgba(79, 195, 247, .14);
+    }
+
+    .ctx .sep {
+      height: 1px;
+      background: var(--line);
+      margin: 4px 2px;
+    }
+
+    .ctx .mh {
+      padding: 4px 10px 2px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--dim);
+    }
+
+    .ctx-search {
+      display: block;
+      width: calc(100% - 8px);
+      margin: 4px;
+      background: #17171b;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 12px;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .ctx-search:focus {
+      border-color: var(--accent);
+    }
+
+    .ctx-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .ctx-err {
+      color: #f06292;
+      font-size: 11px;
+      padding: 2px 10px;
+    }
+
+    .ctx .mi.free {
+      color: var(--warn);
+    }
+
+    .ctx .mi.dim {
+      color: var(--dim);
+      cursor: default;
+    }
+
+    .drop-before {
+      box-shadow: inset 0 2px 0 var(--accent);
+    }
+
+    .drop-after {
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+
+    .entry-add {
+      color: var(--dim);
+      cursor: pointer;
+    }
+
+    .entry-add:hover {
+      color: var(--accent);
+    }
+
+    #lib-search {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      background: #17171b;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 12px;
+      outline: none;
+      margin-bottom: 8px;
+    }
+
+    #lib-search:focus {
+      border-color: var(--accent);
+    }
+
+    .lib-item.st {
+      color: var(--style);
+    }
+
+    .lib-item.ut {
+      color: var(--warn);
+    }
+
+    .usig {
+      cursor: text;
+      border-radius: 4px;
+    }
+
+    .usig:hover {
+      background: rgba(255, 183, 77, .12);
+    }
+
+    .jsx-attrs .attr {
+      display: inline-block;
+      white-space: nowrap;
+      margin-right: 6px;
+    }
+
+    body.lod2 .card {
+      width: 430px;
+    }
+
+    body.lod2 .jsx-attrs {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+    }
+
+    body.lod2 .jsx-row {
+      align-items: flex-start;
+    }
+
+    .jsx-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2.5px 6px;
+      border-radius: 5px;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .jsx-row:hover {
+      background: rgba(79, 195, 247, .08);
+    }
+
+    .jsx-row.hl {
+      background: rgba(255, 183, 77, .18);
+      outline: 1px solid rgba(255, 183, 77, .5);
+    }
+
+    .jsx-row.rowsel {
+      background: rgba(255, 213, 79, .15);
+      outline: 1px solid rgba(255, 213, 79, .5);
+    }
+
+    .jsx-tag {
+      color: var(--accent);
+    }
+
+    .jsx-tag.custom {
+      color: #7fdbca;
+      font-weight: 600;
+    }
+
+    .jsx-attrs {
+      color: #9d9dab;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .jsx-attrs .expr {
+      color: var(--warn);
+    }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 0 6px;
+      border-radius: 7px;
+      flex: 0 0 auto;
+    }
+
+    .badge.if {
+      background: rgba(255, 183, 77, .2);
+      color: var(--warn);
+    }
+
+    .badge.foreach {
+      background: rgba(129, 199, 132, .2);
+      color: var(--hook);
+    }
+
+    .badge.else {
+      background: rgba(240, 98, 146, .2);
+      color: #f06292;
+    }
+
+    .anchor-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--edge);
+      margin-left: auto;
+      flex: 0 0 auto;
+      box-shadow: 0 0 0 2px rgba(92, 139, 176, .25);
+    }
+
+    .imp-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: Consolas, monospace;
+      font-size: 11.5px;
+      color: var(--dim);
+      padding: 1.5px 6px;
+    }
+
+    .imp-row>span:first-child {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .imp-row .anchor-dot.hook {
+      background: var(--edgehook);
+      box-shadow: 0 0 0 2px rgba(109, 168, 111, .25);
+    }
+
+    .imp-row .anchor-dot.style {
+      background: var(--edgestyle);
+      box-shadow: 0 0 0 2px rgba(165, 119, 179, .25);
+    }
+
+    /* style-module entry rows */
+    .style-entry {
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      padding: 2px 6px;
+      color: #cfcfda;
+    }
+
+    .style-entry b {
+      color: var(--style);
+      font-weight: 600;
+    }
+
+    /* ── LOD ─────────────────────────────────────────────── */
+    .pill {
+      display: none;
+    }
+
+    body.lod0 .card {
+      width: 300px;
+    }
+
+    body.lod0 .card-title,
+    body.lod0 .card-section {
+      display: none;
+    }
+
+    body.lod0 .pill {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      font-size: 26px;
+      font-weight: 700;
+      cursor: move;
+    }
+
+    body.lod0 .pill .kind {
+      font-size: 15px;
+      padding: 3px 12px;
+      border-radius: 12px;
+    }
+
+    body.lod1 .lod2only {
+      display: none;
+    }
+
+    body.lod1 .jsx-attrs {
+      max-width: 130px;
+    }
+
+    /* ── Right panel ─────────────────────────────────────── */
+    #right {
+      flex: 0 0 440px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--panel);
+    }
+
+    #vsplit {
+      flex: 0 0 6px;
+      cursor: col-resize;
+      background: var(--panel);
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+    }
+
+    #vsplit:hover {
+      background: var(--accent);
+    }
+
+    #hsplit {
+      flex: 0 0 6px;
+      cursor: row-resize;
+      background: var(--panel);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    #hsplit:hover {
+      background: var(--accent);
+    }
+
+    .pane-title {
+      padding: 7px 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--dim);
+      border-bottom: 1px solid var(--line);
+      background: var(--panel2);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    #preview {
+      flex: 0 0 380px;
+      overflow: auto;
+      padding: 12px;
+    }
+
+    #srcpane {
+      flex: 1 1 auto;
+      overflow: auto;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      padding: 8px 0;
+      border-top: 1px solid var(--line);
+      background: #17171b;
+    }
+
+    .srcline {
+      padding: 0 14px;
+      white-space: pre;
+    }
+
+    .srcline.hl {
+      background: rgba(255, 183, 77, .15);
+    }
+
+    .srcline.sel {
+      background: rgba(255, 213, 79, .18);
+    }
+
+    .k {
+      color: #c792ea;
+    }
+
+    .t {
+      color: var(--accent);
+    }
+
+    .s {
+      color: #c3e88d;
+    }
+
+    .e {
+      color: var(--warn);
+    }
+
+    .cm {
+      color: #616e7a;
+    }
+
+    .cu {
+      color: #7fdbca;
+    }
+
+    /* mock rendered UI */
+    .ui-mock {
+      background: #101014;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .ui-mock .m-header {
+      display: flex;
+      justify-content: space-between;
+      background: #26262e;
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .ui-mock .m-gold {
+      color: var(--warn);
+    }
+
+    .ui-mock .m-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      cursor: pointer;
+    }
+
+    .ui-mock .m-item:hover {
+      border-color: var(--accent);
+    }
+
+    .ui-mock button {
+      background: var(--accent);
+      color: #10222c;
+      border: 0;
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .ui-mock button:disabled {
+      background: #444;
+      color: #999;
+      cursor: default;
+    }
+
+    .ui-mock .soldout {
+      color: #f06292;
+      font-weight: 700;
+      font-size: 11px;
+    }
+
+    .ui-mock .m-counter {
+      margin-top: 8px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 7px 10px;
+      background: #1d2b1d;
+      border-radius: 6px;
+    }
+
+    .knobs {
+      margin-top: 10px;
+      border-top: 1px dashed var(--line);
+      padding-top: 8px;
+    }
+
+    .knobs .krow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .knobs label {
+      color: var(--dim);
+      width: 70px;
+    }
+
+    .knobs input[type=range] {
+      flex: 1;
+    }
+
+    .knobs input[type=text],
+    .knobs input[type=number] {
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 2px 6px;
+      width: 110px;
+    }
+
+    .nopreview {
+      color: var(--dim);
+      font-style: italic;
+      padding: 8px;
+    }
+
+    .gp-root {
+      background: #101014;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .gp-ve {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .gp-label {
+      min-height: 1em;
+    }
+
+    .gp-btn {
+      background: var(--accent);
+      color: #10222c;
+      border: 0;
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-weight: 700;
+      cursor: pointer;
+      align-self: flex-start;
+    }
+
+    .gp-input {
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 3px 8px;
+    }
+
+    .gp-stub {
+      color: var(--dim);
+      font-style: italic;
+    }
+
+    #pv-ui [data-jump] {
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    #pv-ui [data-jump]:hover {
+      outline: 1px dashed var(--accent);
+    }
+
+    /* footer + toast + help */
+    #hint {
+      flex: 0 0 auto;
+      padding: 5px 12px;
+      font-size: 11px;
+      color: var(--dim);
+      background: var(--panel);
+      border-top: 1px solid var(--line);
+    }
+
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: 44px;
+      transform: translateX(-50%);
+      background: var(--panel2);
+      border: 1px solid var(--accent);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: 6px;
+      opacity: 0;
+      transition: opacity .25s;
+      pointer-events: none;
+      z-index: 50;
+    }
+
+    #help {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      width: 330px;
+      background: rgba(35, 35, 41, .97);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: none;
+    }
+
+    #help.open {
+      display: block;
+    }
+
+    #help h3 {
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--accent);
+    }
+
+    #help ol {
+      padding-left: 18px;
+    }
+
+    #help li {
+      margin-bottom: 5px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body class="lod1">
+
+  <div id="toolbar">
+    <span class="logo">RUITK Visual Editor</span><span style="color:var(--dim);font-size:11px">interaction POC</span>
+    <span class="sep"></span>
+    <button id="btnL0">L0 Architecture</button>
+    <button id="btnL1" class="active">L1 Cards</button>
+    <button id="btnL2">L2 Edit</button>
+    <span class="sep"></span>
+    <button id="btnUxml" title="Mock of the one-way UI Builder import">Import .uxml…</button>
+    <button id="btnHelp">? How to drive it</button>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--comp)"></span>component</span>
+      <span><span class="dot" style="background:var(--hook)"></span>hook module</span>
+      <span><span class="dot" style="background:var(--style)"></span>style module</span>
+      <span><span class="dot" style="background:var(--edge)"></span>usage edge</span>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="library">
+      <div class="pane-title"><span>Library</span><button class="mini" id="btnLibNew"
+          title="create a component / style module / hook module">+ new</button></div>
+      <div id="lib-body"></div>
+    </div>
+    <div id="canvasWrap">
+      <div id="help">
+        <h3>Drive it like this</h3>
+        <ol>
+          <li><b>Wheel</b> zooms (to cursor), <b>drag background</b> pans, <b>drag a title bar</b> moves a card.</li>
+          <li>Zoom all the way out — <b>L0</b> is the live architecture diagram.</li>
+          <li>Click <b>ShopScreen</b> — live preview + generated source appear on the right. Buy something.</li>
+          <li><b>Hover the <code>gold</code> chip</b> — every usage lights up in JSX and source.</li>
+          <li>Zoom close (<b>L2</b>) — attributes, code islands and directive badges appear.</li>
+          <li>Select <b>ItemCard</b>, drag its <b>stock</b> knob to 0 — watch the <b>@if</b> branch flip live.</li>
+          <li>Click a JSX row → its source line highlights. Click an element in the preview → same.</li>
+          <li><b>Edit on the canvas</b> (at L2): click an attribute value, a directive badge, or a shopStyles entry to
+            edit inline ({} and quotes stay outside the field); double-click a code island or hook chip to edit body
+            code. Enter commits → the source regenerates.</li>
+          <li><b>Drag from the Library</b> (left, searchable) onto a JSX row — top edge inserts <i>before</i>, bottom
+            edge <i>after</i>, middle nests <i>inside</i>. Drag existing rows to reorder. Hooks drop onto BODY, style
+            modules onto a card (adds the import).</li>
+          <li><b>Right-click a row</b> — searchable typed attributes (native schema / component props, untyped
+            fallback), <b>remove attribute</b>, directives, delete. Emptying an attribute's value also removes it.
+            <b>Right-click a card title</b> — delete. <b>Right-click empty canvas</b> or <b>+ new</b> — create component
+            / style / hook / util module.</li>
+          <li><b>Style authoring</b> — on a style card, <b>+ entry</b> gives searchable keys then value helpers
+            (Px/Pct/Hex/Rgba/FlexRow…); <b>+ style</b> adds another export.</li>
+          <li><b>Source pane is bidirectional</b> — click <b>edit</b> (or double-click the source), change the text,
+            <b>apply</b> (Ctrl+Enter): it re-parses into the model, the card updates, and the source reformats
+            canonically.</li>
+          <li>Select ShopScreen, then edit <b>shopStyles → root</b>&rsquo;s BackgroundColor hex (try
+            <code>#2a1a3a</code>) — the live preview repaints. Drag the splitters to resize panes.</li>
+        </ol>
+      </div>
+      <div id="world"></div>
+      <svg id="edges"></svg>
+    </div>
+    <div id="vsplit" title="drag to resize"></div>
+    <div id="right">
+      <div class="pane-title"><span>Live preview</span><span style="display:flex;gap:6px;align-items:center"><button
+            class="mini" id="btnPvMode" style="display:none"></button><span id="pv-name"
+            style="color:var(--accent)"></span></span></div>
+      <div id="preview">
+        <div class="nopreview">Select a card…</div>
+      </div>
+      <div id="hsplit" title="drag to resize"></div>
+      <div class="pane-title"><span>Source — .uitkx</span><span style="display:flex;gap:6px;align-items:center"><button
+            class="mini" id="btnSrcEdit"
+            title="edit the text; apply re-parses it back into the model">edit</button><button class="mini"
+            id="btnSrcApply" style="display:none">apply (Ctrl+Enter)</button><button class="mini" id="btnSrcCancel"
+            style="display:none">cancel (Esc)</button><span id="src-name" style="color:var(--accent)"></span></span>
+      </div>
+      <div id="srcpane"></div>
+    </div>
+  </div>
+  <div id="hint">Wheel: zoom &nbsp;•&nbsp; Drag Library items onto rows (top=before, bottom=after, middle=inside) or
+    BODY (hooks); drag rows to reorder &nbsp;•&nbsp; Right-click rows / cards / canvas for typed attributes, directives,
+    delete, create &nbsp;•&nbsp; L2: click attrs / badges / style entries to edit &nbsp;•&nbsp; Source pane: edit →
+    apply re-parses &nbsp;•&nbsp; Drag splitters to resize</div>
+  <div id="toast"></div>
+
+  <script>
+    "use strict";
+    /* ═══════════════ Model — a tiny mock project ═══════════════ */
+    let uidCounter = 0;
+    const uid = () => "n" + (++uidCounter);
+
+    function el(tag, attrs, opts) {
+      return Object.assign({ id: uid(), tag, attrs: attrs || [], children: [], ref: null, directive: null }, opts || {});
+    }
+
+    const NODES = [
+      {
+        id: "ShopScreen", kind: "component", x: 60, y: 90,
+        propsSig: "()",
+        imports: [
+          { to: "Header", kind: "usage", text: 'import { Header } from "./Header"' },
+          { to: "ItemCard", kind: "usage", text: 'import { ItemCard } from "./ItemCard"' },
+          { to: "Counter", kind: "usage", text: 'import { Counter } from "./Counter"' },
+          { to: "useCart", kind: "hook", text: 'import { useCart } from "./useCart.hooks"' },
+          { to: "shopData", kind: "usage", text: 'import { SeedItems, StartingGold } from "./shopData"' },
+          { to: "shopStyles", kind: "style", text: 'import * as Styles from "./shopStyles.style"' },
+        ],
+        hooks: [
+          { decl: "var (gold, setGold) = useState(StartingGold);", names: ["gold", "setGold"], hook: "useState" },
+          { decl: "var (items, setItems) = useState(SeedItems());", names: ["items", "setItems"], hook: "useState" },
+          { decl: "var cart = useCart(gold, setGold);", names: ["cart"], hook: "useCart" },
+        ],
+        body: ['var title = $"Shop ({cart.Count} in cart)";'],
+        jsx: el("VisualElement", [{ n: "style", e: "{Styles.root}" }], {
+          children: [
+            el("Header", [{ n: "title", e: "{title}" }, { n: "gold", e: "{gold}" }], { ref: "Header" }),
+            el("ScrollView", [{ n: "style", e: "{Styles.list}" }], {
+              children: [
+                el("ItemCard", [{ n: "item", e: "{item}" }, { n: "onBuy", e: "{cart.Buy}" }, { n: "key", e: "{item.Id}" }],
+                  { ref: "ItemCard", directive: { kind: "foreach", text: "@foreach (var item in items)" } }),
+              ],
+            }),
+            el("Counter", [], { ref: "Counter", directive: { kind: "if", text: "@if (cart.Count > 0)" } }),
+          ],
+        }),
+      },
+      {
+        id: "Header", kind: "component", x: 620, y: 40,
+        propsSig: "(string title, int gold)",
+        imports: [], hooks: [], body: [],
+        jsx: el("VisualElement", [{ n: "style", e: "{headerBar}" }], {
+          children: [
+            el("Label", [{ n: "text", e: "{title}" }]),
+            el("Label", [{ n: "text", e: '{$"{gold} g"}' }, { n: "style", e: "{goldStyle}" }]),
+          ],
+        }),
+      },
+      {
+        id: "ItemCard", kind: "component", x: 620, y: 330,
+        propsSig: "(Item item, Action<Item> onBuy)",
+        imports: [], hooks: [], body: [],
+        jsx: el("VisualElement", [{ n: "style", e: "{row}" }], {
+          children: [
+            el("Label", [{ n: "text", e: "{item.Name}" }]),
+            el("Button", [{ n: "text", e: '{$"Buy {item.Price}g"}' }, { n: "onClick", e: "{_ => onBuy(item)}" }],
+              { directive: { kind: "if", text: "@if (item.Stock > 0)" } }),
+            el("Label", [{ n: "text", e: '"SOLD OUT"' }],
+              { directive: { kind: "else", text: "@else" } }),
+          ],
+        }),
+      },
+      {
+        id: "Counter", kind: "component", x: 620, y: 620,
+        propsSig: "()",
+        imports: [],
+        hooks: [{ decl: "var (count, setCount) = useState(0);", names: ["count", "setCount"], hook: "useState" }],
+        body: [],
+        jsx: el("VisualElement", [], {
+          children: [
+            el("Label", [{ n: "text", e: '{$"Count: {count}"}' }]),
+            el("Button", [{ n: "text", e: '"+1"' }, { n: "onClick", e: "{_ => setCount(count + 1)}" }]),
+          ],
+        }),
+      },
+      {
+        id: "useCart", kind: "hook", x: 60, y: 620,
+        propsSig: "(int gold, StateSetter<int> setGold)",
+        exportsSig: "export (int Count, Action<Item> Buy) useCart",
+        imports: [], hooks: [{ decl: "var (bought, setBought) = useState(new List<Item>());", names: ["bought"], hook: "useState" }],
+        body: ["void Buy(Item it) {", "  if (gold < it.Price) return;", "  setGold(gold - it.Price);", "  setBought(b => b.Append(it));", "}", "return (bought.Count, Buy);"],
+        jsx: null,
+      },
+      {
+        id: "shopData", kind: "util", x: 620, y: 900,
+        propsSig: "", imports: [], hooks: [], body: [], jsx: null,
+        utils: [
+          {
+            sig: "export List<Item> SeedItems()", body: [
+              "return new List<Item> {",
+              '  new Item("Iron Sword", 30, 2),',
+              '  new Item("Health Potion", 15, 5),',
+              '  new Item("Tower Shield", 45, 1),',
+              "};"]
+          },
+          { sig: "export int StartingGold = 100;", body: null },
+        ],
+      },
+      {
+        id: "shopStyles", kind: "style", x: 60, y: 840,
+        propsSig: "", imports: [], hooks: [], body: [],
+        styles: [
+          { name: "root", entries: ["FlexGrow = 1", "Padding = Px(12)", "BackgroundColor = Hex(\"#101014\")"] },
+          { name: "list", entries: ["FlexGrow = 1", "Gap = Px(6)"] },
+          { name: "headerBar", entries: ["FlexDirection = FlexRow", "JustifyContent = JustifySpaceBetween", "BackgroundColor = Hex(\"#26262e\")", "Padding = Px(8)", "BorderRadius = Px(6)"] },
+          { name: "goldStyle", entries: ["Color = Hex(\"#ffb74d\")"] },
+          { name: "row", entries: ["FlexDirection = FlexRow", "JustifyContent = JustifySpaceBetween", "Padding = Px(7)", "BorderRadius = Px(6)"] },
+        ],
+        jsx: null,
+      },
+    ];
+
+    const byId = {}; NODES.forEach(n => byId[n.id] = n);
+
+    /* ═══════════════ Source generation (model → lines, with uid map) ═══════════════ */
+    function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    function escAttr(s) { return esc(s).replace(/"/g, "&quot;"); }
+
+    function tokenize(line) {
+      let h = esc(line);
+      h = h.replace(/(&quot;|")([^"]*)(")/g, '<span class="s">"$2"</span>');
+      h = h.replace(/\{[^{}]*\}/g, m => '<span class="e">' + m + "</span>");
+      h = h.replace(/&lt;(\/?)([A-Z][A-Za-z0-9]*)/g, (m, sl, t) =>
+        "&lt;" + sl + '<span class="' + (byId[t] ? "cu" : "t") + '">' + t + "</span>");
+      h = h.replace(/\b(export|VirtualNode|Style|var|return|import|from|as|new)\b/g, '<span class="k">$1</span>');
+      h = h.replace(/(@if|@else|@foreach)/g, '<span class="k">$1</span>');
+      return h;
+    }
+
+    function genSource(node) {
+      const lines = []; const lineOf = {};
+      const push = (text, id) => { if (id) lineOf[id] = lines.length; lines.push(text); };
+      node.imports.forEach(im => push(im.text, "imp-" + node.id + "-" + im.to));
+      if (node.imports.length) push("");
+
+      if (node.kind === "util") {
+        node.utils.forEach((u, i) => {
+          if (u.body === null) { push(u.sig, "util-" + node.id + "-" + i); }
+          else {
+            push(u.sig + " {", "util-" + node.id + "-" + i);
+            u.body.forEach(b => push("  " + b));
+            push("}");
+          }
+          if (i < node.utils.length - 1) push("");
+        });
+        return { lines, lineOf };
+      }
+      if (node.kind === "style") {
+        node.styles.forEach((s, i) => {
+          push("export Style " + s.name + " = new Style {", "sty-" + node.id + "-" + s.name);
+          s.entries.forEach(e => push("  " + e + ","));
+          push("};"); if (i < node.styles.length - 1) push("");
+        });
+        return { lines, lineOf };
+      }
+      if (node.kind === "hook") {
+        push(node.exportsSig + node.propsSig + " {", "head-" + node.id);
+        node.hooks.forEach(h => push("  " + h.decl, "hk-" + node.id + "-" + h.names[0]));
+        node.body.forEach(b => push("  " + b));
+        push("}");
+        return { lines, lineOf };
+      }
+      push("export VirtualNode " + node.id + node.propsSig + " {", "head-" + node.id);
+      node.hooks.forEach(h => push("  " + h.decl, "hk-" + node.id + "-" + h.names[0]));
+      node.body.forEach(b => push("  " + b));
+      push("");
+      push("  return (");
+      const walk = (j, ind) => {
+        const pad = "    " + "  ".repeat(ind);
+        if (j.directive) push(pad + j.directive.text + " {");
+        const dpad = j.directive ? pad + "  " : pad;
+        const attrs = j.attrs.map(a => a.n + "=" + a.e).join(" ");
+        if (j.children.length) {
+          push(dpad + "<" + j.tag + (attrs ? " " + attrs : "") + ">", "row-" + j.id);
+          j.children.forEach(c => walk(c, ind + (j.directive ? 2 : 1)));
+          push(dpad + "</" + j.tag + ">");
+        } else {
+          push(dpad + "<" + j.tag + (attrs ? " " + attrs : "") + " />", "row-" + j.id);
+        }
+        if (j.directive) push(pad + "}");
+      };
+      walk(node.jsx, 0);
+      push("  );");
+      push("}");
+      return { lines, lineOf };
+    }
+    const SOURCES = {}; NODES.forEach(n => SOURCES[n.id] = genSource(n));
+
+    /* ═══════════════ Canvas: cards, pan/zoom, LOD ═══════════════ */
+    const world = document.getElementById("world");
+    const canvasWrap = document.getElementById("canvasWrap");
+    const edgesSvg = document.getElementById("edges");
+    let view = { x: 40, y: 20, s: 0.75 };
+    let selected = null;
+
+    function kindClass(k) { return k === "component" ? "kind-component" : k === "hook" ? "kind-hook" : k === "util" ? "kind-util" : "kind-style"; }
+    function kindLabel(k) { return k === "component" ? "component" : k === "hook" ? "hook" : k === "util" ? "utils" : "styles"; }
+
+    function jsxRowHtml(node, j, depth) {
+      let h = "";
+      const pad = 8 + depth * 14;
+      const isCustom = !!byId[j.tag];
+      const badge = j.directive ? '<span class="badge ' + j.directive.kind + '" title="' + esc(j.directive.text) + '">' +
+        (j.directive.kind === "foreach" ? "@foreach" : j.directive.kind === "if" ? "@if" : "@else") + "</span>" : "";
+      const attrs = j.attrs.map((a, ai) => '<span class="attr">' + a.n + '=<span class="expr" data-ai="' + ai + '" title="click to edit; empty value removes">' + esc(a.e) + "</span></span>").join("");
+      const exprBlob = j.attrs.map(a => a.e).join(" ") + (j.directive ? " " + j.directive.text : "");
+      h += '<div class="jsx-row" draggable="true" data-node="' + node.id + '" data-rowid="' + j.id + '" data-exprs="' + escAttr(exprBlob) + '" style="padding-left:' + pad + 'px">' +
+        badge +
+        '<span class="jsx-tag' + (isCustom ? " custom" : "") + '">&lt;' + j.tag + "&gt;</span>" +
+        '<span class="jsx-attrs lod2only">' + attrs + "</span>" +
+        (j.ref ? '<span class="anchor-dot" id="a-row-' + j.id + '" title="usage of ' + j.ref + '"></span>' : "") +
+        "</div>";
+      j.children.forEach(c => h += jsxRowHtml(node, c, depth + 1));
+      return h;
+    }
+
+    function cardHtml(n) {
+      let h = '<div class="pill"><span class="kind ' + kindClass(n.kind) + '">' + kindLabel(n.kind) + "</span>" + n.id + "</div>";
+      h += '<div class="card-title"><span class="kind ' + kindClass(n.kind) + '">' + kindLabel(n.kind) + '</span><span class="name">' + n.id + "</span></div>";
+      if (n.kind === "component" || n.kind === "hook")
+        h += '<div class="card-section"><div class="props-row"><b>' + n.id + "</b>" + esc(n.propsSig) + "</div></div>";
+      if (n.imports.length) {
+        h += '<div class="card-section"><div class="sec-label">imports</div>';
+        n.imports.forEach(im => {
+          const cls = im.kind === "hook" ? "hook" : im.kind === "style" ? "style" : "";
+          h += '<div class="imp-row"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(im.text) + '</span><span class="anchor-dot ' + cls + '" id="a-imp-' + n.id + "-" + im.to + '"></span></div>';
+        });
+        h += "</div>";
+      }
+      if (n.kind !== "style" && n.kind !== "util") {
+        h += '<div class="card-section"><div class="sec-label">body — hooks &amp; state</div><div class="chips">';
+        (n.hooks || []).forEach((hk, hi) => {
+          h += '<span class="chip" data-states="' + hk.names.join(",") + '" data-hi="' + hi + '" title="' + escAttr(hk.decl) + ' (double-click to edit)"><span class="hookname">' + hk.hook + "</span>" +
+            (hk.names.length ? " → " + hk.names.map(s => '<span class="st">' + s + "</span>").join(", ") : "") + "</span>";
+        });
+        h += '<span class="chip chip-add" title="add a hook">+ hook</span>';
+        h += "</div>";
+        if (n.body && n.body.length) h += '<div class="code-island lod2only" style="margin-top:6px" title="double-click to edit">' + n.body.map(esc).join("\n") + "</div>";
+        h += "</div>";
+      }
+      if (n.jsx) {
+        h += '<div class="card-section"><div class="sec-label">return — markup</div>' + jsxRowHtml(n, n.jsx, 0) + "</div>";
+      }
+      if (n.styles) {
+        h += '<div class="card-section"><div class="sec-label">exports</div>';
+        n.styles.forEach(sst => {
+          h += '<div class="style-entry"><b>' + sst.name + '</b> = new Style {</div>';
+          sst.entries.forEach((e2, ei) => h += '<div class="style-entry entry lod2only" data-style="' + sst.name + '" data-ei="' + ei + '" style="padding-left:24px" title="click to edit">' + esc(e2) + ",</div>");
+          h += '<div class="style-entry entry-add lod2only" data-style="' + sst.name + '" style="padding-left:24px" title="typed key + value helpers">+ entry</div>';
+          h += '<div class="style-entry">}</div>';
+        });
+        h += '<div class="style-entry entry-add" data-newstyle="1" title="add another style export">+ style</div>';
+        h += "</div>";
+      }
+      if (n.utils) {
+        h += '<div class="card-section"><div class="sec-label">exports</div>';
+        n.utils.forEach((u, ui) => {
+          if (u.body === null) {
+            h += '<div class="style-entry usig" data-ui="' + ui + '" title="click to edit">' + esc(u.sig) + "</div>";
+          } else {
+            h += '<div class="style-entry usig" data-ui="' + ui + '" title="click to edit signature">' + esc(u.sig) + " {</div>";
+            h += '<div class="code-island util-body lod2only" data-ui="' + ui + '" style="margin:4px 0 6px 12px" title="double-click to edit">' + u.body.map(esc).join("\n") + "</div>";
+            h += '<div class="style-entry">}</div>';
+          }
+        });
+        h += '<div class="style-entry entry-add" data-newutil="1" title="add an exported function or value">+ export</div>';
+        h += "</div>";
+      }
+      return h;
+    }
+
+    function buildCards() {
+      world.innerHTML = "";
+      NODES.forEach(n => {
+        const d = document.createElement("div");
+        d.className = "card"; d.id = "card-" + n.id;
+        d.style.left = n.x + "px"; d.style.top = n.y + "px";
+        d.innerHTML = cardHtml(n);
+        world.appendChild(d);
+      });
+    }
+
+    function applyView() {
+      world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.s + ")";
+      const lod = view.s < 0.45 ? 0 : view.s < 1.05 ? 1 : 2;
+      document.body.className = "lod" + lod;
+      ["btnL0", "btnL1", "btnL2"].forEach((id, i) =>
+        document.getElementById(id).classList.toggle("active", i === lod));
+      drawEdges();
+    }
+
+    /* edges in SCREEN space from anchor rects; recomputed each draw so model edits show up */
+    function computeEdges() {
+      const out = [];
+      NODES.forEach(n => {
+        n.imports.forEach(im => out.push({ anchor: "a-imp-" + n.id + "-" + im.to, to: im.to, kind: im.kind }));
+        if (!n.jsx) return;
+        const walk = j => { if (j.ref) out.push({ anchor: "a-row-" + j.id, to: j.ref, kind: "usage" }); j.children.forEach(walk); };
+        walk(n.jsx);
+      });
+      return out;
+    }
+
+    function drawEdges() {
+      const wr = canvasWrap.getBoundingClientRect();
+      let svg = "";
+      computeEdges().forEach(e => {
+        const a = document.getElementById(e.anchor);
+        const target = document.getElementById("card-" + e.to);
+        if (!a || !target) return;
+        const lod0 = document.body.className === "lod0";
+        const src = lod0 ? document.getElementById("card-" + a.closest(".card").id.slice(5)) : a;
+        const r1 = src.getBoundingClientRect(), r2 = target.getBoundingClientRect();
+        const x1 = r1.right - wr.left - (lod0 ? r1.width / 2 : 4), y1 = r1.top - wr.top + r1.height / 2;
+        const x2 = r2.left - wr.left, y2 = r2.top - wr.top + (lod0 ? r2.height / 2 : 18);
+        const dx = Math.max(40, Math.abs(x2 - x1) * 0.45);
+        const color = e.kind === "hook" ? "var(--edgehook)" : e.kind === "style" ? "var(--edgestyle)" : "var(--edge)";
+        const dash = e.kind === "usage" ? "" : ' stroke-dasharray="6 4"';
+        svg += '<path d="M' + x1 + " " + y1 + " C" + (x1 + dx) + " " + y1 + "," + (x2 - dx) + " " + y2 + "," + x2 + " " + y2 +
+          '" fill="none" stroke="' + color + '" stroke-width="2"' + dash + " opacity=\"0.85\"/>";
+        svg += '<circle cx="' + x2 + '" cy="' + y2 + '" r="4" fill="' + color + '"/>';
+      });
+      edgesSvg.innerHTML = svg;
+    }
+
+    /* pan / zoom / drag */
+    let drag = null;
+    canvasWrap.addEventListener("mousedown", ev => {
+      if (ev.button !== 0) return;
+      if (ev.target.closest(".inline-edit, .inline-edit-area")) return;
+      const title = ev.target.closest(".card-title, .pill");
+      if (title) {
+        const card = title.closest(".card");
+        const node = byId[card.id.slice(5)];
+        drag = { kind: "card", node, sx: ev.clientX, sy: ev.clientY, ox: node.x, oy: node.y };
+      } else if (!ev.target.closest(".card")) {
+        drag = { kind: "pan", sx: ev.clientX, sy: ev.clientY, ox: view.x, oy: view.y };
+        canvasWrap.classList.add("panning");
+      }
+    });
+    window.addEventListener("mousemove", ev => {
+      if (!drag) return;
+      const dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy;
+      if (drag.kind === "pan") { view.x = drag.ox + dx; view.y = drag.oy + dy; applyView(); }
+      else {
+        drag.node.x = drag.ox + dx / view.s; drag.node.y = drag.oy + dy / view.s;
+        const c = document.getElementById("card-" + drag.node.id);
+        c.style.left = drag.node.x + "px"; c.style.top = drag.node.y + "px";
+        drawEdges();
+      }
+    });
+    window.addEventListener("mouseup", () => { drag = null; canvasWrap.classList.remove("panning"); });
+    canvasWrap.addEventListener("wheel", ev => {
+      ev.preventDefault();
+      const wr = canvasWrap.getBoundingClientRect();
+      const cx = ev.clientX - wr.left, cy = ev.clientY - wr.top;
+      const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const ns = Math.min(2.2, Math.max(0.18, view.s * factor));
+      view.x = cx - (cx - view.x) * (ns / view.s);
+      view.y = cy - (cy - view.y) * (ns / view.s);
+      view.s = ns;
+      applyView();
+    }, { passive: false });
+
+    function setZoom(s) { view.s = s; view.x = 60; view.y = 30; applyView(); }
+    document.getElementById("btnL0").onclick = () => setZoom(0.3);
+    document.getElementById("btnL1").onclick = () => setZoom(0.75);
+    document.getElementById("btnL2").onclick = () => setZoom(1.25);
+
+    /* ═══════════════ Selection, source pane, highlights ═══════════════ */
+    const srcpane = document.getElementById("srcpane");
+    function renderSource(nodeId) {
+      if (srcEditId === nodeId) return;
+      const s = SOURCES[nodeId];
+      document.getElementById("src-name").textContent =
+        nodeId + (byId[nodeId].kind === "hook" ? ".hooks.uitkx" : byId[nodeId].kind === "style" ? ".style.uitkx" : ".uitkx");
+      srcpane.innerHTML = s.lines.map((l, i) =>
+        '<div class="srcline" data-line="' + i + '">' + (tokenize(l) || "&nbsp;") + "</div>").join("");
+    }
+
+    function selectNode(id, focusRowId) {
+      if (srcEditId && srcEditId !== id) cancelSrcEdit();
+      selected = id;
+      document.querySelectorAll(".card").forEach(c => c.classList.toggle("selected", c.id === "card-" + id));
+      renderSource(id);
+      renderPreview(id);
+      if (focusRowId) focusSourceLine(id, focusRowId);
+      drawEdges();
+    }
+    function focusSourceLine(nodeId, anchorId) {
+      const line = SOURCES[nodeId].lineOf[anchorId];
+      document.querySelectorAll(".srcline.sel").forEach(x => x.classList.remove("sel"));
+      if (line == null) return;
+      const elx = srcpane.querySelector('[data-line="' + line + '"]');
+      if (elx) { elx.classList.add("sel"); elx.scrollIntoView({ block: "center" }); }
+    }
+
+    world.addEventListener("click", ev => {
+      if (ev.target.closest(".inline-edit, .inline-edit-area")) return;
+      const addChip = ev.target.closest(".chip-add");
+      if (addChip) { addHook(byId[addChip.closest(".card").id.slice(5)]); return; }
+      const badge = ev.target.closest(".badge");
+      if (badge) {
+        const rEl = badge.closest(".jsx-row");
+        const bNode = byId[rEl.dataset.node];
+        const bj = findJsx(bNode.jsx, rEl.dataset.rowid);
+        if (bj && bj.directive) editDirectiveInline(badge, bNode, bj);
+        return;
+      }
+      const expr = ev.target.closest(".expr[data-ai]");
+      if (expr) { startAttrEdit(expr); return; }
+      const eAdd = ev.target.closest(".entry-add");
+      if (eAdd) {
+        const styNode = byId[eAdd.closest(".card").id.slice(5)];
+        if (eAdd.dataset.newstyle)
+          openNameMenu(ev.clientX, ev.clientY, "new style export", "styleName",
+            v => !/^[a-z][A-Za-z0-9]*$/.test(v) ? "camelCase identifier required"
+              : styNode.styles.some(s => s.name === v) ? v + " already exists" : null,
+            v => { styNode.styles.push({ name: v, entries: ["FlexGrow = 1"] }); commitNode(styNode, "style " + v); });
+        else if (eAdd.dataset.newutil)
+          openMenu(ev.clientX, ev.clientY, [
+            {
+              label: "New function…", fn: () => openNameMenu(ev.clientX, ev.clientY, "new exported function", "FunctionName",
+                v => !/^[A-Z][A-Za-z0-9]*$/.test(v) ? "PascalCase function name required" : null,
+                v => { styNode.utils.push({ sig: "export int " + v + "(int value)", body: ["return value;"] }); commitNode(styNode, "util " + v); })
+            },
+            {
+              label: "New value…", fn: () => openNameMenu(ev.clientX, ev.clientY, "new exported value", "ValueName",
+                v => !/^[A-Z][A-Za-z0-9]*$/.test(v) ? "PascalCase value name required" : null,
+                v => { styNode.utils.push({ sig: "export int " + v + " = 0;", body: null }); commitNode(styNode, "value " + v); })
+            },
+          ], "add export");
+        else openStyleKeyMenu(ev.clientX, ev.clientY, styNode, eAdd.dataset.style);
+        return;
+      }
+      const entry = ev.target.closest(".style-entry.entry");
+      if (entry) { startStyleEdit(entry); return; }
+      const usig = ev.target.closest(".usig");
+      if (usig) { startUtilSigEdit(usig); return; }
+      const row = ev.target.closest(".jsx-row");
+      const card = ev.target.closest(".card");
+      if (!card) return;
+      const id = card.id.slice(5);
+      if (row) {
+        selectNode(id, "row-" + row.dataset.rowid);
+        document.querySelectorAll(".jsx-row.rowsel").forEach(x => x.classList.remove("rowsel"));
+        row.classList.add("rowsel");
+      } else selectNode(id);
+    });
+    world.addEventListener("dblclick", ev => {
+      if (ev.target.closest(".inline-edit, .inline-edit-area")) return;
+      const uIsland = ev.target.closest(".util-body");
+      if (uIsland) { startUtilBodyEdit(uIsland); return; }
+      const island = ev.target.closest(".code-island");
+      if (island) { startBodyEdit(island); return; }
+      const chip = ev.target.closest(".chip[data-states]");
+      if (chip) { startHookEdit(chip); return; }
+      const row = ev.target.closest(".jsx-row");
+      if (row) { const n = findJsx(byId[row.dataset.node].jsx, row.dataset.rowid); if (n && n.ref) selectNode(n.ref); }
+    });
+    function findJsx(j, id) { if (!j) return null; if (j.id === id) return j; for (const c of j.children) { const r = findJsx(c, id); if (r) return r; } return null; }
+
+    /* ═══════════════ In-canvas editing: visual edit → AST → regenerated source ═══════════════ */
+    function rebuildCard(id) {
+      const c = document.getElementById("card-" + id);
+      if (c) c.innerHTML = cardHtml(byId[id]);
+      drawEdges();
+    }
+    function fileNameOf(n) { return n.id + (n.kind === "hook" ? ".hooks.uitkx" : n.kind === "style" ? ".style.uitkx" : ".uitkx"); }
+    function commitNode(node, what) {
+      SOURCES[node.id] = genSource(node);
+      rebuildCard(node.id);
+      if (selected === node.id) renderSource(node.id);
+      renderPreview(selected);
+      toast("Committed " + what + " → AST → formatter → " + fileNameOf(node) + " (mock write)");
+    }
+    /* {expr} and "string" wrappers are a given — the editor shows them dimmed
+       outside the input and the user edits only the value inside. */
+    function unwrap(e) {
+      if (e.length >= 2 && e[0] === "{" && e[e.length - 1] === "}") return { pre: "{", val: e.slice(1, -1), post: "}" };
+      if (e.length >= 2 && e[0] === '"' && e[e.length - 1] === '"') return { pre: '"', val: e.slice(1, -1), post: '"' };
+      return { pre: "", val: e, post: "" };
+    }
+    function inlineEdit(target, initial, multiline, onCommit, pre, post) {
+      document.querySelectorAll(".jsx-row.hl, .srcline.hl, .code-island.hl").forEach(x => x.classList.remove("hl"));
+      const ownerId = target.closest(".card").id.slice(5);
+      const attrsHost = target.closest(".jsx-attrs");
+      if (attrsHost) attrsHost.classList.add("editing");
+      const ed = document.createElement(multiline ? "textarea" : "input");
+      ed.className = multiline ? "inline-edit-area" : "inline-edit";
+      ed.value = initial;
+      if (!multiline) ed.size = Math.min(34, Math.max(10, initial.length + 2));
+      if (pre || post) {
+        const wrap = document.createElement("span");
+        wrap.className = "editwrap";
+        wrap.append(pre || ""); wrap.appendChild(ed); wrap.append(post || "");
+        target.replaceWith(wrap);
+      } else target.replaceWith(ed);
+      ed.focus(); if (!multiline) ed.select();
+      let done = false;
+      const finish = commit => {
+        if (done) return; done = true;
+        if (commit && ed.value !== initial) onCommit(ed.value);
+        else rebuildCard(ownerId);
+      };
+      ed.addEventListener("keydown", e => {
+        e.stopPropagation();
+        if (e.key === "Enter" && (!multiline || e.ctrlKey)) { e.preventDefault(); finish(true); }
+        if (e.key === "Escape") finish(false);
+      });
+      ed.addEventListener("blur", () => finish(true));
+      ed.addEventListener("mousedown", e => e.stopPropagation());
+      ed.addEventListener("click", e => e.stopPropagation());
+    }
+    function startAttrEdit(span) {
+      const rowEl = span.closest(".jsx-row");
+      const node = byId[rowEl.dataset.node];
+      const j = findJsx(node.jsx, rowEl.dataset.rowid);
+      if (!j) return;
+      const attr = j.attrs[+span.dataset.ai];
+      const w = unwrap(attr.e);
+      inlineEdit(span, w.val, false, v => {
+        if (!v.trim()) { j.attrs.splice(+span.dataset.ai, 1); commitNode(node, "removed " + attr.n); return; }
+        attr.e = w.pre + v + w.post;
+        commitNode(node, "<" + j.tag + "> " + attr.n);
+      }, w.pre, w.post);
+    }
+    function startStyleEdit(entryEl) {
+      const node = byId[entryEl.closest(".card").id.slice(5)];
+      const sty = node.styles.find(s => s.name === entryEl.dataset.style);
+      const ei = +entryEl.dataset.ei;
+      inlineEdit(entryEl, sty.entries[ei], false, v => { sty.entries[ei] = v; commitNode(node, sty.name + " style entry"); });
+    }
+
+    /* Typed style authoring: keys from the Style surface, values from the
+       CssHelpers (Px/Pct/Hex/Rgba/enum helpers) — freeform fallback on both. */
+    const STYLE_KEYS = [
+      ["FlexGrow", "number"], ["FlexShrink", "number"], ["FlexDirection", "flex-direction"],
+      ["JustifyContent", "justify"], ["AlignItems", "align"], ["AlignSelf", "align"],
+      ["Width", "length"], ["Height", "length"], ["MinWidth", "length"], ["MaxWidth", "length"],
+      ["MinHeight", "length"], ["MaxHeight", "length"],
+      ["Padding", "length"], ["Margin", "length"], ["Gap", "length"],
+      ["BorderRadius", "length"], ["BorderWidth", "length"],
+      ["BackgroundColor", "color"], ["Color", "color"], ["BorderColor", "color"],
+      ["FontSize", "length"], ["UnityFontStyle", "font-style"], ["UnityTextAlign", "text-align"],
+      ["Opacity", "number"], ["Display", "display"], ["Position", "position"],
+    ];
+    const VALUE_TEMPLATES = {
+      "number": ["1", "0", "0.5"],
+      "length": ["Px(8)", "Px(16)", "Pct(100)", "Pct(50)"],
+      "color": ['Hex("#1b1b1f")', 'Hex("#4fc3f7")', "Rgba(0, 0, 0, 0.5)"],
+      "flex-direction": ["FlexRow", "FlexColumn"],
+      "justify": ["JustifyCenter", "JustifyFlexStart", "JustifyFlexEnd", "JustifySpaceBetween"],
+      "align": ["AlignCenter", "AlignFlexStart", "AlignFlexEnd", "AlignStretch"],
+      "font-style": ["FontBold", "FontItalic", "FontBoldItalic"],
+      "text-align": ["TextMiddleCenter", "TextMiddleLeft", "TextUpperLeft"],
+      "display": ["DisplayFlex", "DisplayNone"],
+      "position": ["PositionRelative", "PositionAbsolute"],
+    };
+    function openStyleKeyMenu(x, y, node, styleName) {
+      const sty = node.styles.find(s => s.name === styleName);
+      const used = sty.entries.map(e2 => e2.split("=")[0].trim());
+      const items = STYLE_KEYS.filter(k => !used.includes(k[0]))
+        .map(k => ({ label: k[0] + "  :  " + k[1], fn: () => openStyleValueMenu(x, y, node, sty, k[0], k[1]) }));
+      openMenu(x, y, items, sty.name + " — style keys", {
+        search: true, placeholder: "search keys…",
+        freeform: t => ({ label: 'use key "' + t + '"', fn: () => openStyleValueMenu(x, y, node, sty, t, "") }),
+      });
+    }
+    function openStyleValueMenu(x, y, node, sty, key, type) {
+      const addEntry = v => { sty.entries.push(key + " = " + v); commitNode(node, sty.name + "." + key); };
+      const vals = VALUE_TEMPLATES[type] || ["0", "Px(8)", "Pct(100)", 'Hex("#ffffff")'];
+      openMenu(x, y, vals.map(v => ({ label: v, fn: () => addEntry(v) })), key + " — values & helpers", {
+        search: true, placeholder: "value or helper…",
+        freeform: t => ({ label: 'use "' + t + '"', fn: () => addEntry(t) }),
+      });
+    }
+    function startUtilSigEdit(sigEl) {
+      const node = byId[sigEl.closest(".card").id.slice(5)];
+      const u = node.utils[+sigEl.dataset.ui];
+      inlineEdit(sigEl, u.sig, false, v => { u.sig = v.replace(/\s*\{$/, ""); commitNode(node, "util signature"); });
+    }
+    function startUtilBodyEdit(islandEl) {
+      const node = byId[islandEl.closest(".card").id.slice(5)];
+      const u = node.utils[+islandEl.dataset.ui];
+      inlineEdit(islandEl, u.body.join("\n"), true, v => {
+        const ls = v.split("\n");
+        while (ls.length && ls[ls.length - 1].trim() === "") ls.pop();
+        u.body = ls;
+        commitNode(node, "util body");
+      });
+    }
+    function startBodyEdit(islandEl) {
+      const node = byId[islandEl.closest(".card").id.slice(5)];
+      inlineEdit(islandEl, node.body.join("\n"), true, v => {
+        const lines = v.split("\n");
+        while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+        node.body = lines;
+        commitNode(node, "body");
+      });
+    }
+    function startHookEdit(chipEl) {
+      const node = byId[chipEl.closest(".card").id.slice(5)];
+      const hk = node.hooks[+chipEl.dataset.hi];
+      inlineEdit(chipEl, hk.decl, false, v => {
+        hk.decl = v;
+        const tuple = v.match(/var\s*\(([^)]*)\)/), single = v.match(/var\s+([A-Za-z_]\w*)\s*=/);
+        if (tuple) hk.names = tuple[1].split(",").map(x => x.trim()).filter(Boolean);
+        else if (single) hk.names = [single[1]];
+        const hm = v.match(/=\s*(use[A-Za-z0-9_]*)/); if (hm) hk.hook = hm[1];
+        commitNode(node, "hook declaration");
+      });
+    }
+    function addHook(node) {
+      node.hooks = node.hooks || [];
+      node.hooks.push({ decl: "var (value, setValue) = useState(0);", names: ["value", "setValue"], hook: "useState" });
+      commitNode(node, "new hook");
+      const chips = document.querySelectorAll("#card-" + node.id + " .chip[data-states]");
+      const last = chips[chips.length - 1];
+      if (last) startHookEdit(last);
+    }
+    function editDirectiveInline(badgeEl, node, j) {
+      inlineEdit(badgeEl, j.directive.text, false, v => {
+        const t = v.trim();
+        if (!t) { j.directive = null; commitNode(node, "directive removed"); return; }
+        j.directive.text = t;
+        j.directive.kind = t.startsWith("@foreach") ? "foreach" : t.startsWith("@else") ? "else" : "if";
+        commitNode(node, "directive");
+      });
+    }
+    function editDirective(node, j) {
+      const b = document.querySelector("#card-" + node.id + ' .jsx-row[data-rowid="' + j.id + '"] .badge');
+      if (b) editDirectiveInline(b, node, j);
+    }
+    function findParent(root, id) {
+      if (!root) return null;
+      for (const c of root.children) {
+        if (c.id === id) return root;
+        const r = findParent(c, id);
+        if (r) return r;
+      }
+      return null;
+    }
+
+    /* ═══════════════ Context menus: add attributes / children / directives / components ═══════════════ */
+    const NATIVE_TAGS = ["VisualElement", "Label", "Button", "ScrollView", "TextField", "Toggle", "Slider"];
+    let menuEl = null;
+    function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+    function placeMenu(x, y) {
+      const r = menuEl.getBoundingClientRect();
+      menuEl.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 8)) + "px";
+      menuEl.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 8)) + "px";
+    }
+    function openMenu(x, y, items, title, opts) {
+      opts = opts || {};
+      closeMenu();
+      menuEl = document.createElement("div");
+      menuEl.className = "ctx";
+      if (title) { const t = document.createElement("div"); t.className = "mh"; t.textContent = title; menuEl.appendChild(t); }
+      const listWrap = document.createElement("div");
+      listWrap.className = "ctx-list";
+      function renderItems(filter) {
+        listWrap.innerHTML = "";
+        let shown = 0;
+        items.forEach(it => {
+          if (it === "-") { if (!filter) { const s = document.createElement("div"); s.className = "sep"; listWrap.appendChild(s); } return; }
+          if (it.header) { if (!filter) { const t = document.createElement("div"); t.className = "mh"; t.textContent = it.header; listWrap.appendChild(t); } return; }
+          if (filter && it.label.toLowerCase().indexOf(filter.toLowerCase()) < 0) return;
+          const d = document.createElement("div");
+          d.className = "mi"; d.textContent = it.label;
+          d.onclick = () => { closeMenu(); it.fn(); };
+          listWrap.appendChild(d);
+          shown++;
+        });
+        if (filter && opts.freeform) {
+          const fi = opts.freeform(filter);
+          const d = document.createElement("div");
+          d.className = "mi free"; d.textContent = fi.label;
+          d.onclick = () => { closeMenu(); fi.fn(); };
+          listWrap.appendChild(d);
+          shown++;
+        }
+        if (!shown) { const d = document.createElement("div"); d.className = "mi dim"; d.textContent = "(no matches)"; listWrap.appendChild(d); }
+      }
+      let searchInput = null;
+      if (opts.search) {
+        searchInput = document.createElement("input");
+        searchInput.className = "ctx-search";
+        searchInput.placeholder = opts.placeholder || "search…";
+        searchInput.addEventListener("input", () => renderItems(searchInput.value.trim()));
+        searchInput.addEventListener("keydown", e => {
+          e.stopPropagation();
+          if (e.key === "Escape") closeMenu();
+          if (e.key === "Enter") { const first = listWrap.querySelector(".mi:not(.dim)"); if (first) first.click(); }
+        });
+        menuEl.appendChild(searchInput);
+      }
+      menuEl.appendChild(listWrap);
+      renderItems("");
+      document.body.appendChild(menuEl);
+      placeMenu(x, y);
+      if (searchInput) searchInput.focus();
+    }
+    function openNameMenu(x, y, title, placeholder, validate, onSubmit) {
+      closeMenu();
+      menuEl = document.createElement("div");
+      menuEl.className = "ctx";
+      const t = document.createElement("div"); t.className = "mh"; t.textContent = title; menuEl.appendChild(t);
+      const inp = document.createElement("input"); inp.className = "ctx-search"; inp.placeholder = placeholder;
+      const errEl = document.createElement("div"); errEl.className = "ctx-err";
+      const ok = document.createElement("div"); ok.className = "mi"; ok.textContent = "Create";
+      function submit() {
+        const v = inp.value.trim();
+        const err = validate(v);
+        if (err) { errEl.textContent = err; return; }
+        closeMenu(); onSubmit(v);
+      }
+      ok.onclick = submit;
+      inp.addEventListener("keydown", e => {
+        e.stopPropagation();
+        if (e.key === "Enter") submit();
+        if (e.key === "Escape") closeMenu();
+      });
+      menuEl.appendChild(inp); menuEl.appendChild(errEl); menuEl.appendChild(ok);
+      document.body.appendChild(menuEl);
+      placeMenu(x, y);
+      inp.focus();
+    }
+    document.addEventListener("mousedown", e => { if (menuEl && !e.target.closest(".ctx")) closeMenu(); }, true);
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && menuEl) closeMenu(); });
+
+    /* Typed attribute surface: native elements come from a schema table (common
+       VisualElement surface + per-element extras), custom components from their
+       props signature. A freeform fallback always exists in case something is
+       missing from the schema. */
+    const COMMON_ATTRS = [
+      ["style", "Style"], ["name", "string"], ["tooltip", "string"], ["focusable", "bool"],
+      ["pickingMode", "PickingMode"], ["viewDataKey", "string"], ["usageHints", "UsageHints"],
+      ["onClick", "Action"], ["onMouseEnter", "Action"], ["onMouseLeave", "Action"], ["onGeometryChanged", "Action"],
+    ];
+    const ELEMENT_ATTRS = {
+      VisualElement: [],
+      Label: [["text", "string"], ["enableRichText", "bool"], ["displayTooltipWhenElided", "bool"]],
+      Button: [["text", "string"]],
+      ScrollView: [["mode", "ScrollViewMode"], ["horizontalScrollerVisibility", "ScrollerVisibility"], ["verticalScrollerVisibility", "ScrollerVisibility"], ["elasticity", "float"]],
+      TextField: [["value", "string"], ["onChanged", "Action<string>"], ["label", "string"], ["maxLength", "int"], ["isPasswordField", "bool"], ["multiline", "bool"]],
+      Toggle: [["value", "bool"], ["onChanged", "Action<bool>"], ["label", "string"], ["text", "string"]],
+      Slider: [["value", "float"], ["onChanged", "Action<float>"], ["lowValue", "float"], ["highValue", "float"], ["direction", "SliderDirection"], ["showInputField", "bool"]],
+    };
+    function defaultAttrValue(name, type) {
+      if (/^on[A-Z]/.test(name) || /Action/.test(type)) return "{handler}";
+      if (name === "style" || type === "Style") return "{styleName}";
+      if (type === "string" || name === "text" || name === "label") return '"text"';
+      return "{value}";
+    }
+    function openAttrMenu(x, y, node, j) {
+      const has = nm => j.attrs.some(ex => ex.n === nm);
+      const addAttr = (nm, ty) => {
+        j.attrs.push({ n: nm, e: defaultAttrValue(nm, ty || "") });
+        commitNode(node, "attribute " + nm);
+        if (view.s < 1.05) setZoom(1.25);
+        const span = document.querySelector("#card-" + node.id + ' .jsx-row[data-rowid="' + j.id + '"] .expr[data-ai="' + (j.attrs.length - 1) + '"]');
+        if (span) startAttrEdit(span);
+      };
+      const item = a => ({ label: a[0] + "  :  " + a[1], fn: () => addAttr(a[0], a[1]) });
+      const custom = byId[j.tag];
+      const items = [];
+      let source;
+      if (custom && custom.kind === "component") {
+        source = "typed props of " + j.tag;
+        const m = /\(([^)]*)\)/.exec(custom.propsSig || "()");
+        const props = (m && m[1].trim())
+          ? m[1].split(",").map(p => {
+            const parts = p.trim().split(/\s+/);
+            return [parts[parts.length - 1], parts.slice(0, -1).join(" ")];
+          })
+          : [];
+        props.push(["key", "list key"]);
+        props.filter(a => !has(a[0])).forEach(a => items.push(item(a)));
+        items.push("-", { header: "not declared on " + j.tag + " — needs a matching prop" });
+        COMMON_ATTRS.filter(a => !has(a[0])).forEach(a => items.push(item(a)));
+      } else {
+        source = "UI Toolkit schema";
+        (ELEMENT_ATTRS[j.tag] || []).concat(COMMON_ATTRS).filter(a => !has(a[0])).forEach(a => items.push(item(a)));
+      }
+      openMenu(x, y, items, "attributes — " + source, {
+        search: true, placeholder: "search attributes…",
+        freeform: txt => ({ label: 'add "' + txt + '" (untyped)', fn: () => addAttr(txt, "") }),
+      });
+    }
+    function addChildAt(node, parentJ, index, tag) {
+      const isCustom = !!byId[tag];
+      const attrs = !isCustom && tag === "Label" ? [{ n: "text", e: '"New label"' }] :
+        !isCustom && tag === "Button" ? [{ n: "text", e: '"Click"' }] : [];
+      parentJ.children.splice(index, 0, el(tag, attrs, { ref: isCustom ? tag : null }));
+      if (isCustom && !node.imports.some(im => im.to === tag))
+        node.imports.push({ to: tag, kind: "usage", text: "import { " + tag + ' } from "./' + tag + '"' });
+      commitNode(node, "<" + tag + "> child (import auto-added where needed)");
+    }
+    function openAddChildMenu(x, y, node, j) {
+      const items = [{ header: "native elements" }];
+      NATIVE_TAGS.forEach(t => items.push({ label: "<" + t + ">", fn: () => addChildAt(node, j, j.children.length, t) }));
+      items.push("-", { header: "custom components" });
+      NODES.filter(n2 => n2.kind === "component" && n2.id !== node.id)
+        .forEach(n2 => items.push({ label: "<" + n2.id + ">", fn: () => addChildAt(node, j, j.children.length, n2.id) }));
+      openMenu(x, y, items, "add child to <" + j.tag + ">", { search: true, placeholder: "search elements…" });
+    }
+    function openRowMenu(ev, rowEl) {
+      const node = byId[rowEl.dataset.node];
+      const j = findJsx(node.jsx, rowEl.dataset.rowid);
+      if (!j) return;
+      const items = [
+        { label: "Add attribute (typed)…", fn: () => openAttrMenu(ev.clientX, ev.clientY, node, j) },
+        { label: "Add child element…", fn: () => openAddChildMenu(ev.clientX, ev.clientY, node, j) },
+      ];
+      if (j.attrs.length) items.push({
+        label: "Remove attribute…", fn: () =>
+          openMenu(ev.clientX, ev.clientY, j.attrs.map((a, ai2) => ({
+            label: a.n + " = " + a.e, fn: () => {
+              j.attrs.splice(ai2, 1); commitNode(node, "removed " + a.n);
+            }
+          })), "remove attribute", { search: true })
+      });
+      items.push("-");
+      if (j.directive) {
+        items.push({ label: "Edit " + j.directive.kind + " condition", fn: () => editDirective(node, j) });
+        items.push({ label: "Remove directive", fn: () => { j.directive = null; commitNode(node, "directive removed"); } });
+      } else {
+        items.push({ label: "Wrap in @if", fn: () => { j.directive = { kind: "if", text: "@if (condition)" }; commitNode(node, "@if"); editDirective(node, j); } });
+        items.push({ label: "Wrap in @foreach", fn: () => { j.directive = { kind: "foreach", text: "@foreach (var item in items)" }; commitNode(node, "@foreach"); editDirective(node, j); } });
+      }
+      if (j !== node.jsx) {
+        items.push("-", {
+          label: "Delete element", fn: () => {
+            const p = findParent(node.jsx, j.id);
+            if (p) { p.children = p.children.filter(c => c !== j); commitNode(node, "delete <" + j.tag + ">"); }
+          }
+        });
+      }
+      openMenu(ev.clientX, ev.clientY, items, "<" + j.tag + ">");
+    }
+    function createNode(kind, name, x, y) {
+      let node;
+      if (kind === "component") node = {
+        id: name, kind, x, y, propsSig: "()", imports: [], hooks: [], body: [],
+        jsx: el("VisualElement", [], { children: [el("Label", [{ n: "text", e: '"' + name + '"' }])] })
+      };
+      else if (kind === "style") node = {
+        id: name, kind, x, y, propsSig: "", imports: [], hooks: [], body: [], jsx: null,
+        styles: [{ name: "main", entries: ["FlexGrow = 1"] }]
+      };
+      else if (kind === "util") node = {
+        id: name, kind, x, y, propsSig: "", imports: [], hooks: [], body: [], jsx: null,
+        utils: [{ sig: "export int Clamp(int value, int min, int max)", body: ["return value < min ? min : value > max ? max : value;"] }]
+      };
+      else node = {
+        id: name, kind: "hook", x, y, propsSig: "()", exportsSig: "export (int value) " + name,
+        imports: [], hooks: [{ decl: "var (value, setValue) = useState(0);", names: ["value", "setValue"], hook: "useState" }],
+        body: ["return (value);"], jsx: null
+      };
+      NODES.push(node); byId[name] = node;
+      SOURCES[name] = genSource(node);
+      const d = document.createElement("div");
+      d.className = "card"; d.id = "card-" + name;
+      d.style.left = x + "px"; d.style.top = y + "px";
+      d.innerHTML = cardHtml(node);
+      world.appendChild(d);
+      selectNode(name);
+      buildLibrary();
+      toast("Created " + fileNameOf(node) + " (mock)");
+    }
+    function validatePascal(v) {
+      if (!/^[A-Z][A-Za-z0-9]*$/.test(v)) return "PascalCase identifier required";
+      if (byId[v]) return v + " already exists";
+      return null;
+    }
+    function validateUse(v) {
+      if (!/^use[A-Z][A-Za-z0-9]*$/.test(v)) return "hook names start with 'use' (useSomething)";
+      if (byId[v]) return v + " already exists";
+      return null;
+    }
+    function validateCamel(v) {
+      if (!/^[a-z][A-Za-z0-9]*$/.test(v)) return "camelCase identifier required";
+      if (byId[v]) return v + " already exists";
+      return null;
+    }
+    function openCreateMenu(x, y, wx, wy) {
+      openMenu(x, y, [
+        { label: "New component  (.uitkx)", fn: () => openNameMenu(x, y, "new component", "PascalCaseName", validatePascal, v => createNode("component", v, wx, wy)) },
+        { label: "New style module  (.style.uitkx)", fn: () => openNameMenu(x, y, "new style module", "camelCaseName", validateCamel, v => createNode("style", v, wx, wy)) },
+        { label: "New hook module  (.hooks.uitkx)", fn: () => openNameMenu(x, y, "new hook module", "useSomething", validateUse, v => createNode("hook", v, wx, wy)) },
+        { label: "New util module  (.uitkx)", fn: () => openNameMenu(x, y, "new util module", "camelCaseName", validateCamel, v => createNode("util", v, wx, wy)) },
+      ], "create");
+    }
+    function openCardMenu(ev, node) {
+      const refs = new Set();
+      NODES.forEach(n2 => {
+        if (n2.id === node.id) return;
+        if (n2.imports.some(im => im.to === node.id)) refs.add(n2.id);
+        if (n2.jsx) { const scan = j => { if (j.ref === node.id) refs.add(n2.id); j.children.forEach(scan); }; scan(n2.jsx); }
+      });
+      openMenu(ev.clientX, ev.clientY, [
+        {
+          label: "Delete " + fileNameOf(node), fn: () => {
+            if (refs.size) { toast("Can't delete: still referenced by " + Array.from(refs).join(", ") + "."); return; }
+            NODES.splice(NODES.indexOf(node), 1);
+            delete byId[node.id]; delete SOURCES[node.id];
+            const c = document.getElementById("card-" + node.id); if (c) c.remove();
+            if (selected === node.id) selectNode(NODES[0].id);
+            buildLibrary(); drawEdges();
+            toast("Deleted " + fileNameOf(node) + " (mock)");
+          }
+        },
+      ], node.id);
+    }
+    canvasWrap.addEventListener("contextmenu", ev => {
+      ev.preventDefault();
+      if (ev.target.closest(".inline-edit, .inline-edit-area")) return;
+      const row = ev.target.closest(".jsx-row");
+      if (row) { openRowMenu(ev, row); return; }
+      const card = ev.target.closest(".card");
+      if (card) { openCardMenu(ev, byId[card.id.slice(5)]); return; }
+      const wr = canvasWrap.getBoundingClientRect();
+      const wx = (ev.clientX - wr.left - view.x) / view.s, wy = (ev.clientY - wr.top - view.y) / view.s;
+      openCreateMenu(ev.clientX, ev.clientY, Math.round(wx), Math.round(wy));
+    });
+
+    /* ═══════════════ Library sidebar + drag & drop ═══════════════ */
+    const HOOK_TEMPLATES = [
+      { name: "useState", decl: "var (value, setValue) = useState(0);", names: ["value", "setValue"] },
+      { name: "useEffect", decl: "useEffect(() => { }, deps);", names: [] },
+      { name: "useMemo", decl: "var memo = useMemo(() => value, deps);", names: ["memo"] },
+      { name: "useRef", decl: "var elRef = useRef();", names: ["elRef"] },
+    ];
+    function buildLibrary() {
+      const prevSearch = document.getElementById("lib-search");
+      const keep = prevSearch ? prevSearch.value : "";
+      let h = '<input id="lib-search" placeholder="search library…" value="' + escAttr(keep) + '">';
+      h += '<div class="lib-sec">native elements</div>';
+      NATIVE_TAGS.forEach(t => h += '<div class="lib-item" draggable="true" data-lib="element" data-name="' + t + '">&lt;' + t + '&gt;</div>');
+      h += '<div class="lib-sec">custom components</div>';
+      NODES.filter(n => n.kind === "component").forEach(n =>
+        h += '<div class="lib-item cu" draggable="true" data-lib="component" data-name="' + n.id + '">&lt;' + n.id + '&gt;</div>');
+      h += '<div class="lib-sec">hooks</div>';
+      HOOK_TEMPLATES.forEach(t => h += '<div class="lib-item hk" draggable="true" data-lib="hook" data-name="' + t.name + '">' + t.name + "</div>");
+      NODES.filter(n => n.kind === "hook").forEach(n =>
+        h += '<div class="lib-item hk" draggable="true" data-lib="hook" data-name="' + n.id + '">' + n.id + " (module)</div>");
+      h += '<div class="lib-sec">style modules</div>';
+      NODES.filter(n => n.kind === "style").forEach(n =>
+        h += '<div class="lib-item st" draggable="true" data-lib="stylemod" data-name="' + n.id + '">' + n.id + "</div>");
+      h += '<div class="lib-sec">util modules</div>';
+      NODES.filter(n => n.kind === "util").forEach(n =>
+        h += '<div class="lib-item ut" draggable="true" data-lib="utilmod" data-name="' + n.id + '">' + n.id + "</div>");
+      h += '<div class="lib-hint">Drag onto a JSX row: top edge inserts before, bottom edge after, middle nests inside. Drag hooks onto BODY; style/util modules onto a card (adds the import). Drag existing rows to reorder.</div>';
+      document.getElementById("lib-body").innerHTML = h;
+      const si = document.getElementById("lib-search");
+      si.addEventListener("input", () => filterLibrary(si.value.trim().toLowerCase()));
+      si.addEventListener("keydown", e => e.stopPropagation());
+      if (keep) filterLibrary(keep.trim().toLowerCase());
+    }
+    function filterLibrary(q) {
+      const body = document.getElementById("lib-body");
+      body.querySelectorAll(".lib-item").forEach(it => {
+        it.style.display = !q || it.textContent.toLowerCase().includes(q) ? "" : "none";
+      });
+      body.querySelectorAll(".lib-sec").forEach(sec => {
+        let any = false, sib = sec.nextElementSibling;
+        while (sib && !sib.classList.contains("lib-sec")) {
+          if (sib.classList.contains("lib-item") && sib.style.display !== "none") { any = true; break; }
+          sib = sib.nextElementSibling;
+        }
+        sec.style.display = any ? "" : "none";
+      });
+    }
+    function utilName(u) {
+      if (u.body === null) {
+        const vm = /(\w+)\s*=/.exec(u.sig);
+        return vm ? vm[1] : "value";
+      }
+      const p = u.sig.lastIndexOf("(");
+      const m = /(\w+)\s*$/.exec(u.sig.slice(0, p));
+      return m ? m[1] : "util";
+    }
+    let dropHintEl = null, dropWhere = "inside";
+    function clearDropHint() {
+      if (dropHintEl) { dropHintEl.classList.remove("drop-hint", "drop-before", "drop-after"); dropHintEl = null; }
+    }
+    document.getElementById("lib-body").addEventListener("dragstart", e => {
+      const it = e.target.closest(".lib-item");
+      if (!it) return;
+      e.dataTransfer.setData("text/plain", it.dataset.lib + ":" + it.dataset.name);
+      e.dataTransfer.effectAllowed = "copy";
+    });
+    world.addEventListener("dragstart", e => {
+      const row = e.target.closest(".jsx-row");
+      if (!row) return;
+      const node = byId[row.dataset.node];
+      if (!node.jsx || row.dataset.rowid === node.jsx.id) { e.preventDefault(); return; }
+      e.dataTransfer.setData("text/plain", "move:" + node.id + ":" + row.dataset.rowid);
+      e.dataTransfer.effectAllowed = "move";
+    });
+    world.addEventListener("dragover", e => {
+      const card = e.target.closest(".card");
+      if (!card) { clearDropHint(); return; }
+      e.preventDefault();
+      e.dataTransfer.dropEffect = e.dataTransfer.effectAllowed === "move" ? "move" : "copy";
+      clearDropHint();
+      const row = e.target.closest(".jsx-row");
+      if (row) {
+        const node = byId[card.id.slice(5)];
+        const isRoot = node.jsx && row.dataset.rowid === node.jsx.id;
+        const rect = row.getBoundingClientRect();
+        const rel = (e.clientY - rect.top) / rect.height;
+        dropWhere = isRoot ? "inside" : rel < 0.3 ? "before" : rel > 0.7 ? "after" : "inside";
+        row.classList.add(dropWhere === "before" ? "drop-before" : dropWhere === "after" ? "drop-after" : "drop-hint");
+        dropHintEl = row;
+      } else {
+        const sec = e.target.closest(".card-section") || card;
+        sec.classList.add("drop-hint");
+        dropHintEl = sec;
+        dropWhere = "inside";
+      }
+    });
+    world.addEventListener("dragleave", e => { if (!e.relatedTarget || !world.contains(e.relatedTarget)) clearDropHint(); });
+    world.addEventListener("drop", e => {
+      e.preventDefault();
+      const where = dropWhere;
+      clearDropHint();
+      const data = e.dataTransfer.getData("text/plain");
+      const card = e.target.closest(".card");
+      if (!data || !card) return;
+      const sep = data.indexOf(":");
+      const kind = data.slice(0, sep), payload = data.slice(sep + 1);
+      const node = byId[card.id.slice(5)];
+      if (kind === "hook") {
+        if (node.kind === "style") { toast("Style modules have no hooks."); return; }
+        const tpl = HOOK_TEMPLATES.find(t => t.name === payload);
+        const hk = tpl
+          ? { decl: tpl.decl, names: tpl.names.slice(), hook: tpl.name }
+          : { decl: "var value = " + payload + "();", names: ["value"], hook: payload };
+        node.hooks = node.hooks || [];
+        node.hooks.push(hk);
+        commitNode(node, "hook " + payload);
+        return;
+      }
+      if (kind === "stylemod") {
+        if (node.kind !== "component") { toast("Style imports go on components."); return; }
+        if (node.imports.some(im => im.to === payload && im.kind === "style")) { toast(payload + " is already imported."); return; }
+        node.imports.push({ to: payload, kind: "style", text: "import * as Styles from \"./" + payload + ".style\"" });
+        commitNode(node, "style import " + payload);
+        return;
+      }
+      if (kind === "utilmod") {
+        if (node.kind === "style" || node.kind === "util") { toast("Util imports go on components and hook modules."); return; }
+        if (node.imports.some(im => im.to === payload)) { toast(payload + " is already imported."); return; }
+        const names = byId[payload].utils.map(utilName).join(", ");
+        node.imports.push({ to: payload, kind: "usage", text: "import { " + names + ' } from "./' + payload + '"' });
+        commitNode(node, "util import " + payload);
+        return;
+      }
+      if (!node.jsx) { toast("Drop elements onto a component's markup."); return; }
+      const row = e.target.closest(".jsx-row");
+      let parentJ, index;
+      if (row) {
+        const j = findJsx(node.jsx, row.dataset.rowid) || node.jsx;
+        if (where === "inside" || j === node.jsx) { parentJ = j; index = j.children.length; }
+        else {
+          parentJ = findParent(node.jsx, j.id) || node.jsx;
+          index = parentJ.children.indexOf(j) + (where === "after" ? 1 : 0);
+        }
+      } else { parentJ = node.jsx; index = node.jsx.children.length; }
+      if (kind === "move") {
+        const mSep = payload.indexOf(":");
+        const srcNodeId = payload.slice(0, mSep), srcRowId = payload.slice(mSep + 1);
+        if (srcNodeId !== node.id) { toast("Moving across components isn't in the POC — delete and re-add."); return; }
+        const srcJ = findJsx(node.jsx, srcRowId);
+        if (!srcJ || srcJ === node.jsx) return;
+        if (findJsx(srcJ, parentJ.id)) { toast("Can't move an element into its own subtree."); return; }
+        const oldParent = findParent(node.jsx, srcJ.id);
+        const oldIdx = oldParent.children.indexOf(srcJ);
+        if (oldParent === parentJ && oldIdx < index) index--;
+        if (oldParent === parentJ && oldIdx === index) return;
+        oldParent.children.splice(oldIdx, 1);
+        parentJ.children.splice(index, 0, srcJ);
+        commitNode(node, "moved <" + srcJ.tag + ">");
+        return;
+      }
+      if (kind === "component" && payload === node.id) { toast("A component can't contain itself."); return; }
+      addChildAt(node, parentJ, index, payload);
+    });
+
+    /* ═══════════════ Bidirectional source pane: text → parser → model ═══════════════ */
+    let srcEditId = null;
+    function enterSrcEdit() {
+      if (!selected || srcEditId) return;
+      srcEditId = selected;
+      const ta = document.createElement("textarea");
+      ta.id = "src-edit"; ta.spellcheck = false;
+      ta.value = SOURCES[selected].lines.join("\n");
+      srcpane.innerHTML = "";
+      srcpane.appendChild(ta);
+      ta.focus();
+      ta.addEventListener("keydown", e => {
+        e.stopPropagation();
+        if (e.key === "Enter" && e.ctrlKey) { e.preventDefault(); applySrcEdit(); }
+        if (e.key === "Escape") cancelSrcEdit();
+      });
+      ta.addEventListener("input", () => ta.classList.remove("err"));
+      setSrcEditButtons(true);
+    }
+    function cancelSrcEdit() {
+      if (!srcEditId) return;
+      const id = srcEditId; srcEditId = null;
+      setSrcEditButtons(false);
+      renderSource(id);
+    }
+    function setSrcEditButtons(editing) {
+      document.getElementById("btnSrcEdit").style.display = editing ? "none" : "";
+      document.getElementById("btnSrcApply").style.display = editing ? "" : "none";
+      document.getElementById("btnSrcCancel").style.display = editing ? "" : "none";
+    }
+    function applySrcEdit() {
+      const ta = document.getElementById("src-edit");
+      if (!ta || !srcEditId) return;
+      const node = byId[srcEditId];
+      try {
+        if (node.kind === "style") parseStyleModuleText(ta.value, node);
+        else if (node.kind === "hook") parseHookModuleText(ta.value, node);
+        else if (node.kind === "util") parseUtilModuleText(ta.value, node);
+        else parseComponentText(ta.value, node);
+      } catch (ex) { ta.classList.add("err"); toast("Parse failed: " + ex.message); return; }
+      srcEditId = null;
+      setSrcEditButtons(false);
+      commitNode(node, "source edit (re-parsed, reformatted)");
+    }
+
+    const HOOK_LINE_RE = /^(?:var\s*(?:\([^)]*\)|\w+)\s*=\s*)?use[A-Za-z0-9_]+\s*\(/;
+    function parseHookLine(t) {
+      const hk = { decl: t, names: [], hook: "useState" };
+      const tuple = t.match(/var\s*\(([^)]*)\)/), single = t.match(/var\s+([A-Za-z_]\w*)\s*=/);
+      if (tuple) hk.names = tuple[1].split(",").map(x => x.trim()).filter(Boolean);
+      else if (single) hk.names = [single[1]];
+      const hn = t.match(/(use[A-Za-z0-9_]+)\s*\(/); if (hn) hk.hook = hn[1];
+      return hk;
+    }
+    function parseComponentText(text, node) {
+      const imports = [];
+      const importRe = /^import\s+(?:\{\s*(\w+)\s*\}|\*\s+as\s+(\w+))\s+from\s+"\.\/([\w.]+)"/;
+      const lines = text.split(/\r?\n/);
+      let headerIdx = -1;
+      lines.forEach((l, i) => {
+        const t = l.trim();
+        const m = importRe.exec(t);
+        if (m) {
+          const file = m[3];
+          const kind = file.endsWith(".hooks") ? "hook" : file.endsWith(".style") ? "style" : "usage";
+          imports.push({ to: m[1] || file.replace(/\.(hooks|style)$/, ""), kind, text: t });
+        }
+        if (headerIdx < 0 && /^export\s+VirtualNode\s+/.test(t)) headerIdx = i;
+      });
+      if (headerIdx < 0) throw new Error("missing 'export VirtualNode Name(...) {' header");
+      const hm = /^export\s+VirtualNode\s+(\w+)\s*(\([^)]*\))\s*\{/.exec(lines[headerIdx].trim());
+      if (!hm) throw new Error("could not parse the component header line");
+      const retIdx = lines.findIndex((l, i) => i > headerIdx && l.trim().startsWith("return ("));
+      if (retIdx < 0) throw new Error("missing 'return (' block");
+      const hooks = [], body = [];
+      for (let i = headerIdx + 1; i < retIdx; i++) {
+        const t = lines[i].trim();
+        if (!t) continue;
+        if (HOOK_LINE_RE.test(t)) hooks.push(parseHookLine(t));
+        else body.push(lines[i].replace(/^ {2}/, ""));
+      }
+      const jsxText = lines.slice(retIdx).join("\n");
+      const open = jsxText.indexOf("return (");
+      const closeRel = jsxText.lastIndexOf(");");
+      if (closeRel < 0 || closeRel < open) throw new Error("missing ');' closing the return block");
+      const jsx = parseJsxBlock(jsxText.slice(open + 8, closeRel));
+      const ensure = j => {
+        if (j.ref && !imports.some(im => im.to === j.ref))
+          imports.push({ to: j.ref, kind: "usage", text: "import { " + j.ref + ' } from "./' + j.ref + '"' });
+        j.children.forEach(ensure);
+      };
+      ensure(jsx);
+      if (hm[1] !== node.id) toast("Rename to '" + hm[1] + "' ignored — file identity stays " + node.id + " in the POC");
+      node.imports = imports; node.hooks = hooks; node.body = body; node.jsx = jsx; node.propsSig = hm[2];
+    }
+    function parseHookModuleText(text, node) {
+      const lines = text.split(/\r?\n/);
+      const hIdx = lines.findIndex(l => /^export\s+/.test(l.trim()));
+      if (hIdx < 0) throw new Error("missing 'export (...) useX(...) {' header");
+      const hm = /^export\s+(.+?)\s*(\([^)]*\))\s*\{$/.exec(lines[hIdx].trim());
+      if (!hm) throw new Error("could not parse the hook header line");
+      let endIdx = -1;
+      for (let i = lines.length - 1; i > hIdx; i--) if (lines[i].trim() === "}") { endIdx = i; break; }
+      if (endIdx < 0) throw new Error("missing closing '}'");
+      const hooks = [], body = [];
+      for (let i = hIdx + 1; i < endIdx; i++) {
+        const t = lines[i].trim();
+        if (!t) continue;
+        if (HOOK_LINE_RE.test(t)) hooks.push(parseHookLine(t));
+        else body.push(lines[i].replace(/^ {2}/, ""));
+      }
+      node.exportsSig = "export " + hm[1];
+      node.propsSig = hm[2];
+      node.hooks = hooks; node.body = body;
+    }
+    function parseUtilModuleText(text, node) {
+      const utils = [];
+      let cur = null, depth = 0;
+      text.split(/\r?\n/).forEach(l => {
+        const t = l.trim();
+        if (!cur) {
+          if (/^export\s+.+\{$/.test(t)) { cur = { sig: t.replace(/\s*\{$/, ""), body: [] }; depth = 1; }
+          else if (/^export\s+.+;$/.test(t)) utils.push({ sig: t, body: null });
+          return;
+        }
+        depth += (t.match(/\{/g) || []).length - (t.match(/\}/g) || []).length;
+        if (depth === 0) { utils.push(cur); cur = null; return; }
+        if (t) cur.body.push(l.replace(/^ {2}/, ""));
+      });
+      if (cur) throw new Error("unterminated util function (missing closing '}')");
+      if (!utils.length) throw new Error("no 'export <type> Name(...) { ... }' functions found");
+      node.utils = utils;
+    }
+    function parseStyleModuleText(text, node) {
+      const styles = [];
+      let cur = null;
+      text.split(/\r?\n/).forEach(l => {
+        const t = l.trim();
+        if (!t) return;
+        const m = /^export\s+Style\s+(\w+)\s*=\s*new\s+Style\s*\{/.exec(t);
+        if (m) { cur = { name: m[1], entries: [] }; styles.push(cur); return; }
+        if (t === "};") { cur = null; return; }
+        if (cur) cur.entries.push(t.replace(/,+$/, ""));
+      });
+      if (!styles.length) throw new Error("no 'export Style name = new Style { ... };' blocks found");
+      node.styles = styles;
+    }
+    function parseJsxBlock(src) {
+      let pos = 0;
+      function err(msg) {
+        const line = src.slice(0, pos).split("\n").length;
+        throw new Error(msg + " (return block, line ~" + line + ")");
+      }
+      function ws() { while (pos < src.length && /\s/.test(src[pos])) pos++; }
+      function parseNode() {
+        ws();
+        if (src[pos] === "@") {
+          const brace = src.indexOf("{", pos);
+          if (brace < 0) err("directive is missing its '{'");
+          const text = src.slice(pos, brace).trim();
+          pos = brace + 1;
+          const child = parseNode();
+          ws();
+          if (src[pos] !== "}") err("directive is missing its closing '}'");
+          pos++;
+          child.directive = { kind: text.startsWith("@foreach") ? "foreach" : text.startsWith("@else") ? "else" : "if", text };
+          return child;
+        }
+        if (src[pos] !== "<") err("expected '<'");
+        pos++;
+        const tagM = /^[A-Za-z][A-Za-z0-9]*/.exec(src.slice(pos));
+        if (!tagM) err("expected a tag name after '<'");
+        const tag = tagM[0]; pos += tag.length;
+        const attrs = [];
+        for (; ;) {
+          ws();
+          if (src.startsWith("/>", pos)) { pos += 2; return el(tag, attrs, { ref: byId[tag] && byId[tag].kind === "component" ? tag : null }); }
+          if (src[pos] === ">") { pos++; break; }
+          const nm = /^[A-Za-z_][A-Za-z0-9_-]*/.exec(src.slice(pos));
+          if (!nm) err("expected an attribute name in <" + tag + ">");
+          pos += nm[0].length; ws();
+          if (src[pos] !== "=") err("expected '=' after '" + nm[0] + "'");
+          pos++; ws();
+          let val;
+          if (src[pos] === "{") {
+            const start = pos; let depth = 0;
+            while (pos < src.length) {
+              if (src[pos] === "{") depth++;
+              else if (src[pos] === "}") { depth--; if (!depth) { pos++; break; } }
+              pos++;
+            }
+            if (depth) err("unbalanced '{' in attribute '" + nm[0] + "'");
+            val = src.slice(start, pos);
+          } else if (src[pos] === '"') {
+            const start = pos; pos++;
+            while (pos < src.length && src[pos] !== '"') pos++;
+            if (src[pos] !== '"') err("unterminated string in attribute '" + nm[0] + "'");
+            pos++;
+            val = src.slice(start, pos);
+          } else err("expected {expr} or \"string\" for attribute '" + nm[0] + "'");
+          attrs.push({ n: nm[0], e: val });
+        }
+        const jn = el(tag, attrs, { ref: byId[tag] && byId[tag].kind === "component" ? tag : null });
+        for (; ;) {
+          ws();
+          if (src.startsWith("</", pos)) {
+            pos += 2; ws();
+            const closeM = /^[A-Za-z][A-Za-z0-9]*/.exec(src.slice(pos));
+            if (!closeM || closeM[0] !== tag) err("mismatched closing tag for <" + tag + ">");
+            pos += closeM[0].length; ws();
+            if (src[pos] !== ">") err("expected '>' in closing tag of <" + tag + ">");
+            pos++;
+            return jn;
+          }
+          if (pos >= src.length) err("missing </" + tag + ">");
+          jn.children.push(parseNode());
+        }
+      }
+      const root = parseNode();
+      ws();
+      if (pos < src.length) err("unexpected trailing content after the root element");
+      return root;
+    }
+
+    /* state-chip hover → trace usages */
+    world.addEventListener("mouseover", ev => {
+      const chip = ev.target.closest(".chip[data-states]");
+      if (!chip) return;
+      const card = chip.closest(".card"); const nodeId = card.id.slice(5);
+      const states = chip.dataset.states.split(",").filter(Boolean);
+      if (!states.length) return;
+      const re = new RegExp("\\b(" + states.join("|") + ")\\b");
+      card.querySelectorAll(".jsx-row").forEach(r => { if (re.test(r.dataset.exprs)) r.classList.add("hl"); });
+      card.querySelectorAll(".code-island").forEach(isl => { if (re.test(isl.textContent)) isl.classList.add("hl"); });
+      if (selected === nodeId)
+        SOURCES[nodeId].lines.forEach((l, i) => {
+          if (re.test(l)) { const s = srcpane.querySelector('[data-line="' + i + '"]'); if (s) s.classList.add("hl"); }
+        });
+    });
+    world.addEventListener("mouseout", ev => {
+      if (ev.target.closest(".chip[data-states]")) {
+        document.querySelectorAll(".jsx-row.hl, .srcline.hl, .code-island.hl").forEach(x => x.classList.remove("hl"));
+      }
+    });
+
+    /* ═══════════════ Live preview (hand-mocked, genuinely stateful) ═══════════════ */
+    const pv = document.getElementById("preview");
+    const pvState = {};
+    function st(id, init) { if (!(id in pvState)) pvState[id] = init(); return pvState[id]; }
+
+    function renderPreview(id) {
+      document.getElementById("pv-name").textContent = "<" + id + ">";
+      document.getElementById("btnPvMode").style.display = "none";
+      const n = byId[id];
+      if (n.kind === "hook") { pv.innerHTML = '<div class="nopreview">Hook module — no visual. Exposes <b>useCart(gold, setGold) → (Count, Buy)</b>. Consumed by ShopScreen (green edge). Double-click its code island to edit the body.</div>'; return; }
+      if (n.kind === "style") { pv.innerHTML = '<div class="nopreview">Style module — no visual of its own. Zoom to L2 and click an entry to edit it. Tip: select <b>ShopScreen</b> first, then edit <b>root</b>&rsquo;s BackgroundColor hex — the live preview repaints.</div>'; return; }
+      if (n.kind === "util") { pv.innerHTML = '<div class="nopreview">Util module — no visual. Its exported functions land on the file&rsquo;s <b>__Exports</b> class; drag the module onto a component to import them by name.</div>'; return; }
+      if (id === "ShopScreen") {
+        const scripted = pvState.shopMode === "scripted";
+        const btn = document.getElementById("btnPvMode");
+        btn.style.display = "";
+        btn.textContent = scripted ? "model render" : "scripted demo";
+        btn.title = scripted ? "switch to the generic model-driven render (reflects every edit)" : "switch to the interactive scripted demo";
+        return scripted ? pvShop() : pvGeneric(id);
+      }
+      pvGeneric(id);
+    }
+
+    /* Knobs are built ONCE per selection; state changes re-render only #pv-ui,
+       so inputs keep focus while typing / dragging. */
+    function getShopBg() {
+      const sty = byId.shopStyles.styles.find(s2 => s2.name === "root");
+      const m = sty && sty.entries.join(" ").match(/Hex\("(#[0-9a-fA-F]{3,8})"\)/);
+      return m ? m[1] : "#101014";
+    }
+
+    function pvShop() {
+      const s = st("ShopScreen", () => ({
+        gold: 100, count: 0, cart: 0, items: [
+          { name: "Iron Sword", price: 30, stock: 2 }, { name: "Health Potion", price: 15, stock: 5 }, { name: "Tower Shield", price: 45, stock: 1 }]
+      }));
+      pv.innerHTML = '<div id="pv-ui"></div>' +
+        '<div class="knobs"><div class="krow"><label>gold</label><input type="range" min="0" max="200" id="pv-gold" value="' + s.gold + '"><b id="pv-gold-val">' + s.gold + "</b></div>" +
+        '<div class="krow"><label></label><span style="color:var(--dim);font-size:11px">scripted app demo (state + interactions); all other components render generically from the model</span></div></div>';
+      document.getElementById("pv-gold").oninput = e => { s.gold = +e.target.value; syncShop(s); };
+      syncShop(s);
+    }
+    function syncShop(s) {
+      const ui = document.getElementById("pv-ui");
+      let items = "";
+      s.items.forEach((it, i) => {
+        items += '<div class="m-item" data-jumpc="ItemCard"><span>' + it.name + "</span>" +
+          (it.stock > 0
+            ? '<button data-buy="' + i + '"' + (s.gold < it.price ? " disabled" : "") + ">Buy " + it.price + "g</button>"
+            : '<span class="soldout">SOLD OUT</span>') + "</div>";
+      });
+      ui.innerHTML = '<div class="ui-mock" style="background:' + getShopBg() + '">' +
+        '<div class="m-header" data-jumpc="Header"><span>Shop (' + s.cart + " in cart)</span><span class=\"m-gold\">" + s.gold + " g</span></div>" +
+        items +
+        (s.cart > 0 ? '<div class="m-counter" data-jumpc="Counter"><span>Count: ' + s.count + '</span><button data-cnt="1">+1</button></div>' : "") +
+        "</div>";
+      ui.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => {
+        const it = s.items[+b.dataset.buy]; if (s.gold < it.price) return;
+        s.gold -= it.price; it.stock--; s.cart++; syncShop(s);
+      });
+      const cnt = ui.querySelector("[data-cnt]"); if (cnt) cnt.onclick = () => { s.count++; syncShop(s); };
+      ui.querySelectorAll("[data-jumpc]").forEach(x => x.onclick = ev => { if (ev.target.tagName !== "BUTTON") selectNode(x.dataset.jumpc); });
+      const slider = document.getElementById("pv-gold");
+      if (document.activeElement !== slider) slider.value = s.gold;
+      document.getElementById("pv-gold-val").textContent = s.gold;
+    }
+
+    /* ═══ Generic model-driven preview: evaluates the AST directly, so every
+       canvas/source edit (attrs, order, directives, props, styles) is reflected.
+       The real tool replaces this whole section with the actual fiber renderer. ═══ */
+    function parseProps(node) {
+      const m = /\(([^)]*)\)/.exec(node.propsSig || "()");
+      if (!m || !m[1].trim()) return [];
+      return m[1].split(",").map(p => {
+        const parts = p.trim().split(/\s+/);
+        return { name: parts[parts.length - 1], type: parts.slice(0, -1).join(" ") };
+      });
+    }
+    function collectExprs(node) {
+      const out = [];
+      const walk = j => {
+        j.attrs.forEach(a => out.push(a.e));
+        if (j.directive) out.push(j.directive.text);
+        j.children.forEach(walk);
+      };
+      if (node.jsx) walk(node.jsx);
+      return out.join(" ");
+    }
+    function lookupPath(scope, path) {
+      let v = scope;
+      for (const seg of path.split(".")) { if (v == null) return undefined; v = v[seg]; }
+      return v;
+    }
+    function evalRef(r, scope) {
+      if (/^-?\d+(\.\d+)?$/.test(r)) return +r;
+      if (/^".*"$/.test(r)) return r.slice(1, -1);
+      if (/^[A-Za-z_][\w.]*$/.test(r)) return lookupPath(scope, r);
+      return undefined;
+    }
+    function evalExpr(e, scope) {
+      if (e == null) return "";
+      e = e.trim();
+      if (e.startsWith("{") && e.endsWith("}")) e = e.slice(1, -1).trim();
+      if (/^".*"$/.test(e)) return e.slice(1, -1);
+      if (/^\$".*"$/.test(e)) {
+        return e.slice(2, -1).replace(/\{([^{}]+)\}/g, (mm, inner) => {
+          const v = evalRef(inner.trim(), scope);
+          return v === undefined ? "…" : v;
+        });
+      }
+      const v = evalRef(e, scope);
+      return v === undefined ? "" : v;
+    }
+    function evalCond(text, scope) {
+      const m = /\((.*)\)\s*$/.exec(text.trim());
+      if (!m) return true;
+      const c = m[1].trim();
+      const bm = /^(.+?)\s*(>=|<=|==|!=|>|<)\s*(.+)$/.exec(c);
+      if (bm) {
+        const l = evalRef(bm[1].trim(), scope), r = evalRef(bm[3].trim(), scope);
+        if (l === undefined || r === undefined) return true;
+        switch (bm[2]) {
+          case ">": return l > r; case "<": return l < r; case ">=": return l >= r;
+          case "<=": return l <= r; case "==": return l == r; case "!=": return l != r;
+        }
+      }
+      const v = evalRef(c, scope);
+      return v === undefined ? true : !!v;
+    }
+    function resolveStyleEntries(node, expr) {
+      const m = /^\{?\s*(?:Styles\.)?(\w+)\s*\}?$/.exec(expr.trim());
+      if (!m) return null;
+      const styImport = node.imports.find(im => im.kind === "style");
+      const mod = styImport && byId[styImport.to];
+      if (mod && mod.styles) {
+        const sty = mod.styles.find(s => s.name === m[1]);
+        if (sty) return sty.entries;
+      }
+      for (const n2 of NODES) {
+        if (n2.kind !== "style") continue;
+        const sty = n2.styles.find(s => s.name === m[1]);
+        if (sty) return sty.entries;
+      }
+      return null;
+    }
+    function applyEntriesToDom(elDom, entries) {
+      entries.forEach(en => {
+        const eq = en.indexOf("=");
+        if (eq < 0) return;
+        const k = en.slice(0, eq).trim(), vRaw = en.slice(eq + 1).trim();
+        const px = /Px\(([\d.]+)\)/.exec(vRaw), pct = /Pct\(([\d.]+)\)/.exec(vRaw), hex = /Hex\("(#[0-9a-fA-F]+)"\)/.exec(vRaw);
+        const val = px ? px[1] + "px" : pct ? pct[1] + "%" : hex ? hex[1] : vRaw;
+        const enumCss = s => s.replace(/^(Justify|Align)/, "").replace("FlexStart", "flex-start").replace("FlexEnd", "flex-end").replace("SpaceBetween", "space-between").toLowerCase();
+        switch (k) {
+          case "BackgroundColor": elDom.style.background = val; break;
+          case "Color": elDom.style.color = val; break;
+          case "Padding": elDom.style.padding = val; break;
+          case "Margin": elDom.style.margin = val; break;
+          case "Gap": elDom.style.gap = val; break;
+          case "BorderRadius": elDom.style.borderRadius = val; break;
+          case "FontSize": elDom.style.fontSize = val; break;
+          case "Width": elDom.style.width = val; break;
+          case "Height": elDom.style.height = val; break;
+          case "FlexGrow": elDom.style.flexGrow = val; break;
+          case "Opacity": elDom.style.opacity = val; break;
+          case "FlexDirection": elDom.style.display = "flex"; elDom.style.flexDirection = val === "FlexRow" ? "row" : "column"; break;
+          case "JustifyContent": elDom.style.display = "flex"; elDom.style.justifyContent = enumCss(val); break;
+          case "AlignItems": elDom.style.alignItems = enumCss(val); break;
+        }
+      });
+    }
+    function renderChildrenDom(node, children, scope, depth, out) {
+      let lastIf = null;
+      children.forEach(c => {
+        if (c.directive && c.directive.kind === "if") {
+          const ok = evalCond(c.directive.text, scope);
+          lastIf = ok;
+          if (ok) out.push(renderOneDom(node, c, scope, depth));
+          return;
+        }
+        if (c.directive && c.directive.kind === "else") {
+          if (lastIf === false) out.push(renderOneDom(node, c, scope, depth));
+          lastIf = null;
+          return;
+        }
+        if (c.directive && c.directive.kind === "foreach") {
+          const fm = /\(\s*var\s+(\w+)\s+in\s+([\w.]+)\s*\)/.exec(c.directive.text);
+          const arr = fm ? lookupPath(scope, fm[2]) : null;
+          const items = Array.isArray(arr) && arr.length ? arr : [{}, {}];
+          items.forEach(it => {
+            const s2 = Object.assign({}, scope);
+            if (fm) s2[fm[1]] = it;
+            out.push(renderOneDom(node, c, s2, depth));
+          });
+          lastIf = null;
+          return;
+        }
+        lastIf = null;
+        out.push(renderOneDom(node, c, scope, depth));
+      });
+    }
+    function renderOneDom(node, j, scope, depth) {
+      const custom = byId[j.tag];
+      if (custom && custom.kind === "component") {
+        const wrap = document.createElement("div");
+        wrap.dataset.jump = j.tag;
+        wrap.title = "click to open " + j.tag;
+        if (depth > 2) { wrap.className = "gp-stub"; wrap.textContent = "<" + j.tag + " /> (depth cap)"; return wrap; }
+        const childProps = {};
+        j.attrs.forEach(a => { childProps[a.n] = evalExpr(a.e, scope); });
+        wrap.appendChild(renderComponentDom(custom, childProps, depth + 1, null, null));
+        return wrap;
+      }
+      const attrOf = nm => { const a = j.attrs.find(x => x.n === nm); return a ? a.e : null; };
+      let d;
+      switch (j.tag) {
+        case "Label": d = document.createElement("div"); d.className = "gp-label"; d.textContent = evalExpr(attrOf("text"), scope); break;
+        case "Button": {
+          d = document.createElement("button"); d.className = "gp-btn";
+          d.textContent = evalExpr(attrOf("text"), scope) || "Button";
+          const oc = attrOf("onClick");
+          const im = oc && /set(\w+)\s*\(\s*(\w+)\s*\+\s*1\s*\)/.exec(oc);
+          if (im) d.onclick = e => { e.stopPropagation(); if (scope.__set) scope.__set(im[2], (scope[im[2]] || 0) + 1); };
+          break;
+        }
+        case "TextField": d = document.createElement("input"); d.className = "gp-input"; d.value = evalExpr(attrOf("value"), scope) || ""; break;
+        case "Toggle": d = document.createElement("input"); d.type = "checkbox"; d.checked = !!evalExpr(attrOf("value"), scope); break;
+        case "Slider": d = document.createElement("input"); d.type = "range"; break;
+        default: d = document.createElement("div"); d.className = "gp-ve";
+      }
+      const styleAttr = attrOf("style");
+      if (styleAttr) { const ent = resolveStyleEntries(node, styleAttr); if (ent) applyEntriesToDom(d, ent); }
+      if (j.children.length) {
+        const out = [];
+        renderChildrenDom(node, j.children, scope, depth, out);
+        out.filter(Boolean).forEach(c => d.appendChild(c));
+      }
+      return d;
+    }
+    /* The evaluator cannot run C# bodies, so functions exported by util modules
+       get mock stand-ins here (the real renderer runs the compiled code). */
+    const MOCK_BUILTINS = {
+      SeedItems: () => [
+        { Name: "Iron Sword", Price: 30, Stock: 2 },
+        { Name: "Health Potion", Price: 15, Stock: 5 },
+        { Name: "Tower Shield", Price: 45, Stock: 1 },
+      ],
+    };
+    function resolveUtilValue(node, name) {
+      for (const im of node.imports) {
+        const mod = byId[im.to];
+        if (!mod || mod.kind !== "util") continue;
+        for (const u of mod.utils) {
+          if (u.body !== null) continue;
+          const m = new RegExp("\\b" + name + "\\s*=\\s*(.+);").exec(u.sig);
+          if (m) {
+            const raw = m[1].trim();
+            if (/^-?\d+(\.\d+)?$/.test(raw)) return +raw;
+            if (/^".*"$/.test(raw)) return raw.slice(1, -1);
+          }
+        }
+      }
+      return undefined;
+    }
+    function buildScope(node, props, stateStore) {
+      const scope = Object.assign({}, props);
+      (node.hooks || []).forEach(hk => {
+        if (!hk.names.length) return;
+        const key = hk.names[0];
+        if (hk.hook === "useState") {
+          const im = /useState\s*\((.*)\)/.exec(hk.decl);
+          let init = 0;
+          if (im) {
+            const raw = im[1].trim();
+            if (/^-?\d+(\.\d+)?$/.test(raw)) init = +raw;
+            else if (/^".*"$/.test(raw)) init = raw.slice(1, -1);
+            else if (/^[A-Za-z_]\w*$/.test(raw)) { const v = resolveUtilValue(node, raw); if (v !== undefined) init = v; }
+            else { const bm = /^(\w+)\s*\(\s*\)$/.exec(raw); if (bm && MOCK_BUILTINS[bm[1]]) init = MOCK_BUILTINS[bm[1]](); }
+          }
+          if (stateStore) { if (!(key in stateStore)) stateStore[key] = init; scope[key] = stateStore[key]; }
+          else if (!(key in scope)) scope[key] = init;
+          return;
+        }
+        /* custom hook: stub its result from the hook module's export signature */
+        const mod = byId[hk.hook];
+        const stub = {};
+        if (mod && mod.exportsSig) {
+          const tm = /export\s*\(([^)]*)\)/.exec(mod.exportsSig);
+          if (tm) tm[1].split(",").forEach(part => {
+            const ps = part.trim().split(/\s+/);
+            if (ps.length < 2) return;
+            const nm = ps[ps.length - 1], ty = ps.slice(0, -1).join(" ");
+            stub[nm] = /int|float|double|long/.test(ty) ? 0 : /string/.test(ty) ? "" : /bool/.test(ty) ? false : undefined;
+          });
+        }
+        if (!(key in scope)) scope[key] = stub;
+      });
+      (node.body || []).forEach(b => {
+        const vm = /^var\s+(\w+)\s*=\s*(.+);$/.exec(b.trim());
+        if (vm && !(vm[1] in scope)) scope[vm[1]] = evalExpr(vm[2].trim(), scope);
+      });
+      return scope;
+    }
+    function renderComponentDom(node, props, depth, stateStore, rerender) {
+      const scope = buildScope(node, props, stateStore);
+      scope.__set = (key, val) => { if (stateStore) { stateStore[key] = val; if (rerender) rerender(); } };
+      const root = document.createElement("div");
+      root.className = "gp-root";
+      if (node.jsx) {
+        const out = [];
+        renderChildrenDom(node, [node.jsx], scope, depth, out);
+        out.filter(Boolean).forEach(c => root.appendChild(c));
+      }
+      return root;
+    }
+    function getKnobDefault(props, path, type) {
+      const segs = path.split(".");
+      let obj = props;
+      for (let i = 0; i < segs.length - 1; i++) { obj[segs[i]] = obj[segs[i]] || {}; obj = obj[segs[i]]; }
+      const last = segs[segs.length - 1];
+      if (!(last in obj)) obj[last] = type === "number" ? (segs.length > 1 ? 1 : 0) : type === "checkbox" ? false : last;
+      return obj[last];
+    }
+    function setKnob(props, path, v) {
+      const segs = path.split(".");
+      let o = props;
+      for (let i = 0; i < segs.length - 1; i++) { o[segs[i]] = o[segs[i]] || {}; o = o[segs[i]]; }
+      o[segs[segs.length - 1]] = v;
+    }
+    function firstUsageProps(nodeId) {
+      for (const n2 of NODES) {
+        if (n2.id === nodeId || !n2.jsx) continue;
+        let found = null;
+        const walk = j => { if (!found) { if (j.ref === nodeId) { found = j; return; } j.children.forEach(walk); } };
+        walk(n2.jsx);
+        if (found) {
+          const scope = buildScope(n2, {}, null);
+          const props = {};
+          found.attrs.forEach(a => { const v = evalExpr(a.e, scope); if (v !== undefined) props[a.n] = v; });
+          return { props, from: n2.id };
+        }
+      }
+      return null;
+    }
+    function pvGeneric(id) {
+      const node = byId[id];
+      const store = st("gp-" + id, () => ({ props: {}, state: {} }));
+      if (!store.seeded) {
+        store.seeded = true;
+        const up = firstUsageProps(id);
+        if (up) {
+          Object.keys(up.props).forEach(k => {
+            const v = up.props[k];
+            if (typeof v !== "object" && v !== "" && !(k in store.props)) store.props[k] = v;
+          });
+          store.seededFrom = up.from;
+        }
+      }
+      const blob = collectExprs(node);
+      const rows = [];
+      parseProps(node).forEach(p => {
+        if (/Action|Func|delegate/.test(p.type)) return;
+        if (/^(int|float|double|long)$/.test(p.type)) rows.push({ path: p.name, type: "number" });
+        else if (p.type === "bool") rows.push({ path: p.name, type: "checkbox" });
+        else if (p.type === "string") rows.push({ path: p.name, type: "text" });
+        else {
+          const re = new RegExp("\\b" + p.name + "\\.([A-Za-z_]\\w*)", "g");
+          const seen = new Set(); let mm;
+          while ((mm = re.exec(blob))) seen.add(mm[1]);
+          if (!(p.name in store.props)) store.props[p.name] = {};
+          seen.forEach(mem => rows.push({
+            path: p.name + "." + mem,
+            type: /price|count|stock|gold|amount|size|width|height|hp|level|score|id$/i.test(mem) ? "number" : "text",
+          }));
+        }
+      });
+      let kh = "";
+      rows.forEach(r => {
+        const cur = getKnobDefault(store.props, r.path, r.type);
+        kh += '<div class="krow"><label>' + r.path + "</label>" +
+          (r.type === "checkbox"
+            ? '<input type="checkbox" data-k="' + r.path + '"' + (cur ? " checked" : "") + ">"
+            : '<input type="' + r.type + '" data-k="' + r.path + '" value="' + escAttr(String(cur)) + '">') + "</div>";
+      });
+      buildScope(node, store.props, store.state);
+      const stateRows = [];
+      (node.hooks || []).forEach(hk => {
+        if (hk.hook !== "useState" || !hk.names.length) return;
+        const key = hk.names[0], v = store.state[key];
+        if (typeof v === "number") stateRows.push({ key, type: "number" });
+        else if (typeof v === "string") stateRows.push({ key, type: "text" });
+        else if (typeof v === "boolean") stateRows.push({ key, type: "checkbox" });
+      });
+      if (stateRows.length) {
+        kh += '<div class="sec-label" style="margin:8px 0 6px">state — live hook values</div>';
+        stateRows.forEach(r => {
+          const cur = store.state[r.key];
+          kh += '<div class="krow"><label>' + r.key + "</label>" +
+            (r.type === "checkbox"
+              ? '<input type="checkbox" data-sk="' + r.key + '"' + (cur ? " checked" : "") + ">"
+              : '<input type="' + r.type + '" data-sk="' + r.key + '" value="' + escAttr(String(cur)) + '">') + "</div>";
+        });
+      }
+      pv.innerHTML = '<div id="pv-ui"></div><div class="knobs">' +
+        (rows.length ? '<div class="sec-label" style="margin-bottom:6px">props — auto-generated knobs</div>' : "") + kh +
+        (store.seededFrom ? '<div class="krow"><label></label><span style="color:var(--dim);font-size:11px">knob defaults taken from its usage in ' + store.seededFrom + "</span></div>" : "") +
+        '<div class="krow"><label></label><span style="color:var(--dim);font-size:11px">rendered generically from the model — every edit re-renders; handlers with C# bodies (e.g. cart.Buy) are no-ops here, the real renderer runs them</span></div></div>';
+      pv.querySelectorAll("[data-k]").forEach(inp => {
+        inp.oninput = () => {
+          const v = inp.type === "checkbox" ? inp.checked : inp.type === "number" ? (+inp.value || 0) : inp.value;
+          setKnob(store.props, inp.dataset.k, v);
+          syncGeneric(node, store);
+        };
+      });
+      pv.querySelectorAll("[data-sk]").forEach(inp => {
+        inp.oninput = () => {
+          const v = inp.type === "checkbox" ? inp.checked : inp.type === "number" ? (+inp.value || 0) : inp.value;
+          store.state[inp.dataset.sk] = v;
+          syncGeneric(node, store);
+        };
+      });
+      syncGeneric(node, store);
+    }
+    function syncGeneric(node, store) {
+      const ui = document.getElementById("pv-ui");
+      if (!ui) return;
+      ui.innerHTML = "";
+      ui.appendChild(renderComponentDom(node, store.props, 0, store.state, () => syncGeneric(node, store)));
+      ui.querySelectorAll("[data-jump]").forEach(x => x.onclick = e => {
+        if (e.target.tagName !== "BUTTON") { e.stopPropagation(); selectNode(x.dataset.jump); }
+      });
+      pv.querySelectorAll("[data-sk]").forEach(inp => {
+        if (document.activeElement === inp) return;
+        const v = store.state[inp.dataset.sk];
+        if (inp.type === "checkbox") inp.checked = !!v; else inp.value = v;
+      });
+    }
+
+    /* ═══════════════ Misc UI ═══════════════ */
+    document.getElementById("btnHelp").onclick = () => document.getElementById("help").classList.toggle("open");
+    document.getElementById("btnUxml").onclick = () => toast("Mock: would import Shop.uxml from UI Builder → generates Shop.uitkx on the canvas (one-way).");
+    let toastTimer = null;
+    function toast(msg) {
+      const t = document.getElementById("toast"); t.textContent = msg; t.style.opacity = 1;
+      clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.opacity = 0, 3200);
+    }
+
+    /* pane splitters */
+    (function initSplitters() {
+      const right = document.getElementById("right"), prev = document.getElementById("preview");
+      let sd = null;
+      document.getElementById("vsplit").addEventListener("mousedown", e => { sd = { kind: "v", sx: e.clientX, w: right.getBoundingClientRect().width }; e.preventDefault(); });
+      document.getElementById("hsplit").addEventListener("mousedown", e => { sd = { kind: "h", sy: e.clientY, h: prev.getBoundingClientRect().height }; e.preventDefault(); });
+      window.addEventListener("mousemove", e => {
+        if (!sd) return;
+        if (sd.kind === "v") right.style.flexBasis = Math.min(Math.max(280, sd.w - (e.clientX - sd.sx)), window.innerWidth - 300) + "px";
+        else prev.style.flexBasis = Math.min(Math.max(120, sd.h + (e.clientY - sd.sy)), window.innerHeight - 200) + "px";
+        drawEdges();
+      });
+      window.addEventListener("mouseup", () => sd = null);
+    })();
+
+    /* boot */
+    document.getElementById("btnLibNew").onclick = e => {
+      const wr = canvasWrap.getBoundingClientRect();
+      const wx = (wr.width / 2 - view.x) / view.s, wy = (wr.height / 2 - view.y) / view.s;
+      openCreateMenu(e.clientX, e.clientY + 8, Math.round(wx), Math.round(wy));
+    };
+    document.getElementById("btnPvMode").onclick = () => {
+      pvState.shopMode = pvState.shopMode === "scripted" ? "model" : "scripted";
+      renderPreview(selected);
+    };
+    document.getElementById("btnSrcEdit").onclick = enterSrcEdit;
+    document.getElementById("btnSrcApply").onclick = applySrcEdit;
+    document.getElementById("btnSrcCancel").onclick = cancelSrcEdit;
+    srcpane.addEventListener("dblclick", () => { if (!srcEditId) enterSrcEdit(); });
+    buildLibrary();
+    buildCards();
+    applyView();
+    selectNode("ShopScreen");
+    setTimeout(drawEdges, 50);
+    window.addEventListener("resize", drawEdges);
+  </script>
+</body>
+
+</html>
