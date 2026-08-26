@@ -14,6 +14,7 @@ import {
   Paper,
 } from '@mui/material'
 import { Shot } from './Shot'
+import workspaceShot from '../../assets/builder/workspace.png'
 import Styles from './UiBuilderPage.style'
 
 const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -39,7 +40,7 @@ export const UiBuilderOverviewPage: FC = () => (
     </Typography>
 
     <Shot
-      src="/builder/workspace.png"
+      src={workspaceShot}
       alt="The RUITK UI Builder with the folder tree, library, canvas, live preview and source pane"
       caption="The whole workspace: folders and library on the left, the canvas in the middle, live preview and source on the right."
     />

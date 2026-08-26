@@ -14,6 +14,8 @@ import {
   Paper,
 } from '@mui/material'
 import { Shot } from './Shot'
+import layerCardsShot from '../../assets/builder/layer-cards.png'
+import styleKeysShot from '../../assets/builder/style-keys.png'
 import Styles from './UiBuilderPage.style'
 
 const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -85,7 +87,7 @@ export const UiBuilderEditingPage: FC = () => (
       </TableContainer>
 
       <Shot
-        src="/builder/layer-cards.png"
+        src={layerCardsShot}
         alt="The canvas at Layer 2, showing five compact cards and their import edges"
         caption="Layer 2 — Cards. The whole tree at once, still readable, with the usage edges visible."
       />
@@ -173,7 +175,7 @@ export const UiBuilderEditingPage: FC = () => (
       </Typography>
 
       <Shot
-        src="/builder/style-keys.png"
+        src={styleKeysShot}
         alt="The style key picker open over a style module card, with the History panel visible"
         caption="Adding a style key. Every entry carries its type, and the list is searchable."
       />
