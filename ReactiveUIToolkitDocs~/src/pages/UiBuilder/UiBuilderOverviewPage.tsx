@@ -15,6 +15,7 @@ import {
 } from '@mui/material'
 import { Shot } from './Shot'
 import workspaceShot from '../../assets/builder/workspace.png'
+import emptyStateShot from '../../assets/builder/empty-state.png'
 import Styles from './UiBuilderPage.style'
 
 const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -140,6 +141,11 @@ export const UiBuilderOverviewPage: FC = () => (
           </TableBody>
         </Table>
       </TableContainer>
+      <Shot
+        src={emptyStateShot}
+        alt="The builder's empty state offering New component, style, hook and util module"
+        caption="Opened from the menu with nothing selected, the builder offers the four ways to start. Nothing is written to disk until you Save."
+      />
       <Typography variant="body2" paragraph>
         Double-clicking a <code>.uitkx</code> asset keeps opening your external editor. The builder
         never takes that route over.
