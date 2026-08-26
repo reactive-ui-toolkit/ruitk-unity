@@ -64,6 +64,25 @@ jobs:
           fi
           echo "OK: assets are base-prefixed with /${{ env.LEG_DIR }}/"
 
+      - name: Guard — no hand-written absolute asset URLs
+        # Vite only rewrites asset URLs it PROCESSES: attributes in index.html, and imports the
+        # bundler resolves. A literal like src="/logo.png" in a .tsx is emitted VERBATIM, so under
+        # base=/unity/ it points at the domain root, 404s on the live site, and builds perfectly
+        # happily -- which is how the site logo and the first UI Builder screenshots shipped broken.
+        # Images belong in src/assets and must be imported; then Vite hashes them, prefixes them,
+        # and a wrong path is a BUILD error instead of a silent 404.
+        run: |
+          set -euo pipefail
+          hits=$(cat "${DOCS_DIR}"/dist/assets/*.js \
+            | grep -ohE '["`]/[A-Za-z0-9_./-]+\.(png|jpe?g|gif|svg|webp|ico|woff2?)["`]' \
+            | grep -v '^["`]/${{ env.LEG_DIR }}/' | sort -u || true)
+          if [ -n "$hits" ]; then
+            echo "::error::asset URLs that bypass the base prefix -- import them from src/assets instead:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: every absolute asset URL in the bundle is base-prefixed"
+
       - name: Push into the family documentation site
         env:
           TOKEN: ${{ secrets.DOCUMENTATION_SYNC_PATS }}

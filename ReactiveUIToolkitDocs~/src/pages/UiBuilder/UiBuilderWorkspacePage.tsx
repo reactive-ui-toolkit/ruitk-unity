@@ -14,6 +14,7 @@ import {
   Paper,
 } from '@mui/material'
 import { Shot } from './Shot'
+import workspaceShot from '../../assets/builder/workspace.png'
 import Styles from './UiBuilderPage.style'
 
 const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -37,7 +38,7 @@ export const UiBuilderWorkspacePage: FC = () => (
     </Typography>
 
     <Shot
-      src="/builder/workspace.png"
+      src={workspaceShot}
       alt="The builder workspace with all five regions visible"
       caption="All five regions at Layer 3. The header reads the focused file and how many files are open and dirty."
     />

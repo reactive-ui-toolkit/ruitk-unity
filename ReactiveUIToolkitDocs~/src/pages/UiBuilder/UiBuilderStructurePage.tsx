@@ -15,6 +15,7 @@ import {
 } from '@mui/material'
 import { CodeBlock } from '../../components/CodeBlock/CodeBlock'
 import { Shot } from './Shot'
+import contextMenuShot from '../../assets/builder/context-menu.png'
 import Styles from './UiBuilderPage.style'
 
 const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -152,7 +153,7 @@ export const UiBuilderStructurePage: FC = () => (
       </Typography>
 
       <Shot
-        src="/builder/context-menu.png"
+        src={contextMenuShot}
         alt="The card context menu with the New submenu open, showing child and beside placement hints"
         caption="Every entry in the New submenu states its placement on the right: child or beside."
       />

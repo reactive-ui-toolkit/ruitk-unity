@@ -4,6 +4,7 @@ import { Link as RouterLink } from 'react-router-dom'
 import SearchIcon from '@mui/icons-material/Search'
 import GitHubIcon from '@mui/icons-material/GitHub'
 import Styles from './TopBar.style'
+import logoUrl from '../../assets/logo.png'
 import { PACKAGE_VERSION } from '../../version'
 import { SUPPORTED_VERSIONS } from '../../versionManifest'
 import { useSelectedVersion } from '../../contexts/useSelectedVersion'
@@ -20,7 +21,7 @@ export const TopBar: FC<TopBarProps> = ({ onOpenSearch }) => {
           <Link component={RouterLink} to="/" underline="none" sx={Styles.titleLink}>
             <Box
               component="img"
-              src="/logo.png"
+              src={logoUrl}
               alt="Reactive UI Toolkit — Unity logo"
               sx={Styles.logo}
             />
