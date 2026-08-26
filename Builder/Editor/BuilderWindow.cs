@@ -5680,23 +5680,50 @@ namespace Ruitk.Builder
                 plan.Add((module, target));
             }
 
+            // Where every module SITS before anything moves.
+            //
+            // The walk below relocates a module by moving its FOLDER, and that
+            // carries every module inside it. So by the time the loop reaches one
+            // of those passengers its path has ALREADY changed, and a before/after
+            // read around its own PlaceAt call compares two identical paths -
+            // which the layout treats as "did not move" and ignores. Only the
+            // module that physically triggered each move was ever told about it;
+            // every card that rode along kept a position keyed to the provisional
+            // root, stopped resolving, and was handed a default slot by the mount
+            // that follows the save. One dragged card survived and the rest fell
+            // into a column (UB-220).
+            //
+            // Asking each module where it USED to be answers that for passengers
+            // and drivers alike, and does not care what order the tree hands them
+            // back.
+            var wasAt = new System.Collections.Generic.Dictionary<BuilderModule, string>();
+            foreach (var module in _workspace.Modules)
+                wasAt[module] = module.FilePath;
+
             foreach (var step in plan)
             {
-                // A module the folder move already carried home is placed where
-                // it now is, which changes nothing - so the walk does not care
-                // what order the tree hands it back.
-                string from = step.Module.FilePath;
                 var rewrites = _workspace.PlaceAt(step.Module, step.Folder);
                 if (rewrites == null)
                     continue;
                 foreach (var rewrite in rewrites)
                     _ledger.Record(rewrite.FilePath, rewrite.Before, rewrite.After);
-                string to = step.Module.FilePath;
+                _relocatedOnSave = true;
+            }
+
+            // Read once: the focus moves inside this loop, so re-reading it would
+            // compare later modules against an already-updated path.
+            string focusWas = FocusFull;
+            foreach (var module in _workspace.Modules)
+            {
+                if (!wasAt.TryGetValue(module, out string from))
+                    continue;
+                string to = module.FilePath;
+                if (string.Equals(from, to, System.StringComparison.OrdinalIgnoreCase))
+                    continue;
                 _canvasHost?.RepathLayout(from, to, isFolder: false);
-                if (string.Equals(FocusFull, Path.GetFullPath(from),
+                if (string.Equals(focusWas, Path.GetFullPath(from),
                         System.StringComparison.OrdinalIgnoreCase))
                     _focusFile = to;
-                _relocatedOnSave = true;
             }
             _ledger.End();
             RefreshHistoryPanel();

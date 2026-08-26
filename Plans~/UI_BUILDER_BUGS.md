@@ -3724,6 +3724,72 @@ The heading is the FILE now - "NewComponent.uitkx" - which cannot be read as an
 instruction. The flyout also carries its own heading, since the menu's title sits
 above it visually and looked like a heading for its rows.
 
+### UB-220 — Save rearranged the canvas `FIXED` `HIGH`
+
+Owner report 2026-08-26: "i had the component sorted in 1 way in the canvas,
+when i clicked save, it switch twice and not small change it completely
+rearrange how it looks".
+
+EVIDENCE, not inference. `UserSettings/ReactiveUIToolkit/Builder/` held TWO
+configs written seconds apart by that one save - which is the "twice" - and the
+first one carried the whole story in its own Positions table:
+
+```
+NewComponent.uitkx                                    -> [-36.95, -81.05]   the user position, kept
+.../__RuitkBuilderUnsaved__~/.../newComponent.style   -> [477.0, -49.8]     orphaned
+.../__RuitkBuilderUnsaved__~/.../RightSide.uitkx      -> [651.9, 345.8]     orphaned
+.../__RuitkBuilderUnsaved__~/.../MiddleSide.uitkx     -> [210.6, 355.8]     orphaned
+.../__RuitkBuilderUnsaved__~/.../LeftSide.uitkx       -> [-235.1, 353.4]    orphaned
+components/LeftSide/LeftSide.uitkx                    -> [60, 80]           default column
+components/MiddleSide/MiddleSide.uitkx                -> [60, 339.9]        default column
+components/RightSide/RightSide.uitkx                  -> [60, 599.8]        default column
+newComponent.style.uitkx                              -> [60, 859.7]        default column
+```
+
+Exactly one card kept its place and the other four were stacked in a column at
+x=60. Their real positions were still in the file, keyed to where they used to
+live.
+
+ROOT CAUSE: the placement pass relocates a module by moving its FOLDER, and
+that carries every module inside it. The loop told the layout about each move
+by reading `module.FilePath` before and after its own `PlaceAt` call - but a
+module its parent already carried has ALREADY changed path by the time the loop
+reaches it, so before and after are the same string and `Repath` early-returns
+on `from == to`. Only the module that physically triggered each move was ever
+told. Everything that rode along kept a key under the provisional root, stopped
+resolving at the next mount, and `AdoptUnplaced` then wrote the default slot
+down - which is what made it permanent rather than a bad first paint.
+
+The shape is the campaign's recurring one: the question asked was "what did
+this call move", when the layout needed "what moved". FIX: snapshot where every
+module sits before the pass, and reconcile against it afterwards, so passengers
+and drivers are both answered and order stops mattering.
+
+### UB-221 — a re-rooted tree looked like a tree nobody had laid out `FIXED` `MED`
+
+The second config from the same save (the second "switch"). It was minted fresh
+under a DIFFERENT root - `components/LeftSide/LeftSide.uitkx` rather than
+`NewComponent.uitkx` - and filled with a fresh default column for all five
+cards.
+
+ROOT CAUSE: the layout is addressed by the tree ROOT, and the root is DERIVED -
+from where the modules sit and which of them owns the top folder. It is
+therefore not a stable name for a tree: a save that re-files a folder, or a
+mount that comes up focused elsewhere, can elect a different head, and the
+lookup then misses entirely. The fallback scan asked only whether one file - the
+FOCUS - appeared in some config's member list, which is the same fragile
+question narrowed to a single member.
+
+FIX: identify a tree by WHO IS IN IT. `LoadForMembers` returns the config
+sharing the most members with the graph, newest breaking a tie, so a re-rooted
+tree finds its own layout instead of minting a default one. `LoadForMember` is
+removed rather than left beside it - two lookups that can disagree is how this
+went wrong once already.
+
+RECOVERY: the owner's four displaced cards were put back by re-keying the
+orphaned entries onto the saved tree (their coordinates were never lost, only
+unaddressable) and the duplicate config deleted. Backup in
+`UserSettings/ReactiveUIToolkit/Builder/.backup-ub220/`.
 ### UB-219 — the window ate the menu's Escape `FIXED` `MED`
 
 Owner report 2026-08-26, after UB-217: arrows and Enter work, Escape still does

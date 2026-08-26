@@ -157,12 +157,15 @@ namespace Ruitk.Builder
 
             _graph = graph;
             onGraphLoaded?.Invoke(graph);
-            // Root FIRST. It is derived from the tree, so every module in the tree
-            // gives the same answer; the member scan is a fallback for a layout
-            // saved before that was true, and it returns whichever file lists the
-            // focus first in directory order.
+            // Root FIRST, then the WHOLE membership. The root is derived, so it
+            // is not a stable name for a tree - a re-filed folder or a mount that
+            // comes up focused elsewhere can elect a different head - and asking
+            // by root alone made such a tree look brand new (UB-221).
+            var members = new System.Collections.Generic.List<string>();
+            foreach (var node in _graph.Nodes)
+                members.Add(node.FilePath);
             _config = BuilderCanvasConfig.TryLoadForRoot(_graph.RootPath)
-                ?? BuilderCanvasConfig.LoadForMember(focusFile)
+                ?? BuilderCanvasConfig.LoadForMembers(members)
                 ?? BuilderCanvasConfig.LoadForRoot(_graph.RootPath);
             _config.ApplyTo(_graph);
             // Freeze whatever slots the default layout just handed out, so the

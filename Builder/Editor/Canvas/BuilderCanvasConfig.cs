@@ -91,38 +91,76 @@ namespace Ruitk.Builder
             return new BuilderCanvasConfig { RootPath = rootFullPath };
         }
 
-        /// <summary>
-        /// Finds the config whose member set contains <paramref name="anyMemberPath"/> —
-        /// tree identity survives opening from a non-root file, and tree merges keep
-        /// the first root's layout.
-        /// </summary>
-        public static BuilderCanvasConfig LoadForMember(string anyMemberPath)
+        /// <summary>The layout that already covers this SET of modules.
+        ///
+        /// The root is DERIVED - from where the modules sit and which of them
+        /// owns the top folder - so it is not a stable name for a tree: a save
+        /// that re-files a folder, or a mount that comes up focused somewhere
+        /// else, can resolve a different module as root. Addressed by root alone,
+        /// the tree then looks like a tree nobody has ever laid out, and the mount
+        /// mints a fresh default column and writes it down (UB-221).
+        ///
+        /// A tree is better identified by WHO IS IN IT than by which member is
+        /// currently its head, so this asks for the config sharing the most
+        /// members with the graph. Scanning for the focus file alone was the same
+        /// idea applied to a single member, and missed whenever the focus was the
+        /// one module that had just changed.</summary>
+        public static BuilderCanvasConfig LoadForMembers(IEnumerable<string> memberPaths)
         {
+            if (memberPaths == null)
+                return null;
+            var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string member in memberPaths)
+            {
+                if (string.IsNullOrEmpty(member))
+                    continue;
+                try { wanted.Add(Path.GetFullPath(member)); } catch { }
+            }
+            if (wanted.Count == 0)
+                return null;
+
+            BuilderCanvasConfig best = null;
+            int bestOverlap = 0;
+            string bestSavedAt = "";
             try
             {
-                if (Directory.Exists(ConfigDir))
+                if (!Directory.Exists(ConfigDir))
+                    return null;
+                foreach (string file in Directory.GetFiles(ConfigDir, "*.json"))
                 {
-                    string full = Path.GetFullPath(anyMemberPath);
-                    foreach (string file in Directory.GetFiles(ConfigDir, "*.json"))
+                    BuilderCanvasConfig cfg;
+                    try { cfg = JsonConvert.DeserializeObject<BuilderCanvasConfig>(File.ReadAllText(file)); }
+                    catch { continue; }
+                    if (cfg?.Members == null)
+                        continue;
+                    int overlap = 0;
+                    foreach (string member in cfg.Members)
                     {
-                        BuilderCanvasConfig cfg;
-                        try { cfg = JsonConvert.DeserializeObject<BuilderCanvasConfig>(File.ReadAllText(file)); }
-                        catch { continue; }
-                        if (cfg == null)
+                        if (string.IsNullOrEmpty(member))
                             continue;
-                        foreach (string member in cfg.Members)
-                            if (string.Equals(Path.GetFullPath(member), full, StringComparison.OrdinalIgnoreCase))
-                                return cfg;
+                        try { if (wanted.Contains(Path.GetFullPath(member))) overlap++; } catch { }
+                    }
+                    if (overlap == 0)
+                        continue;
+                    // Most of the tree wins; the newest breaks a tie, so a stale
+                    // config from an earlier shape cannot outrank the live one.
+                    if (overlap > bestOverlap
+                        || (overlap == bestOverlap
+                            && string.CompareOrdinal(cfg.SavedAt ?? "", bestSavedAt) > 0))
+                    {
+                        best = cfg;
+                        bestOverlap = overlap;
+                        bestSavedAt = cfg.SavedAt ?? "";
                     }
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[RUITK Builder] canvas config scan failed: {ex.Message}");
+                return null;
             }
-            return null;
+            return best;
         }
-
         public void Save()
         {
             try
