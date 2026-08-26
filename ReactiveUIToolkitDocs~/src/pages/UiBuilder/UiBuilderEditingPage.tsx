@@ -14,7 +14,10 @@ import {
   Paper,
 } from '@mui/material'
 import { Shot } from './Shot'
+import layerArchitectureShot from '../../assets/builder/layer-architecture.png'
 import layerCardsShot from '../../assets/builder/layer-cards.png'
+import dragBeforeShot from '../../assets/builder/drag-band-before.png'
+import dragInsideShot from '../../assets/builder/drag-band-inside.png'
 import styleKeysShot from '../../assets/builder/style-keys.png'
 import Styles from './UiBuilderPage.style'
 
@@ -87,6 +90,12 @@ export const UiBuilderEditingPage: FC = () => (
       </TableContainer>
 
       <Shot
+        src={layerArchitectureShot}
+        alt="The canvas at Layer 1, every file reduced to a named pill with edges between them"
+        caption="Layer 1 — Architecture. Names, kinds and edges only: the shape of the UI, nothing else."
+      />
+
+      <Shot
         src={layerCardsShot}
         alt="The canvas at Layer 2, showing five compact cards and their import edges"
         caption="Layer 2 — Cards. The whole tree at once, still readable, with the usage edges visible."
@@ -133,6 +142,16 @@ export const UiBuilderEditingPage: FC = () => (
           </TableBody>
         </Table>
       </TableContainer>
+      <Shot
+        src={dragBeforeShot}
+        alt="A drag over the lower part of a row, showing a dashed insertion line beneath it"
+        caption="Near an edge: a dashed line shows exactly where the element will land as a sibling."
+      />
+      <Shot
+        src={dragInsideShot}
+        alt="A drag over the middle of a row, showing the whole row outlined"
+        caption="Over the middle: the whole row is outlined instead — the drop nests inside it."
+      />
       <Typography variant="body2" paragraph>
         Rows can also be dragged among themselves to reorder markup, and a blocked drop says why
         rather than silently doing nothing.

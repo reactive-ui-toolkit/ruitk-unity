@@ -22,7 +22,9 @@ const figure: SxProps<Theme> = {
 }
 
 const shot: SxProps<Theme> = {
-  width: '100%',
+  // maxWidth, never width: these are 1x screenshots, so stretching a tight crop
+  // to the column width just blurs it. Large shots still shrink to fit.
+  maxWidth: '100%',
   height: 'auto',
   display: 'block',
   borderRadius: 1,

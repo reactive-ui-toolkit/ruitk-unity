@@ -2754,22 +2754,33 @@ namespace Ruitk.Builder
                         indent = IndentOf(full, rootRow.SourceLine) + "  ";
                     }
                     if (!hasRow)
+                    {
+                        Toast("Nothing to drop onto - release over a markup row.");
                         break;
+                    }
                     int split = name.LastIndexOf(':');
-                    if (split < 0)
+                    if (split < 0 || !int.TryParse(name.Substring(split + 1), out int srcRowIdx))
+                    {
+                        Toast("Lost track of the dragged row - press it again.");
                         break;
+                    }
                     string srcPath = Path.GetFullPath(name.Substring(0, split));
-                    if (!int.TryParse(name.Substring(split + 1), out int srcRowIdx))
-                        break;
                     if (!string.Equals(srcPath, full, System.StringComparison.OrdinalIgnoreCase))
                     {
                         Toast("Moving across components isn't in the POC — delete and re-add.");
                         break;
                     }
                     var srcNode = _canvasHost?.FindNode(srcPath);
-                    if (srcNode == null || srcRowIdx < 0 || srcRowIdx >= srcNode.Markup.Count
-                        || srcRowIdx == rowIdx)
+                    if (srcNode == null || srcRowIdx < 0 || srcRowIdx >= srcNode.Markup.Count)
+                    {
+                        Toast("That row is no longer there - try the drag again.");
                         break;
+                    }
+                    if (srcRowIdx == rowIdx)
+                    {
+                        Toast("Dropped on itself - nothing moved.");
+                        break;
+                    }
                     var srcRow = srcNode.Markup[srcRowIdx];
                     // An "inside" move onto a directive head must land in the
                     // clause's return markup exactly like the insert path — the
@@ -2821,6 +2832,17 @@ namespace Ruitk.Builder
                             ? indent
                             : indent + ((asFirstChild || (band == 1 && !intoSelfClosing)) ? "  " : ""),
                         "moved " + srcRow.Text);
+                    // A drop that landed BETWEEN rows is still a move, and it is
+                    // the one that reads as "the drag did something random": the
+                    // row leaves where it was and reappears at the end of the
+                    // root, which is nowhere near the cursor. Say so, because the
+                    // alternative is the user concluding the gesture is broken.
+                    Toast(appendToRoot
+                        ? "Released between rows - moved to the end of "
+                            + node.Markup[rootRowIdx].Text.Trim()
+                        : "Moved " + srcRow.Text.Trim()
+                            + (band == 0 ? " before " : band == 2 ? " after " : " into ")
+                            + row.Text.Trim());
                     break;
                 }
             }

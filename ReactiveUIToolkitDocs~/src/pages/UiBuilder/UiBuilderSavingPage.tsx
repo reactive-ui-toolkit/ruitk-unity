@@ -13,6 +13,9 @@ import {
   TableRow,
   Paper,
 } from '@mui/material'
+import { Shot } from './Shot'
+import saveFolderShot from '../../assets/builder/save-folder-prompt.png'
+import appliesOnSaveShot from '../../assets/builder/toast-applies-on-save.png'
 import Styles from './UiBuilderPage.style'
 
 const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -71,6 +74,11 @@ export const UiBuilderSavingPage: FC = () => (
           <ListItemText primary="With HMR Mode active, there is no domain reload at all: the saved files are hot-swapped in place." />
         </ListItem>
       </List>
+      <Shot
+        src={appliesOnSaveShot}
+        alt="A toast reading: Created SomethingNew.uitkx in SomethingNew - applies on Save"
+        caption="Every structural action says the same thing: it is real in the session, and it reaches disk on Save."
+      />
     </Section>
 
     <Section title="Saving a brand-new tree">
@@ -80,6 +88,11 @@ export const UiBuilderSavingPage: FC = () => (
         provisional location that Unity deliberately cannot see, so a half-finished tree can never
         be picked up by a compile.
       </Typography>
+      <Shot
+        src={saveFolderShot}
+        alt="A folder picker titled Where should this UI live, browsing the project Assets folder"
+        caption="The first Save asks once, and only accepts a folder inside the project — a .uitkx outside Assets is never compiled."
+      />
       <Typography variant="body2" paragraph>
         The move is planned in full before anything happens, so a name collision cancels the whole
         relocation instead of leaving half the tree in the new folder.

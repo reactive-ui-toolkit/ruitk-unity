@@ -16,6 +16,7 @@ import {
 import { CodeBlock } from '../../components/CodeBlock/CodeBlock'
 import { Shot } from './Shot'
 import contextMenuShot from '../../assets/builder/context-menu.png'
+import folderTreeShot from '../../assets/builder/folder-tree.png'
 import Styles from './UiBuilderPage.style'
 
 const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -61,6 +62,11 @@ export const UiBuilderStructurePage: FC = () => (
         companions &mdash; styles and hooks &mdash; sit beside it, not below it.
       </Typography>
       <CodeBlock language="bash" code={TREE} />
+      <Shot
+        src={folderTreeShot}
+        alt="The builder's folder pane showing NewComponent with a components folder and three child components"
+        caption="The same tree in the builder's folder pane. Components and companions are coloured by kind."
+      />
       <Typography variant="body1" paragraph>
         The <strong>tree root</strong> is the outermost component that owns its folder. Opening any
         file in this layout opens the whole tree on one canvas, because the root is derived from the
