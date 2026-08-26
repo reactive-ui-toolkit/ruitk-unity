@@ -3656,3 +3656,40 @@ Deliberate cost: context menus look like Unity rather than like the POC's dark
 
 `FocusInvoker` moved into `Place`, so every remaining custom window takes the
 keyboard before it opens rather than only the plain menus doing so.
+
+### UB-216 — the context menu, fourth shape and the right one `SHIPPED` `MED`
+
+Three shapes failed on the same structural point before this one, and each
+failure was informative:
+
+1. A custom **EditorWindow** (the original) cannot have a submenu: the submenu is
+   a SECOND EditorWindow, each closes on lost focus, so the child kills its
+   parent.
+2. **One window sized for two columns** (UB-214) dodged the fight and left a
+   permanently oversized menu with a hidden half - the owner saw through it
+   immediately: "you basically made the menu much bigger so you can fit the
+   submenu in?"
+3. **IMGUI GenericMenu** (UB-215) has real submenus and correct focus, and cannot
+   be styled AT ALL - no GUIStyle hook, no skin override, confirmed against the
+   docs. It could not match the rest of the builder.
+
+UI Toolkit's **GenericDropdownMenu** pointed at the answer without being it. Its
+`DropDown()` does `m_PanelRootVisualContainer.Add(m_MenuContainer)` - the menu is
+a LAYER IN THE PANEL, not a window, so nothing can lose focus to anything. But
+its rows come from `AddItem`, which offers no hook to open a submenu and no
+public way to dismiss the menu from a row of one's own, so a submenu cannot be
+built on it either. Its submenu support was also claimed by a search summary and
+is not in the source or the 6000.3 docs.
+
+The lifecycle it owns is thirty lines: cover the panel, close on an outside click
+or Escape. `BuilderContextMenu` owns those thirty lines instead and inherits no
+limits - the styling is the builder's, and a submenu is a real flyout positioned
+beside its row, parented to the full-panel scrim so the menu box cannot clip it.
+
+Rejected: the third-party UnityDropdown, which does all of this and a search bar.
+It requires disabling Assembly Version Validation in Player Settings, which is
+not something a UI library should ask of everyone who installs this package.
+
+The searchable menus and name prompts stay in the EditorWindow, where a search
+field, a freeform "use what I typed" row and an inline error line are what it
+exists for.

@@ -11,7 +11,8 @@ namespace Ruitk.Builder
     /// The POC's searchable context menu (spec 6.4 chrome): title header,
     /// search field, filtered list, optional freeform fallback item rendered in
     /// warn-orange, "(no matches)" dim row, Enter activates the first item,
-    /// Escape closes. Replaces GenericMenu wherever the POC menu is searchable.
+    /// Escape closes. The SEARCHABLE menus and the name prompts only - the plain
+    /// context menus are BuilderContextMenu, drawn in the builder's own panel.
     /// </summary>
     internal sealed class BuilderSearchMenu : EditorWindow
     {
@@ -27,13 +28,10 @@ namespace Ruitk.Builder
             /// <summary>POC ".ctx .mh" inline section header inside the list.</summary>
             public string Header;
 
-            /// <summary>A SUBMENU. The row shows an arrow and opens these in a
-            /// second column when the pointer rests on it.
-            ///
-            /// The column lives in the SAME window rather than in a popup of its
-            /// own, and that is the whole trick: every menu here is an EditorWindow
-            /// that closes on lost focus, so a child popup taking focus would close
-            /// its own parent. One window cannot fight itself.</summary>
+            /// <summary>A SUBMENU. The row shows an arrow and opens these beside
+            /// it. Honoured by the plain context menu; the searchable menus do not
+            /// nest, and a search that could not see past a fold would be a search
+            /// that lies about what is there.</summary>
             public List<Item> Children;
         }
 
@@ -88,77 +86,21 @@ namespace Ruitk.Builder
         private string _initialValue;
         private Label _errorLabel;
 
-        /// <summary>A plain context menu - card, row, canvas, import - drawn by
-        /// UNITY rather than by this window.
+        /// <summary>A plain context menu - card, row, canvas, import.
         ///
-        /// These have no search field, so everything the custom window exists for
-        /// is unused here, and everything it has to hand-roll is a liability:
-        /// submenus, hover, and the popup-from-an-inactive-window rule that made a
-        /// right-click silently do nothing three separate times (UB-197, UB-199,
-        /// UB-209). GenericMenu is not an EditorWindow popup, so that rule does not
-        /// apply to it at all, and a nested item is just a path - "New/Component"
-        /// draws a real submenu with the editor's own hover and keyboard.
-        ///
-        /// The cost is deliberate: this menu looks like Unity, not like the POC's
-        /// dark chrome. Correct behaviour beat matching the mock (UB-215).</summary>
+        /// Drawn by <see cref="BuilderContextMenu"/> as a layer in the builder's
+        /// own panel: no window, so nothing can lose focus to anything, and the
+        /// styling is the builder's rather than the editor's. This window keeps
+        /// the SEARCHABLE menus and the name prompts, where a search field, a
+        /// freeform "use what I typed" row and an inline error line are what it
+        /// exists for - none of which a dropdown can express.</summary>
         public static void ShowSimple(string title, List<Item> items)
         {
-            var menu = new GenericMenu();
-            if (!string.IsNullOrEmpty(title))
-            {
-                menu.AddDisabledItem(new GUIContent(title));
-                menu.AddSeparator("");
-            }
-            foreach (var item in items)
-            {
-                if (item == null)
-                    continue;
-                if (item.IsSeparator)
-                {
-                    menu.AddSeparator("");
-                    continue;
-                }
-                if (item.Header != null)
-                {
-                    menu.AddDisabledItem(new GUIContent(item.Header));
-                    continue;
-                }
-                if (item.Children != null && item.Children.Count > 0)
-                {
-                    foreach (var child in item.Children)
-                    {
-                        if (child == null || child.IsSeparator || child.Header != null)
-                            continue;
-                        AddLeaf(menu, item.Label + "/" + child.Label, child);
-                    }
-                    continue;
-                }
-                AddLeaf(menu, item.Label, item);
-            }
-            // ShowAsContext puts the menu at the CURRENT event, which is the
-            // right-click still being dispatched - every caller reaches here
-            // synchronously from its pointer handler. Outside an event there is no
-            // "current" position, so the remembered pointer stands in.
-            if (Event.current != null)
-                menu.ShowAsContext();
-            else
-                menu.DropDown(new Rect(s_pointer, Vector2.zero));
-        }
-
-        /// <summary>One selectable row. The Detail column has no equivalent in a
-        /// GenericMenu, so it rides along in the label where it still reads.</summary>
-        private static void AddLeaf(GenericMenu menu, string path, Item item)
-        {
-            string label = string.IsNullOrEmpty(item.Detail)
-                ? path
-                : path + "  (" + item.Detail + ")";
-            var pick = item.OnPick;
-            if (pick == null)
-            {
-                menu.AddDisabledItem(new GUIContent(label));
+            var host = s_pointerWindow != null ? s_pointerWindow : focusedWindow;
+            var root = host?.rootVisualElement;
+            if (root == null)
                 return;
-            }
-            menu.AddItem(new GUIContent(label), false, () => pick());
+            BuilderContextMenu.Show(root, s_pointer, title, items);
         }
 
         public static void Show(
@@ -209,8 +151,9 @@ namespace Ruitk.Builder
         {
             // Every custom window goes through here, and every one of them is an
             // EditorWindow popup - which Unity will not open from a window that is
-            // not the active one. The plain menus escaped this by moving to
-            // GenericMenu; these cannot, so they take the keyboard first (UB-209).
+            // not the active one. The plain menus escaped this by ceasing to be
+            // windows at all; these cannot, so they take the keyboard first
+            // (UB-209).
             FocusInvoker();
             // Captured BEFORE ShowPopup steals focus. s_pointerWindow is only set
             // by the gestures that need at-cursor placement, so it cannot be the
