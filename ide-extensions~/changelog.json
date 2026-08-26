@@ -1,6 +1,16 @@
 {
   "entries": [
     {
+      "date": "2026-08-15",
+      "versions": {
+        "vscode": "1.11.0",
+        "vs2022": "1.11.0"
+      },
+      "shared": [
+        "Feature: language server gains the builder request surface shipping with Unity package 0.17.0 (RUITK UI Builder): four custom requests (`ruitk/schema`, `ruitk/hooks`, `ruitk/componentProps`, `ruitk/workspaceGraph` with import-specifier resolution), an unsaved-buffer overlay in the workspace index so open-editor content is visible to element/props/graph intelligence, and the `enableRichText` attribute on `Label` in the embedded schema (completion + hover + unknown-attribute checks). One-way UXML-to-UITKX conversion joins the shared language library. SG suite 1878/1878, LSP suite 180/180."
+      ]
+    },
+    {
       "date": "2026-08-10",
       "versions": {
         "vscode": "1.10.0",

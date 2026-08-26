@@ -1,8 +1,8 @@
 export VirtualNode DeferredEffectDemoFunc() {
   var (commitCount, setCommitCount) = useState(0);
   var (effectCount, setEffectCount) = useState(0);
-  var (lastCommitTime, setLastCommitTime) = useState("â€”");
-  var (lastEffectTime, setLastEffectTime) = useState("â€”");
+  var (lastCommitTime, setLastCommitTime) = useState("—");
+  var (lastEffectTime, setLastEffectTime) = useState("—");
   var (trigger, setTrigger) = useState(0);
 
   useLayoutEffect(() =>
@@ -43,12 +43,12 @@ export VirtualNode DeferredEffectDemoFunc() {
   };
 
   var syncMessage = inSync
-    ? "âœ” In sync â€” both match"
-    : $"â³ Commit is ahead by {commitCount - effectCount} â€” effect pending next frame";
+    ? "✔ In sync — both match"
+    : $"⏳ Commit is ahead by {commitCount - effectCount} — effect pending next frame";
 
   return (
     <VisualElement style={containerStyle}>
-      <Text text="Deferred UseEffect â€” Step 3 Test" />
+      <Text text="Deferred UseEffect — Step 3 Test" />
       <Label
         text="UseLayoutEffect is synchronous. UseEffect is deferred (next frame via scheduler). Click the button and watch Commit get ahead of Effect for one frame."
         style={new Style { (StyleKeys.MarginTop, 4f), (StyleKeys.Color, new Color(0.75f, 0.75f, 0.75f, 1f)), (StyleKeys.WhiteSpace, "normal") }}

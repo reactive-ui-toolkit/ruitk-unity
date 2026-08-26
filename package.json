@@ -1,7 +1,7 @@
 {
   "name": "com.reactiveuitoolkit",
   "displayName": "Reactive UI Toolkit — Unity",
-  "version": "0.16.0",
+  "version": "0.18.0",
   "unity": "6000.2",
   "license": "SEE LICENSE IN LICENSE.md",
   "description": "Lightweight React-inspired component model for Unity UI Toolkit. Supports function components (V.Func), hooks (state, reducer, memo, effect, layoutEffect, context, deferred value, imperative handle), portals, suspense, snapshots, and a typed props model.",
@@ -15,7 +15,9 @@
     "hooks",
     "unity"
   ],
-  "dependencies": {},
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  },
   "samples": [
     {
       "displayName": "All Samples",

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -97,6 +97,55 @@ namespace Ruitk.EditorSupport.HMR
             throw new IOException($"ReadTextWithRetry exhausted attempts for '{path}'.");
         }
 
+        /// <summary>
+        /// Optional overlay for unsaved editor buffers (the RUITK Builder compiles
+        /// buffer content that never touched disk). Every <c>.uitkx</c> read on the
+        /// compile pipeline consults it FIRST: a non-null return is used verbatim,
+        /// null falls through to disk. Companion <c>.cs</c> reads are never
+        /// overlaid. Existence checks for <c>.uitkx</c> go through
+        /// <see cref="UitkxSourceExists"/> so overlay-only files (created in the
+        /// builder, not yet saved) resolve as import targets.
+        /// </summary>
+        internal Func<string, string> SourceOverlay { get; set; }
+
+        /// <summary>Optional diagnostic sink. What a swap unit INLINES is the one
+        /// fact that decides whether an edit to an imported module can be seen,
+        /// and it was invisible from outside - which is what made UB-203 take four
+        /// rounds of guessing.</summary>
+        internal Action<string> Trace { get; set; }
+
+        /// <summary>Hands the unsaved-buffer overlay to the language lib, which
+        /// resolves import targets of its own when it computes the using aliases an
+        /// import implies. Done per compile rather than once, so it cannot depend on
+        /// whether the overlay was set before or after initialisation.</summary>
+        private void PublishSourceOverlay()
+        {
+            if (_importScopeOverlay == null)
+                return;
+            try
+            {
+                _importScopeOverlay.SetValue(null, SourceOverlay);
+            }
+            catch (Exception)
+            {
+                // An older Language.dll, or a field of another shape: the compile
+                // still runs, it just cannot see unsaved import targets.
+            }
+        }
+
+        private string ReadUitkxText(string path)
+        {
+            string overlay = SourceOverlay?.Invoke(path);
+            return overlay ?? ReadTextWithRetry(path);
+        }
+
+        private bool UitkxSourceExists(string path)
+        {
+            if (SourceOverlay?.Invoke(path) != null)
+                return true;
+            return File.Exists(path);
+        }
+
         // ── Loaded pipeline assembly ──────────────────────────────────────────
         private Assembly _languageAsm;
 
@@ -118,6 +167,7 @@ namespace Ruitk.EditorSupport.HMR
         // the using lines a file's imports imply (cross-folder hook containers + module/component
         // type aliases with EFFECTIVE namespaces). Optional (older Language.dll → skip).
         private MethodInfo _importScopePayloads;
+        private FieldInfo _importScopeOverlay;
         // U-03 bridges — ImportScopeFacts.ComputeImportedMemberBridgeLines(DirectiveSet, string):
         // rendered `internal static …` forwarding lines for aliased/default member imports,
         // byte-identical to the SG's ExportsEmitter shapes. Optional (older Language.dll → skip).
@@ -289,10 +339,11 @@ namespace Ruitk.EditorSupport.HMR
         {
             var result = new HmrCompileResult();
             var sw = Stopwatch.StartNew();
+            PublishSourceOverlay();
 
             try
             {
-                string source = ReadTextWithRetry(uitkxPath);
+                string source = ReadUitkxText(uitkxPath);
 
                 // ── 1. Parse directives ──────────────────────────────────────
                 var stepSw = Stopwatch.StartNew();
@@ -628,7 +679,7 @@ namespace Ruitk.EditorSupport.HMR
 
             try
             {
-                string source = ReadTextWithRetry(uitkxPath);
+                string source = ReadUitkxText(uitkxPath);
                 var stepSw = Stopwatch.StartNew();
 
                 var diagList = CreateDiagnosticList();
@@ -755,7 +806,16 @@ namespace Ruitk.EditorSupport.HMR
                 if (compDir != null)
                 {
                     string prefix = componentName + ".";
-                    foreach (var file in Directory.GetFiles(compDir, prefix + "*.uitkx"))
+                    // A module the builder is holding as a pending buffer can
+                    // sit in a directory that does not exist on disk yet (a new
+                    // component owns a fresh folder, and so does a rename). An
+                    // absent directory HAS no companions - that is an answer,
+                    // not a failure - but the unguarded scan threw
+                    // DirectoryNotFoundException on every debounced recompile,
+                    // which killed the preview and made typing crawl.
+                    foreach (var file in Directory.Exists(compDir)
+                        ? Directory.GetFiles(compDir, prefix + "*.uitkx")
+                        : System.Array.Empty<string>())
                     {
                         if (!string.Equals(file, uitkxPath, StringComparison.OrdinalIgnoreCase))
                             artifacts.CompanionUitkxPathsConsumed.Add(Path.GetFullPath(file));
@@ -1288,7 +1348,11 @@ namespace Ruitk.EditorSupport.HMR
             var candidateFiles = new List<string>();
             var seenCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             string prefix = componentName + ".";
-            foreach (var f in Directory.GetFiles(dir, prefix + "*.uitkx"))
+            // Same reason as the companion scan above: a pending module may
+            // have no directory on disk, which simply means no candidates.
+            foreach (var f in Directory.Exists(dir)
+                ? Directory.GetFiles(dir, prefix + "*.uitkx")
+                : System.Array.Empty<string>())
                 if (seenCandidates.Add(Path.GetFullPath(f)))
                     candidateFiles.Add(f);
             if (componentDirectives != null && _importResolverMap != null)
@@ -1314,7 +1378,7 @@ namespace Ruitk.EditorSupport.HMR
                             targetFile = _importResolverMap.Invoke(null, args) as string;
                         }
                         catch { }
-                        if (string.IsNullOrEmpty(targetFile) || !File.Exists(targetFile))
+                        if (string.IsNullOrEmpty(targetFile) || !UitkxSourceExists(targetFile))
                             continue;
                         if (seenCandidates.Add(Path.GetFullPath(targetFile)))
                             candidateFiles.Add(targetFile);
@@ -1334,7 +1398,7 @@ namespace Ruitk.EditorSupport.HMR
 
                 try
                 {
-                    string companionSource = ReadTextWithRetry(file);
+                    string companionSource = ReadUitkxText(file);
                     var diagList = CreateDiagnosticList();
                     var companionDir = InvokeWithDefaults(
                         _directiveParse,
@@ -1370,9 +1434,23 @@ namespace Ruitk.EditorSupport.HMR
                     {
                         string newModeNs = ComputeEffectiveNs(companionDir, file);
                         string exportsFqn = newModeNs + ".__Exports";
+                        // An OVERLAID companion is one the caller is holding a live
+                        // buffer for, and then the project assembly's copy is stale
+                        // BY CONSTRUCTION - so the gate below, which asks whether the
+                        // container already exists somewhere referenceable, answers
+                        // the wrong question. For a style module saved once and
+                        // edited ever since, that answer is always yes: the importer
+                        // bound to the SAVED exports and every unsaved edit to the
+                        // style was invisible in the preview, at any value, which is
+                        // why it never looked like a staleness bug (UB-203).
+                        //
+                        // Only the builder sets an overlay; the HMR controller's own
+                        // instance leaves it null and keeps the original gate.
+                        bool overlaid = SourceOverlay?.Invoke(file) != null;
                         if (!string.IsNullOrEmpty(newModeNs)
-                            && !TypeExistsInProjectAssemblies(exportsFqn)
-                            && !HotExportsAvailable(exportsFqn))
+                            && (overlaid
+                                || (!TypeExistsInProjectAssemblies(exportsFqn)
+                                    && !HotExportsAvailable(exportsFqn))))
                         {
                             string inlined = HmrHookEmitter.EmitExports(
                                 companionDir, file,
@@ -1399,6 +1477,10 @@ namespace Ruitk.EditorSupport.HMR
                                     catch { }
                                 }
                                 sources.Add(inlined);
+                                Trace?.Invoke(
+                                    "inlined " + Path.GetFileName(file) + " into "
+                                    + Path.GetFileName(uitkxPath)
+                                    + (overlaid ? " (live buffer)" : " (not in any assembly)"));
                             }
                         }
                     }
@@ -1470,7 +1552,7 @@ namespace Ruitk.EditorSupport.HMR
                 return;
             try
             {
-                string source = ReadTextWithRetry(uitkxPath);
+                string source = ReadUitkxText(uitkxPath);
                 var diag = CreateDiagnosticList();
                 var directives = InvokeWithDefaults(_directiveParse, null, source, uitkxPath, diag, true);
                 if (directives == null)
@@ -1675,6 +1757,14 @@ namespace Ruitk.EditorSupport.HMR
             _importScopePayloads = _languageAsm
                 .GetType("Ruitk.Language.ImportScopeFacts")
                 ?.GetMethod("ComputeInjectedUsingPayloads", BindingFlags.Public | BindingFlags.Static);
+            // ImportScopeFacts resolves each import TARGET itself to work out the
+            // using alias it implies, and it read those targets straight off disk -
+            // so a module held only as an editor buffer could not be an import
+            // target and no alias was emitted for it. Optional: an older
+            // Language.dll simply has no such field.
+            _importScopeOverlay = _languageAsm
+                .GetType("Ruitk.Language.ImportScopeFacts")
+                ?.GetField("SourceOverlay", BindingFlags.Public | BindingFlags.Static);
             _importedMemberBridgeLines = _languageAsm
                 .GetType("Ruitk.Language.ImportScopeFacts")
                 ?.GetMethod("ComputeImportedMemberBridgeLines", BindingFlags.Public | BindingFlags.Static);
@@ -3381,7 +3471,7 @@ namespace Ruitk.EditorSupport.HMR
                             targetFile = _importResolverMap.Invoke(null, args) as string;
                         }
                         catch { }
-                        if (string.IsNullOrEmpty(targetFile) || !File.Exists(targetFile))
+                        if (string.IsNullOrEmpty(targetFile) || !UitkxSourceExists(targetFile))
                             continue;
                         object targetDs = ParseDirectivesForFile(targetFile);
                         string targetNs = targetDs != null
@@ -3500,7 +3590,7 @@ namespace Ruitk.EditorSupport.HMR
         {
             try
             {
-                string src = ReadTextWithRetry(targetFile);
+                string src = ReadUitkxText(targetFile);
                 var diag = CreateDiagnosticList();
                 return InvokeWithDefaults(_directiveParse, null, src, targetFile, diag, true);
             }

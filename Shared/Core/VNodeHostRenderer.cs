@@ -25,6 +25,8 @@ namespace Ruitk.Core
             fiberRenderer = new FiberRenderer(host, hostContext);
         }
 
+        internal FiberRenderer Fiber => fiberRenderer;
+
         public void Render(VirtualNode vnode)
         {
             fiberRenderer.Render(NormalizeHostRoot(vnode));

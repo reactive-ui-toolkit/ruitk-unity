@@ -1,0 +1,85 @@
+import * as SpikeStyles from "./spikeStyles.style"
+import "@UnityEngine.UIElements"
+
+export VirtualNode CanvasSpike(int cardCount = 300) {
+  var (camX, setCamX) = useState(0f);
+  var (camY, setCamY) = useState(0f);
+  var (zoom, setZoom) = useState(1f);
+  var dragging = useRef(false);
+  var lastX = useRef(0f);
+  var lastY = useRef(0f);
+  var renders = useRef(0);
+  var prevStamp = useRef(0.0);
+  var clock = useRef<System.Diagnostics.Stopwatch?>(null);
+
+  if (clock.Current == null) {
+    clock.Current = System.Diagnostics.Stopwatch.StartNew();
+  }
+  double nowMs = clock.Current.Elapsed.TotalMilliseconds;
+  double frameMs = renders.Current == 0 ? 0.0 : nowMs - prevStamp.Current;
+  prevStamp.Current = nowMs;
+  renders.Current = renders.Current + 1;
+
+  int columns = 20;
+
+  return (
+    <VisualElement
+      style={SpikeStyles.Root}
+      onPointerDown={e => {
+        dragging.Current = true;
+        lastX.Current = e.Position.x;
+        lastY.Current = e.Position.y;
+      }}
+      onPointerUp={e => { dragging.Current = false; }}
+      onPointerLeave={e => { dragging.Current = false; }}
+      onPointerMove={e => {
+        if (dragging.Current) {
+          setCamX(camX + (e.Position.x - lastX.Current));
+          setCamY(camY + (e.Position.y - lastY.Current));
+          lastX.Current = e.Position.x;
+          lastY.Current = e.Position.y;
+        }
+      }}
+      onWheel={e => {
+        float factor = e.Delta.y < 0f ? 1.1f : 0.9f;
+        setZoom(Mathf.Clamp(zoom * factor, 0.15f, 3f));
+      }}
+    >
+      <VisualElement
+        style={new Style {
+          Position = PosAbsolute,
+          Top = Px(0),
+          Left = Px(0),
+          Translate = Xlate(Px(camX), Px(camY)),
+          Scale = new UnityEngine.UIElements.Scale(new Vector2(zoom, zoom)),
+        }}
+      >
+        @for (int i = 0; i < cardCount; i++) {
+          float gx = (i % columns) * 170f;
+          float gy = (i / columns) * 110f;
+          return (
+            <VisualElement
+              key={$"card-{i}"}
+              style={new Style {
+                Position = PosAbsolute,
+                Width = Px(150),
+                Height = Px(90),
+                BackgroundColor = Hex("#232329"),
+                BorderRadius = Px(8),
+                Padding = Px(8),
+                Translate = Xlate(Px(gx), Px(gy)),
+              }}
+            >
+              <Label text={$"Card {i}"} style={SpikeStyles.CardTitle} />
+              <Label text="pan: drag, zoom: wheel" style={SpikeStyles.CardBody} />
+            </VisualElement>
+          );
+        }
+      </VisualElement>
+      <VisualElement style={SpikeStyles.Hud}>
+        <Label text={$"cards {cardCount}  renders {renders.Current}"} />
+        <Label text={$"frame {frameMs:F1} ms  zoom {zoom:F2}"} />
+      </VisualElement>
+    </VisualElement>
+  );
+}

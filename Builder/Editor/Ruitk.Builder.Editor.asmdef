@@ -1,0 +1,24 @@
+{
+    "name": "Ruitk.Builder.Editor",
+    "rootNamespace": "",
+    "references": [
+        "Ruitk.Shared",
+        "Ruitk.Runtime",
+        "Ruitk.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Ruitk.Language.Editor.dll",
+        "System.Collections.Immutable.dll",
+        "Newtonsoft.Json.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -181,6 +181,30 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline
     );
 
+    // ── Construction / unsaved-buffer overlay (VE-07) ────────────────────────
+
+    public WorkspaceIndex() { }
+
+    /// <summary>
+    /// DI constructor: wires the index to read open-document buffers before disk,
+    /// so unsaved files (the RUITK Builder's save/abort sessions, plain unsaved
+    /// IDE edits) contribute their exports/props/imports to completion menus and
+    /// the workspace graph. Disk stays the fallback for everything unopened.
+    /// </summary>
+    public WorkspaceIndex(DocumentStore documentStore)
+    {
+        TextOverlay = path =>
+            documentStore.TryGetByPath(path, out var text) ? text : null;
+    }
+
+    /// <summary>Buffer-first text source consulted by every index read; null falls through to disk.</summary>
+    public Func<string, string?>? TextOverlay { get; set; }
+
+    private string? TryOverlay(string filePath) => TextOverlay?.Invoke(filePath);
+
+    private bool ExistsForIndex(string filePath) =>
+        TryOverlay(filePath) != null || File.Exists(filePath);
+
     // ── IOnLanguageServerStarted ─────────────────────────────────────────────
 
     /// <summary>
@@ -219,11 +243,13 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
         if (!string.IsNullOrEmpty(root))
         {
             ServerLog.Log($"WorkspaceIndex.OnStarted: starting scan from '{root}'");
+            _scanScheduled = true;
             _ = Task.Run(
                 () =>
                 {
                     ScanDirectory(root);
                     ScanCompleted?.Invoke();
+                    _initialScanTcs.TrySetResult(true);
                 },
                 cancellationToken
             );
@@ -231,12 +257,37 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
         else
         {
             ServerLog.Log("WorkspaceIndex.OnStarted: no root — scan deferred until EnsureScanned() is called");
+            _initialScanTcs.TrySetResult(true);
         }
 
         return Task.CompletedTask;
     }
 
     private volatile bool _hasScanned;
+
+    private readonly TaskCompletionSource<bool> _initialScanTcs =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private volatile bool _scanScheduled;
+
+    /// <summary>
+    /// Completes when the initial workspace scan finishes (or immediately when
+    /// the client provided no root, so the index will never populate). Requests
+    /// whose answer is meaningless on a partial index — the builder's
+    /// workspace-graph and component-props — await this instead of racing the
+    /// background scan and returning an empty graph.
+    /// </summary>
+    public Task InitialScan => _initialScanTcs.Task;
+
+    /// <summary>No-op unless a scan is actually scheduled and unfinished —
+    /// a directly-constructed index (tests, overlay-only use) never waits.
+    /// Bounded so a wedged scan degrades to a partial answer, not a hang.</summary>
+    public Task WaitForInitialScanAsync(CancellationToken cancellationToken)
+    {
+        if (!_scanScheduled || _hasScanned)
+            return Task.CompletedTask;
+        return Task.WhenAny(_initialScanTcs.Task, Task.Delay(30000, cancellationToken));
+    }
 
     /// <summary>
     /// Returns <c>true</c> once the initial background workspace scan has
@@ -259,8 +310,10 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
             return;
 
         ServerLog.Log($"WorkspaceIndex.EnsureScanned: deferred scan from '{rootPath}'");
+        _scanScheduled = true;
         ScanDirectory(rootPath);
         ScanCompleted?.Invoke();
+        _initialScanTcs.TrySetResult(true);
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -575,7 +628,7 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
 
         if (filePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
         {
-            if (!File.Exists(filePath))
+            if (!ExistsForIndex(filePath))
             {
                 _lock.EnterWriteLock();
                 try { _allCsFiles.Remove(filePath); }
@@ -593,12 +646,14 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
                     ScanDirectory(dir);
                 return;
             }
+            string beforeCs = ComputeFileSurface(filePath);
             IndexFile(filePath);
-            IndexChanged?.Invoke();
+            if (!string.Equals(beforeCs, ComputeFileSurface(filePath), StringComparison.Ordinal))
+                IndexChanged?.Invoke();
         }
         else if (filePath.EndsWith(".uitkx", StringComparison.OrdinalIgnoreCase))
         {
-            if (!File.Exists(filePath))
+            if (!ExistsForIndex(filePath))
             {
                 _lock.EnterWriteLock();
                 try { _moduleHookFiles.Remove(filePath); }
@@ -612,9 +667,74 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
                 IndexChanged?.Invoke();
                 return;
             }
+            string before = ComputeFileSurface(filePath);
             IndexUitkxFile(filePath);
-            IndexChanged?.Invoke();
+            if (!string.Equals(before, ComputeFileSurface(filePath), StringComparison.Ordinal))
+                IndexChanged?.Invoke();
         }
+    }
+
+    /// <summary>
+    /// Cheap signature of everything OTHER files can observe about
+    /// <paramref name="filePath"/>: exports, imports, declared element names and
+    /// their prop surfaces. <see cref="Refresh"/> fires <see cref="IndexChanged"/>
+    /// only when this changes — buffer-driven refreshes arrive per keystroke and
+    /// an unconditional event would put the debounced open-document revalidation
+    /// on the typing hot path.
+    /// </summary>
+    private string ComputeFileSurface(string filePath)
+    {
+        var sb = new System.Text.StringBuilder();
+        _lock.EnterReadLock();
+        try
+        {
+            if (_exportsByFile.TryGetValue(filePath, out var exports))
+                foreach (var (name, kind) in exports)
+                    sb.Append("e:").Append(name).Append(':').Append((int)kind).Append(';');
+            if (_importsByFile.TryGetValue(filePath, out var imports))
+                foreach (var (spec, names) in imports)
+                {
+                    sb.Append("i:").Append(spec).Append(':');
+                    foreach (var n in names)
+                        sb.Append(n).Append(',');
+                    sb.Append(';');
+                }
+            if (_moduleHookFiles.Contains(filePath))
+                sb.Append("m;");
+            if (_elementsByFile.TryGetValue(filePath, out var names2))
+                foreach (var name in names2)
+                {
+                    sb.Append("c:").Append(name);
+                    // Props, not OwnProps: uitkx-declared components store their params in
+                    // Props only (OwnProps is the .cs-side declared-vs-inherited split).
+                    if (_elementInfo.TryGetValue(name, out var byFile)
+                        && byFile.TryGetValue(filePath, out var info))
+                        foreach (var p in info.Props)
+                            sb.Append(':').Append(p.Name).Append('=').Append(p.Type);
+                    sb.Append(';');
+                }
+        }
+        finally { _lock.ExitReadLock(); }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Snapshot of every indexed .uitkx file's exports — the node/export table a
+    /// <c>ruitk/workspaceGraph</c> response is built from (edges come from
+    /// <see cref="GetImportEdges"/> + specifier resolution).
+    /// </summary>
+    public IReadOnlyList<(string File, string Name, StrictImportDetector.ExportKind Kind)> GetExportsSnapshot()
+    {
+        var result = new List<(string, string, StrictImportDetector.ExportKind)>();
+        _lock.EnterReadLock();
+        try
+        {
+            foreach (var kvp in _exportsByFile)
+                foreach (var (name, kind) in kvp.Value)
+                    result.Add((kvp.Key, name, kind));
+        }
+        finally { _lock.ExitReadLock(); }
+        return result;
     }
 
     // ── Scanning ─────────────────────────────────────────────────────────────
@@ -697,7 +817,7 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
 
         try
         {
-            string content = File.ReadAllText(filePath);
+            string content = TryOverlay(filePath) ?? File.ReadAllText(filePath);
 
             // Blank comments + string/char literals (offset-preserving) before the regex
             // passes so a declaration-shaped line inside a /* */ block comment can't index
@@ -822,7 +942,10 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
 
         try
         {
-            var lines = File.ReadAllLines(filePath);
+            string? overlayText = TryOverlay(filePath);
+            var lines = overlayText != null
+                ? overlayText.Replace("\r\n", "\n").Split('\n')
+                : File.ReadAllLines(filePath);
             string? currentElement = null;
             string? currentBase = null;
             int currentLine = 0;
