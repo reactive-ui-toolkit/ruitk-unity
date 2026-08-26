@@ -15,6 +15,7 @@ import {
 } from '@mui/material'
 import { Shot } from './Shot'
 import workspaceShot from '../../assets/builder/workspace.png'
+import nestedMarkupShot from '../../assets/builder/nested-markup.png'
 import Styles from './UiBuilderPage.style'
 
 const Section: FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -202,6 +203,11 @@ export const UiBuilderWorkspacePage: FC = () => (
         <strong>RETURN &mdash; MARKUP</strong>. A style module card shows{' '}
         <strong>EXPORTS</strong> instead, with each style entry and its keys.
       </Typography>
+      <Shot
+        src={nestedMarkupShot}
+        alt="A component card showing its badge, signature, imports, body and nested markup"
+        caption="One card, top to bottom: kind badge, signature, IMPORTS, BODY, and the markup — nested exactly as the file nests it."
+      />
     </Section>
 
     <Section title="Live preview">
