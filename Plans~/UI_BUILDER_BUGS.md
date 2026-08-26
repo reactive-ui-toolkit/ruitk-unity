@@ -3627,3 +3627,32 @@ the same window - one window cannot fight itself for focus.
 
 The card menu is back to one "New" row with the four kinds behind it, and any
 menu can nest now by filling in `Children`.
+
+### UB-215 — two menu types, each doing what it is good at `SHIPPED` `MED`
+
+Owner, after seeing UB-214's two-column popup: "you basically made the menu much
+bigger so you can fit the submenu in?" Yes - and it was the wrong shape. A popup
+cannot resize without pulling rows out from under the pointer, so the window was
+sized for both columns from the start and sat there half empty.
+
+Researched what Unity actually offers:
+
+- **GenericMenu** - the editor's own context menu. Submenus are just a PATH:
+  `AddItem(new GUIContent("New/Component"), ...)` draws a real flyout with the
+  editor's hover and keyboard. And it is not an EditorWindow popup, so the
+  open-from-an-inactive-window rule that cost three fixes (UB-197, UB-199,
+  UB-209) does not apply to it at all.
+- **AdvancedDropdown** - searchable AND hierarchical, the Add Component control.
+  Rejected: it selects from a FIXED item tree, and 4 of the 8 searchable menus
+  need a freeform "use what I typed" row, which it cannot express. Its sizing is
+  also awkward (`minimumSize` protected, `maximumSize` internal).
+
+SO: the 7 non-searchable menus are GenericMenu now, and the custom window keeps
+the 8 searchable menus and 5 name prompts, where freeform entry and the inline
+error line are load-bearing. The hand-rolled submenu column is deleted.
+
+Deliberate cost: context menus look like Unity rather than like the POC's dark
+`.ctx` chrome. Correct submenu, hover and focus behaviour beat matching the mock.
+
+`FocusInvoker` moved into `Place`, so every remaining custom window takes the
+keyboard before it opens rather than only the plain menus doing so.

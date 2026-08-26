@@ -77,14 +77,6 @@ namespace Ruitk.Builder
         private bool _searchable = true;
         private TextField _search;
         private ScrollView _list;
-        private ScrollView _submenu;
-
-        /// <summary>The row whose children the second column is showing.</summary>
-        private Item _openParent;
-
-        /// <summary>Which column the keyboard is walking. Right arrow steps into a
-        /// submenu, Left steps back out.</summary>
-        private bool _inSubmenu;
         private Func<string, string> _nameValidate;
         private Action<string> _nameSubmit;
 
@@ -96,51 +88,77 @@ namespace Ruitk.Builder
         private string _initialValue;
         private Label _errorLabel;
 
-        /// <summary>POC plain context menu (row / card / create): title header,
-        /// no search field, separators and inline section headers, sized to its
-        /// content like the in-page ".ctx" menu.</summary>
+        /// <summary>A plain context menu - card, row, canvas, import - drawn by
+        /// UNITY rather than by this window.
+        ///
+        /// These have no search field, so everything the custom window exists for
+        /// is unused here, and everything it has to hand-roll is a liability:
+        /// submenus, hover, and the popup-from-an-inactive-window rule that made a
+        /// right-click silently do nothing three separate times (UB-197, UB-199,
+        /// UB-209). GenericMenu is not an EditorWindow popup, so that rule does not
+        /// apply to it at all, and a nested item is just a path - "New/Component"
+        /// draws a real submenu with the editor's own hover and keyboard.
+        ///
+        /// The cost is deliberate: this menu looks like Unity, not like the POC's
+        /// dark chrome. Correct behaviour beat matching the mock (UB-215).</summary>
         public static void ShowSimple(string title, List<Item> items)
         {
-            FocusInvoker();
-            int rows = 0;
-            int widest = title?.Length ?? 0;
-            int widestChild = 0;
-            int deepestChild = 0;
+            var menu = new GenericMenu();
+            if (!string.IsNullOrEmpty(title))
+            {
+                menu.AddDisabledItem(new GUIContent(title));
+                menu.AddSeparator("");
+            }
             foreach (var item in items)
             {
-                rows++;
-                int length = item.IsSeparator ? 0
-                    : item.Header != null ? item.Header.Length
-                    : (item.Label?.Length ?? 0);
-                if (item.Children != null)
+                if (item == null)
+                    continue;
+                if (item.IsSeparator)
                 {
-                    // A submenu opens BESIDE the list, so the window is sized for
-                    // both columns up front. Growing it on hover would move the
-                    // rows out from under the pointer that opened them.
-                    length += 2;
-                    int deep = 0;
+                    menu.AddSeparator("");
+                    continue;
+                }
+                if (item.Header != null)
+                {
+                    menu.AddDisabledItem(new GUIContent(item.Header));
+                    continue;
+                }
+                if (item.Children != null && item.Children.Count > 0)
+                {
                     foreach (var child in item.Children)
                     {
-                        if (child.IsSeparator || child.Header != null)
+                        if (child == null || child.IsSeparator || child.Header != null)
                             continue;
-                        deep++;
-                        if ((child.Label?.Length ?? 0) > widestChild)
-                            widestChild = child.Label.Length;
+                        AddLeaf(menu, item.Label + "/" + child.Label, child);
                     }
-                    if (deep > deepestChild)
-                        deepestChild = deep;
+                    continue;
                 }
-                if (length > widest)
-                    widest = length;
+                AddLeaf(menu, item.Label, item);
             }
-            float listWidth = Mathf.Clamp(widest * 7.2f + 30f, 195f, 420f);
-            float childWidth = widestChild == 0
-                ? 0f
-                : Mathf.Clamp(widestChild * 7.2f + 34f, 150f, 360f);
-            Open(
-                title, null, items, null, searchable: false,
-                width: listWidth + childWidth,
-                height: 24f + Mathf.Max(rows, deepestChild) * 21f + 10f);
+            // ShowAsContext puts the menu at the CURRENT event, which is the
+            // right-click still being dispatched - every caller reaches here
+            // synchronously from its pointer handler. Outside an event there is no
+            // "current" position, so the remembered pointer stands in.
+            if (Event.current != null)
+                menu.ShowAsContext();
+            else
+                menu.DropDown(new Rect(s_pointer, Vector2.zero));
+        }
+
+        /// <summary>One selectable row. The Detail column has no equivalent in a
+        /// GenericMenu, so it rides along in the label where it still reads.</summary>
+        private static void AddLeaf(GenericMenu menu, string path, Item item)
+        {
+            string label = string.IsNullOrEmpty(item.Detail)
+                ? path
+                : path + "  (" + item.Detail + ")";
+            var pick = item.OnPick;
+            if (pick == null)
+            {
+                menu.AddDisabledItem(new GUIContent(label));
+                return;
+            }
+            menu.AddItem(new GUIContent(label), false, () => pick());
         }
 
         public static void Show(
@@ -189,6 +207,11 @@ namespace Ruitk.Builder
 
         private static void Place(BuilderSearchMenu window, float width, float height)
         {
+            // Every custom window goes through here, and every one of them is an
+            // EditorWindow popup - which Unity will not open from a window that is
+            // not the active one. The plain menus escaped this by moving to
+            // GenericMenu; these cannot, so they take the keyboard first (UB-209).
+            FocusInvoker();
             // Captured BEFORE ShowPopup steals focus. s_pointerWindow is only set
             // by the gestures that need at-cursor placement, so it cannot be the
             // only source for UB-92's focus restore — a menu opened from a
@@ -339,22 +362,8 @@ namespace Ruitk.Builder
                 root.Add(_errorLabel);
             }
 
-            var columns = new VisualElement
-            {
-                style = { flexDirection = FlexDirection.Row, flexGrow = 1f, minHeight = 0f },
-            };
             _list = new ScrollView { style = { flexGrow = 1f, maxHeight = 300f } };
-            columns.Add(_list);
-            _submenu = new ScrollView
-            {
-                style =
-                {
-                    flexGrow = 1f, maxHeight = 300f, display = DisplayStyle.None,
-                    borderLeftWidth = 1f, borderLeftColor = BuilderPalette.Line,
-                },
-            };
-            columns.Add(_submenu);
-            root.Add(columns);
+            root.Add(_list);
             Rebuild();
             if (_searchable)
             {
@@ -417,27 +426,8 @@ namespace Ruitk.Builder
                     MoveHighlight(-1);
                     evt.StopPropagation();
                     break;
-                case KeyCode.RightArrow:
-                    EnterSubmenu();
-                    evt.StopPropagation();
-                    break;
-                case KeyCode.LeftArrow:
-                    if (_inSubmenu)
-                    {
-                        _inSubmenu = false;
-                        _highlight = -1;
-                        MoveHighlight(1);
-                    }
-                    evt.StopPropagation();
-                    break;
                 case KeyCode.Return:
                 case KeyCode.KeypadEnter:
-                    if (!_inSubmenu && HighlightedItem()?.Children != null)
-                    {
-                        EnterSubmenu();
-                        evt.StopPropagation();
-                        break;
-                    }
                     PickHighlighted();
                     evt.StopPropagation();
                     break;
@@ -454,10 +444,9 @@ namespace Ruitk.Builder
         private List<VisualElement> PickableRows()
         {
             var rows = new List<VisualElement>();
-            var column = _inSubmenu && _openParent != null ? _submenu : _list;
-            if (column == null)
+            if (_list == null)
                 return rows;
-            foreach (var child in column.contentContainer.Children())
+            foreach (var child in _list.contentContainer.Children())
                 if (child.userData is Item)
                     rows.Add(child);
             return rows;
@@ -474,30 +463,7 @@ namespace Ruitk.Builder
                 rows[i].style.backgroundColor = i == _highlight
                     ? new Color(0.31f, 0.76f, 0.97f, 0.14f)
                     : new Color(0f, 0f, 0f, 0f);
-            (_inSubmenu && _openParent != null ? _submenu : _list).ScrollTo(rows[_highlight]);
-        }
-
-        /// <summary>The item the keyboard is on, or null.</summary>
-        private Item HighlightedItem()
-        {
-            var rows = PickableRows();
-            if (rows.Count == 0 || _highlight < 0 || _highlight >= rows.Count)
-                return null;
-            return rows[_highlight].userData as Item;
-        }
-
-        /// <summary>Steps the keyboard into the highlighted row's submenu.</summary>
-        private void EnterSubmenu()
-        {
-            if (_inSubmenu)
-                return;
-            var item = HighlightedItem();
-            if (item?.Children == null || item.Children.Count == 0)
-                return;
-            OpenSubmenu(item);
-            _inSubmenu = true;
-            _highlight = -1;
-            MoveHighlight(1);
+            _list.ScrollTo(rows[_highlight]);
         }
 
         private void PickHighlighted()
@@ -599,12 +565,8 @@ namespace Ruitk.Builder
             }
         }
 
-        private void AddRow(Item item, Color color, bool submitsName = false) =>
-            AddRow(item, color, submitsName, _list);
-
-        private void AddRow(Item item, Color color, bool submitsName, ScrollView into)
+        private void AddRow(Item item, Color color, bool submitsName = false)
         {
-            bool hasChildren = item.Children != null && item.Children.Count > 0;
             var row = new VisualElement
             {
                 userData = item,
@@ -621,21 +583,10 @@ namespace Ruitk.Builder
                 {
                     style = { color = new Color(0.55f, 0.55f, 0.59f), fontSize = 10f },
                 });
-            if (hasChildren)
-                row.Add(new Label("›")
-                {
-                    style = { color = new Color(0.55f, 0.55f, 0.59f), marginLeft = 6f },
-                });
+
             row.RegisterCallback<PointerDownEvent>(evt =>
             {
                 evt.StopPropagation();
-                if (hasChildren)
-                {
-                    // A click on a parent row opens its column too, so the menu
-                    // works for someone who clicks rather than hovers.
-                    OpenSubmenu(item);
-                    return;
-                }
                 if (submitsName)
                 {
                     SubmitName();
@@ -646,48 +597,12 @@ namespace Ruitk.Builder
             });
             BuilderCursor.Set(row, MouseCursor.Link);
             row.RegisterCallback<MouseEnterEvent>(_ =>
-            {
-                row.style.backgroundColor = new Color(0.31f, 0.76f, 0.97f, 0.14f);
-                // Resting on a parent opens its column; resting on any OTHER row
-                // of the same column closes it. Moving into the column itself is
-                // neither, so the submenu survives the trip across.
-                if (hasChildren)
-                    OpenSubmenu(item);
-                else if (into == _list)
-                    CloseSubmenu();
-            });
+                row.style.backgroundColor = new Color(0.31f, 0.76f, 0.97f, 0.14f));
             row.RegisterCallback<MouseLeaveEvent>(_ =>
                 row.style.backgroundColor = StyleKeyword.Null);
-            into.contentContainer.Add(row);
+            _list.contentContainer.Add(row);
         }
 
-        /// <summary>Fills the second column with one row's children.</summary>
-        private void OpenSubmenu(Item parent)
-        {
-            if (_submenu == null || parent?.Children == null)
-                return;
-            if (ReferenceEquals(_openParent, parent))
-                return;
-            _openParent = parent;
-            _submenu.contentContainer.Clear();
-            foreach (var child in parent.Children)
-            {
-                if (child.IsSeparator || child.Header != null)
-                    continue;
-                AddRow(child, BuilderPalette.Text, submitsName: false, into: _submenu);
-            }
-            _submenu.style.display = DisplayStyle.Flex;
-        }
-
-        private void CloseSubmenu()
-        {
-            if (_submenu == null || _openParent == null)
-                return;
-            _openParent = null;
-            _inSubmenu = false;
-            _submenu.contentContainer.Clear();
-            _submenu.style.display = DisplayStyle.None;
-        }
     }
 }
 #endif
