@@ -3723,3 +3723,26 @@ It is only ambiguous for that name, which is exactly why it was easy to miss.
 The heading is the FILE now - "NewComponent.uitkx" - which cannot be read as an
 instruction. The flyout also carries its own heading, since the menu's title sits
 above it visually and looked like a heading for its rows.
+
+### UB-219 — the window ate the menu's Escape `FIXED` `MED`
+
+Owner report 2026-08-26, after UB-217: arrows and Enter work, Escape still does
+nothing. That asymmetry IS the diagnosis - the menu's key handler is clearly
+firing, so something takes Escape specifically before it.
+
+ROOT CAUSE: `BuilderWindow` registers its own KeyDownEvent on
+`rootVisualElement` with TrickleDown, at CreateGUI - before the menu registers
+one on the SAME element. Same element, same phase, so registration order decides,
+and the window goes first. Its Escape branch calls `CancelActiveEdit()` and then
+`ConsumeKey`, which uses `StopImmediatePropagation` - and that kills the
+remaining callbacks on that element too, not just the rest of the propagation
+path. The arrows worked because the window's switch ignores them and returns
+without consuming.
+
+FIX: a menu is the innermost thing on screen, so Escape belongs to it. The window
+defers while one is open, and the menu's own handler keeps doing the backing-out
+one level at a time. One place owns menu Escape.
+
+Worth remembering generally: `StopImmediatePropagation` on a shared element is
+invisible to whoever registers later, and the two handlers never appear in the
+same file.

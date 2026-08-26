@@ -5458,6 +5458,15 @@ namespace Ruitk.Builder
                 }
                 else if (evt.keyCode == KeyCode.Escape)
                 {
+                    // A menu is the innermost thing on screen, so Escape is its.
+                    // This handler runs FIRST - registered on the same element,
+                    // earlier - and ConsumeKey uses StopImmediatePropagation, which
+                    // kills the remaining callbacks on that element too. So
+                    // consuming here stopped the menu ever seeing the key, while
+                    // the arrows worked because they fall through untouched
+                    // (UB-219).
+                    if (BuilderContextMenu.IsOpen)
+                        return;
                     CancelActiveEdit();
                     ConsumeKey(evt);
                 }
