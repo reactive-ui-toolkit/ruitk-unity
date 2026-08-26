@@ -3693,3 +3693,33 @@ not something a UI library should ask of everyone who installs this package.
 The searchable menus and name prompts stay in the EditorWindow, where a search
 field, a freeform "use what I typed" row and an inline error line are what it
 exists for.
+
+### UB-217 — the context menu had no keyboard `FIXED` `MED`
+
+Owner report 2026-08-26: up/down/Enter do nothing, and Escape does nothing
+either.
+
+Escape was WIRED, on the menu's own scrim, and could never have fired: a
+KeyDownEvent goes to the FOCUSED element and bubbles through ITS ancestors, and
+the menu is not one of them. Focusing the scrim would have worked only while
+nothing else wanted focus. The handler now sits on the panel ROOT with
+TrickleDown, so the menu gets first refusal on a key wherever focus happens to
+be, and comes off again when the menu closes.
+
+The arrows and Enter were simply never built - the menu shipped pointer-only.
+Down/Up walk the column the eye is on, Right steps into a flyout, Left steps back
+out, Enter picks (or opens, on a nesting row), and Escape backs out one level at
+a time rather than closing everything at once.
+
+### UB-218 — the menu title read as an instruction `FIXED` `LOW`
+
+Owner report 2026-08-26: the title is "not always true".
+
+A card menu was headed with the card's TITLE, so a component called NewComponent
+produced a menu headed "NEWCOMPONENT" directly above a row reading "New" - which
+reads as announcing a new component rather than naming the card being acted on.
+It is only ambiguous for that name, which is exactly why it was easy to miss.
+
+The heading is the FILE now - "NewComponent.uitkx" - which cannot be read as an
+instruction. The flyout also carries its own heading, since the menu's title sits
+above it visually and looked like a heading for its rows.

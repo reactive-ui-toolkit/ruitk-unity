@@ -890,7 +890,11 @@ namespace Ruitk.Builder
                     Children = kinds,
                 });
             }
-            BuilderSearchMenu.ShowSimple(node.Title, items);
+            // The FILE, not the title. A menu headed "NEWCOMPONENT" over a row
+            // reading "New" looks like it is announcing a new component rather
+            // than naming the card being acted on - which is only obvious when the
+            // card is called something other than NewComponent (UB-218).
+            BuilderSearchMenu.ShowSimple(System.IO.Path.GetFileName(targetPath), items);
         }
 
         /// <summary>The card delete plus its referenced-by guard, in one place so

@@ -34,11 +34,28 @@ namespace Ruitk.Builder
     /// </summary>
     internal static class BuilderContextMenu
     {
-        private const float RowHeight = 21f;
-
         private static VisualElement s_scrim;
         private static VisualElement s_flyout;
         private static object s_openParent;
+
+        /// <summary>The panel root the menu is living in, kept so the key handler
+        /// can be taken off it again. Keys are caught THERE rather than on the menu
+        /// itself: a KeyDownEvent goes to the FOCUSED element and bubbles through
+        /// its ancestors, and the menu is not one of them - which is why Escape did
+        /// nothing at all (UB-217).</summary>
+        private static VisualElement s_keyHost;
+
+        /// <summary>Rows of the column the keyboard is walking, and where it is.
+        /// Rebuilt when a flyout opens or closes, so the arrows always move within
+        /// whichever column the eye is on.</summary>
+        private static readonly List<(VisualElement Row, BuilderSearchMenu.Item Item)> s_walk =
+            new List<(VisualElement, BuilderSearchMenu.Item)>();
+        private static int s_highlight = -1;
+        private static readonly List<(VisualElement Row, BuilderSearchMenu.Item Item)> s_mainRows =
+            new List<(VisualElement, BuilderSearchMenu.Item)>();
+        private static readonly List<(VisualElement Row, BuilderSearchMenu.Item Item)> s_flyoutRows =
+            new List<(VisualElement, BuilderSearchMenu.Item)>();
+        private static bool s_inFlyout;
 
         /// <summary>Opens a menu at a panel-space point. Closes any menu already
         /// open, so a second right-click replaces rather than stacks.</summary>
@@ -62,16 +79,14 @@ namespace Ruitk.Builder
                 },
             };
             s_scrim.RegisterCallback<PointerDownEvent>(_ => Close());
-            s_scrim.RegisterCallback<KeyDownEvent>(evt =>
-            {
-                if (evt.keyCode == KeyCode.Escape)
-                {
-                    Close();
-                    evt.StopPropagation();
-                }
-            });
             panelRoot.Add(s_scrim);
+            s_keyHost = panelRoot;
+            // TrickleDown, so the menu gets first refusal on the key before
+            // whatever happens to hold focus does.
+            panelRoot.RegisterCallback<KeyDownEvent>(OnKey, TrickleDown.TrickleDown);
 
+            s_mainRows.Clear();
+            s_flyoutRows.Clear();
             var menu = Panel();
             if (!string.IsNullOrEmpty(title))
                 menu.Add(TitleRow(title));
@@ -79,16 +94,133 @@ namespace Ruitk.Builder
                 AddRow(menu, item, isFlyout: false);
             s_scrim.Add(menu);
             PlaceAt(menu, at, panelRoot);
-
-            s_scrim.schedule.Execute(() => s_scrim?.Focus()).ExecuteLater(1);
+            UseColumn(s_mainRows, inFlyout: false);
         }
 
         public static void Close()
         {
+            if (s_keyHost != null)
+            {
+                s_keyHost.UnregisterCallback<KeyDownEvent>(OnKey, TrickleDown.TrickleDown);
+                s_keyHost = null;
+            }
             s_flyout = null;
             s_openParent = null;
+            s_mainRows.Clear();
+            s_flyoutRows.Clear();
+            s_walk.Clear();
+            s_highlight = -1;
+            s_inFlyout = false;
             s_scrim?.RemoveFromHierarchy();
             s_scrim = null;
+        }
+
+        public static bool IsOpen => s_scrim != null;
+
+        // ── Keyboard ─────────────────────────────────────────────────────────
+
+        private static void OnKey(KeyDownEvent evt)
+        {
+            if (s_scrim == null)
+                return;
+            switch (evt.keyCode)
+            {
+                case KeyCode.Escape:
+                    // Out of the flyout first, then out of the menu - Escape backs
+                    // out one level at a time, which is what it does everywhere.
+                    if (s_inFlyout)
+                    {
+                        CloseFlyout();
+                        UseColumn(s_mainRows, inFlyout: false);
+                    }
+                    else
+                    {
+                        Close();
+                    }
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.DownArrow:
+                    Move(1);
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.UpArrow:
+                    Move(-1);
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.RightArrow:
+                    StepIn();
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.LeftArrow:
+                    if (s_inFlyout)
+                    {
+                        CloseFlyout();
+                        UseColumn(s_mainRows, inFlyout: false);
+                    }
+                    evt.StopPropagation();
+                    break;
+                case KeyCode.Return:
+                case KeyCode.KeypadEnter:
+                    Activate();
+                    evt.StopPropagation();
+                    break;
+            }
+        }
+
+        private static void UseColumn(
+            List<(VisualElement Row, BuilderSearchMenu.Item Item)> rows, bool inFlyout)
+        {
+            s_walk.Clear();
+            s_walk.AddRange(rows);
+            s_inFlyout = inFlyout;
+            s_highlight = -1;
+            Paint();
+        }
+
+        private static void Move(int delta)
+        {
+            if (s_walk.Count == 0)
+                return;
+            int next = s_highlight < 0 ? (delta > 0 ? 0 : s_walk.Count - 1) : s_highlight + delta;
+            s_highlight = Mathf.Clamp(next, 0, s_walk.Count - 1);
+            Paint();
+        }
+
+        private static void Paint()
+        {
+            for (int i = 0; i < s_walk.Count; i++)
+                s_walk[i].Row.style.backgroundColor = i == s_highlight
+                    ? new Color(0.31f, 0.76f, 0.97f, 0.14f)
+                    : new Color(0f, 0f, 0f, 0f);
+        }
+
+        private static void StepIn()
+        {
+            if (s_inFlyout || s_highlight < 0 || s_highlight >= s_walk.Count)
+                return;
+            var (row, item) = s_walk[s_highlight];
+            if (item?.Children == null || item.Children.Count == 0)
+                return;
+            OpenFlyout(row, item);
+            UseColumn(s_flyoutRows, inFlyout: true);
+            Move(1);
+        }
+
+        private static void Activate()
+        {
+            if (s_highlight < 0 || s_highlight >= s_walk.Count)
+                return;
+            var item = s_walk[s_highlight].Item;
+            if (item == null)
+                return;
+            if (item.Children != null && item.Children.Count > 0)
+            {
+                StepIn();
+                return;
+            }
+            var pick = item.OnPick;
+            Close();
+            pick?.Invoke();
         }
 
         // ── Rows ─────────────────────────────────────────────────────────────
@@ -151,6 +283,7 @@ namespace Ruitk.Builder
                 });
 
             BuilderCursor.Set(row, MouseCursor.Link);
+            (isFlyout ? s_flyoutRows : s_mainRows).Add((row, item));
             row.RegisterCallback<MouseEnterEvent>(_ =>
             {
                 row.style.backgroundColor = new Color(0.31f, 0.76f, 0.97f, 0.14f);
@@ -204,6 +337,11 @@ namespace Ruitk.Builder
             s_openParent = parent;
 
             var flyout = Panel();
+            // Its own heading, because the menu's title names the SUBJECT of the
+            // menu - a card - and read over the flyout it looked like a heading
+            // for these rows, which it is not (UB-218).
+            flyout.Add(TitleRow(parent.Label));
+            s_flyoutRows.Clear();
             foreach (var child in parent.Children)
                 AddRow(flyout, child, isFlyout: true);
             s_scrim.Add(flyout);
@@ -225,6 +363,7 @@ namespace Ruitk.Builder
             s_flyout?.RemoveFromHierarchy();
             s_flyout = null;
             s_openParent = null;
+            s_flyoutRows.Clear();
         }
 
         // ── Chrome ───────────────────────────────────────────────────────────
