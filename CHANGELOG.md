@@ -6,6 +6,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.18.1] - 2026-08-27
+
+### Fixed
+
+- **The store build could not compile.** The Asset Store shell project's
+  `manifest.json` was a hand-written duplicate of the package's dependency set,
+  and `com.unity.nuget.newtonsoft-json` (a Builder dependency since 0.17.0) was
+  never added to it. Copied into `Assets/`, the package is no longer a UPM
+  package, so nothing resolves its own `package.json` and the import died on
+  CS0246 across every Builder file that touches JSON. The manifest is now
+  GENERATED from `package.json`, so a new dependency reaches the store build by
+  construction.
+- **A move that the builder refused said nothing.** Dropping a markup row onto
+  another element had five refusal paths that returned silently, so a drop that
+  did not land where you aimed was indistinguishable from a drag that never
+  armed &mdash; and a release BETWEEN rows quietly relocated the row to the end
+  of the root instead. Every outcome now reports itself, including the
+  successful ones ("Moved &lt;LeftSide&gt; into &lt;VisualElement&gt;"). The
+  insert path has always explained its refusals; the move path now does too.
+
+### Docs
+
+- Screenshots on the site were broken: an absolute `src="/builder/…"` in the
+  page source is emitted verbatim by Vite, so under the site's `/unity/` base it
+  pointed at the domain root and 404'd. Images now live in `src/assets` and are
+  imported, which makes them hashed, base-correct, and a build error when wrong.
+  The site logo had the same defect and was silently loading the family site's
+  root logo instead of the Unity leg's own. `docs-sync.yml` gained a guard that
+  fails the sync on any un-prefixed asset URL.
+- The UI Builder section gained figures for the empty state, Layer 1, card
+  anatomy, both drop bands, the first-Save folder prompt, and the
+  applies-on-Save toast; every screenshot is now cropped to the thing its
+  caption names rather than a full-window capture.
 ## [0.18.0] - 2026-08-26
 
 ### Added — RUITK UI Builder: structure, menus and a settled placement model
