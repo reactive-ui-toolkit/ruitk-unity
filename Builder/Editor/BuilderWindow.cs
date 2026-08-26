@@ -441,6 +441,13 @@ namespace Ruitk.Builder
 
             // TrickleDown: the keys must be consumed before Unity's global routes
             // see them (Ctrl+S -> Save Project, Ctrl+Z -> global Undo).
+            //
+            // THIS IS THE FIRST KeyDownEvent HANDLER ON THE ROOT, and therefore the
+            // gatekeeper for every key it consumes. Anything registering here later
+            // - a menu, an overlay, a pane - runs AFTER this one, and never runs at
+            // all for a key this one passes to ConsumeKey. Read ConsumeKey before
+            // adding a root-level handler; UB-219 was exactly this, and the symptom
+            // was one key silently doing nothing while its neighbours worked.
             root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
             // A KeyDownEvent is dispatched to the FOCUSED element, and nothing in
             // the canvas is focusable — so every window shortcut only ever fired
@@ -5419,6 +5426,19 @@ namespace Ruitk.Builder
         /// Redo, mutating the scene behind the user's back. Using the imgui
         /// event is what tells the Editor the keystroke is spoken for, so the
         /// builder's shortcuts stay inside the builder's window.</summary>
+        /// <summary>Takes a key out of circulation.
+        ///
+        /// StopImmediatePropagation does more than its name suggests: as well as
+        /// ending the propagation path, it drops the callbacks still queued ON THE
+        /// SAME ELEMENT. Every root-level handler registered after this window's
+        /// therefore never sees a consumed key - and since those live in other
+        /// files with nothing linking them, the effect is invisible from either
+        /// side. It shows up as ONE key doing nothing while its neighbours work,
+        /// which is how UB-219's Escape hid behind working arrows.
+        ///
+        /// So: consuming here is a decision about every other handler on the root,
+        /// not just about Unity's global routes. Where another surface owns a key
+        /// while it is up - a menu, a modal - defer instead of consuming.</summary>
         private static void ConsumeKey(KeyDownEvent evt)
         {
             evt.StopImmediatePropagation();
