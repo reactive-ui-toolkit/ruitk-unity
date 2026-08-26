@@ -1,3 +1,29 @@
+## [0.18.1] - 2026-08-27
+
+### Patch - the store build compiles, and a refused drag says so
+
+**The Asset Store build could not compile.** The store shell project's `manifest.json` was a
+hand-written copy of the package's dependency set, and `com.unity.nuget.newtonsoft-json` - a
+Builder dependency since 0.17.0 - was never added to it. Copied into `Assets/`, the package is no
+longer a UPM package, so nothing resolves its own `package.json`, and the import died on `CS0246`
+across every Builder file that touches JSON. The manifest is now GENERATED from `package.json`, so
+a new dependency reaches the store build by construction rather than by remembering.
+
+**A move that the builder refused said nothing.** Dropping a markup row onto another element had
+five refusal paths that returned in silence, so a drop that did not land where you aimed was
+indistinguishable from a drag that never armed - and a release BETWEEN rows quietly relocated the
+row to the end of the root instead, which reads as the gesture doing something random. Every
+outcome now reports itself, successes included ("Moved <LeftSide> into <VisualElement>"). The
+insert path has always explained its refusals; the move path does too now.
+
+**Docs.** Screenshots on the site were broken: an absolute `src="/builder/..."` written into a page
+is emitted verbatim by Vite, so under the site's `/unity/` base it pointed at the domain root and
+404'd. Images are imported now, which makes them hashed, base-correct, and a build error when
+wrong; the sync gained a guard that fails on any un-prefixed asset URL. The UI Builder section also
+gained figures for the empty state, Layer 1, card anatomy, both drop bands, the first-Save folder
+prompt and the applies-on-Save toast - each cropped to the thing its caption names.
+
+---
 ## [0.18.0] - 2026-08-26
 
 ### RUITK UI Builder - structure, menus, and a settled placement model

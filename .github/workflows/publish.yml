@@ -16,8 +16,9 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   deploy-dist:
     runs-on: ubuntu-latest
-    # Consumed by the discord job below: it must fire with the same new-tag gating this job's
-    # own version check uses (skip=false == "a new v<version> tag ships this dispatch").
+    # Consumed by the discord job below, which reads `version` on EVERY dispatch — the check
+    # step writes it before deciding `skip`, so it is there whether or not a tag ships. `skip`
+    # stays for this job's own steps.
     outputs:
       version: ${{ steps.check.outputs.version }}
       skip: ${{ steps.check.outputs.skip }}
@@ -188,9 +189,15 @@ jobs:
   # INERT until armed: set the DISCORD_BOT_TOKEN repo secret (a bot with View Channel +
   # Read Message History + Send Messages on the channel).
   # ════════════════════════════════════════════════════════════════════════════
+  # Deliberately NOT gated on deploy-dist having published in THIS run. The post is
+  # deduped against the channel, so running it on every dispatch is a no-op once the
+  # entry is up -- and gating it on "did dist publish here" is what made a miss
+  # unrecoverable: 0.18.1 shipped without its DISCORD_CHANGELOG entry, and by the time
+  # that surfaced the version was already tagged, so every later dispatch skipped
+  # deploy-dist and took this job down with it. A re-run cannot help either: it replays
+  # the original commit, which is the one missing the entry.
   discord:
     needs: deploy-dist
-    if: needs.deploy-dist.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
