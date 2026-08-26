@@ -171,8 +171,6 @@ public sealed class DiagnosticsAnalyzerTests
         Assert.False(HasDiag(diags, DiagnosticCodes.MultipleRenderRoots));
     }
 
-    // ── UITKX0110: Unreachable after break/continue ────────────────────────
-
     // ── UITKX0109: Unknown attribute ───────────────────────────────────────
 
     [Fact]

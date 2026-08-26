@@ -1,0 +1,394 @@
+export Style Root = new Style {
+  FlexGrow = 1,
+  Overflow = OverflowHidden,
+  BackgroundColor = Hex("#1b1b1f"),
+};
+
+export Style DotGrid = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Right = Px(0),
+  Bottom = Px(0),
+};
+
+export Style EdgeLayer = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Width = Px(1),
+  Height = Px(1),
+};
+
+export Style CardHeader = new Style {
+  FlexDirection = FlexRow,
+  AlignItems = AlignCenter,
+  PaddingLeft = Px(12),
+  PaddingRight = Px(12),
+  PaddingTop = Px(8),
+  PaddingBottom = Px(8),
+  BackgroundColor = Hex("#2a2a31"),
+  // The POC rule is 1px, scaled by the live zoom like everything else on the
+  // canvas. 1.5px was a compensation for UITK dimming a hairline, but measured
+  // against poc-l2-edit.png it overshoots: the POC lays down ~1.4 device px of
+  // ink at the L2 zoom and 1.5f snapped to 2 solid px. The authored POC width is
+  // the geometrically exact value (1 * zoom == the browser's own coverage).
+  BorderBottomWidth = 1f,
+  BorderBottomColor = Hex("#3a3a44"),
+  BorderTopLeftRadius = Px(9),
+  BorderTopRightRadius = Px(9),
+};
+
+export Style CardPill = new Style {
+  FlexDirection = FlexRow,
+  AlignItems = AlignCenter,
+  PaddingLeft = Px(20),
+  PaddingRight = Px(20),
+  PaddingTop = Px(16),
+  PaddingBottom = Px(16),
+};
+
+// POC "font: 13px/1.45" cascades a 1.45 LINE BOX onto every card row. UI Toolkit
+// Labels have no line-height property and lay out at the font's own line box, so
+// every row came out 15-20% short and the cards read tighter than the POC's.
+// Each single-line row carries its 1.45x box as an explicit height with the text
+// centred in it, which is what a CSS line box does.
+export Style CardTitle = new Style {
+  Color = Hex("#d6d6dc"),
+  FontSize = Px(14),
+  Height = Px(20.3f),
+  TextAlign = TextMiddleLeft,
+  UnityFontStyle = FontBold,
+  FlexGrow = 1,
+};
+
+export Style CardKindLabel = new Style {
+  Color = Hex("#8b8b96"),
+  FontSize = Px(9),
+};
+
+export Style CardLock = new Style {
+  Color = Hex("#c9a25a"),
+  FontSize = Px(9),
+  MarginLeft = Px(4),
+};
+
+export Style CardBody = new Style {
+  FlexShrink = 0,
+};
+
+export Style CardSection = new Style {
+  PaddingLeft = Px(12),
+  PaddingRight = Px(12),
+  PaddingTop = Px(7),
+  PaddingBottom = Px(7),
+  // POC "rgba(58,58,68,.6)" over the #232329 card composites to #313139, painted
+  // here at full alpha so the width alone carries the weight. 1px is the POC's
+  // own rule width; 1.5f put a second solid device px of ink under every section.
+  BorderBottomWidth = 1f,
+  BorderBottomColor = Hex("#313139"),
+};
+
+export Style CardSectionLast = new Style {
+  PaddingLeft = Px(12),
+  PaddingRight = Px(12),
+  PaddingTop = Px(7),
+  PaddingBottom = Px(7),
+};
+
+// POC ".props-row" declares only colour/family/size — no white-space, no overflow,
+// no text-overflow — so a signature wider than the card WRAPS and grows its
+// section. A pinned Height cut the tail of every long signature mid-word.
+export Style CardSignature = new Style {
+  Color = Hex("#8b8b96"),
+  FontSize = Px(12),
+  MinHeight = Px(17.4f),
+  WhiteSpace = WsNormal,
+  TextAlign = TextMiddleLeft,
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+};
+
+export Style CardSectionHeader = new Style {
+  Color = Hex("#8b8b96"),
+  FontSize = Px(10),
+  Height = Px(14.5f),
+  TextAlign = TextMiddleLeft,
+  // POC ".sec-label { letter-spacing: .08em }" at font-size 10 = 0.8px per char.
+  LetterSpacing = Px(0.8f),
+  MarginBottom = Px(5),
+};
+
+export Style CardImportLine = new Style {
+  Color = Hex("#8b8b96"),
+  FontSize = Px(11.5f),
+  Height = Px(16.7f),
+  // A flex item's "min-height: auto" is its min-content height, which for the
+  // mono face is TALLER than the declared 1.45 box — so the auto minimum won and
+  // the row measured ~20.7 instead of 19.7 (measured drift: ~7px over six rows).
+  MinHeight = Px(0),
+  TextAlign = TextMiddleLeft,
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+  FlexGrow = 1,
+  FlexShrink = 1,
+  Overflow = OverflowHidden,
+  WhiteSpace = WsNowrap,
+  TextOverflow = TextEllipsis,
+};
+
+// POC jsxRowHtml concatenates the attribute name, the '=' and the expr span with
+// NOTHING between them. Composed out of sibling Labels the inherited box spacing
+// showed up as a space after every '=' and inside every brace pair, so the four
+// pieces of an attribute carry no margin or padding of their own; only the
+// per-attribute wrapper keeps the POC's ".attr" 6px right margin.
+export Style AttrName = new Style {
+  Color = Hex("#9d9dab"),
+  FontSize = Px(12),
+  Height = Px(17.4f),
+  MinHeight = Px(0),
+  TextAlign = TextMiddleLeft,
+  MarginLeft = Px(0),
+  MarginRight = Px(0),
+  PaddingLeft = Px(0),
+  PaddingRight = Px(0),
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+};
+
+export Style AttrBrace = new Style {
+  Color = Hex("#ffb74d"),
+  FontSize = Px(12),
+  Height = Px(17.4f),
+  MinHeight = Px(0),
+  TextAlign = TextMiddleLeft,
+  MarginLeft = Px(0),
+  MarginRight = Px(0),
+  PaddingLeft = Px(0),
+  PaddingRight = Px(0),
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+};
+
+export Style InlineEdit = new Style {
+  BackgroundColor = Hex("#17171b"),
+  Color = Hex("#d6d6dc"),
+  FontSize = Px(11.5f),
+  BorderRadius = Px(4),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#4fc3f7"),
+  BorderRightColor = Hex("#4fc3f7"),
+  BorderBottomColor = Hex("#4fc3f7"),
+  BorderLeftColor = Hex("#4fc3f7"),
+  PaddingLeft = Px(6),
+  PaddingRight = Px(6),
+  PaddingTop = Px(2),
+  PaddingBottom = Px(2),
+  MinWidth = Px(60),
+  MaxWidth = Px(240),
+  FlexGrow = 1,
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+};
+
+export Style InlineEditArea = new Style {
+  BackgroundColor = Hex("#17171b"),
+  Color = Hex("#d6d6dc"),
+  FontSize = Px(11.5f),
+  BorderRadius = Px(4),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#4fc3f7"),
+  BorderRightColor = Hex("#4fc3f7"),
+  BorderBottomColor = Hex("#4fc3f7"),
+  BorderLeftColor = Hex("#4fc3f7"),
+  PaddingLeft = Px(6),
+  PaddingRight = Px(6),
+  PaddingTop = Px(2),
+  PaddingBottom = Px(2),
+  MinHeight = Px(84),
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+};
+
+// POC ".code-island { white-space: pre; overflow-x: auto }" — a line wider than
+// the card stays INSIDE the island; nothing paints past its border. UI Toolkit's
+// default overflow is Visible, so a pre-formatted line ran out over the card edge.
+// A horizontal ScrollView is not used for the "auto" half: UI Toolkit's ScrollView
+// consumes the mouse wheel when only its horizontal scroller is usable, which
+// would swallow the canvas zoom gesture over every island. Double-click still
+// opens the full text in the inline editor.
+export Style CodeIsland = new Style {
+  // POC emits the BODY island with an inline "margin-top: 6px" —
+  // 6px of card ground between the last hook chip and the island. The chips
+  // wrapper cancels its trailing chip margin (MarginBottom -5), so without this
+  // the island butted straight against the chip row. The hover/trace variants
+  // carry the same margin or the island jumps when the pointer enters it.
+  MarginTop = Px(6),
+  BackgroundColor = Hex("#17171b"),
+  Overflow = OverflowHidden,
+  BorderRadius = Px(6),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#3a3a44"),
+  BorderRightColor = Hex("#3a3a44"),
+  BorderBottomColor = Hex("#3a3a44"),
+  BorderLeftColor = Hex("#3a3a44"),
+  PaddingLeft = Px(9),
+  PaddingRight = Px(9),
+  PaddingTop = Px(6),
+  PaddingBottom = Px(6),
+};
+
+// Owner decision 2026-08-16 (deliberate POC divergence): islands scroll
+// VERTICALLY only inside the card — a long statement WRAPS instead of hiding
+// behind a horizontal scroll, so the fixed 16.7 line box becomes a minimum.
+// UB-96: one source line renders as ONE line. WsNormal was used to stop the
+// island scrolling horizontally, but it bought that by wrapping every long
+// statement mid-expression, which is why the display read as badly formatted
+// while the same text in edit mode read fine. The island keeps its
+// vertical-only scrolling and simply CLIPS what runs past the card edge —
+// double-click opens the editor, which scrolls horizontally.
+export Style CodeIslandLine = new Style {
+  Color = Hex("#bdbdc7"),
+  FontSize = Px(11.5f),
+  Height = Px(16.7f),
+  TextAlign = TextMiddleLeft,
+  WhiteSpace = WsPre,
+  Overflow = OverflowHidden,
+  FlexShrink = 0,
+  UnityFontDefinition = Ruitk.Builder.BuilderCanvasDrawing.MonoFontDefinition,
+};
+
+// POC ".code-island:hover { border-color: var(--accent) }" — the island is an
+// editable surface, so hovering it says so.
+export Style CodeIslandHover = new Style {
+  MarginTop = Px(6),
+  BackgroundColor = Hex("#17171b"),
+  Overflow = OverflowHidden,
+  BorderRadius = Px(6),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#4fc3f7"),
+  BorderRightColor = Hex("#4fc3f7"),
+  BorderBottomColor = Hex("#4fc3f7"),
+  BorderLeftColor = Hex("#4fc3f7"),
+  PaddingLeft = Px(9),
+  PaddingRight = Px(9),
+  PaddingTop = Px(6),
+  PaddingBottom = Px(6),
+};
+
+// UB-102: a SELECTED island — one click, before any edit. Warm band plus the
+// accent outline, matching how a selected markup row and a selected hook chip
+// read, so "this is what Delete will remove" is the same signal everywhere.
+export Style CodeIslandSelected = new Style {
+  MarginTop = Px(6),
+  BackgroundColor = Rgba(255, 213, 79, 38),
+  Overflow = OverflowHidden,
+  BorderRadius = Px(6),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Hex("#ffb74d"),
+  BorderRightColor = Hex("#ffb74d"),
+  BorderBottomColor = Hex("#ffb74d"),
+  BorderLeftColor = Hex("#ffb74d"),
+  PaddingLeft = Px(9),
+  PaddingRight = Px(9),
+  PaddingTop = Px(6),
+  PaddingBottom = Px(6),
+};
+
+// POC ".code-island.hl" — a code island whose text names a traced hook state.
+export Style CodeIslandTrace = new Style {
+  MarginTop = Px(6),
+  BackgroundColor = Hex("#221d12"),
+  Overflow = OverflowHidden,
+  BorderRadius = Px(6),
+  BorderTopWidth = 1,
+  BorderRightWidth = 1,
+  BorderBottomWidth = 1,
+  BorderLeftWidth = 1,
+  BorderTopColor = Rgba(255, 183, 77, 153),
+  BorderRightColor = Rgba(255, 183, 77, 153),
+  BorderBottomColor = Rgba(255, 183, 77, 153),
+  BorderLeftColor = Rgba(255, 183, 77, 153),
+  PaddingLeft = Px(9),
+  PaddingRight = Px(9),
+  PaddingTop = Px(6),
+  PaddingBottom = Px(6),
+};
+
+// POC ".card.selected" adds "0 0 0 2px rgba(255,213,79,.25)" WITHOUT changing the
+// border width — a spread shadow, which sits OUTSIDE the border. Painted inset it
+// landed under the solid gold border and was invisible, so the ring is offset by
+// its own 2px and lives outside the card frame (which clips its children).
+export Style SelectionRing = new Style {
+  Position = PosAbsolute,
+  Top = Px(-2),
+  Left = Px(-2),
+  Right = Px(-2),
+  Bottom = Px(-2),
+  BorderRadius = Px(11),
+  BorderTopWidth = 2,
+  BorderRightWidth = 2,
+  BorderBottomWidth = 2,
+  BorderLeftWidth = 2,
+  BorderTopColor = Rgba(255, 213, 79, 64),
+  BorderRightColor = Rgba(255, 213, 79, 64),
+  BorderBottomColor = Rgba(255, 213, 79, 64),
+  BorderLeftColor = Rgba(255, 213, 79, 64),
+};
+
+// POC ".drop-hint": 2px dashed accent outline + rgba(79,195,247,.08) fill on
+// the card/section a payload would land on (UITK has no dashed border — the
+// closest equivalent is the solid accent ring with the same tint).
+export Style CardDropHint = new Style {
+  Position = PosAbsolute,
+  Top = Px(0),
+  Left = Px(0),
+  Right = Px(0),
+  Bottom = Px(0),
+  BorderRadius = Px(9),
+  BackgroundColor = Rgba(79, 195, 247, 20),
+  BorderTopWidth = 2,
+  BorderRightWidth = 2,
+  BorderBottomWidth = 2,
+  BorderLeftWidth = 2,
+  BorderTopColor = Hex("#4fc3f7"),
+  BorderRightColor = Hex("#4fc3f7"),
+  BorderBottomColor = Hex("#4fc3f7"),
+  BorderLeftColor = Hex("#4fc3f7"),
+};
+
+// POC ".card { box-shadow: 0 6px 18px rgba(0,0,0,.35) }" — an 18px BLUR around a
+// shadow box offset 6px down, so the dark reaches 18px past that box on every
+// side and fades CONTINUOUSLY (probed on poc-l2-edit.png: 24 monotone rows below
+// the card, no two the same). UITK has no box-shadow, and four stacked opaque
+// rects read as four flat plateaus with visible steps between them. One layer
+// carries the whole falloff now, painted as a Gaussian ramp by
+// BuilderCanvasDrawing.DrawCardShadow. The insets below ARE the blur reach: the
+// element's content rect is the shadow box grown by 18 on all four sides, which
+// is the geometry the painter assumes.
+export Style CardShadowLayer = new Style {
+  Position = PosAbsolute,
+  Top = Px(-12),
+  Left = Px(-18),
+  Right = Px(-18),
+  Bottom = Px(-24),
+};
+
+export Style CardExport = new Style {
+  Color = Hex("#9a9aa6"),
+  FontSize = Px(10),
+};
+
+export Style CardExportMore = new Style {
+  Color = Hex("#6a6a74"),
+  FontSize = Px(9),
+};

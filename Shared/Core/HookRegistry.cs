@@ -54,7 +54,7 @@ namespace Ruitk.Core
     /// <para>
     /// <b>Adding a hook.</b>  When a new hook is added to
     /// <c>Shared/Core/Hooks.cs</c>, update exactly one place — this file —
-    /// in five sub-steps:
+    /// in six sub-steps:
     /// </para>
     /// <list type="number">
     ///   <item>Add the canonical PascalCase name to <see cref="s_signatureOrder"/>
@@ -69,6 +69,10 @@ namespace Ruitk.Core
     ///     emission order.</item>
     ///   <item>Add two hover-doc entries (camelCase shorthand and qualified
     ///     <c>Hooks.UseFoo</c>) to <see cref="BuildDocMap"/>.</item>
+    ///   <item>Add a <see cref="s_callSiteTable"/> row: the FIBER-path
+    ///     <c>HookStates</c> slot count (what the Builder's STATE panel
+    ///     indexes) and the call-site insertion snippet (what the Builder's
+    ///     palette drops into a component body).</item>
     /// </list>
     /// <para>
     /// Then bump the <c>Registry_HookCount_IsExpected</c> test constant.  The
@@ -77,7 +81,15 @@ namespace Ruitk.Core
     /// <c>SourceGenerator~/Tests/Golden/HookRegistry/</c>.
     /// </para>
     /// </summary>
+#if RUITK_EDITOR_VARIANT
+    // Ruitk.Language.Editor only: the Builder compile-references both this DLL
+    // and Ruitk.Shared (which compiles this same linked file), and two public
+    // HookRegistry types are CS0433 at every Builder call site. Internal here;
+    // the in-assembly analyzer/virtual-doc consumers are unaffected.
+    internal static class HookRegistry
+#else
     public static class HookRegistry
+#endif
     {
         // ── Canonical hook lists ─────────────────────────────────────────────
         //
@@ -210,6 +222,57 @@ namespace Ruitk.Core
         public static string GenerateVirtualDocStubs(bool staticForm) =>
             staticForm ? s_staticStubsCache : s_instanceStubsCache;
 
+        /// <summary>
+        /// FIBER-path <c>FunctionComponentState.HookStates</c> slot count per
+        /// hook, keyed by BOTH casings.  This is what positional STATE-panel
+        /// indexing must use: effects live in separate lists (0), UseContext
+        /// stores in ContextDependencies (0), and the four metadata-gated
+        /// hooks (UseSafeArea, UseStableFunc/Action/Callback) early-return
+        /// under a fiber owner and consume 0 there despite taking a slot on
+        /// the legacy metadata path.  Returned dictionary is the SAME cached
+        /// reference on every call; consumers MUST NOT mutate it.
+        /// </summary>
+        public static IReadOnlyDictionary<string, int> GetStateSlotArity() =>
+            s_stateSlotArityCache;
+
+        /// <summary>
+        /// Call-site declaration snippet per hook (camelCase shorthand form,
+        /// compilable against the virtual-doc stub signatures), keyed by BOTH
+        /// casings — the single source the Builder's palette inserts from.
+        /// Returned dictionary is the SAME cached reference on every call;
+        /// consumers MUST NOT mutate it.
+        /// </summary>
+        public static IReadOnlyDictionary<string, string> GetInsertionSnippets() =>
+            s_insertionSnippetCache;
+
+        // ── Per-hook call-site table (fiber slot arity + insertion snippet) ──
+
+        private static readonly (string Name, int FiberSlots, string Snippet)[] s_callSiteTable =
+        {
+            ("UseState", 1, "var (value, setValue) = useState(0);"),
+            ("UseEffect", 0, "useEffect(() => { return null; }, null);"),
+            ("UseLayoutEffect", 0, "useLayoutEffect(() => { return null; }, null);"),
+            ("UseRef", 1, "var elRef = useRef<UnityEngine.UIElements.VisualElement?>(null);"),
+            ("UseCallback", 1, "var callback = useCallback(() => 0, null);"),
+            ("UseMemo", 1, "var memo = useMemo(() => 0, null);"),
+            ("UseContext", 0, "var context = useContext<object>(\"key\");"),
+            ("UseReducer", 1, "var (state, dispatch) = useReducer<int, int>((s, a) => s, 0);"),
+            ("UseSignal", 1, "var value = useSignal<int>(\"key\", 0);"),
+            ("UseDeferredValue", 1, "var deferred = useDeferredValue(0, null);"),
+            ("UseTransition", 1, "var (isPending, startTransition) = useTransition();"),
+            ("UseSafeArea", 0, "var safeArea = useSafeArea();"),
+            ("UseStableFunc", 0, "var stableFunc = useStableFunc(() => 0);"),
+            ("UseStableAction", 0, "var stableAction = useStableAction<int>(_ => { });"),
+            ("UseStableCallback", 0, "var stableCallback = useStableCallback(() => { });"),
+            ("UseImperativeHandle", 1, "var handle = useImperativeHandle(() => new object(), null);"),
+            ("UseAnimate", 1, "useAnimate(null);"),
+            ("UseTweenFloat", 1,
+                "useTweenFloat(0f, 1f, 0.3f, Ruitk.Core.Animation.Ease.Linear, 0f, v => { }, null);"),
+            ("UseUiDocumentRoot", 1, "var docRoot = useUiDocumentRoot(\"context\");"),
+            ("UseSfx", 1, "var playSfx = useSfx();"),
+            ("ProvideContext", 0, "provideContext(\"key\", null);"),
+        };
+
         // ── Cached fields ────────────────────────────────────────────────────
 
         private static readonly (string, string)[] s_aliasCache             = BuildAliases();
@@ -219,6 +282,30 @@ namespace Ruitk.Core
         private static readonly string[]           s_validationPatternsCache = BuildValidationPatterns();
         private static readonly string             s_staticStubsCache       = HookStubsStaticForm;
         private static readonly string             s_instanceStubsCache     = HookStubsInstanceForm;
+        private static readonly Dictionary<string, int> s_stateSlotArityCache = BuildStateSlotArity();
+        private static readonly Dictionary<string, string> s_insertionSnippetCache = BuildInsertionSnippets();
+
+        private static Dictionary<string, int> BuildStateSlotArity()
+        {
+            var map = new Dictionary<string, int>(s_callSiteTable.Length * 2);
+            foreach (var (name, slots, _) in s_callSiteTable)
+            {
+                map[name] = slots;
+                map[CamelOf(name)] = slots;
+            }
+            return map;
+        }
+
+        private static Dictionary<string, string> BuildInsertionSnippets()
+        {
+            var map = new Dictionary<string, string>(s_callSiteTable.Length * 2);
+            foreach (var (name, _, snippet) in s_callSiteTable)
+            {
+                map[name] = snippet;
+                map[CamelOf(name)] = snippet;
+            }
+            return map;
+        }
 
         // ── Builders ─────────────────────────────────────────────────────────
 

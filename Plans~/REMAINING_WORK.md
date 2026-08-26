@@ -44,12 +44,16 @@ Phase 1 (the three new controls) shipped in **0.14.0**. These are the items it d
 
 | ID | Item | Evidence / anchor | Source |
 |---|---|---|---|
+| UB-KEYS | STANDING HAZARD, not a task. `BuilderWindow.OnKeyDown` is the FIRST `KeyDownEvent` handler on `rootVisualElement` (TrickleDown), and its `ConsumeKey` calls `StopImmediatePropagation` - which also drops callbacks still queued ON THE SAME ELEMENT. So every root-level handler registered later never sees a consumed key (today: Delete, Escape, Ctrl+S/Z/Y). The two handlers live in different files with nothing linking them, so it presents as ONE key silently doing nothing while its neighbours work. Before adding a root-level key handler, read `ConsumeKey`; where another surface owns a key while it is up, make the window DEFER rather than consume (the `BuilderContextMenu.IsOpen` check is the pattern) | `Builder/Editor/BuilderWindow.cs` `OnKeyDown` registration + `ConsumeKey`; both carry the warning in-place | UI Builder campaign 2026-08-26, UB-219 |
 | TXT-1 | `<Text>` silently drops every attribute except `text` — it compiles to the bare `V.Text(string, key)` primitive, so `style=`/`onClick=`/etc. vanish with no diagnostic (cost a demo-fix cycle: wrap styles on `<Text>` were no-ops). Add a UITKX warning for unsupported attributes on BuiltinText — needs the full parity sweep (SG diagnostic + HMR emitter + LSP/virtual doc) plus a docs note steering styled text to `<Label>` | `SourceGenerator~/Emitter/CSharpEmitter.cs:1316-1320` reads only `text` | demo sweep 2026-08-03 |
-| GEN-2 | `UitkxAssetRegistrySync` scans `Assets/` only (`FullRescan` walks `Application.dataPath`; `SyncChangedFiles`' assetPath derivation assumes `Assets/`), so `Asset<T>()` references in package-resident `.uitkx` (embedded/local layouts) never register. Sibling of the GEN-1 watcher fix that shipped 2026-08-11 — extend the scan to writable package roots via the same `PackageInfo` resolver `UitkxChangeWatcher.ResolveAssetFolderAbsolute` now uses | `Editor/UitkxAssetRegistrySync.cs:111-140` | HmrTests embed repro 2026-08-11 |
-| GEN-3 | `UitkxCsprojPostprocessor.FindUitkxFiles` injects only `Assets/`-rooted `.uitkx` as `<AdditionalFiles>` into Unity-generated csprojs, so package-resident `.uitkx` are absent from IDE (dotnet) compiles — those fall back to the generator's asmdef-root disk scan, so this is latency/incrementality, not correctness; Unity in-editor compiles are unaffected. Needs care: naive injection into every csproj risks duplicate generated types across asmdef csprojs | `Editor/UitkxCsprojPostprocessor.cs:100-124` | HmrTests embed repro 2026-08-11 |
 | GEN-4 | HMR secondary paths not yet verified for LOCAL (`file:`) packages: `NewCsFileDiscovery` roots at the project root (covers embedded, misses outside-root local installs) and the `Asset<T>` HMR import path joins `projectRoot + assetPath` (same limitation). The primary flow — watch roots, compile, swap, .uss cache refresh — is layout-aware as of the 2026-08-12 HMR wave; embedded packages fully covered and field-tested | `Editor/HMR/NewCsFileDiscovery.cs`, `Editor/HMR/UitkxHmrController.cs` (Asset import fallback) | HMR package-watch fix 2026-08-12 |
 | U4 | Multi-root counting mismatch: `DiagnosticsAnalyzer` and `StructureValidator` count render roots with two separate implementations that can disagree — extract one shared root counter | two implementations remain (language-lib `DiagnosticsAnalyzer` vs SG `StructureValidator`) | PARITY U4 |
 | P-2 | Format-on-save silently no-ops in some VS Code sessions — needs a live repro before any change (investigation item) | no repro recorded | V1 P-2 |
+| LANG-2 | An APOSTROPHE inside a `//` comment that sits inside a JSX attribute expression (`style={new Style { // the body's line box …` ) makes the expression splicer swallow the rest of the file: the scanner treats `'` as a char-literal opener even in comment text, so the attribute never closes and the emitter produces garbage C# (`CS0116 a namespace cannot directly contain members` at the LAST markup lines, plus `CS0246` on the component's own props type). Zero parse diagnostics — `validate-uitkx.ps1` reports 0 and only the SG-backed csc smoke catches it. Fix: skip comment runs in the attribute-expression scanner (parity sweep: SG splicer, HMR emitter, language-lib, virtual doc). Workaround in tree: builder comments inside JSX expressions are written apostrophe-free | reproduced 2026-08-15 on `Builder/Editor/Canvas/CanvasView.uitkx` by adding `// 15px in the body's 1.45 line box` inside a `style={new Style { … }}` block; removing the apostrophe compiles | RUITK Builder pixel-parity round |
+| LANG-1 | Bare JSX inside `@if`/`@for` directive blocks (no `return (...)`) parses clean (0 diagnostics) but the emitter produces MANGLED C#: raw markup left unlowered inside the IIFE, and a `@for` header containing `&&` + a `<` comparison gets a peer splice injected mid-header. Silent garbage, surfaced as misleading CS0246 at a `#line`-mapped location. Either support the bare form or diagnose it (new UITKX code) — full parity sweep (SG + HMR + vdoc + analyzer). Repro: builder CanvasView pre-rewrite, `git show 4cf5b535^..` vicinity; supported idiom (directive body wraps markup in `return (...)`) documented by every sample | found via the VE-09 SG-backed smoke compile (csc `-analyzer:` + `-additionalfile:` rsp), 2026-08-15 | RUITK Builder campaign |
+| UB-05a | SUPERSEDED — the owner rejected this deferral on 2026-08-16; the work is ACTIVE again as `Plans~/UI_BUILDER_BUGS.md` UB-76 (single-line editors: LSP completion at the exact mapped position; multiline island editors: embed CodeField instead of bare TextFields). Row kept only so the ID resolves | `Plans~/UI_BUILDER_BUGS.md` §9 UB-76 | UI Builder campaign 2026-08-16 |
+| UB-21a | `SemanticTokensProvider` threads `knownElements` through every Collect* overload but never dereferences it — its doc promises "names NOT in the set are skipped" and nothing implements that, and no distinct custom-tag token type exists. The Builder classifies custom tags client-side (CodeField schema-membership split); VS Code/VS still colour every tag as Element. Provider-level fix = new token type or the documented skip, with the 4-layer parity sweep | `ide-extensions~/language-lib/SemanticTokens/SemanticTokensProvider.cs` (`knownElements` pass-through only) | UI Builder campaign 2026-08-16, UB-21 |
+| UB-REV | Adversarial-review tail deliberately deferred (all bounded/pre-existing): preview render exceptions from ASYNC scheduler ticks bypass the Mount try/catch (wrap `BuilderRenderScheduler`'s pump to close); `CollectStateNames` regex counts hook calls in comments/strings and pools one flat slot list across a MULTI-component file (both pre-existing imprecision — needs the parsed AST instead of a buffer regex); `RecompileWhenQuiet` status-write ordering when focus succeeds while a sibling fails; attribute menu opens at a stale pointer after the 1.5 s componentProps await; layer dropdown cannot re-trigger the CURRENT layer's preset (no value change event); drop-hint band line paints 2 world px (thin at L0, where rows are hidden anyway) | review workflow wf_9060148d-30b, findings 10/22/24/25/26/27/32; scratchpad review-findings.json | UI Builder campaign review 2026-08-16 |
 
 ## 2. HMR
 
@@ -171,3 +175,33 @@ pins all 18 tags, and the docs site has the "uGUI Backend" page at /ugui.
 | UG-3b | Compile-time markup diagnostics: driven-rect warning (rect props on a child of a childControl* LayoutGroup tag) and pointer-with-raycastTarget-false hint — the runtime editor hint ships (`UguiRectApplier.HintIfDriven`); the markup-level analysis needs parent-chain prop inspection in DiagnosticsAnalyzer | runtime hint only | ugui field wave shows the runtime hint is not early enough |
 | UG-7 | `Animate` support for ugui hosts (tween adapter) — ON HOLD by owner; current guidance: Animator/DOTween via `Ref<RectTransform>` | `ResolveAnimationTarget` casts to VisualElement (null for ugui) | owner go |
 | UG-8 | Prefab-bridge and island SCENE samples (need owner-side prefab/PanelSettings assets) + store omit-list review. Shipped: UguiDemo counter, RuntimeUguiGalleryDemo (slider/toggle/dropdown/input/scroll list), RuntimeUguiStressTestDemo (StressTest port), and the Ruitk.Ugui.Tests EditMode assembly (11 runtime tests incl. two stress-churn loops) | Samples/Showcase/Runtime + Ugui/Tests | owner F5 pass |
+
+## SG-APOSTROPHE — RETRACTED, did not reproduce
+
+Recorded 2026-08-19 and withdrawn the same day. The claim was that an
+apostrophe in a // comment inside a {…} attribute expression parsed clean but
+broke source generation. It does NOT: a dedicated spike carrying the exact
+comment, and a second carrying parentheses inside an attribute string, both
+parse with 0 diagnostics AND compile with the generator loaded.
+
+What actually misled me: (1) IDE diagnostics captured mid-write, which reported
+an "extra root" that the parser harness does not reproduce for the same file,
+and (2) a compile failure in CanvasView that cleared when I removed the comment
+— but I changed several things in that region across consecutive edits and
+never isolated a single variable before concluding. The most likely real cause
+is that the region referenced onCopyImportAlias before the prop existed.
+
+Lesson, and the reason this entry stays rather than being deleted: a fix that
+makes a symptom disappear is not a diagnosis. Bisect to ONE variable in a
+throwaway file before naming a root cause, especially before naming one in a
+shared language layer.
+
+## UB-124 — rename a module from the canvas
+
+Owner ask 2026-08-19: "all component should have an option to renaim them."
+Not started. Scope is why: a rename is the export name, the file name, the
+folder name when the module owns one, and EVERY importer's specifier and
+binding across the tree — with the save-only contract meaning all of it stays
+pending until Save. That is a real refactor feature, not a menu item, and it
+wants its own pass rather than being bolted onto a fix wave.
+

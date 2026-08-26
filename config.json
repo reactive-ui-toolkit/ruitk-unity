@@ -24,6 +24,7 @@
     "ReactiveUIToolkitDocs~/**",
     "_docs_branch",
     "Analyzers/Ruitk.Language.pdb",
+    "Editor/Plugins/Ruitk.Language.Editor.pdb",
     "Analyzers/Ruitk.SourceGenerator.pdb",
     "publisher-secrets.json",
     "publisher-secrets.json.meta",

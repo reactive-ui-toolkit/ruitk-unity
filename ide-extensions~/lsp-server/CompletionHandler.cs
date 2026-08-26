@@ -467,19 +467,15 @@ public sealed class CompletionHandler : ICompletionHandler
         if (prevSig == '}' || (nextSig == '}' && stack.Contains(BlockKind.If)))
             allowed.Add("else");
 
-        // @case/@default should only appear at direct switch body level
+        // @case/@default should only appear at direct switch body level.
+        // @break/@continue are deliberately NOT offered: @continue never
+        // parses, @break has no AST node (it is only silently swallowed as an
+        // optional case terminator), and loop bodies are raw C# where plain
+        // break;/continue; statements already work (UB-04).
         if (top == BlockKind.Switch)
         {
             allowed.Add("case");
             allowed.Add("default");
-            allowed.Add("break"); // switch-case terminator style
-        }
-
-        // Loop-flow appears when inside loop body (including nested blocks inside loop)
-        if (stack.Contains(BlockKind.Loop))
-        {
-            allowed.Add("break");
-            allowed.Add("continue");
         }
 
         return allowed;
@@ -1213,9 +1209,9 @@ public sealed class CompletionHandler : ICompletionHandler
             "if" => "@if ($1)\n{\n\t$0\n}",
             "else" => "@else\n{\n\t$0\n}",
             "foreach" => "@foreach (var item in $1)\n{\n\t$0\n}",
-            "switch" => "@switch ($1)\n{\n\t@case $2 => $0\n}",
-            "case" => "@case $1 => $0",
-            "default" => "@default => $0",
+            "switch" => "@switch ($1)\n{\n\t@case $2:\n\t\t$0\n}",
+            "case" => "@case $1:\n\t$0",
+            "default" => "@default:\n\t$0",
             "for" => "@for (int $1 = 0; $1 < $2; $1++)\n{\n\t$0\n}",
             "while" => "@while ($1)\n{\n\t$0\n}",
             _ => "@" + name,

@@ -17,7 +17,7 @@ export VirtualNode ContextBailoutDemoFunc() {
 
   return (
     <VisualElement style={containerStyle}>
-      <Text text="Context Through Bailout â€” Step 4 Test" />
+      <Text text="Context Through Bailout — Step 4 Test" />
       <Label
         text="Root provides a context color. Middle layer's props never change so it bails out. Without the fix the consumer would be stuck on the initial color. With the fix the consumer re-renders every toggle."
         style={new Style { (StyleKeys.MarginTop, 4f), (StyleKeys.Color, new Color(0.75f, 0.75f, 0.75f, 1f)), (StyleKeys.WhiteSpace, "normal") }}

@@ -154,6 +154,7 @@ namespace Ruitk.Core.Fiber
             if (_root?.Current == null)
             {
                 _root = null;
+                DropInFlightWork();
                 return;
             }
 
@@ -171,6 +172,16 @@ namespace Ruitk.Core.Fiber
 
             _root.Current.Child = null;
             _root = null;
+            DropInFlightWork();
+        }
+
+        /// <summary>Abandons a render that is part-way through. A teardown that
+        /// left it in place kept a pointer into the tree it had just deleted, and
+        /// the next slice picked up exactly where it left off.</summary>
+        private void DropInFlightWork()
+        {
+            _nextUnitOfWork = null;
+            _workInProgressRoot = null;
         }
 
         /// <summary>
@@ -432,6 +443,19 @@ namespace Ruitk.Core.Fiber
         /// </summary>
         private void ProcessWorkUntilDeadline()
         {
+            // A slice already sitting in the scheduler's queue when the root was
+            // torn down cannot be retracted - the queue holds the closure, and
+            // this is the only place that can know the tree it renders is gone.
+            // Resuming one walked the dead tree into CompleteWork, whose effect
+            // collection dereferences the root and threw a NullReferenceException
+            // from inside the unmount itself (UB-179). Dropping the work here
+            // also stops Slice() from re-scheduling itself forever.
+            if (_root == null)
+            {
+                _nextUnitOfWork = null;
+                _workInProgressRoot = null;
+                return;
+            }
             if (_nextUnitOfWork == null)
             {
                 return;
@@ -1477,11 +1501,13 @@ namespace Ruitk.Core.Fiber
             if (_root?.Current == null)
             {
                 _root = null;
+                DropInFlightWork();
                 return;
             }
             AbandonFiber(_root.Current);
             _root.Current.Child = null;
             _root = null;
+            DropInFlightWork();
         }
 
         private static void AbandonFiber(FiberNode fiber)

@@ -1,0 +1,1276 @@
+import * as CanvasStyles from "./canvasStyles.style"
+import "@UnityEngine.UIElements"
+import "@Ruitk.Builder"
+
+export VirtualNode CanvasView(
+  BuilderGraph graph,
+  float initialCamX = 0f,
+  float initialCamY = 0f,
+  float initialZoom = 1f,
+  Action<string> onOpenFile = null,
+  Action onLayoutChanged = null,
+  Action<int> onSelect = null,
+  Action<float, float, float> onCameraChanged = null,
+  Action<string> onCardContext = null,
+  Action<string, int> onRowClick = null,
+  Action<string, int, int> onRowSelect = null,
+  Action<string, int, int, string> onLineSelect = null,
+  Action<string, int, int> onRowContext = null,
+  Action<float, float> onCanvasContext = null,
+  Action<string, string, int> onStyleAddEntry = null,
+  Action<string, int, int, string> onStyleRowContext = null,
+  string armedAddFile = "",
+  string armedAddStyle = "",
+  Action<string> onAddHook = null,
+  Action<string> onAddCode = null,
+  Action<string> onCopyImportAlias = null,
+  Action<string, string> onImportContext = null,
+  Action<string> onRowNavigate = null,
+  Action<string, int, int, string, VisualElement> onEditAttrValue = null,
+  Action<string, int, string, VisualElement> onEditDirective = null,
+  Action<string, int, string, string, VisualElement> onEditLine = null,
+  Action<string, int, int, string, VisualElement> onEditIsland = null,
+  Action<string> onAddStyleExport = null,
+  Action<string> onAddUtilExport = null,
+  Action<string> onTraceStates = null,
+  float viewZoom = 0f,
+  float viewCamX = 0f,
+  float viewCamY = 0f,
+  int viewVersion = 0,
+  string selectPath = "",
+  int selectVersion = 0,
+  float viewportW = 0f,
+  float viewportH = 0f
+) {
+  var (camX, setCamX) = useState(initialCamX);
+  var (camY, setCamY) = useState(initialCamY);
+  var (zoom, setZoom) = useState(initialZoom);
+  var (selected, setSelected) = useState(graph.IndexOf(selectPath));
+  var (selRowNode, setSelRowNode) = useState(-1);
+  var (selRowIdx, setSelRowIdx) = useState(-1);
+  var (traceStates, setTraceStates) = useState((string)null);
+  var (hoverRowKey, setHoverRowKey) = useState(-1);
+  var (traceOwner, setTraceOwner) = useState(-1);
+  var (layoutVersion, setLayoutVersion) = useState(0);
+  var (hoverChipKey, setHoverChipKey) = useState("");
+  // UB-94: the key of whatever NON-markup thing is selected (a hook chip, an
+  // import, a code island, a style entry). Markup rows keep their own pair;
+  // selecting either kind clears the other, so exactly one thing is selected.
+  var (selLineKey, setSelLineKey) = useState("");
+
+  var panning = useRef(false);
+  var dragCard = useRef(-1);
+  var lastX = useRef(0f);
+  var lastY = useRef(0f);
+  var appliedView = useRef(viewVersion);
+  var appliedSelect = useRef(selectVersion);
+
+  // The host pushes selection and camera as VERSION bumps. Applying them by
+  // calling the setters DURING render is what "[Hooks][Strict] State update
+  // scheduled during render" was reporting, every frame a push landed. The
+  // render now DERIVES the incoming value for this pass and an effect commits
+  // it for later ones — the same shape React's "adjusting state on prop
+  // change" guidance describes.
+  if (appliedSelect.Current != selectVersion) {
+    int wantedNow = graph.IndexOf(selectPath);
+    if (wantedNow >= 0) {
+      selected = wantedNow;
+    }
+  }
+
+  useEffect(() => {
+    if (appliedSelect.Current != selectVersion) {
+      appliedSelect.Current = selectVersion;
+      int wanted = graph.IndexOf(selectPath);
+      if (wanted >= 0) {
+        setSelected(wanted);
+      }
+    }
+    return null;
+  }, new object[] { selectVersion });
+
+  if (appliedView.Current != viewVersion) {
+    zoom = viewZoom;
+    camX = viewCamX;
+    camY = viewCamY;
+  }
+
+  useEffect(() => {
+    if (appliedView.Current != viewVersion) {
+      appliedView.Current = viewVersion;
+      setZoom(viewZoom);
+      setCamX(viewCamX);
+      setCamY(viewCamY);
+    }
+    return null;
+  }, new object[] { viewVersion });
+
+  int lod = zoom < 0.45f ? 0 : (zoom < 1.05f ? 1 : 2);
+  bool lodFull = lod >= 1;
+  BuilderCanvasDrawing.CurrentLod = lod;
+  BuilderCanvasDrawing.CurrentZoom = zoom;
+  float cardWidth = BuilderCanvasDrawing.CardWidthFor(lod);
+
+  return (
+    <VisualElement
+      style={CanvasStyles.Root}
+      onPointerDown={e => {
+        if (e.Button == 1) {
+          BuilderCanvasDrawing.RememberMenuPointer(e);
+          if (onCanvasContext != null) {
+            onCanvasContext((e.Position.x - camX) / zoom, (e.Position.y - camY) / zoom);
+          }
+          return;
+        }
+        if (dragCard.Current < 0) {
+          panning.Current = true;
+          lastX.Current = e.Position.x;
+          lastY.Current = e.Position.y;
+        }
+      }}
+      onPointerUp={e => {
+        BuilderDragService.PointerUp(e);
+        if (panning.Current && onCameraChanged != null) {
+          onCameraChanged(camX, camY, zoom);
+        }
+        panning.Current = false;
+        if (dragCard.Current >= 0) {
+          dragCard.Current = -1;
+          if (onLayoutChanged != null) {
+            onLayoutChanged();
+          }
+        }
+      }}
+      onPointerLeave={e => {
+        panning.Current = false;
+        if (dragCard.Current >= 0) {
+          dragCard.Current = -1;
+          if (onLayoutChanged != null) {
+            onLayoutChanged();
+          }
+        }
+      }}
+      onPointerMove={e => {
+        if (dragCard.Current >= 0) {
+          var node = graph.Nodes[dragCard.Current];
+          node.X = node.X + (e.Position.x - lastX.Current) / zoom;
+          node.Y = node.Y + (e.Position.y - lastY.Current) / zoom;
+          lastX.Current = e.Position.x;
+          lastY.Current = e.Position.y;
+          setLayoutVersion(layoutVersion + 1);
+        } else if (panning.Current) {
+          setCamX(camX + (e.Position.x - lastX.Current));
+          setCamY(camY + (e.Position.y - lastY.Current));
+          lastX.Current = e.Position.x;
+          lastY.Current = e.Position.y;
+        }
+      }}
+      onWheel={e => {
+        float factor = e.Delta.y < 0f ? 1.12f : 1f / 1.12f;
+        float next = Mathf.Clamp(zoom * factor,
+          BuilderCanvasDrawing.ZoomMin, BuilderCanvasDrawing.ZoomMax);
+        if (next != zoom) {
+          float scale = next / zoom;
+          float nx = e.Position.x - (e.Position.x - camX) * scale;
+          float ny = e.Position.y - (e.Position.y - camY) * scale;
+          setCamX(nx);
+          setCamY(ny);
+          setZoom(next);
+          if (onCameraChanged != null) {
+            onCameraChanged(nx, ny, next);
+          }
+        }
+      }}
+    >
+      <VisualElement
+        style={CanvasStyles.DotGrid}
+        pickingMode={PickIgnore}
+        onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawDotGrid(ctx)}
+      />
+      <VisualElement
+        style={new Style {
+          Position = PosAbsolute,
+          Top = Px(0),
+          Left = Px(0),
+          Translate = Xlate(Px(camX), Px(camY)),
+          Scale = new UnityEngine.UIElements.Scale(new Vector2(zoom, zoom)),
+        }}
+      >
+        @for (int i = 0; i < graph.Nodes.Count; i++) {
+          var node = graph.Nodes[i];
+          int index = i;
+          bool isSelected = selected == index;
+          int lastSection = BuilderCanvasDrawing.LastSectionOf(node);
+          // UB-81: every card built its FULL subtree regardless of where it sat,
+          // and L2 is where that explodes - each markup row adds a wrapper plus
+          // three labels per attribute, for every card in the tree at once. Only
+          // cards within one viewport of the visible rect build their sections;
+          // the rest render as a sized empty box. The box stays because the edge
+          // painter measures "card-{index}" and falls back to a guess (and a
+          // 12-repaint retry burst) when it cannot find one.
+          bool nearView = BuilderCanvasDrawing.IsNearViewport(
+            node, cardWidth, camX, camY, zoom, viewportW, viewportH);
+          return (
+            <VisualElement
+              key={node.FilePath}
+              name={$"card-{index}"}
+              style={new Style {
+                Position = PosAbsolute,
+                Width = Px(cardWidth),
+                Translate = Xlate(Px(node.X), Px(node.Y)),
+              }}
+            >
+            @if (!nearView) {
+              return (
+                <VisualElement
+                  style={new Style {
+                    Height = Px(BuilderCanvasDrawing.EstimatedCardHeight(node)),
+                    BackgroundColor = Hex("#232329"),
+                    BorderRadius = Px(10),
+                    BorderTopWidth = 1.15f,
+                    BorderRightWidth = 1.15f,
+                    BorderBottomWidth = 1.15f,
+                    BorderLeftWidth = 1.15f,
+                    BorderTopColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                    BorderRightColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                    BorderBottomColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                    BorderLeftColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                  }}
+                />
+              );
+            }
+            @if (nearView) {
+              return (
+                <VisualElement
+                  style={CanvasStyles.CardShadowLayer}
+                  pickingMode={PickIgnore}
+                  onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawCardShadow(ctx)}
+                />
+              );
+            }
+            @if (nearView) {
+              return (
+            <VisualElement
+              style={new Style {
+                Overflow = lod == 0 ? OverflowVisible : OverflowHidden,
+                BackgroundColor = Hex("#232329"),
+                BorderRadius = Px(10),
+                // POC .card is a 1.5px solid --line frame - a DIFFERENT rule from
+                // .card-title border-bottom 1px, which stays at 1f in canvasStyles.
+                // The global box-sizing:border-box reset in index.html puts this
+                // frame INSIDE the authored .card width, and UITK Width is
+                // border-box too, so CardWidthFor carries the POC number as-is.
+                // The authored 1.5 laid down ~1.8 device px of ink at the L1 zoom
+                // against the ~1.1 the POC lays down (UITK spreads a fractional
+                // border across the next whole device pixel instead of dimming it),
+                // so the width carries the same measured compensation
+                // CardHeader/CardSection already do.
+                BorderTopWidth = 1.15f,
+                BorderRightWidth = 1.15f,
+                BorderBottomWidth = 1.15f,
+                BorderLeftWidth = 1.15f,
+                BorderTopColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                BorderRightColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                BorderBottomColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+                BorderLeftColor = BuilderCanvasDrawing.CardFrameBorderColor(isSelected, lod),
+              }}
+              onPointerDown={e => {
+                if (e.Button == 1) {
+                  BuilderCanvasDrawing.RememberMenuPointer(e);
+                  if (onCardContext != null) {
+                    // The MODULE, never its index. This lambda lives on a keyed
+                    // element that survives re-renders, so a captured index goes
+                    // stale the moment the node order changes - and then the menu
+                    // acted on a different card than the one clicked.
+                    onCardContext(node.FilePath);
+                  }
+                  e.StopPropagation();
+                  return;
+                }
+                if (e.ClickCount >= 2) {
+                  if (onOpenFile != null) {
+                    onOpenFile(node.FilePath);
+                  }
+                  e.StopPropagation();
+                  return;
+                }
+                setSelected(index);
+                if (onSelect != null) {
+                  onSelect(index);
+                }
+                e.StopPropagation();
+              }}
+            >
+              @if (lod == 0) {
+                return (
+                  <VisualElement
+                    style={CanvasStyles.CardPill}
+                    onAttachToPanel={e => { BuilderCanvasDrawing.SetMoveCursor(e); }}
+                    onPointerDown={e => {
+                      if (e.Button == 0 && e.ClickCount < 2) {
+                        dragCard.Current = index;
+                        lastX.Current = e.Position.x;
+                        lastY.Current = e.Position.y;
+                        setSelected(index);
+                      }
+                    }}
+                  >
+                    <Label
+                      text={BuilderCanvasDrawing.KindLabel(node.Kind)}
+                      tooltip="drag onto another card to use this module"
+                      onPointerDown={e => {
+                        if (BuilderCanvasDrawing.BeginCardDrag(node, e)) {
+                          setSelected(index);
+                        }
+                      }}
+                      onPointerMove={e => {
+                        BuilderDragService.PointerMove(e);
+                      }}
+                      onPointerUp={e => {
+                        if (BuilderCanvasDrawing.DragActive) {
+                          BuilderDragService.PointerUp(e);
+                          e.StopPropagation();
+                        }
+                      }}
+                      style={new Style {
+                        FontSize = Px(15),
+                        UnityFontStyle = FontBold,
+                        Color = BuilderCanvasDrawing.KindColor(node.Kind),
+                        BackgroundColor = BuilderCanvasDrawing.KindBadgeBg(node.Kind),
+                        BorderRadius = Px(12),
+                        PaddingLeft = Px(12),
+                        PaddingRight = Px(12),
+                        PaddingTop = Px(3),
+                        PaddingBottom = Px(3),
+                        // 15px in the POC body line box (1.45) plus the 3px pair.
+                        Height = Px(27.75f),
+                        TextAlign = TextMiddleLeft,
+                        MarginRight = Px(12),
+                      }}
+                    />
+                    <Label
+                      text={node.Title}
+                      style={new Style {
+                        FontSize = Px(26),
+                        UnityFontStyle = FontBold,
+                        Color = Hex("#d6d6dc"),
+                        // POC body.lod0 .pill is font-size 26 inside the body 1.45
+                        // line box: 26 * 1.45 = 37.7px. Every sibling row on the card
+                        // carries its line box explicitly; this one laid out at the
+                        // UITK natural ~32px box, ~6px short of the POC 72.7 pill.
+                        Height = Px(37.7f),
+                        TextAlign = TextMiddleLeft,
+                        FlexGrow = 1,
+                        // Neither ".card" nor ".pill" sets overflow:hidden in the
+                        // POC, so a name wider than the 300px pill renders PAST it
+                        // instead of being sliced at the border.
+                        FlexShrink = 0,
+                        WhiteSpace = WsNowrap,
+                      }}
+                    />
+                  </VisualElement>
+                );
+              }
+              @if (lod >= 1) {
+                return (
+                  <VisualElement
+                    style={CanvasStyles.CardHeader}
+                    onAttachToPanel={e => { BuilderCanvasDrawing.SetMoveCursor(e); }}
+                    onPointerDown={e => {
+                      if (e.Button == 0 && e.ClickCount < 2) {
+                        dragCard.Current = index;
+                        lastX.Current = e.Position.x;
+                        lastY.Current = e.Position.y;
+                        setSelected(index);
+                      }
+                    }}
+                  >
+                    <Label
+                      text={BuilderCanvasDrawing.KindLabel(node.Kind)}
+                      tooltip="drag onto another card to use this module"
+                      onPointerDown={e => {
+                        if (BuilderCanvasDrawing.BeginCardDrag(node, e)) {
+                          setSelected(index);
+                        }
+                      }}
+                      onPointerMove={e => {
+                        BuilderDragService.PointerMove(e);
+                      }}
+                      onPointerUp={e => {
+                        if (BuilderCanvasDrawing.DragActive) {
+                          BuilderDragService.PointerUp(e);
+                          e.StopPropagation();
+                        }
+                      }}
+                      style={new Style {
+                        FontSize = Px(10),
+                        UnityFontStyle = FontBold,
+                        Color = BuilderCanvasDrawing.KindColor(node.Kind),
+                        BackgroundColor = BuilderCanvasDrawing.KindBadgeBg(node.Kind),
+                        BorderRadius = Px(8),
+                        PaddingLeft = Px(7),
+                        PaddingRight = Px(7),
+                        PaddingTop = Px(1),
+                        PaddingBottom = Px(1),
+                        // 10px in the POC body line box (1.45) plus the 1px pair:
+                        // on poc-l1-cards.png the ShopScreen kind badge is 12 screen
+                        // px at zoom 0.75, i.e. 16.5 CSS.
+                        Height = Px(16.5f),
+                        TextAlign = TextMiddleLeft,
+                        MarginRight = Px(8),
+                      }}
+                    />
+                    <Label text={node.Title} style={CanvasStyles.CardTitle} />
+                  </VisualElement>
+                );
+              }
+              @if (lod >= 1 && node.Signature != null && node.Signature.Length > 0) {
+                return (
+                  <VisualElement style={lastSection == 0 ? CanvasStyles.CardSectionLast : CanvasStyles.CardSection}>
+                    <Label
+                      text={BuilderCanvasDrawing.SignatureRichText(node.Signature)}
+                      enableRichText={true}
+                      style={CanvasStyles.CardSignature}
+                    />
+                  </VisualElement>
+                );
+              }
+              @if (lodFull) {
+                return (
+                  <VisualElement style={CanvasStyles.CardBody}>
+                    @if (node.Imports.Count > 0) {
+                      return (
+                        <VisualElement style={lastSection == 1 ? CanvasStyles.CardSectionLast : CanvasStyles.CardSection}>
+                          <Label text="IMPORTS" style={CanvasStyles.CardSectionHeader} />
+                          <ScrollView
+                            name="ruitk-section-scroll"
+                            style={new Style { MaxHeight = Px(140) }}
+                          >
+                          @for (int x = 0; x < node.Imports.Count; x++) {
+                            var imp = node.Imports[x];
+                            string impKey = $"imp:{index}:{x}";
+                            return (
+                              <VisualElement
+                                key={$"imp-{x}"}
+                                tooltip={imp.Text + " - double-click copies the name"}
+                                onPointerDown={e => {
+                                  if (e.Button == 1) {
+                                    if (onImportContext != null && imp.SourceLine > 0) {
+                                      // Every menu opens AT the click, and it only
+                                      // does so if the gesture records where that
+                                      // was - this one did not, so the popup landed
+                                      // wherever the previous menu gesture had been.
+                                      BuilderCanvasDrawing.RememberMenuPointer(e);
+                                      onImportContext(node.FilePath, imp.AttrsText);
+                                      e.StopPropagation();
+                                    }
+                                    return;
+                                  }
+                                  if (imp.SourceLine <= 0) {
+                                    return;
+                                  }
+                                  // the alias is the name every reference spells
+                                  if (e.ClickCount >= 2) {
+                                    if (onCopyImportAlias != null) {
+                                      onCopyImportAlias(imp.Text);
+                                    }
+                                    e.StopPropagation();
+                                    return;
+                                  }
+                                  setSelected(index);
+                                  setSelRowNode(-1);
+                                  setSelRowIdx(-1);
+                                  setSelLineKey(impKey);
+                                  if (onLineSelect != null) {
+                                    onLineSelect(node.FilePath, imp.SourceLine, imp.SourceLine, "import");
+                                  }
+                                  e.StopPropagation();
+                                }}
+                                style={new Style {
+                                  BackgroundColor = selLineKey == impKey ? Rgba(255, 213, 79, 38) : Rgba(0, 0, 0, 0),
+                                  FlexDirection = FlexRow,
+                                  AlignItems = AlignCenter,
+                                  PaddingTop = Px(1.5f),
+                                  PaddingBottom = Px(1.5f),
+                                  PaddingLeft = Px(6),
+                                  PaddingRight = Px(6),
+                                  // POC .imp-row: 11.5 * 1.45 line box + the 1.5px
+                                  // padding pair = 19.7. Pinned on the ROW so the auto
+                                  // flex minimum of the mono Label cannot push the
+                                  // pitch past the POC one.
+                                  Height = Px(19.7f),
+                                  MinHeight = Px(0),
+                                }}
+                              >
+                                <Label
+                                  text={imp.Text}
+                                  style={CanvasStyles.CardImportLine}
+                                />
+                                <VisualElement
+                                  name={$"a-imp-{index}-{x}"}
+                                  style={new Style {
+                                    Width = Px(8),
+                                    Height = Px(8),
+                                    MarginLeft = Px(6),
+                                    FlexShrink = 0,
+                                    Overflow = OverflowVisible,
+                                  }}
+                                />
+                              </VisualElement>
+                            );
+                          }
+                          </ScrollView>
+                        </VisualElement>
+                      );
+                    }
+                    @if (node.Body.Count > 0 || node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook) {
+                      return (
+                        <VisualElement style={lastSection == 2 ? CanvasStyles.CardSectionLast : CanvasStyles.CardSection}>
+                          <Label
+                            text={node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook ? "BODY — HOOKS & STATE" : "EXPORTS"}
+                            style={CanvasStyles.CardSectionHeader}
+                          />
+                          <ScrollView
+                            name="ruitk-section-scroll"
+                            style={new Style { MaxHeight = Px(260) }}
+                          >
+                          <VisualElement
+                            style={new Style {
+                              FlexDirection = FlexRow,
+                              FlexWrap = WrapOn,
+                              // POC ".chips { gap: 5px }" leaves NO gap under the
+                              // last chip row; UI Toolkit has no flex gap, so the
+                              // 5px lives on every chip's MarginBottom and the
+                              // trailing one is cancelled here. Without this the
+                              // BODY band measured 46px against the POC's 41.
+                              MarginBottom = Px(-5),
+                            }}
+                          >
+                            @for (int x = 0; x < node.Body.Count; x++) {
+                              int bx = x;
+                              string chipKey = $"hook:{index}:{x}";
+                              return (
+                                <VisualElement
+                                  key={$"body-{x}"}
+                                  style={new Style {
+                                    FlexShrink = 0,
+                                    MaxWidth = Px(cardWidth - 30f),
+                                  }}
+                                >
+                                <Label
+                                  name={$"chip-{index}-{x}"}
+                                  text={node.Body[bx].Kind == BuilderCardLineKind.Hook ? BuilderCanvasDrawing.ChipRichText(node.Body[bx].Text) : node.Body[bx].Text}
+                                  enableRichText={true}
+                                  tooltip={node.Body[bx].SourceText + " (double-click to edit)"}
+                                  onPointerDown={e => {
+                                    if (e.Button == 1) {
+                                      return;
+                                    }
+                                    if (e.ClickCount >= 2 && node.Body[bx].SourceLine > 0) {
+                                      if (onEditLine != null) {
+                                        onEditLine(node.FilePath, node.Body[bx].SourceLine, node.Body[bx].SourceText, "", e.CurrentTarget);
+                                      }
+                                      e.StopPropagation();
+                                      return;
+                                    }
+                                    // UB-94: a single click SELECTS the chip, so
+                                    // Delete can remove it like any markup row.
+                                    if (node.Body[bx].SourceLine > 0) {
+                                      setSelected(index);
+                                      setSelRowNode(-1);
+                                      setSelRowIdx(-1);
+                                      setSelLineKey(chipKey);
+                                      if (onLineSelect != null) {
+                                        onLineSelect(node.FilePath, node.Body[bx].SourceLine,
+                                          node.Body[bx].EndLine > 0 ? node.Body[bx].EndLine : node.Body[bx].SourceLine,
+                                          "hook");
+                                      }
+                                      e.StopPropagation();
+                                    }
+                                  }}
+                                  onPointerEnter={e => {
+                                    setTraceOwner(index);
+                                    setHoverChipKey(chipKey);
+                                    setTraceStates(BuilderCanvasDrawing.ChipStates(node.Body[bx].Text));
+                                    if (onTraceStates != null && selected == index) {
+                                      onTraceStates(BuilderCanvasDrawing.ChipStates(node.Body[bx].Text));
+                                    }
+                                  }}
+                                  onPointerLeave={e => {
+                                    setTraceStates((string)null);
+                                    setTraceOwner(-1);
+                                    setHoverChipKey("");
+                                    if (onTraceStates != null) {
+                                      onTraceStates((string)null);
+                                    }
+                                  }}
+                                  style={new Style {
+                                    Color = node.Body[bx].Kind == BuilderCardLineKind.Hook ? Hex("#d6d6dc") : BuilderCanvasDrawing.LineColor(node.Body[bx].Kind),
+                                    FontSize = Px(11.5f),
+                                    // POC .chip sets no white-space rule, so a chip
+                                    // wider than the card WRAPS inside its own pill and
+                                    // the pill stays whole. A fixed Height plus the
+                                    // default no-wrap sliced the last chip off at the
+                                    // card border — no right cap, no ellipsis.
+                                    MinHeight = Px(22.7f),
+                                    WhiteSpace = WsNormal,
+                                    MaxWidth = Px(cardWidth - 30f),
+                                    TextAlign = TextMiddleLeft,
+                                    UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                                    // UB-102: a single click SELECTS the chip and the
+                                    // selection has to be visible — the same warm band
+                                    // and accent outline the markup rows use.
+                                    BackgroundColor = selLineKey == chipKey ? Rgba(255, 213, 79, 38) : Hex("#2a2a31"),
+                                    BorderRadius = Px(10),
+                                    // POC .chip is a 1px solid --line border - the
+                                    // 1.5px rule belongs to .card, not here.
+                                    BorderTopWidth = 1f,
+                                    BorderRightWidth = 1f,
+                                    BorderBottomWidth = 1f,
+                                    BorderLeftWidth = 1f,
+                                    BorderTopColor = (hoverChipKey == chipKey || selLineKey == chipKey) ? Hex("#ffb74d") : Hex("#3a3a44"),
+                                    BorderRightColor = (hoverChipKey == chipKey || selLineKey == chipKey) ? Hex("#ffb74d") : Hex("#3a3a44"),
+                                    BorderBottomColor = (hoverChipKey == chipKey || selLineKey == chipKey) ? Hex("#ffb74d") : Hex("#3a3a44"),
+                                    BorderLeftColor = (hoverChipKey == chipKey || selLineKey == chipKey) ? Hex("#ffb74d") : Hex("#3a3a44"),
+                                    PaddingLeft = Px(9),
+                                    PaddingRight = Px(9),
+                                    PaddingTop = Px(1.5f),
+                                    PaddingBottom = Px(1.5f),
+                                    MarginRight = Px(5),
+                                    MarginBottom = Px(5),
+                                  }}
+                                />
+                                </VisualElement>
+                              );
+                            }
+                            @if (node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook) {
+                              return (
+                                <Label
+                                  text="+ hook"
+                                  tooltip="add a hook"
+                                  onPointerEnter={e => { setHoverChipKey($"addhook:{index}"); }}
+                                  onPointerLeave={e => { setHoverChipKey(""); }}
+                                  onPointerDown={e => {
+                                    if (e.Button == 1) {
+                                      return;
+                                    }
+                                    if (onAddHook != null) {
+                                      onAddHook(node.FilePath);
+                                    }
+                                    e.StopPropagation();
+                                  }}
+                                  onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawDashedChipBorder(ctx, hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"))}
+                                  style={new Style {
+                                    Color = hoverChipKey == $"addhook:{index}" ? Hex("#4fc3f7") : Hex("#8b8b96"),
+                                    FontSize = Px(11.5f),
+                                    Height = Px(22.7f),
+                                    TextAlign = TextMiddleLeft,
+                                    UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                                    BackgroundColor = Hex("#2a2a31"),
+                                    BorderRadius = Px(10),
+                                    // POC .chip-add sets border-style: dashed — the
+                                    // affordance reads as an affordance only because
+                                    // its outline is broken. UI Toolkit has no dashed
+                                    // border, so the solid one is dropped here and
+                                    // the rounded outline is painted 3-on / 3-off.
+                                    PaddingLeft = Px(10.5f),
+                                    PaddingRight = Px(10.5f),
+                                    PaddingTop = Px(3),
+                                    PaddingBottom = Px(3),
+                                    MarginBottom = Px(5),
+                                  }}
+                                />
+                              );
+                            }
+                            @if (node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook) {
+                              return (
+                                <Label
+                                  text="+ code"
+                                  tooltip="add a statement to the component body"
+                                  onPointerEnter={e => { setHoverChipKey($"addcode:{index}"); }}
+                                  onPointerLeave={e => { setHoverChipKey(""); }}
+                                  onPointerDown={e => {
+                                    if (e.Button == 1) {
+                                      return;
+                                    }
+                                    if (onAddCode != null) {
+                                      onAddCode(node.FilePath);
+                                    }
+                                    e.StopPropagation();
+                                  }}
+                                  onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawDashedChipBorder(ctx, hoverChipKey == $"addcode:{index}" ? Hex("#4fc3f7") : Hex("#3a3a44"))}
+                                  style={new Style {
+                                    Color = hoverChipKey == $"addcode:{index}" ? Hex("#4fc3f7") : Hex("#8b8b96"),
+                                    FontSize = Px(11.5f),
+                                    Height = Px(22.7f),
+                                    TextAlign = TextMiddleLeft,
+                                    UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                                    BackgroundColor = Hex("#2a2a31"),
+                                    BorderRadius = Px(10),
+                                    PaddingLeft = Px(10.5f),
+                                    PaddingRight = Px(10.5f),
+                                    PaddingTop = Px(3),
+                                    PaddingBottom = Px(3),
+                                    MarginBottom = Px(5),
+                                    MarginLeft = Px(5),
+                                  }}
+                                />
+                              );
+                            }
+                          </VisualElement>
+                          @if (lod == 2 && node.IslandLines.Count > 0) {
+                            return (
+                              <VisualElement
+                                tooltip="double-click to edit"
+                                onPointerEnter={e => { setHoverChipKey($"island:{index}"); }}
+                                onPointerLeave={e => { setHoverChipKey(""); }}
+                                onPointerDown={e => {
+                                  if (e.Button == 1) {
+                                    return;
+                                  }
+                                  if (e.ClickCount >= 2 && node.IslandStartLine > 0) {
+                                    if (onEditIsland != null) {
+                                      onEditIsland(node.FilePath, node.IslandStartLine, node.IslandEndLine,
+                                        string.Join("\n", node.IslandLines), e.CurrentTarget);
+                                    }
+                                    e.StopPropagation();
+                                    return;
+                                  }
+                                  if (node.IslandStartLine > 0) {
+                                    setSelected(index);
+                                    setSelRowNode(-1);
+                                    setSelRowIdx(-1);
+                                    setSelLineKey($"island:{index}");
+                                    if (onLineSelect != null) {
+                                      onLineSelect(node.FilePath, node.IslandStartLine,
+                                        node.IslandEndLine, "code island");
+                                    }
+                                    e.StopPropagation();
+                                  }
+                                }}
+                                style={selLineKey == $"island:{index}"
+                                  ? CanvasStyles.CodeIslandSelected
+                                  : (traceOwner == index && BuilderCanvasDrawing.RowMatchesTrace(string.Join(" ", node.IslandLines), traceStates)
+                                    ? CanvasStyles.CodeIslandTrace
+                                    : (hoverChipKey == $"island:{index}" ? CanvasStyles.CodeIslandHover : CanvasStyles.CodeIsland))}
+                              >
+                                <ScrollView
+                                  name="ruitk-island-scroll"
+                                  mode="vertical"
+                                  style={new Style {
+                                    // Owner decision: islands scroll vertically
+                                    // ONLY — wide statements wrap (CodeIslandLine
+                                    // WsNormal) so nothing hides behind a
+                                    // horizontal offset, and the island caps its
+                                    // own height instead of pinning it.
+                                    MaxHeight = Px(220),
+                                    FlexShrink = 0,
+                                  }}
+                                >
+                                  @for (int ci = 0; ci < node.IslandLines.Count; ci++) {
+                                    return (
+                                      <Label
+                                        key={$"isl-{ci}"}
+                                        text={CodeField.BuildLineRichText(node.IslandLines[ci], null)}
+                                        style={CanvasStyles.CodeIslandLine}
+                                      />
+                                    );
+                                  }
+                                </ScrollView>
+                              </VisualElement>
+                            );
+                          }
+                          </ScrollView>
+                        </VisualElement>
+                      );
+                    }
+                    @if (node.ExportDetail.Count > 0) {
+                      return (
+                        <VisualElement style={lastSection == 3 ? CanvasStyles.CardSectionLast : CanvasStyles.CardSection}>
+                          <Label text="EXPORTS" style={CanvasStyles.CardSectionHeader} />
+                          <ScrollView
+                            name="ruitk-section-scroll"
+                            style={new Style { MaxHeight = Px(280) }}
+                          >
+                          @for (int x = 0; x < node.ExportDetail.Count; x++) {
+                            var detail = node.ExportDetail[x];
+                            bool isAdd = detail.BadgeKind == 9 || detail.BadgeKind == 10 || detail.BadgeKind == 11;
+                            bool isIsland = detail.BadgeKind == 12;
+                            bool isUtilSig = detail.Kind == BuilderCardLineKind.Export && detail.BadgeKind == 0;
+                            bool editableLine = !isAdd
+                              && !isIsland
+                              && detail.Text != "}"
+                              && detail.BadgeKind != 13
+                              && (isUtilSig ? lod >= 1 : lod == 2);
+                            string entrySuffix = detail.Text.EndsWith(" {") ? " {"
+                              : detail.Text.EndsWith(",") ? ","
+                              : "";
+                            string entrySeed = entrySuffix.Length > 0
+                              ? detail.Text.Substring(0, detail.Text.Length - entrySuffix.Length)
+                              : detail.Text;
+                            string entryTip = isAdd
+                              ? (detail.BadgeKind == 9 ? "typed key + value helpers"
+                                : detail.BadgeKind == 10 ? "add another style export"
+                                : "add an exported function or value")
+                              : editableLine ? "click to edit" : "";
+                            string entryKey = $"entry:{index}:{x}";
+                            // The "+ entry" row the last Enter armed: pressing
+                            // Enter again adds another entry, so it has to LOOK
+                            // like the thing the keyboard is pointed at.
+                            bool armedAdd = detail.BadgeKind == 9
+                              && armedAddFile == node.FilePath
+                              && armedAddStyle == detail.AttrsText;
+                            bool detailVisible = detail.Kind == BuilderCardLineKind.Export
+                              || detail.Text == "}"
+                              || detail.BadgeKind == 10
+                              || detail.BadgeKind == 11
+                              || lod == 2;
+                            return (
+                              <VisualElement key={$"ed-{x}"}>
+                                @if (detailVisible && isIsland) {
+                                  return (
+                                    <VisualElement
+                                      style={new Style {
+                                        BackgroundColor = Hex("#17171b"),
+                                        Overflow = OverflowHidden,
+                                        BorderRadius = Px(6),
+                                        BorderTopWidth = 1,
+                                        BorderRightWidth = 1,
+                                        BorderBottomWidth = 1,
+                                        BorderLeftWidth = 1,
+                                        BorderTopColor = Hex("#3a3a44"),
+                                        BorderRightColor = Hex("#3a3a44"),
+                                        BorderBottomColor = Hex("#3a3a44"),
+                                        BorderLeftColor = Hex("#3a3a44"),
+                                        PaddingLeft = Px(9),
+                                        PaddingRight = Px(9),
+                                        PaddingTop = Px(6),
+                                        PaddingBottom = Px(6),
+                                        MarginTop = Px(4),
+                                        MarginBottom = Px(6),
+                                        MarginLeft = Px(12),
+                                      }}
+                                      tooltip="double-click to edit"
+                                      onPointerDown={e => {
+                                        if (e.Button == 1) {
+                                          return;
+                                        }
+                                        if (e.ClickCount >= 2) {
+                                          if (onEditIsland != null) {
+                                            onEditIsland(node.FilePath, detail.SourceLine, detail.EndLine, detail.Text, e.CurrentTarget);
+                                          }
+                                          e.StopPropagation();
+                                          return;
+                                        }
+                                        if (detail.SourceLine > 0) {
+                                          setSelected(index);
+                                          setSelRowNode(-1);
+                                          setSelRowIdx(-1);
+                                          setSelLineKey($"entry:{index}:{x}");
+                                          if (onLineSelect != null) {
+                                            onLineSelect(node.FilePath, detail.SourceLine,
+                                              detail.EndLine > 0 ? detail.EndLine : detail.SourceLine, "entry");
+                                          }
+                                          e.StopPropagation();
+                                        }
+                                      }}
+                                    >
+                                      <Label
+                                        text={CodeField.BuildLineRichText(detail.Text, null)}
+                                        style={CanvasStyles.CodeIslandLine}
+                                      />
+                                    </VisualElement>
+                                  );
+                                }
+                                @if (detailVisible && !isIsland) {
+                                  return (
+                                    <Label
+                                      text={detail.BadgeKind == 13 ? BuilderCanvasDrawing.ExportRichText(detail.Text) : detail.Text}
+                                      enableRichText={true}
+                                      name={$"ruitk-row-{index}-{detail.SourceLine}"}
+                                      tooltip={entryTip}
+                                      onPointerEnter={e => { if (isAdd || editableLine) { setHoverChipKey(entryKey); } }}
+                                      onPointerLeave={e => { if (isAdd || editableLine) { setHoverChipKey(""); } }}
+                                      style={new Style {
+                                        Color = isAdd
+                                          ? (hoverChipKey == entryKey ? Hex("#4fc3f7") : Hex("#8b8b96"))
+                                          : Hex("#cfcfda"),
+                                        FontSize = Px(12),
+                                        UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                                        // POC cardHtml gives an entry row an inline
+                                        // padding-left of 24px which REPLACES the
+                                        // .style-entry 6px — an 18px step from the
+                                        // export name, not 24 stacked on top of 6.
+                                        MarginLeft = Px(0),
+                                        // POC .style-entry is padding 2px 6px at
+                                        // font-size 12 — a 17.4px line box plus the
+                                        // 2px pair, measured as a 16 screen px pitch
+                                        // at zoom 0.75 on poc-l1-cards.png.
+                                        PaddingTop = Px(2),
+                                        PaddingBottom = Px(2),
+                                        PaddingLeft = Px(detail.Depth > 0 ? detail.Depth * 24f : 6f),
+                                        PaddingRight = Px(6),
+                                        // POC ".style-entry" carries no white-space
+                                        // rule, so an entry wider than the card
+                                        // wraps and the row GROWS. A pinned height
+                                        // clipped the tail of a long entry instead.
+                                        MinHeight = Px(21.4f),
+                                        WhiteSpace = WsNormal,
+                                        TextAlign = TextMiddleLeft,
+                                        BorderRadius = Px(4),
+                                        BackgroundColor = armedAdd
+                                          ? Rgba(255, 213, 79, 46)
+                                          : editableLine && hoverChipKey == entryKey
+                                            ? (isUtilSig ? Rgba(255, 183, 77, 31) : Rgba(206, 147, 216, 31))
+                                            : Rgba(0, 0, 0, 0),
+                                        BorderRadius = Px(4),
+                                        BorderTopWidth = armedAdd ? 1 : 0,
+                                        BorderRightWidth = armedAdd ? 1 : 0,
+                                        BorderBottomWidth = armedAdd ? 1 : 0,
+                                        BorderLeftWidth = armedAdd ? 1 : 0,
+                                        BorderTopColor = Hex("#ffd54f"),
+                                        BorderRightColor = Hex("#ffd54f"),
+                                        BorderBottomColor = Hex("#ffd54f"),
+                                        BorderLeftColor = Hex("#ffd54f"),
+                                      }}
+                                      onPointerDown={e => {
+                                        if (e.Button == 1) {
+                                          if (onStyleRowContext != null && detail.SourceLine > 0) {
+                                            BuilderCanvasDrawing.RememberMenuPointer(e);
+                                            if (detail.BadgeKind == 13) {
+                                              onStyleRowContext(node.FilePath, detail.SourceLine, detail.EndLine, $"style {detail.AttrsText}");
+                                            } else if (editableLine && !isUtilSig) {
+                                              onStyleRowContext(node.FilePath, detail.SourceLine, detail.SourceLine, "entry");
+                                            }
+                                            e.StopPropagation();
+                                          }
+                                          return;
+                                        }
+                                        BuilderCanvasDrawing.RememberMenuPointer(e);
+                                        if (detail.BadgeKind == 9) {
+                                          if (onStyleAddEntry != null) {
+                                            onStyleAddEntry(node.FilePath, detail.AttrsText, detail.SourceLine);
+                                          }
+                                        } else if (detail.BadgeKind == 10) {
+                                          if (onAddStyleExport != null) {
+                                            onAddStyleExport(node.FilePath);
+                                          }
+                                        } else if (detail.BadgeKind == 11) {
+                                          if (onAddUtilExport != null) {
+                                            onAddUtilExport(node.FilePath);
+                                          }
+                                        } else if (editableLine) {
+                                          if (onEditLine != null) {
+                                            onEditLine(node.FilePath, detail.SourceLine, entrySeed, entrySuffix, e.CurrentTarget);
+                                          }
+                                        } else if (onRowClick != null) {
+                                          onRowClick(node.FilePath, detail.SourceLine);
+                                        }
+                                        e.StopPropagation();
+                                      }}
+                                    />
+                                  );
+                                }
+                              </VisualElement>
+                            );
+                          }
+                          </ScrollView>
+                        </VisualElement>
+                      );
+                    }
+                    @if (node.Markup.Count > 0) {
+                      return (
+                        <VisualElement style={lastSection == 4 ? CanvasStyles.CardSectionLast : CanvasStyles.CardSection}>
+                          <Label text="RETURN — MARKUP" style={CanvasStyles.CardSectionHeader} />
+                          <ScrollView
+                            name="ruitk-section-scroll"
+                            style={new Style { MaxHeight = Px(340) }}
+                          >
+                          @for (int x = 0; x < node.Markup.Count; x++) {
+                            var row = node.Markup[x];
+                            int rowIdx = x;
+                            int rowKey = index * 1000 + rowIdx;
+                            // §8.1: the ROOT guard keys on the first ELEMENT row —
+                            // a directive head wrapping the root occupies index 0.
+                            int firstElementIdx = BuilderCanvasDrawing.FirstElementRow(node);
+                            bool headRow = row.Kind == BuilderCardLineKind.Directive;
+                            bool rowSel = selRowNode == index && selRowIdx == rowIdx;
+                            // POC jsxRowHtml exprBlob = attribute values PLUS the
+                            // directive text, so hovering `cart` lights the
+                            // "@if (cart.Count > 0)" row too.
+                            bool rowHl = traceOwner == index
+                              && BuilderCanvasDrawing.RowMatchesTrace(
+                                row.AttrsText + " " + row.DirectiveText, traceStates);
+                            bool ringSel = rowSel;
+                            bool ringHl = rowHl && !rowSel;
+                            return (
+                              <VisualElement
+                                key={$"mk-{x}"}
+                                name={$"row-{index}-{rowIdx}"}
+                                style={new Style {
+                                  FlexDirection = FlexRow,
+                                  AlignItems = lod == 2 ? AlignStart : AlignCenter,
+                                  PaddingLeft = Px(8f + row.Depth * 14f),
+                                  PaddingRight = Px(6),
+                                  PaddingTop = Px(2.5f),
+                                  PaddingBottom = Px(2.5f),
+                                  // Same auto-minimum trap as the import row; the row
+                                  // still GROWS for wrapped L2 attributes because no
+                                  // Height is pinned here.
+                                  MinHeight = Px(0),
+                                  BorderRadius = Px(5),
+                                  BackgroundColor = rowSel
+                                    ? Rgba(255, 213, 79, 38)
+                                    : rowHl
+                                      ? Rgba(255, 183, 77, 46)
+                                      : hoverRowKey == rowKey
+                                        ? Rgba(79, 195, 247, 20)
+                                        : Rgba(0, 0, 0, 0),
+                                  BorderTopWidth = ringSel || ringHl ? 1 : 0,
+                                  BorderRightWidth = ringSel || ringHl ? 1 : 0,
+                                  BorderLeftWidth = ringSel || ringHl ? 1 : 0,
+                                  BorderBottomWidth = ringSel || ringHl ? 1 : 0,
+                                  BorderTopColor = ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128),
+                                  BorderRightColor = ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128),
+                                  BorderLeftColor = ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128),
+                                  BorderBottomColor = ringSel ? Rgba(255, 213, 79, 128) : Rgba(255, 183, 77, 128),
+                                }}
+                                onPointerEnter={e => {
+                                  if (hoverRowKey != rowKey) {
+                                    setHoverRowKey(rowKey);
+                                  }
+                                }}
+                                onPointerLeave={e => {
+                                  if (hoverRowKey == rowKey) {
+                                    setHoverRowKey(-1);
+                                  }
+                                }}
+                                onPointerMove={e => {
+                                  BuilderDragService.PointerMove(e);
+                                }}
+                                onPointerUp={e => {
+                                  if (BuilderCanvasDrawing.DragActive) {
+                                    BuilderDragService.PointerUp(e);
+                                    e.StopPropagation();
+                                  }
+                                }}
+                                onPointerDown={e => {
+                                  if (e.Button == 1) {
+                                    BuilderCanvasDrawing.RememberMenuPointer(e);
+                                    if (onRowContext != null) {
+                                      onRowContext(node.FilePath, row.SourceLine, rowIdx);
+                                    }
+                                    e.StopPropagation();
+                                    return;
+                                  }
+                                  if (e.ClickCount >= 2 && row.Kind == BuilderCardLineKind.Component) {
+                                    if (onRowNavigate != null) {
+                                      onRowNavigate(row.Text.Trim('<', '>'));
+                                    }
+                                    e.StopPropagation();
+                                    return;
+                                  }
+                                  // §8.1 move rules: an element row (never the
+                                  // root) drags itself; a construct head drags
+                                  // the whole block; a continuation clause
+                                  // (@else/@case) is structurally bound and
+                                  // never arms. The service captures the pointer;
+                                  // a release under the travel threshold stays a
+                                  // plain click (the select below already ran).
+                                  if (e.Button == 0 && (headRow ? row.ClauseIndex == 0 : rowIdx != firstElementIdx)) {
+                                    BuilderDragService.Begin($"move:{node.FilePath}:{rowIdx}",
+                                      headRow ? row.BadgeText + " block" : row.Text, e);
+                                  }
+                                  setSelected(index);
+                                  setSelRowNode(index);
+                                  setSelRowIdx(rowIdx);
+                                  setSelLineKey("");
+                                  // UB-74: the selection has to leave the fiber
+                                  // for the Delete key to have a subject — the
+                                  // host mirrors it the way it already mirrors
+                                  // the card ring.
+                                  if (onRowSelect != null) {
+                                    onRowSelect(node.FilePath, rowIdx, row.SourceLine);
+                                  }
+                                  if (onRowClick != null) {
+                                    onRowClick(node.FilePath, row.SourceLine);
+                                  }
+                                  e.StopPropagation();
+                                }}
+                              >
+                                @if (row.BadgeKind > 0) {
+                                  return (
+                                    <Label
+                                      text={row.BadgeText}
+                                      tooltip={row.DirectiveText}
+                                      onPointerDown={e => {
+                                        if (e.Button == 1) {
+                                          BuilderCanvasDrawing.RememberMenuPointer(e);
+                                          if (onRowContext != null) {
+                                            onRowContext(node.FilePath, row.SourceLine, rowIdx);
+                                          }
+                                          e.StopPropagation();
+                                          return;
+                                        }
+                                        if (onEditDirective != null) {
+                                          onEditDirective(node.FilePath, row.DirectiveLine, row.DirectiveText, e.CurrentTarget);
+                                        }
+                                        e.StopPropagation();
+                                      }}
+                                      style={new Style {
+                                        FontSize = Px(10),
+                                        UnityFontStyle = FontBold,
+                                        Color = BuilderCanvasDrawing.BadgeColor(row.BadgeKind),
+                                        BackgroundColor = BuilderCanvasDrawing.BadgeBg(row.BadgeKind),
+                                        BorderRadius = Px(7),
+                                        PaddingLeft = Px(6),
+                                        PaddingRight = Px(6),
+                                        // POC .badge is padding 0 6px — 10px in the
+                                        // body line box, no vertical padding at all.
+                                        Height = Px(14.5f),
+                                        TextAlign = TextMiddleLeft,
+                                        MarginRight = Px(6),
+                                        FlexShrink = 0,
+                                      }}
+                                    />
+                                  );
+                                }
+                                <Label
+                                  text={row.Text}
+                                  style={new Style {
+                                    Color = BuilderCanvasDrawing.LineColor(row.Kind),
+                                    FontSize = Px(12),
+                                    Height = Px(17.4f),
+                                    // A flex item min-height of auto resolves to
+                                    // its own min-content height, and the mono face
+                                    // line box is TALLER than the declared 1.45
+                                    // box — so the auto minimum, not Height, sized
+                                    // every row (~1px over per row, ~7px over a
+                                    // six-import section).
+                                    MinHeight = Px(0),
+                                    TextAlign = TextMiddleLeft,
+                                    FlexShrink = 0,
+                                    UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                                    UnityFontStyle = row.Kind == BuilderCardLineKind.Component ? FontBold : FontNormal,
+                                  }}
+                                />
+                                @if (lod == 2) {
+                                  return (
+                                    <VisualElement style={new Style { FlexDirection = FlexRow, FlexWrap = WrapOn, FlexShrink = 1, FlexGrow = 1, MinHeight = Px(0) }}>
+                                      @for (int ai = 0; ai < row.AttrPairs.Count; ai++) {
+                                        int attrIdx = ai;
+                                        string pair = row.AttrPairs[ai];
+                                        int eq = pair.IndexOf('=');
+                                        string attrName = eq < 0 ? pair : pair.Substring(0, eq);
+                                        string attrValue = eq < 0 ? "" : pair.Substring(eq + 1);
+                                        bool isExpr = attrValue.StartsWith("{");
+                                        string innerValue = attrValue.Length >= 2 ? attrValue.Substring(1, attrValue.Length - 2) : "";
+                                        string attrKey = $"attr:{index}:{rowIdx}:{ai}";
+                                        return (
+                                          <VisualElement key={attrKey} style={new Style { FlexDirection = FlexRow, MarginLeft = Px(6), MinHeight = Px(0) }}>
+                                            <Label
+                                              text={attrName + "="}
+                                              style={CanvasStyles.AttrName}
+                                            />
+                                            <Label
+                                              text={isExpr ? "{" : "\""}
+                                              style={CanvasStyles.AttrBrace}
+                                            />
+                                            <Label
+                                              text={innerValue}
+                                              tooltip="click to edit; empty value removes"
+                                              onPointerEnter={e => { setHoverChipKey(attrKey); }}
+                                              onPointerLeave={e => { setHoverChipKey(""); }}
+                                              onPointerDown={e => {
+                                                if (e.Button == 1) {
+                                                  BuilderCanvasDrawing.RememberMenuPointer(e);
+                                                  if (onRowContext != null) {
+                                                    onRowContext(node.FilePath, row.SourceLine, rowIdx);
+                                                  }
+                                                  e.StopPropagation();
+                                                  return;
+                                                }
+                                                if (onEditAttrValue != null) {
+                                                  onEditAttrValue(node.FilePath, row.SourceLine, attrIdx, innerValue, e.CurrentTarget);
+                                                }
+                                                e.StopPropagation();
+                                              }}
+                                              onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawDottedUnderline(ctx, Hex("#ffb74d"), hoverChipKey == attrKey)}
+                                              style={new Style {
+                                                Color = Hex("#ffb74d"),
+                                                FontSize = Px(12),
+                                                Height = Px(17.4f),
+                                                // The auto flex minimum of the mono
+                                                // face is TALLER than the declared
+                                                // 1.45 box, so without this the
+                                                // value label — the last piece of the
+                                                // attribute run still carrying it —
+                                                // sized every L2 markup row to 23.4
+                                                // where the POC measures 22.4.
+                                                MinHeight = Px(0),
+                                                TextAlign = TextMiddleLeft,
+                                                UnityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition,
+                                                BorderRadius = Px(3),
+                                                MarginLeft = Px(0),
+                                                MarginRight = Px(0),
+                                                PaddingLeft = Px(0),
+                                                PaddingRight = Px(0),
+                                              }}
+                                            />
+                                            <Label
+                                              text={isExpr ? "}" : "\""}
+                                              style={CanvasStyles.AttrBrace}
+                                            />
+                                          </VisualElement>
+                                        );
+                                      }
+                                    </VisualElement>
+                                  );
+                                }
+                                @if (BuilderCanvasDrawing.ResolvesToNode(graph, row.Text)) {
+                                  return (
+                                    <VisualElement
+                                      name={$"a-row-{index}-{rowIdx}"}
+                                      tooltip={"usage of " + row.Text.Trim('<', '>')}
+                                      style={new Style {
+                                        Width = Px(8),
+                                        Height = Px(8),
+                                        MarginLeft = StyleAuto,
+                                        FlexShrink = 0,
+                                        Overflow = OverflowVisible,
+                                      }}
+                                    />
+                                  );
+                                }
+                              </VisualElement>
+                            );
+                          }
+                          </ScrollView>
+                        </VisualElement>
+                      );
+                    }
+                  </VisualElement>
+                );
+              }
+            </VisualElement>
+              );
+            }
+            @if (isSelected) {
+              return (
+                <VisualElement style={CanvasStyles.SelectionRing} pickingMode={PickIgnore} />
+              );
+            }
+            </VisualElement>
+          );
+        }
+        <VisualElement
+          name="ruitk-edge-layer"
+          style={CanvasStyles.EdgeLayer}
+          pickingMode={PickIgnore}
+          onGenerateVisualContent={ctx => BuilderCanvasDrawing.DrawEdges(ctx, graph)}
+          redrawKey={layoutVersion * 8 + lod}
+        />
+      </VisualElement>
+    </VisualElement>
+  );
+}

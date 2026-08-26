@@ -1,0 +1,1394 @@
+#if UNITY_EDITOR
+using System;
+using System.Collections.Generic;
+using System.Text;
+using Ruitk.Language;
+using Ruitk.Language.SemanticTokens;
+using UnityEngine;
+using UnityEngine.UIElements;
+
+namespace Ruitk.Builder
+{
+    /// <summary>
+    /// The POC source pane, shape for shape: in READ mode "#srcpane" is a
+    /// scrolling column of ".srcline" divs (one per line, white-space:pre, the
+    /// .hl/.sel bands painted on the row), and "edit" swaps the whole pane for the
+    /// plain "#src-edit" textarea. The single-Label overlay this replaced could
+    /// not carry the POC's 17.4px line pitch (UI Toolkit applies
+    /// unityParagraphSpacing between PARAGRAPHS, and a whiteSpace:Pre label is one
+    /// paragraph) and could not scroll on either axis without the transparent
+    /// input drifting off the glyphs it sits on.
+    /// </summary>
+    internal sealed class CodeField : VisualElement
+    {
+        private readonly TextField _input;
+        private readonly ScrollView _scroll;
+        private readonly VisualElement _linesHost;
+        private readonly Label _probe;
+        private readonly Label _diagnosticsLabel;
+
+        private readonly ScrollView _diagnosticsScroll;
+        private string _filePath = "";
+        private HashSet<string> _knownElements;
+        private bool _suppressChange;
+        private bool _editing;
+        private bool _coloredEdit;
+        private bool _innerScrollWired;
+        private float _editPitch;
+        private readonly Label _pitchProbe;
+        private VisualElement _completionPopup;
+        private List<(string Code, int Line1, string Message)> _overlayDiagnostics;
+        private string _localDiagnosticsText = "";
+
+        public event Action<string> TextEdited;
+
+        /// <summary>POC source pane: double-click enters edit mode, Ctrl+Enter
+        /// applies (re-parse), Esc cancels and restores the snapshot.</summary>
+        public event Action EditRequested;
+
+        public event Action ApplyRequested;
+
+        public event Action CancelRequested;
+
+        private readonly List<string> _traceNames = new List<string>();
+        private string _traceSource = "";
+
+        /// <summary>POC ".srcline.hl": while a hook chip is hovered, every source
+        /// line naming one of its states gets the warn-tinted band.</summary>
+        public void SetTraceNames(string spaceSeparated)
+        {
+            string next = spaceSeparated ?? "";
+            if (next == _traceSource)
+                return;
+            _traceSource = next;
+            _traceNames.Clear();
+            if (!string.IsNullOrEmpty(spaceSeparated))
+            {
+                foreach (string raw in spaceSeparated.Split(' '))
+                {
+                    string name = raw.Trim();
+                    if (name.Length > 0)
+                        _traceNames.Add(name);
+                }
+            }
+            Recolor(TextLf);
+        }
+
+        /// <summary>POC "textarea.err": a failed apply turns the field's border
+        /// red until the next successful parse.</summary>
+        public void SetError(bool error)
+        {
+            var color = error ? new Color(0.94f, 0.38f, 0.38f) : BuilderPalette.Transparent;
+            float width = error ? 1f : 0f;
+            style.borderTopWidth = width;
+            style.borderBottomWidth = width;
+            style.borderLeftWidth = width;
+            style.borderRightWidth = width;
+            style.borderTopColor = color;
+            style.borderBottomColor = color;
+            style.borderLeftColor = color;
+            style.borderRightColor = color;
+        }
+
+        public void FocusEditor()
+        {
+            _input.Focus();
+        }
+
+        /// <summary>True once the edit box actually owns the keyboard. The
+        /// overlay retries against this because Focus() on an element that has
+        /// not laid out yet is a silent no-op — the input is display:none until
+        /// SetEditing, so focusing it in the same tick did nothing and a
+        /// freshly-wrapped directive header opened un-typable (owner report
+        /// 2026-08-17).</summary>
+        public bool EditorHasFocus =>
+            _input?.panel?.focusController?.focusedElement is VisualElement focused
+            && (focused == _input || focused.FindCommonAncestor(_input) == _input);
+
+        /// <summary>Ctrl+Space asks this for completions at (line0, char0);
+        /// the window wires it to the shared LSP client.</summary>
+        public Func<int, int, System.Threading.Tasks.Task<List<(string Label, string Insert)>>>
+            CompletionProvider { get; set; }
+
+        /// <summary>UB-76: the field edits a FRAGMENT of a file (an attribute
+        /// value, a directive header, an island), not a whole buffer — the
+        /// regex colouring passes run but the whole-file parse, the local
+        /// diagnostics and the server-token overlay are skipped (a fragment
+        /// parses as garbage). Completion positions are LOCAL; the owner maps
+        /// them into the real file.</summary>
+        public bool FragmentMode { get; set; }
+
+        /// <summary>Enter commits (fires ApplyRequested) instead of inserting a
+        /// newline — the single-line inline-editor flavour.</summary>
+        public bool SingleLine { get; set; }
+
+        /// <summary>0-based caret (line, column) over the LF buffer — the
+        /// inline-editor overlay maps this into the target file for
+        /// completion requests.</summary>
+        public (int Line0, int Char0) CaretLocal => CaretPosition();
+
+        /// <summary>POC "#srcpane .srcline" inherits the body's 13px/1.45 metric at
+        /// font-size 12, so the line pitch is 17.4px (measured on poc-l2-edit.png:
+        /// line tops at 502, 519, 537, 554, 571, 589 at zoom 1).</summary>
+        private const float LineHeight = 17.4f;
+
+        /// <summary>POC ".srcline { padding: 0 14px }".</summary>
+        private const float Gutter = 14f;
+
+        /// <summary>Strips Unity's field chrome off one element of the TextField's
+        /// inner hierarchy so the edit box reads as the POC's "#src-edit": a bare
+        /// #17171b textarea with 12px mono ink and no inset field box.</summary>
+        private static void FlattenInput(VisualElement element, float fontSize)
+        {
+            if (element == null)
+                return;
+            element.style.backgroundColor = BuilderPalette.Transparent;
+            element.style.color = BuilderPalette.Text;
+            element.style.borderTopWidth = 0f;
+            element.style.borderBottomWidth = 0f;
+            element.style.borderLeftWidth = 0f;
+            element.style.borderRightWidth = 0f;
+            element.style.borderTopLeftRadius = 0f;
+            element.style.borderTopRightRadius = 0f;
+            element.style.borderBottomLeftRadius = 0f;
+            element.style.borderBottomRightRadius = 0f;
+            element.style.paddingTop = 0f;
+            element.style.paddingBottom = 0f;
+            element.style.paddingLeft = 0f;
+            element.style.paddingRight = 0f;
+            element.style.marginTop = 0f;
+            element.style.marginBottom = 0f;
+            element.style.marginLeft = 0f;
+            element.style.marginRight = 0f;
+            element.style.fontSize = fontSize;
+            element.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+        }
+
+        private float _fontSize = 12f;
+
+        /// <summary>Strips the source pane's generous gutter and vertical
+        /// padding. The fragment editors are one row tall, and the 8px/Gutter
+        /// chrome ate so much of the box that scaled-up glyphs were clipped top
+        /// and bottom (owner report 2026-08-18).</summary>
+        public void UseCompactChrome()
+        {
+            _input.style.paddingTop = CompactPadY;
+            _input.style.paddingBottom = CompactPadY;
+            _input.style.paddingLeft = CompactPadX;
+            _input.style.paddingRight = CompactPadX;
+            _scroll.style.paddingTop = CompactPadY;
+            _scroll.style.paddingBottom = CompactPadY;
+            _compact = true;
+            foreach (var row in _linesHost.Children())
+            {
+                row.style.paddingLeft = CompactPadX;
+                row.style.paddingRight = CompactPadX;
+            }
+        }
+
+        /// <summary>Centres a single line inside a box that is TALLER than the
+        /// text needs. The compact chrome pins 2px above and below, so whenever the
+        /// editor was stretched to cover a tall canvas row - which it is, because it
+        /// takes the row's height - the glyphs sat at the top of the box with all
+        /// the slack underneath. The surplus is split evenly instead.</summary>
+        public void CenterSingleLine(float boxHeight)
+        {
+            float line = FontSize * 1.4f;
+            float pad = Mathf.Max(CompactPadY, (boxHeight - line) * 0.5f);
+            _input.style.paddingTop = pad;
+            _input.style.paddingBottom = pad;
+            _scroll.style.paddingTop = pad;
+            _scroll.style.paddingBottom = pad;
+        }
+
+        private bool _compact;
+
+        /// <summary>The coloured-edit overlay only registers while the INPUT
+        /// and the LISTING share identical text geometry, so compact mode must
+        /// move BOTH. Driving the input alone left the listing on the source
+        /// pane's 8px band, and the selection highlight - which the input draws -
+        /// sat several pixels off the glyphs the user sees, reading as a
+        /// half-covered line.</summary>
+        private const float CompactPadX = 6f;
+        private const float CompactPadY = 2f;
+
+        /// <summary>UB-99: the inline editor scales its glyphs to the canvas row
+        /// it covers, so a fragment edited at high zoom is not a tiny field
+        /// floating inside a large highlighted row.</summary>
+        public float FontSize
+        {
+            get => _fontSize;
+            set
+            {
+                if (Mathf.Approximately(_fontSize, value))
+                    return;
+                _fontSize = value;
+                _input.style.fontSize = value;
+                FlattenInputTree();
+                foreach (var row in _linesHost.Children())
+                    row.style.fontSize = value;
+                Recolor(TextLf);
+            }
+        }
+
+        private void FlattenInputTree()
+        {
+            FlattenInput(_input.Q(TextField.textInputUssName), _fontSize);
+            foreach (var text in _input.Query<TextElement>().ToList())
+                FlattenInput(text, _fontSize);
+        }
+
+        public CodeField()
+        {
+            style.flexGrow = 1f;
+            // POC "#srcpane": #17171b ground, 12px monospace, 8px 0 padding.
+            style.backgroundColor = BuilderPalette.Ground;
+
+            var host = new VisualElement
+            {
+                style =
+                {
+                    flexGrow = 1f, position = Position.Relative, overflow = Overflow.Hidden,
+                    backgroundColor = BuilderPalette.Ground,
+                },
+            };
+            Add(host);
+
+            // POC "#srcpane { overflow: auto }" — BOTH axes, so a long line and a
+            // long file are always reachable.
+            _scroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal)
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 0f, left = 0f, right = 0f, bottom = 0f,
+                    paddingTop = 8f, paddingBottom = 8f,
+                },
+            };
+            BuilderWindow.StyleScrollers(_scroll);
+            _linesHost = new VisualElement
+            {
+                style = { flexDirection = FlexDirection.Column, flexShrink = 0f },
+            };
+            _scroll.contentContainer.Add(_linesHost);
+            host.Add(_scroll);
+            // POC: srcpane.addEventListener("dblclick", enterSrcEdit).
+            _scroll.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.clickCount >= 2)
+                    EditRequested?.Invoke();
+            });
+            _scroll.contentViewport.RegisterCallback<GeometryChangedEvent>(_ => ApplyLinesWidth());
+
+            _probe = new Label("MMMMMMMMMM")
+            {
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 0f, left = 0f,
+                    visibility = Visibility.Hidden,
+                    fontSize = 12f,
+                    whiteSpace = WhiteSpace.Pre,
+                },
+            };
+            _probe.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+            _probe.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                float width = _probe.layout.width;
+                if (float.IsNaN(width) || width <= 0f)
+                    return;
+                float advance = width / 10f;
+                if (Mathf.Approximately(advance, _charAdvance))
+                    return;
+                _charAdvance = advance;
+                ApplyLinesWidth();
+            });
+            host.Add(_probe);
+
+            // UB-25: two stacked M's measure the text engine's NATURAL line
+            // pitch — in coloured edit mode the listing rows adopt it so the
+            // glyphs sit exactly under the transparent input's own lines.
+            _pitchProbe = new Label("M\nM")
+            {
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 0f, left = 0f,
+                    visibility = Visibility.Hidden,
+                    fontSize = 12f,
+                    whiteSpace = WhiteSpace.Pre,
+                },
+            };
+            _pitchProbe.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+            _pitchProbe.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                float height = _pitchProbe.layout.height;
+                if (!float.IsNaN(height) && height > 0f)
+                    _editPitch = height / 2f;
+            });
+            host.Add(_pitchProbe);
+
+            _input = new TextField { multiline = true };
+            _input.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            _input.style.position = Position.Absolute;
+            _input.style.top = 0f;
+            _input.style.left = 0f;
+            _input.style.right = 0f;
+            _input.style.bottom = 0f;
+            _input.style.fontSize = 12f;
+            _input.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+            _input.style.marginTop = 0f;
+            _input.style.marginBottom = 0f;
+            _input.style.marginLeft = 0f;
+            _input.style.marginRight = 0f;
+            // POC "#src-edit { padding: 8px 14px }" on the #17171b ground.
+            _input.style.paddingTop = 8f;
+            _input.style.paddingBottom = 8f;
+            _input.style.paddingLeft = Gutter;
+            _input.style.paddingRight = Gutter;
+            _input.style.backgroundColor = BuilderPalette.Ground;
+            _input.style.color = BuilderPalette.Text;
+            _input.style.display = DisplayStyle.None;
+            FlattenInputTree();
+            _input.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                FlattenInputTree();
+                if (_coloredEdit)
+                    ApplyColoredEditInk();
+            });
+            // UB-97: entering edit mode must not select the whole document. The
+            // stock field selects all on focus, so the first keystroke replaced
+            // an entire code island or source file.
+            _input.textSelection.selectAllOnFocus = false;
+            _input.textSelection.selectAllOnMouseUp = false;
+            _input.RegisterValueChangedCallback(OnInputChanged);
+            _input.RegisterCallback<FocusOutEvent>(OnInputBlur);
+            _input.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+            host.Add(_input);
+
+            RegisterCallback<AttachToPanelEvent>(_ => ApplyLinesWidth());
+
+            // UB-77: the console was a bare Label with a hard 4-line cap, so the
+            // rest of a diagnostic storm existed nowhere the user could reach and
+            // nothing in it could be selected. It is now a scrolling, selectable
+            // surface holding EVERY line, with Ctrl+A/Ctrl+C and a context menu
+            // that copy the whole set (not just what is on screen).
+            _diagnosticsScroll = new ScrollView(ScrollViewMode.Vertical)
+            {
+                style = { flexShrink = 0f, maxHeight = 90f, display = DisplayStyle.None },
+            };
+            _diagnosticsScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            BuilderWindow.StyleScrollers(_diagnosticsScroll);
+            _diagnosticsLabel = new Label
+            {
+                style =
+                {
+                    flexShrink = 0f,
+                    color = new Color(0.94f, 0.55f, 0.45f),
+                    fontSize = 10f,
+                    marginLeft = 4f,
+                    whiteSpace = WhiteSpace.Normal,
+                },
+            };
+            _diagnosticsLabel.selection.isSelectable = true;
+            _diagnosticsLabel.selection.doubleClickSelectsWord = true;
+            _diagnosticsLabel.selection.tripleClickSelectsLine = true;
+            _diagnosticsLabel.focusable = true;
+            _diagnosticsLabel.RegisterCallback<KeyDownEvent>(OnDiagnosticsKeyDown);
+            _diagnosticsLabel.AddManipulator(new ContextualMenuManipulator(evt =>
+                evt.menu.AppendAction(
+                    "Copy all diagnostics",
+                    _ => CopyAllDiagnostics(),
+                    _ => string.IsNullOrEmpty(_diagnosticsLabel.text)
+                        ? DropdownMenuAction.Status.Disabled
+                        : DropdownMenuAction.Status.Normal)));
+            _diagnosticsScroll.Add(_diagnosticsLabel);
+            Add(_diagnosticsScroll);
+        }
+
+        /// <summary>Ctrl+A selects the whole console and Ctrl+C copies it. Both
+        /// are scoped to the console element, so they never race the canvas or
+        /// the source editor for the same chord.</summary>
+        private void OnDiagnosticsKeyDown(KeyDownEvent evt)
+        {
+            if (!evt.ctrlKey && !evt.commandKey)
+                return;
+            if (evt.keyCode == KeyCode.A)
+            {
+                _diagnosticsLabel.selection.SelectAll();
+                evt.StopPropagation();
+                return;
+            }
+            if (evt.keyCode == KeyCode.C)
+            {
+                CopyAllDiagnostics();
+                evt.StopPropagation();
+            }
+        }
+
+        private void CopyAllDiagnostics()
+        {
+            string all = _diagnosticsLabel.text ?? "";
+            if (all.Length > 0)
+                UnityEditor.EditorGUIUtility.systemCopyBuffer = all;
+        }
+
+        public string TextLf => (_input.value ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
+
+        /// <summary>UB-25 (deliberate POC divergence — the POC drops to a plain
+        /// textarea): edit mode keeps the COLOURED listing visible under a
+        /// transparent-ink input whose caret and selection stay visible. The
+        /// registration contract: rows adopt the text engine's measured natural
+        /// pitch and the input's internal scroller drives the listing's offset.
+        /// If either the pitch or the internal scroller is unavailable the pane
+        /// degrades to the opaque textarea — never a misregistered overlay.</summary>
+        public void SetEditing(bool editing)
+        {
+            _editing = editing;
+            _input.style.display = editing ? DisplayStyle.Flex : DisplayStyle.None;
+            if (!editing)
+            {
+                // Restore BEFORE clearing the flag — the old order made
+                // EndColoredEdit an unconditional no-op and left the input's
+                // ink transparent for every read-mode session after the first
+                // coloured edit (review finding, 2026-08-16).
+                EndColoredEdit();
+                _scroll.style.display = DisplayStyle.Flex;
+                Recolor(TextLf);
+                return;
+            }
+            _coloredEdit = TryBeginColoredEdit();
+            _scroll.style.display = _coloredEdit ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_coloredEdit)
+            {
+                Recolor(TextLf);
+                return;
+            }
+            // The input was display:none until this frame — its internal
+            // ScrollView may not exist yet. One deferred retry upgrades to the
+            // coloured overlay once the field has built itself; if it still
+            // cannot, the opaque textarea stands.
+            schedule.Execute(() =>
+            {
+                if (!_editing || _coloredEdit)
+                    return;
+                _coloredEdit = TryBeginColoredEdit();
+                if (_coloredEdit)
+                {
+                    _scroll.style.display = DisplayStyle.Flex;
+                    Recolor(TextLf);
+                }
+            }).ExecuteLater(60);
+        }
+
+        private bool TryBeginColoredEdit()
+        {
+            if (_editPitch <= 0f)
+                return false;
+            var inner = _input.Q<ScrollView>();
+            if (inner == null)
+                return false;
+            if (!_innerScrollWired)
+            {
+                _innerScrollWired = true;
+                // The INPUT's scroller drives; it also gets the window's dark
+                // chrome instead of the stock control.
+                BuilderWindow.StyleScrollers(inner);
+                if (inner.verticalScroller != null)
+                {
+                    // UB-98: the input carries a Gutter-wide right padding, which
+                    // pushed its scroller in off the boundary and over the text.
+                    // Pinning it to the right edge puts it where every other
+                    // scroller in the window sits.
+                    inner.verticalScroller.style.width = 8f;
+                    inner.verticalScroller.style.position = Position.Absolute;
+                    inner.verticalScroller.style.right = 0f;
+                    inner.verticalScroller.style.top = 0f;
+                    inner.verticalScroller.style.bottom = 0f;
+                    inner.verticalScroller.valueChanged += _ => SyncListingScroll(inner);
+                }
+                if (inner.horizontalScroller != null)
+                    inner.horizontalScroller.valueChanged += _ => SyncListingScroll(inner);
+            }
+            // One scrollbar, not two: the listing mirrors the input's offset,
+            // so its own scrollers hide while the overlay is active.
+            _scroll.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            _scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            ApplyColoredEditInk();
+            SyncListingScroll(inner);
+            return true;
+        }
+
+        private void ApplyColoredEditInk()
+        {
+            _input.style.backgroundColor = BuilderPalette.Transparent;
+            foreach (var text in _input.Query<TextElement>().ToList())
+                text.style.color = BuilderPalette.Transparent;
+            var selection = _input.textSelection;
+            // The replacement USS custom properties (--unity-cursor-color /
+            // --unity-selection-color) have no C# setter — a runtime-built
+            // control with per-state colors has only this API until Unity
+            // exposes one.
+#pragma warning disable CS0618
+            selection.cursorColor = BuilderPalette.Text;
+            var band = BuilderPalette.Accent;
+            band.a = 0.3f;
+            selection.selectionColor = band;
+#pragma warning restore CS0618
+        }
+
+        private void EndColoredEdit()
+        {
+            _coloredEdit = false;
+            _input.style.backgroundColor = BuilderPalette.Ground;
+            foreach (var text in _input.Query<TextElement>().ToList())
+                text.style.color = BuilderPalette.Text;
+            _scroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            _scroll.horizontalScrollerVisibility = ScrollerVisibility.Auto;
+        }
+
+        private void SyncListingScroll(ScrollView inner)
+        {
+            if (!_coloredEdit || inner == null)
+                return;
+            _scroll.scrollOffset = new Vector2(
+                inner.horizontalScroller?.value ?? 0f,
+                inner.verticalScroller?.value ?? 0f);
+        }
+
+        /// <summary>Brings a row into view VERTICALLY, leaving the horizontal
+        /// offset exactly where the user put it. ScrollView.ScrollTo moves both
+        /// axes to reveal the whole element, and a source row is as wide as the
+        /// longest line in the file — so revealing one row yanked the pane
+        /// sideways to a position nobody asked for, which read as the pane
+        /// scrolling on its own in random directions (owner report 2026-08-17).
+        /// A row already fully in view is left alone.</summary>
+        private void ScrollRowIntoView(VisualElement row)
+        {
+            if (row == null)
+                return;
+            float viewH = _scroll.contentViewport.resolvedStyle.height;
+            if (viewH <= 0f)
+                return;
+            float top = row.layout.yMin;
+            float bottom = row.layout.yMax;
+            var offset = _scroll.scrollOffset;
+            float y = offset.y;
+            if (top < y)
+                y = top;
+            else if (bottom > y + viewH)
+                y = bottom - viewH;
+            else
+                return;
+            _scroll.scrollOffset = new Vector2(offset.x, Mathf.Max(0f, y));
+        }
+
+        /// <summary>POC row→source sync: band the line, scroll it into view, and —
+        /// in edit mode — select it.</summary>
+        public void FocusLine(int line1)
+        {
+            // POC ".srcline.sel": the focused line gets a gold band, not Unity's
+            // selection blue.
+            _selectedLine1 = line1;
+            Recolor(TextLf);
+            // In coloured edit mode the input's internal scroller OWNS the
+            // listing offset — scrolling the listing directly would shear it
+            // off the transparent glyphs; the caret move below drives both.
+            if (!_coloredEdit && line1 >= 1 && line1 <= _linesHost.childCount)
+                ScrollRowIntoView(_linesHost[line1 - 1]);
+            if (!_editing)
+                return;
+            string text = _input.value ?? "";
+            int line = 1, start = 0;
+            for (int i = 0; i < text.Length && line < line1; i++)
+            {
+                if (text[i] == '\n')
+                {
+                    line++;
+                    start = i + 1;
+                }
+            }
+            int end = text.IndexOf('\n', start);
+            if (end < 0)
+                end = text.Length;
+            _input.cursorIndex = start;
+            _input.selectIndex = end;
+            _input.Focus();
+        }
+
+        private int _selectedLine1;
+
+        /// <summary>Inserts at the caret (or replaces the selection) and fires
+        /// the normal edited path — palette clicks author through the same
+        /// session/undo/recompile pipeline as typing.</summary>
+        public void InsertAtCaret(string snippet)
+        {
+            if (_input.isReadOnly || string.IsNullOrEmpty(snippet))
+                return;
+            string text = _input.value ?? "";
+            int start = Mathf.Clamp(Mathf.Min(_input.cursorIndex, _input.selectIndex), 0, text.Length);
+            int end = Mathf.Clamp(Mathf.Max(_input.cursorIndex, _input.selectIndex), 0, text.Length);
+            _input.value = text.Substring(0, start) + snippet + text.Substring(end);
+            _input.cursorIndex = start + snippet.Length;
+            _input.selectIndex = _input.cursorIndex;
+            if (_editing)
+                _input.Focus();
+        }
+
+        public void SetContent(string textLf, string filePath, HashSet<string> knownElements)
+        {
+            string nextPath = filePath ?? "";
+            bool switchedFile =
+                !string.Equals(_filePath, nextPath, StringComparison.OrdinalIgnoreCase);
+            if (switchedFile)
+            {
+                _overlayDiagnostics = null;
+                // A new document starts at its top. The offset used to carry over
+                // from the previous file, so selecting another component showed
+                // it already scrolled to wherever the last one had been left
+                // (owner report 2026-08-17).
+                _scroll.scrollOffset = Vector2.zero;
+            }
+            _filePath = nextPath;
+            _knownElements = knownElements;
+            _suppressChange = true;
+            _input.value = textLf ?? "";
+            _suppressChange = false;
+            Recolor(textLf ?? "");
+        }
+
+        /// <summary>UB-07: refresh the element set without touching the buffer
+        /// or the caret — the graph loads after the first SetContent, and custom
+        /// tags stay unclassified until the set arrives.</summary>
+        public void SetKnownElements(HashSet<string> knownElements)
+        {
+            if (ReferenceEquals(_knownElements, knownElements))
+                return;
+            _knownElements = knownElements;
+            Recolor(_input.value ?? "");
+        }
+
+        private SemanticTokenData[] _serverTokens;
+        private string _serverTokensText;
+
+        /// <summary>The LSP's semanticTokens/full — UITKX structural tokens
+        /// merged with Roslyn's C# classification, which is what colours the
+        /// setup-code body like a real editor (the local T1/T2 tokens cover
+        /// markup only). Tagged with the buffer text they were computed for:
+        /// between an edit and the next server response the pane falls back to
+        /// the local tokens instead of painting with stale offsets.</summary>
+        public void SetServerTokens(SemanticTokenData[] tokens, string forTextLf)
+        {
+            _serverTokens = tokens;
+            _serverTokensText = forTextLf;
+            if (string.Equals(TextLf, forTextLf, StringComparison.Ordinal))
+                Recolor(forTextLf);
+        }
+
+        public void SetEditable(bool editable)
+        {
+            _input.isReadOnly = !editable;
+        }
+
+        /// <summary>The edit is over: focus left the field. This is the source
+        /// pane's commit boundary - free typing has no other one - and it is what
+        /// the preview compiles on, so typing something and abandoning it never
+        /// costs a build.</summary>
+        public event Action EditingFinished;
+
+        private void OnInputBlur(FocusOutEvent evt) => EditingFinished?.Invoke();
+
+        private void OnInputChanged(ChangeEvent<string> evt)
+        {
+            if (_suppressChange)
+                return;
+            CloseCompletionPopup();
+            string lf = (evt.newValue ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
+            Recolor(lf);
+            TextEdited?.Invoke(lf);
+        }
+
+        private void OnKeyDown(KeyDownEvent evt)
+        {
+            if (evt.keyCode == KeyCode.Escape)
+            {
+                CloseCompletionPopup();
+                CancelRequested?.Invoke();
+                return;
+            }
+            if ((evt.ctrlKey || SingleLine)
+                && (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter))
+            {
+                // PreventDefault is obsolete in Unity 6 (CS0618); consuming the
+                // underlying IMGUI event is what actually stops the Editor from
+                // acting on the same keystroke.
+                evt.StopImmediatePropagation();
+                evt.imguiEvent?.Use();
+                ApplyRequested?.Invoke();
+                return;
+            }
+            if (!(evt.ctrlKey && evt.keyCode == KeyCode.Space))
+                return;
+            evt.StopPropagation();
+            ShowCompletions();
+        }
+
+        private (int Line0, int Char0) CaretPosition()
+        {
+            string text = TextLf;
+            int index = Mathf.Clamp(_input.cursorIndex, 0, text.Length);
+            int line = 0, lineStart = 0;
+            for (int i = 0; i < index; i++)
+            {
+                if (text[i] == '\n')
+                {
+                    line++;
+                    lineStart = i + 1;
+                }
+            }
+            return (line, index - lineStart);
+        }
+
+        private async void ShowCompletions()
+        {
+            if (CompletionProvider == null)
+                return;
+            var (line0, char0) = CaretPosition();
+            List<(string Label, string Insert)> items;
+            try
+            {
+                items = await CompletionProvider(line0, char0);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+            if (items == null || items.Count == 0 || panel == null)
+                return;
+
+            CloseCompletionPopup();
+            var popup = new ScrollView
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 22f, right = 8f,
+                    maxHeight = 200f, minWidth = 180f,
+                    backgroundColor = new Color(0.13f, 0.13f, 0.15f),
+                    borderTopWidth = 1f, borderBottomWidth = 1f,
+                    borderLeftWidth = 1f, borderRightWidth = 1f,
+                    borderTopColor = new Color(0.3f, 0.3f, 0.35f),
+                    borderBottomColor = new Color(0.3f, 0.3f, 0.35f),
+                    borderLeftColor = new Color(0.3f, 0.3f, 0.35f),
+                    borderRightColor = new Color(0.3f, 0.3f, 0.35f),
+                },
+            };
+            int shown = 0;
+            foreach (var item in items)
+            {
+                if (shown++ == 25)
+                    break;
+                var row = new Label(item.Label)
+                {
+                    style = { paddingLeft = 6f, paddingTop = 1f, paddingBottom = 1f },
+                };
+                var captured = item;
+                row.RegisterCallback<PointerDownEvent>(e =>
+                {
+                    e.StopPropagation();
+                    CloseCompletionPopup();
+                    InsertAtCaret(captured.Insert ?? captured.Label);
+                });
+                row.RegisterCallback<MouseEnterEvent>(_ =>
+                    row.style.backgroundColor = new Color(0.2f, 0.3f, 0.4f));
+                row.RegisterCallback<MouseLeaveEvent>(_ =>
+                    row.style.backgroundColor = StyleKeyword.Null);
+                popup.Add(row);
+            }
+            _completionPopup = popup;
+            Add(popup);
+        }
+
+        private void CloseCompletionPopup()
+        {
+            if (_completionPopup != null)
+            {
+                _completionPopup.RemoveFromHierarchy();
+                _completionPopup = null;
+            }
+        }
+
+        /// <summary>POC ".srcline.sel" rgba(255,213,79,.18) and ".srcline.hl"
+        /// rgba(255,183,77,.15) — bands on the ROW, which is why the listing is a
+        /// column of rows and not one text block.</summary>
+        private static readonly Color SelBand = new Color(1f, 0.835f, 0.310f, 0.18f);
+
+        private static readonly Color TraceBand = new Color(1f, 0.718f, 0.302f, 0.15f);
+
+
+        private int _longestLine;
+
+        private float _charAdvance;
+
+        /// <summary>The mono advance is read off a hidden ten-glyph probe once the
+        /// panel has laid it out (Consolas 12px ≈ 6.6px, but the fallback face on a
+        /// machine without it is not the same width).</summary>
+        private float CharAdvance() => _charAdvance > 0f ? _charAdvance : 6.6f;
+
+        /// <summary>The rows carry the .hl/.sel bands, so they must all be as wide
+        /// as the widest line (and never narrower than the viewport) — that width
+        /// is also what gives the ScrollView something to scroll horizontally.</summary>
+        private void ApplyLinesWidth()
+        {
+            float content = Gutter * 2f + _longestLine * CharAdvance();
+            float viewport = _scroll.contentViewport.layout.width;
+            if (float.IsNaN(viewport) || viewport <= 0f)
+                viewport = 0f;
+            _linesHost.style.width = Mathf.Max(content, viewport);
+        }
+
+        private Label NewLine()
+        {
+            var label = new Label
+            {
+                enableRichText = true,
+                style =
+                {
+                    height = _compact ? _fontSize * 1.45f : LineHeight,
+                    minHeight = 0f,
+                    flexShrink = 0f,
+                    paddingLeft = _compact ? CompactPadX : Gutter,
+                    paddingRight = _compact ? CompactPadX : Gutter,
+                    color = BuilderPalette.Text,
+                    fontSize = _fontSize,
+                    whiteSpace = WhiteSpace.Pre,
+                    unityTextAlign = TextAnchor.MiddleLeft,
+                },
+            };
+            label.style.unityFontDefinition = BuilderCanvasDrawing.MonoFontDefinition;
+            return label;
+        }
+
+        private void Recolor(string textLf)
+        {
+            string[] lines = (textLf ?? "").Split('\n');
+            SemanticTokenData[] tokens;
+            if (FragmentMode)
+            {
+                // A fragment is not a parseable unit — regex passes only, no
+                // diagnostics, no server tokens.
+                tokens = Array.Empty<SemanticTokenData>();
+                _diagnosticsScroll.style.display = DisplayStyle.None;
+                RecolorRows(lines, tokens);
+                return;
+            }
+            try
+            {
+                var parsed = BuilderLanguage.Parse(textLf, _filePath);
+                // Server tokens (UITKX + Roslyn C#) win when they were computed
+                // for exactly this text; otherwise the local structural tokens
+                // carry the frame until the next server response lands.
+                tokens = _serverTokens != null
+                    && string.Equals(_serverTokensText, textLf, StringComparison.Ordinal)
+                    ? _serverTokens
+                    : BuilderLanguage.Tokens(parsed, textLf, _knownElements, _filePath);
+
+                // Diagnostics are the expensive half - a full analyzer pass - and
+                // nothing about them has to be true THIS keystroke. Colouring stays
+                // synchronous because the user is looking straight at it; the
+                // console catches up once typing settles.
+                ScheduleDiagnostics(textLf);
+            }
+            catch (Exception)
+            {
+                tokens = Array.Empty<SemanticTokenData>();
+                _localDiagnosticsText = "";
+                RenderDiagnosticsLabel();
+            }
+
+            RecolorRows(lines, tokens);
+        }
+
+        [NonSerialized] private double _diagnosticsDue;
+        [NonSerialized] private bool _diagnosticsScheduled;
+        [NonSerialized] private string _diagnosticsText;
+
+        /// <summary>Runs the analyzer once typing settles rather than on every
+        /// keystroke. A blank buffer is not a broken one - a style or util module
+        /// is created EMPTY by design - so it reports nothing at all.</summary>
+        private void ScheduleDiagnostics(string textLf)
+        {
+            _diagnosticsText = textLf;
+            _diagnosticsDue = UnityEditor.EditorApplication.timeSinceStartup + 0.25;
+            if (_diagnosticsScheduled)
+                return;
+            _diagnosticsScheduled = true;
+            UnityEditor.EditorApplication.update += RunDiagnosticsWhenQuiet;
+        }
+
+        private void RunDiagnosticsWhenQuiet()
+        {
+            if (UnityEditor.EditorApplication.timeSinceStartup < _diagnosticsDue)
+                return;
+            UnityEditor.EditorApplication.update -= RunDiagnosticsWhenQuiet;
+            _diagnosticsScheduled = false;
+
+            string textLf = _diagnosticsText;
+            if (textLf == null || FragmentMode)
+                return;
+            try
+            {
+                if (textLf.Trim().Length == 0)
+                {
+                    _localDiagnosticsText = "";
+                }
+                else
+                {
+                    var parsed = BuilderLanguage.Parse(textLf, _filePath);
+                    var sb = new StringBuilder();
+                    foreach (var d in BuilderLanguage.Diagnose(parsed, _filePath, _knownElements))
+                        sb.Append(d.Code).Append(" L").Append(d.SourceLine)
+                            .Append(": ").Append(d.Message).Append('\n');
+                    _localDiagnosticsText = sb.ToString();
+                }
+            }
+            catch (Exception)
+            {
+                _localDiagnosticsText = "";
+            }
+            RenderDiagnosticsLabel();
+        }
+
+        private void RecolorRows(string[] lines, SemanticTokenData[] tokens)
+        {
+            var byLine = new Dictionary<int, List<SemanticTokenData>>();
+            foreach (var token in tokens)
+            {
+                if (!byLine.TryGetValue(token.Line, out var list))
+                    byLine[token.Line] = list = new List<SemanticTokenData>();
+                list.Add(token);
+            }
+
+            while (_linesHost.childCount > lines.Length)
+                _linesHost.RemoveAt(_linesHost.childCount - 1);
+            while (_linesHost.childCount < lines.Length)
+                _linesHost.Add(NewLine());
+
+            _longestLine = 0;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (line.Length > _longestLine)
+                    _longestLine = line.Length;
+                var row = (Label)_linesHost[i];
+                byLine.TryGetValue(i, out var list);
+                row.text = BuildLineRichText(line, list);
+                // UB-25: coloured edit mode re-pitches every row to the text
+                // engine's natural line height so the listing registers with the
+                // transparent input's glyphs.
+                row.style.height = _coloredEdit && _editPitch > 0f ? _editPitch : LineHeight;
+                row.style.backgroundColor = _selectedLine1 == i + 1
+                    ? SelBand
+                    : LineNamesAny(line, _traceNames) ? TraceBand : BuilderPalette.Transparent;
+            }
+            ApplyLinesWidth();
+        }
+
+        /// <summary>UB-06: the label merges the local T1+T2 list with the LSP's
+        /// published diagnostics — only the Roslyn tier (CS####) is taken from
+        /// the server, the UITKX tiers are already computed locally. Cap 4.</summary>
+        public void SetOverlayDiagnostics(List<(string Code, int Line1, string Message)> overlay)
+        {
+            _overlayDiagnostics = overlay;
+            RenderDiagnosticsLabel();
+        }
+
+        private void RenderDiagnosticsLabel()
+        {
+            var lines = new List<string>();
+            foreach (string line in (_localDiagnosticsText ?? "").Split('\n'))
+                if (line.Length > 0)
+                    lines.Add(line);
+            if (_overlayDiagnostics != null)
+                foreach (var (code, line1, message) in _overlayDiagnostics)
+                    if (code != null && code.StartsWith("CS", StringComparison.Ordinal))
+                        lines.Add(code + " L" + line1 + ": " + message);
+            if (lines.Count == 0)
+            {
+                _diagnosticsLabel.text = "";
+                _diagnosticsScroll.style.display = DisplayStyle.None;
+                return;
+            }
+            // Every line, not the first four: the console scrolls, and a copy
+            // that silently dropped the tail would be worse than no copy at all.
+            var sb = new StringBuilder();
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (i > 0)
+                    sb.Append('\n');
+                sb.Append(lines[i]);
+            }
+            _diagnosticsLabel.text = sb.ToString();
+            if (!FragmentMode)
+                _diagnosticsScroll.style.display = DisplayStyle.Flex;
+        }
+
+        /// <summary>Tokens are 0-based line/column over the LF buffer; segments
+        /// between tokens escape verbatim, token text escapes inside its color
+        /// tag, so rich-text markup never shifts what the user is editing.</summary>
+        private static bool LineNamesAny(string line, List<string> names)
+        {
+            if (names == null || names.Count == 0 || line.Length == 0)
+                return false;
+            foreach (string name in names)
+            {
+                int at = line.IndexOf(name, StringComparison.Ordinal);
+                while (at >= 0)
+                {
+                    bool leftOk = at == 0 || !char.IsLetterOrDigit(line[at - 1]);
+                    int end = at + name.Length;
+                    bool rightOk = end >= line.Length || !char.IsLetterOrDigit(line[end]);
+                    if (leftOk && rightOk)
+                        return true;
+                    at = line.IndexOf(name, at + 1, StringComparison.Ordinal);
+                }
+            }
+            return false;
+        }
+
+        /// <summary>POC palette (index.html .k/.t/.s/.e/.cm/.cu) for the markup
+        /// classes, VS-dark palette for the C#-side classes. Owner bar 2026-08-17
+        /// ("the real gap in coloring still remains — look at all that white"):
+        /// Function/Variable used to paint #CFCFDA, indistinguishable from plain
+        /// ink #D6D6DC, and Attribute/Property painted nothing — every identifier
+        /// read as white. Identifier classes now carry real editor colours.</summary>
+        private static string ColorFor(string tokenType)
+        {
+            switch (tokenType)
+            {
+                case SemanticTokenTypes.Element:
+                    return TagColor;
+                case SemanticTokenTypes.Type:
+                    return TypeColor;
+                case SemanticTokenTypes.Attribute:
+                case SemanticTokenTypes.Property:
+                case SemanticTokenTypes.Variable:
+                    return MemberColor;
+                case SemanticTokenTypes.Directive:
+                case SemanticTokenTypes.DirectiveName:
+                case SemanticTokenTypes.Keyword:
+                    return KeywordColor;
+                case SemanticTokenTypes.String:
+                    return StringColor;
+                case SemanticTokenTypes.Number:
+                    return NumberColor;
+                case SemanticTokenTypes.Expression:
+                    return ExprColor;
+                case SemanticTokenTypes.Comment:
+                    return CommentColor;
+                case SemanticTokenTypes.Function:
+                    return FunctionColor;
+                default:
+                    return null;
+            }
+        }
+
+        private const string StringColor = "#C3E88D";
+        private const string ExprColor = "#FFB74D";
+        private const string KeywordColor = "#C792EA";
+        private const string CommentColor = "#616E7A";
+        private const string TagColor = "#4FC3F7";
+        private const string CustomTagColor = "#7FDBCA";
+        private const string FunctionColor = "#DCDCAA";
+        private const string MemberColor = "#9CDCFE";
+        private const string TypeColor = "#4EC9B0";
+        private const string NumberColor = "#B5CEA8";
+
+        /// <summary>POC tokenize() line 1273: the keyword pass runs LAST, over the
+        /// HTML the earlier passes already emitted, and its nested span WINS — so
+        /// `new` is purple even inside an orange `{…}` run. The LSP only classifies
+        /// markup-side words as Keyword, so `VirtualNode`, `var`, `return`, `new`,
+        /// `Style` and `as` in a C# body reached the pane as plain ink.</summary>
+        // Owner bar 2026-08-16 ("not all coloring is done correctly"): the POC's
+        // nine keywords left void/int/bool/true/null plain wherever no Roslyn
+        // token covers them (fragments have none) — the pass now knows the
+        // common C# keyword set.
+        private static readonly System.Text.RegularExpressions.Regex s_keywords =
+            new System.Text.RegularExpressions.Regex(
+                @"\b(export|VirtualNode|Style|var|return|import|from|as|new"
+                + @"|void|int|uint|long|ulong|float|double|bool|string|char|object|byte|short"
+                + @"|true|false|null|if|else|for|foreach|while|do|switch|case|default"
+                + @"|break|continue|try|catch|finally|throw|using|static|public|private"
+                + @"|internal|out|ref|in|is|not|and|or|async|await|this|typeof|nameof)\b"
+                + @"|(@if|@else if|@else|@foreach|@for|@while|@switch|@case|@default)",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>POC tokenize() pass 1:
+        /// <c>h.replace(/(&amp;quot;|")([^"]*)(")/g, …)</c>.</summary>
+        private static readonly System.Text.RegularExpressions.Regex s_strings =
+            new System.Text.RegularExpressions.Regex(
+                "\"[^\"\n]*\"",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static readonly System.Text.RegularExpressions.Regex s_identifiers =
+            new System.Text.RegularExpressions.Regex(
+                @"[A-Za-z_][A-Za-z0-9_]*",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static readonly System.Text.RegularExpressions.Regex s_numbers =
+            new System.Text.RegularExpressions.Regex(
+                @"\b(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*(?:\.\d+)?)[fFdDmMuUlL]{0,2}\b",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>Lexical fallback for identifier cells no semantic token
+        /// reached: fragments never get server tokens, and the Roslyn merge drops
+        /// "property name" and unresolved "identifier" spans entirely — before
+        /// this pass those all rendered plain ink (owner bar 2026-08-17, "look at
+        /// all that white"). Call sites go function gold, tag-position names use
+        /// the schema split, dotted members and everything camelCase go member
+        /// blue, PascalCase goes type teal; the keyword and comment passes still
+        /// run later and win.</summary>
+        private static bool IsIdentifierChar(char c)
+        {
+            return c == '_' || char.IsLetterOrDigit(c);
+        }
+
+        private static string ClassifyIdentifier(string line, int start, int length)
+        {
+            char before = start > 0 ? line[start - 1] : '\0';
+            int lt = before == '<' ? start - 1
+                : (before == '/' && start > 1 && line[start - 2] == '<') ? start - 2
+                : -1;
+            // `List<T>` is not a tag: a markup '<' opens at line start or after
+            // whitespace/'>' , while a generic argument list opens straight off
+            // an identifier. Signature lines are full of the latter (UB-78).
+            if (lt >= 0 && (lt == 0 || !IsIdentifierChar(line[lt - 1])))
+            {
+                string tag = line.Substring(start, length);
+                if (char.IsUpper(tag[0]) && BuilderSchemaCache.HasSchema
+                    && !BuilderSchemaCache.HasElement(tag))
+                    return CustomTagColor;
+                return TagColor;
+            }
+            int next = start + length;
+            while (next < line.Length && line[next] == ' ')
+                next++;
+            char after = next < line.Length ? line[next] : '\0';
+            if (after == '(')
+                return FunctionColor;
+            if (after == '<' && next == start + length)
+            {
+                int close = line.IndexOf('>', next + 1);
+                if (close > 0 && close - next < 64)
+                {
+                    int paren = close + 1;
+                    while (paren < line.Length && line[paren] == ' ')
+                        paren++;
+                    if (paren < line.Length && line[paren] == '(')
+                        return FunctionColor;
+                }
+            }
+            if (before == '.')
+                return MemberColor;
+            if (char.IsUpper(line[start]))
+                return TypeColor;
+            return MemberColor;
+        }
+
+        private static bool[] s_inBrace = new bool[512];
+
+        private static string[] s_colors = new string[512];
+
+        /// <summary>POC tokenize(): after strings are painted, EVERY <c>{…}</c> run
+        /// on the line becomes class .e (var(--warn) #ffb74d) — which is why
+        /// <c>import { Header }</c> and <c>key={item.Id}</c> are orange in the POC
+        /// captures while the LSP classifies those same names as Element/Property
+        /// and paints them blue. Strings keep their green because the POC wraps
+        /// them first and the brace span nests around them.</summary>
+        private static void MarkBraces(string line)
+        {
+            if (s_inBrace.Length < line.Length)
+                s_inBrace = new bool[Mathf.NextPowerOfTwo(line.Length + 1)];
+            for (int i = 0; i < line.Length; i++)
+                s_inBrace[i] = false;
+            int open = -1;
+            for (int i = 0; i < line.Length; i++)
+            {
+                if (line[i] == '{')
+                    open = i;
+                else if (line[i] == '}' && open >= 0)
+                {
+                    for (int j = open; j <= i; j++)
+                        s_inBrace[j] = true;
+                    open = -1;
+                }
+            }
+        }
+
+        /// <summary>UI Toolkit's rich-text parser strips tags but does NOT decode
+        /// character entities, so "&amp;lt;" reached the glyph run verbatim and
+        /// every markup line in the pane read "&amp;lt;VisualElement&amp;gt;". A run
+        /// containing '&lt;' is wrapped in &lt;noparse&gt; instead — the glyphs
+        /// round-trip exactly, which they must, because the edit box above holds
+        /// the same characters.</summary>
+        private static void AppendSegment(StringBuilder sb, string text, string color, bool bold)
+        {
+            if (text.Length == 0)
+                return;
+            bool needsNoParse = text.IndexOf('<') >= 0;
+            if (bold)
+                sb.Append("<b>");
+            if (color != null)
+                sb.Append("<color=").Append(color).Append('>');
+            if (needsNoParse)
+                sb.Append("<noparse>").Append(text).Append("</noparse>");
+            else
+                sb.Append(text);
+            if (color != null)
+                sb.Append("</color>");
+            if (bold)
+                sb.Append("</b>");
+        }
+
+        /// <summary>Internal so the canvas code islands share the exact same
+        /// colouring passes (tokens null = regex passes only).</summary>
+        internal static string BuildLineRichText(string line, List<SemanticTokenData> tokens)
+        {
+            return BuildLineRichText(line, tokens, 0);
+        }
+
+        /// <summary>UB-78: the card signature wants the declaring name bold and
+        /// everything after it plain, which the POC did by splitting at '(' and
+        /// bolding the head. Splitting before colouring would rob the name of
+        /// the '(' that classifies it as a call, so the whole line is coloured
+        /// once and <paramref name="boldPrefix"/> forces a run break there.</summary>
+        internal static string BuildLineRichText(
+            string line, List<SemanticTokenData> tokens, int boldPrefix)
+        {
+            if (line.Length == 0)
+                return "";
+            if (s_colors.Length < line.Length)
+                s_colors = new string[Mathf.NextPowerOfTwo(line.Length + 1)];
+            for (int i = 0; i < line.Length; i++)
+                s_colors[i] = null;
+
+            if (tokens != null)
+            {
+                tokens.Sort((a, b) => a.Column.CompareTo(b.Column));
+                foreach (var token in tokens)
+                {
+                    int start = Mathf.Clamp(token.Column, 0, line.Length);
+                    int end = Mathf.Clamp(token.Column + token.Length, start, line.Length);
+                    string color = ColorFor(token.TokenType);
+                    // POC ".cu": a tag that is NOT a schema element renders in
+                    // the custom-component teal. The semantic provider emits one
+                    // Element type for every tag, so the split happens here,
+                    // where the tag text and the schema are both in hand.
+                    if (token.TokenType == SemanticTokenTypes.Element
+                        && BuilderSchemaCache.HasSchema && end > start)
+                    {
+                        string tag = line.Substring(start, end - start);
+                        if (tag.Length > 0 && char.IsUpper(tag[0])
+                            && !BuilderSchemaCache.HasElement(tag))
+                            color = CustomTagColor;
+                    }
+                    for (int i = start; i < end; i++)
+                        s_colors[i] = color;
+                }
+            }
+
+            // POC tokenize() pass 1, and it runs BEFORE everything else: every
+            // quoted run on the line becomes ".s" green. The LSP only emits String
+            // tokens for C#-side literals, so a markup attribute value
+            // (text="SOLD OUT") arrived at the pane as plain ink.
+            foreach (System.Text.RegularExpressions.Match m in s_strings.Matches(line))
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    s_colors[i] = StringColor;
+
+            MarkBraces(line);
+            for (int i = 0; i < line.Length; i++)
+                if (s_inBrace[i] && s_colors[i] != StringColor)
+                    s_colors[i] = ExprColor;
+
+            // Numbers before identifiers, so 0x1F is one green run and never a
+            // "0" plus an identifier "x1F". Both passes claim only cells every
+            // earlier pass (tokens, strings, {…} runs) left uncoloured.
+            foreach (System.Text.RegularExpressions.Match m in s_numbers.Matches(line))
+            {
+                bool free = true;
+                for (int i = m.Index; free && i < m.Index + m.Length; i++)
+                    if (s_colors[i] != null)
+                        free = false;
+                if (!free)
+                    continue;
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    s_colors[i] = NumberColor;
+            }
+
+            foreach (System.Text.RegularExpressions.Match m in s_identifiers.Matches(line))
+            {
+                bool free = true;
+                for (int i = m.Index; free && i < m.Index + m.Length; i++)
+                    if (s_colors[i] != null)
+                        free = false;
+                if (!free)
+                    continue;
+                string idColor = ClassifyIdentifier(line, m.Index, m.Length);
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    s_colors[i] = idColor;
+            }
+
+            // Keywords win over expression runs (POC: `new` stays purple inside
+            // an orange {…}) but never repaint STRING content — the widened C#
+            // set would otherwise purple every "if"/"or"/"not" in user text.
+            foreach (System.Text.RegularExpressions.Match m in s_keywords.Matches(line))
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    if (s_colors[i] != StringColor)
+                        s_colors[i] = KeywordColor;
+
+            // POC ".cm": a // comment greys the rest of the line and WINS over
+            // every earlier pass. Islands have no LSP Comment tokens, so this
+            // is their only comment colouring.
+            bool inStr = false;
+            for (int i = 0; i + 1 < line.Length; i++)
+            {
+                char c = line[i];
+                if (inStr)
+                {
+                    if (c == '"')
+                        inStr = false;
+                    continue;
+                }
+                if (c == '"')
+                {
+                    inStr = true;
+                    continue;
+                }
+                if (c == '/' && line[i + 1] == '/')
+                {
+                    for (int k = i; k < line.Length; k++)
+                        s_colors[k] = CommentColor;
+                    break;
+                }
+            }
+
+            var sb = new StringBuilder(line.Length + 32);
+            int cursor = 0;
+            while (cursor < line.Length)
+            {
+                string color = s_colors[cursor];
+                int run = cursor + 1;
+                while (run < line.Length && s_colors[run] == color)
+                    run++;
+                if (boldPrefix > cursor && boldPrefix < run)
+                    run = boldPrefix;
+                AppendSegment(sb, line.Substring(cursor, run - cursor), color, cursor < boldPrefix);
+                cursor = run;
+            }
+            return sb.ToString();
+        }
+    }
+}
+#endif

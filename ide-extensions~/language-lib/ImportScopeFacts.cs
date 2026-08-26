@@ -50,6 +50,45 @@ namespace Ruitk.Language
         /// <c>Widget = My.Ns.Widget</c>), deduplicated, in import order. Empty when the file has no
         /// imports or none resolve.
         /// </summary>
+        /// <summary>Reads a resolved import target. An editor holding a module as
+        /// an UNSAVED buffer supplies this so the module can be found at all; a
+        /// null overlay, or a null return from it, falls through to disk.
+        ///
+        /// Without it, every one of the four lookups below asked the filesystem
+        /// directly, so a module that had never been written could not be an import
+        /// target: no using alias was emitted for it, and every reference to it
+        /// failed to compile with CS0103 on the alias name. The RUITK Builder holds
+        /// entire trees in memory by design, which makes that the normal case
+        /// rather than an edge one.</summary>
+        public static Func<string, string?>? SourceOverlay;
+
+        private static DirectiveSet? ReadTargetDirectives(string target)
+        {
+            string? text = null;
+            try
+            {
+                text = SourceOverlay?.Invoke(target);
+            }
+            catch { text = null; }
+
+            if (text == null)
+            {
+                if (!File.Exists(target))
+                    return null;
+                try
+                {
+                    text = File.ReadAllText(target);
+                }
+                catch { return null; }
+            }
+
+            try
+            {
+                return DirectiveParser.Parse(text, target, new List<ParseDiagnostic>());
+            }
+            catch { return null; }
+        }
+
         public static IReadOnlyList<string> ComputeInjectedUsingPayloads(
             DirectiveSet directives, string uitkxFilePath)
         {
@@ -65,15 +104,12 @@ namespace Ruitk.Language
             {
                 string? target = ImportResolver.MapSpecifierToPath(
                     importerDir, imp.Specifier, rootDir, out _);
-                if (target == null || !File.Exists(target))
+                if (target == null)
                     continue;
-
-                DirectiveSet tds;
-                try
-                {
-                    tds = DirectiveParser.Parse(File.ReadAllText(target), target, new List<ParseDiagnostic>());
-                }
-                catch { continue; }
+                DirectiveSet? resolved = ReadTargetDirectives(target);
+                if (resolved == null)
+                    continue;
+                DirectiveSet tds = resolved;
 
                 // EFFECTIVE namespace of the target — the namespace its generated types actually
                 // land in (explicit @namespace wins, else path-derived + config prefix).
@@ -201,15 +237,12 @@ namespace Ruitk.Language
                     continue;
 
                 string? target = ImportResolver.MapSpecifierToPath(importerDir, imp.Specifier, rootDir, out _);
-                if (target == null || !File.Exists(target))
+                if (target == null)
                     continue;
-
-                DirectiveSet tds;
-                try
-                {
-                    tds = DirectiveParser.Parse(File.ReadAllText(target), target, new List<ParseDiagnostic>());
-                }
-                catch { continue; }
+                DirectiveSet? resolved = ReadTargetDirectives(target);
+                if (resolved == null)
+                    continue;
+                DirectiveSet tds = resolved;
                 if (tds.MemberDeclarations.IsDefaultOrEmpty)
                     continue;
 
@@ -320,14 +353,12 @@ namespace Ruitk.Language
                 if (!interesting)
                     continue;
                 string? target = ImportResolver.MapSpecifierToPath(importerDir, imp.Specifier, rootDir, out _);
-                if (target == null || !File.Exists(target))
+                if (target == null)
                     continue;
-                DirectiveSet tds;
-                try
-                {
-                    tds = DirectiveParser.Parse(File.ReadAllText(target), target, new List<ParseDiagnostic>());
-                }
-                catch { continue; }
+                DirectiveSet? resolved = ReadTargetDirectives(target);
+                if (resolved == null)
+                    continue;
+                DirectiveSet tds = resolved;
                 string? tns = EffectiveNamespace.Resolve(
                     tds.HasExplicitNamespace, tds.Namespace, target, fileKeyed: true);
                 if (!string.IsNullOrEmpty(tns))
@@ -361,15 +392,12 @@ namespace Ruitk.Language
                     continue;
 
                 string? target = ImportResolver.MapSpecifierToPath(importerDir, imp.Specifier, rootDir, out _);
-                if (target == null || !File.Exists(target))
+                if (target == null)
                     continue;
-
-                DirectiveSet tds;
-                try
-                {
-                    tds = DirectiveParser.Parse(File.ReadAllText(target), target, new List<ParseDiagnostic>());
-                }
-                catch { continue; }
+                DirectiveSet? resolved = ReadTargetDirectives(target);
+                if (resolved == null)
+                    continue;
+                DirectiveSet tds = resolved;
                 if (tds.MemberDeclarations.IsDefaultOrEmpty)
                     continue;
                 string? tns = EffectiveNamespace.Resolve(

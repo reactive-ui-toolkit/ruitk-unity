@@ -341,5 +341,67 @@ namespace Ruitk.Shared.Tests
             Assert.Equal(new[] { "setup", "cleanup" }, log);
             Assert.Empty(_container.Children);
         }
+
+        // UB-179: unmounting drains the scheduler so effect cleanups run before
+        // the host goes away - and that drain used to resume a render slice that
+        // had been queued against the tree the unmount had just deleted. The
+        // slice walked the dead tree into CompleteWork, which appends to the
+        // root's effect list, and the root was null: a NullReferenceException
+        // thrown from inside the unmount, on the builder's Save path.
+        [Fact]
+        public void UnmountDropsRenderWorkAlreadyQueuedAgainstTheDeadTree()
+        {
+            var scheduler = new QueueScheduler();
+            var context = new HostContext(new ElementRegistry(), _host);
+            context.Environment["scheduler"] = scheduler;
+            var reconciler = new FiberReconciler(context);
+            var container = new MockElement { Type = "root" };
+
+            var root = reconciler.CreateRoot(
+                container,
+                El("Box", children: new[] { El("Label"), El("Label") })
+            );
+
+            // An update SCHEDULES a slice rather than running it: the work is in
+            // flight and the tree is about to be torn down under it.
+            reconciler.ScheduleUpdateOnFiber(
+                root.Current,
+                El("Box", children: new[] { El("Label") })
+            );
+            Assert.True(scheduler.Pending > 0, "the update should have queued a slice");
+
+            reconciler.UnmountRoot();
+
+            // The queue still holds the closure - nothing can retract it - so
+            // this is the moment the old code threw.
+            scheduler.PumpNow();
+
+            // And a second teardown, or any further pump, stays quiet too.
+            reconciler.UnmountRoot();
+            scheduler.PumpNow();
+        }
+
+        [Fact]
+        public void AbandonRootDropsRenderWorkAlreadyQueued()
+        {
+            var scheduler = new QueueScheduler();
+            var context = new HostContext(new ElementRegistry(), _host);
+            context.Environment["scheduler"] = scheduler;
+            var reconciler = new FiberReconciler(context);
+            var container = new MockElement { Type = "root" };
+
+            var root = reconciler.CreateRoot(
+                container,
+                El("Box", children: new[] { El("Label"), El("Label") })
+            );
+            reconciler.ScheduleUpdateOnFiber(
+                root.Current,
+                El("Box", children: new[] { El("Label") })
+            );
+            Assert.True(scheduler.Pending > 0, "the update should have queued a slice");
+
+            reconciler.AbandonRoot();
+            scheduler.PumpNow();
+        }
     }
 }

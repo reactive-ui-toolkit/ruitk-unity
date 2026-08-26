@@ -588,10 +588,9 @@ public sealed class HoverHandler : IHoverHandler
             "else" => "@else\n{\n    <Label text=\"Hidden\" />\n}",
             "foreach" => "@foreach (var item in items)\n{\n    <Label text={item.Name} />\n}",
             "switch" =>
-                "@switch (mode)\n{\n    @case 0 => <Label text=\"A\" />\n    @default => <Label text=\"B\" />\n}",
-            "case" => "@case 0 => <Label text=\"State\" />",
-            "default" => "@default => <Label text=\"Fallback\" />",
-            "code" => "@code\n{\n    var enabled = true;\n}",
+                "@switch (mode)\n{\n    @case 0:\n        return ( <Label text=\"A\" /> );\n    @default:\n        return ( <Label text=\"B\" /> );\n}",
+            "case" => "@case 0:\n    return ( <Label text=\"State\" /> );",
+            "default" => "@default:\n    return ( <Label text=\"Fallback\" /> );",
             _ => "@" + name,
         };
 }

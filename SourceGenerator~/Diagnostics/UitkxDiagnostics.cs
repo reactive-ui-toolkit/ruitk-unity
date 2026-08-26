@@ -120,17 +120,6 @@ namespace Ruitk.SourceGenerator
             isEnabledByDefault: true
         );
 
-        /// <summary>UITKX0305 — An @directive keyword is unrecognised in markup context.</summary>
-        public static readonly DiagnosticDescriptor UnknownDirective = new DiagnosticDescriptor(
-            id: "UITKX0305",
-            title: "Unknown markup directive",
-            messageFormat: "Unknown markup directive '@{0}' at line {1} in '{2}'. "
-                + "Valid directives are: if, else, for, foreach, while, switch, case, default, break, continue, code.",
-            category: Category,
-            defaultSeverity: DiagnosticSeverity.Warning,
-            isEnabledByDefault: true
-        );
-
         // ── Phase 5 — semantic diagnostics ────────────────────────────────────
 
         /// <summary>UITKX0109 — An attribute name is not a known property on the resolved Props type. Aligned with analyzer's <c>DiagnosticCodes.UnknownAttribute</c>.</summary>
