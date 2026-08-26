@@ -6,6 +6,89 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.18.0] - 2026-08-26
+
+### Added — RUITK UI Builder: structure, menus and a settled placement model
+
+The builder gains the half it was missing in 0.17.0: it now has an opinion about
+*where files go*, and a way to see and change that while you work.
+
+- **Folder tree** — the left panel carries both indexes of a tree: where modules
+  live (a folder pane, expanded by default and collapsible) above what can go in
+  them (the library). Click to focus, drag a file or folder onto another folder to
+  re-file it. The old "Folders" toolbar button that swapped it with the canvas is
+  gone — seeing structure is something you do WHILE working on the canvas.
+- **A settled placement convention.** A component owns a folder; its children live
+  in `components/` inside it; its companions (`name.style.uitkx`,
+  `useName.hooks.uitkx`) sit beside it. Right-clicking the empty canvas creates at
+  the tree ROOT; right-clicking a component card creates a CHILD component or a
+  SIBLING companion, and the prompt names the parent. This replaces 0.17.0's
+  focus-relative rule, under which three components created in a row nested three
+  deep — the structure recorded the order of your clicks rather than your UI.
+- **Create states placement; wiring states usage.** Creating a module never adds an
+  import. It cannot: an import with no usage is `UITKX2304`, which is error-tier,
+  so a create that imported would also have to guess where a style applies. The
+  builder places the file and stops; you wire it by dragging it in.
+- **Families.** `NewComponent.uitkx`, `newComponent.style.uitkx` and
+  `useNewComponent.hooks.uitkx` are recognised as one family, so a new companion
+  lands in its component's folder wherever that component lives. Companions being
+  siblings is also what lets `Card/button.style.uitkx` and `Panel/button.style.uitkx`
+  coexist.
+- **Context menus** are now drawn as a layer in the builder's own panel: real
+  submenus, the builder's styling rather than the editor's, no window to lose focus
+  to, and full keyboard drive (arrows, Enter, Right to open a submenu, Escape to
+  back out one level). Long menus — style keys, elements — keep the searchable
+  form, which a plain dropdown cannot express.
+- **Named zoom layers** — `Layer 1 — Architecture`, `Layer 2 — Cards`,
+  `Layer 3 — Edit` — selectable from the toolbar, with one mapping table so labels,
+  zoom presets and the active index cannot drift apart.
+- **History panel** listing every action this session, newest first, with click-to-
+  jump; **Trace** toggles a running log of what the preview pipeline considered,
+  rebuilt, and why.
+- **Crash cover** — the tree is journalled while you work and dumped before a domain
+  reload, and offered back if the builder ever comes up empty beside a journal.
+- **Docs** — a full `UI Builder` section on the site: Overview, The Workspace,
+  Folders & Naming, Editing, and Saving & History, with screenshots. It replaces the
+  single page at `/tooling/ui-builder`, now `/ui-builder`.
+
+### Changed
+
+- **Deletion is absence.** The tree is the model and Save is a pure diff against the
+  last projection, rather than a set of flags each caller had to remember to set.
+- **Save asks before anything irreversible** — it names every file a save would
+  delete (to the trash, not erased), and refuses to write an empty module, which is
+  not an empty file but a broken one (`UITKX2105` on the next import).
+- A brand-new tree lives at a provisional location the Asset Database deliberately
+  cannot see until the first Save asks where it should go, so a half-finished tree
+  can never be picked up by a compile. The relocation is planned in full, so a name
+  collision cancels it rather than leaving half the tree in the new folder.
+
+### Fixed
+
+Roughly seventy tracked defects. The ones worth naming:
+
+- **The preview showed saved code, not your edits.** An importing module bound to
+  the SAVED copy of a style module whenever that module already existed in a
+  referenceable assembly — which a style saved once always does. Style edits
+  therefore never reached the preview at all.
+- **What USES a changed module now rebuilds**, not just the module itself, and the
+  preview renders what it SHOWS rather than what happens to be focused.
+- **A save no longer rearranges the canvas.** Relocating a module moves its folder,
+  which carries every module inside it; the layout was only told about the module
+  that triggered each move, so every card that rode along lost its position and was
+  handed a default slot. A tree is also now identified by its membership rather than
+  by its derived root, so a re-filed tree finds its own layout instead of minting a
+  default one.
+- **A folder rearrangement can be saved** — the Asset Database move no longer fails
+  on a parent directory it has not been told about.
+- **Escape reaches an open menu.** The window owns `KeyDownEvent` on the panel root
+  and consumed keys with `StopImmediatePropagation`, which also drops callbacks
+  queued on that same element, so the menu's handler never ran for Escape while the
+  arrows worked.
+- Files written to the provisional root are no longer invisible to Unity; a 0-byte
+  module can no longer break the project compile; the LSP no longer leaks orphan
+  processes; palette inserts land inside the return block rather than above the
+  imports.
 ## [0.17.0] - 2026-08-15
 
 ### Added — RUITK UI Builder (first release)

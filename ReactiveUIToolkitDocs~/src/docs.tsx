@@ -27,7 +27,11 @@ import { UitkxSignalsPage } from './pages/UITKX/Signals/UitkxSignalsPage'
 import { UitkxPortalPage } from './pages/UITKX/Portal/UitkxPortalPage'
 import { UitkxSuspensePage } from './pages/UITKX/Suspense/UitkxSuspensePage'
 import { HmrPage } from './pages/Tooling/HMR/HmrPage'
-import { UiBuilderPage } from './pages/Tooling/UiBuilder/UiBuilderPage'
+import { UiBuilderOverviewPage } from './pages/UiBuilder/UiBuilderOverviewPage'
+import { UiBuilderWorkspacePage } from './pages/UiBuilder/UiBuilderWorkspacePage'
+import { UiBuilderStructurePage } from './pages/UiBuilder/UiBuilderStructurePage'
+import { UiBuilderEditingPage } from './pages/UiBuilder/UiBuilderEditingPage'
+import { UiBuilderSavingPage } from './pages/UiBuilder/UiBuilderSavingPage'
 import { FAQPage } from './pages/FAQ/FAQPage'
 import { LicensingPage } from './pages/Licensing/LicensingPage'
 import { StylingPage } from './pages/UITKX/Styling/StylingPage'
@@ -271,14 +275,6 @@ export const sections: DocSection[] = [
         element: () => <UitkxSignalsPage />,
       },
       {
-        id: 'ui-builder-page',
-        canonicalId: 'ui-builder',
-        title: 'RUITK UI Builder',
-        path: '/tooling/ui-builder',
-        keywords: ['ui builder', 'visual editor', 'canvas', 'preview', 'uxml import'],
-        element: () => <UiBuilderPage />,
-      },
-      {
         id: 'hmr-page',
         canonicalId: 'hmr',
         title: 'Hot Module Replacement',
@@ -304,6 +300,57 @@ export const sections: DocSection[] = [
         keywords: ['suspense', 'loading', 'async', 'fallback'],
         searchContent: 'suspense loading fallback async await task isReady V.Suspense fallbackNode pendingTask SuspendUntil callback mode task mode loading state pattern',
         element: () => <UitkxSuspensePage />,
+      },
+    ],
+  },
+  {
+    id: 'ui-builder',
+    title: 'UI Builder',
+    pages: [
+      {
+        id: 'ui-builder-overview',
+        canonicalId: 'ui-builder',
+        title: 'Overview',
+        path: '/ui-builder',
+        keywords: ['ui builder', 'visual editor', 'no code', 'near zero code', 'canvas', 'preview', 'uxml import'],
+        searchContent: 'ruitk ui builder in-unity visual editor uitkx component trees near zero code not no-code visual authoring canvas live preview source pane the file is the truth no project database no export round trips hand edit ide open in ruitk ui builder assets context menu convert uxml to uitkx one-way import inline uss typed style reactive ui toolkit menu empty state first save pick a folder hmr mode no domain reload play mode state preserved what you see is what you ship',
+        element: () => <UiBuilderOverviewPage />,
+      },
+      {
+        id: 'ui-builder-workspace',
+        canonicalId: 'ui-builder-workspace',
+        title: 'The Workspace',
+        path: '/ui-builder/workspace',
+        keywords: ['panes', 'toolbar', 'folders', 'library', 'canvas', 'preview', 'source', 'trace', 'history'],
+        searchContent: 'builder workspace panes toolbar header focused file dirty count layer select import uxml history trace how to drive it save abort legend component hook module style module usage edge folders pane tree on disk collapsible drag to re-file pending until save library searchable palette language server native elements custom components hooks ambient usestate useeffect usememo useref providecontext plus new canvas one card per file import edges kind colored badge imports body hooks and state return markup exports style entries live preview fiber reconciler frame budgeted scheduler knobs primitive props ctrl+click jump to component source pane semantic coloring parse analyzer diagnostics edit apply re-parses read-only immutable packages splitters draggable',
+        element: () => <UiBuilderWorkspacePage />,
+      },
+      {
+        id: 'ui-builder-structure',
+        canonicalId: 'ui-builder-structure',
+        title: 'Folders & Naming',
+        path: '/ui-builder/structure',
+        keywords: ['folder structure', 'naming', 'family', 'placement', 'components folder', 'companion', 'tree root'],
+        searchContent: 'builder folder structure naming convention component owns a folder children in components folder companions beside not below tree root derived from structure component pascalcase style module camelcase.style.uitkx hook module usesomething.hooks.uitkx util module camelcase families same name three roles one folder newComponent.style useNewComponent.hooks placement where a new module is born canvas right-click tree root card right-click child sibling companion cards no create create states placement wiring states usage never adds an import UITKX2304 unused import error tier what moves a module drag in the folder tree re-files by type rewrites import specifiers adds and removes no imports closest shared parent rejected unpredictable deep tree',
+        element: () => <UiBuilderStructurePage />,
+      },
+      {
+        id: 'ui-builder-editing',
+        canonicalId: 'ui-builder-editing',
+        title: 'Editing',
+        path: '/ui-builder/editing',
+        keywords: ['zoom layers', 'drag and drop', 'context menu', 'style keys', 'shortcuts', 'lod'],
+        searchContent: 'builder editing zoom layers level of detail layer 1 architecture layer 2 cards layer 3 edit wheel zoom to cursor ctrl+wheel over scrolling section toolbar dropdown dragging from the library drop targets top edge before bottom edge after middle nested inside body section hook call reorder rows blocked drop says why context menus right-click typed operations rows cards imports empty canvas submenus keyboard up down right enter left escape searchable menus style keys typed style picker flexgrow number margin length color compile-time checked pct px flexrow rgba helpers inline editing attributes badges style entries keyboard shortcuts ctrl+s ctrl+z ctrl+shift+z ctrl+y delete escape enter ctrl+click preview',
+        element: () => <UiBuilderEditingPage />,
+      },
+      {
+        id: 'ui-builder-saving',
+        canonicalId: 'ui-builder-saving',
+        title: 'Saving & History',
+        path: '/ui-builder/saving',
+        keywords: ['save', 'abort', 'undo', 'history', 'journal', 'layout', 'usersettings'],
+        searchContent: 'builder saving history save writes every dirty buffer one batch one script reload formats on save performs planned moves renames folder re-filings import specifier rewrites asks about deletion names every file trash not erased refuses to write an empty module top-level declaration required hmr mode no domain reload hot swap saving a brand new tree first save asks for a folder provisional location unity cannot see planned in full name collision cancels abort discards unsaved buffers paths back renamed module returns history panel newest first click a row to jump undo redo ctrl+z ctrl+shift+z ctrl+y session scoped never unity global undo one entry per operation crash cover journal domain reload offers unsaved work back canvas layout usersettings per tree per user survives library deletion gitignored positions written on drag slot decided once remembered renaming moving carries the layout known limitations disk gated immutable packages read-only',
+        element: () => <UiBuilderSavingPage />,
       },
     ],
   },
