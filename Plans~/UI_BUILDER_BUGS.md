@@ -2912,6 +2912,40 @@ Both are needed: the scheduler holds the closure and cannot be made to forget
 it, so the reconciler has to be able to say the slice is void. Two tests in
 `SharedTests~` reproduce it - verified failing without the fix.
 
+PROVEN 2026-08-28, after the owner challenged the diagnosis - a shipped game
+has run on this reconciler for months without hitting it. A temporary editor
+demo drove the scenario deterministically and settled three things:
+
+1. **The mechanism is certain, not a race.** `AppendToEffectList` dereferences
+   `_root` unconditionally on its first line. With in-flight work and a null
+   root the NullReferenceException is guaranteed. Reproduced with the guard
+   skipped; the stack frame is `FiberReconciler.AppendToEffectList`.
+
+2. **It is unreachable on mount, and unreachable without state.** `CreateRoot`
+   renders synchronously by design ("the initial mount is always synchronous;
+   time-slicing is reserved for subsequent state-driven updates"), so nothing
+   can ever be in flight during a mount. The trigger needs a STATE UPDATE whose
+   render exceeds the frame budget, torn down before the next slice runs. That
+   is far narrower than the original write-up implied, and it is the best
+   explanation of why a shipped game never saw it.
+
+3. **The fix cannot cost anything.** `_root` is assigned only in `CreateRoot`
+   and nulled only in `UnmountRoot`, so `_root == null` means nothing is
+   mounted and any in-flight work is orphaned by definition - the tree it
+   points at was already deleted by `CommitDeletion`. A later render goes
+   through `CreateRoot`, which sets the WIP root fresh. Cost is one null check
+   per slice, and guard 2 also stops `Slice()` re-scheduling itself forever.
+
+The demo was removed once it had answered the question (owner decision - the
+fix stays, the harness does not). To recreate it: force `TimeSliceMs = 0`
+AFTER `RuitkBootstrap.CreateHostContext` (it ends in `ApplyGlobalConfig()`,
+which restores the project values), mount a stateful component through a
+manual `IScheduler`, drive its setter, step one slice, unmount, then let the
+queued slice run. Both of those ordering traps cost a round each.
+
+STILL SHARP: `AppendToEffectList` has no null guard of its own. It is
+unreachable today because the two guards above stand in front of it, but the
+next path that reaches it will find the same edge (REMAINING_WORK: CORE-1).
 ### UB-180 — adding a component rearranged the canvas `FIXED` `MEDIUM`
 
 Owner report 2026-08-23: "when you add new component, it rearranges the canvas,
