@@ -103,9 +103,11 @@ namespace Ruitk.Samples.UITKX.Editor
 
             root.Add(Title("Unmount mid-render (UB-179)"));
             root.Add(Body(
-                "Renders a tree large enough to yield, unmounts the root while a slice is "
-                + "still queued, then lets that slice run. The scheduler is manual and the "
-                + "time slice is 0 ms, so the sequence is identical on every run."));
+                "Mounts a tree, drives a STATE UPDATE large enough to yield, unmounts the root "
+                + "while a slice of that update is still queued, then lets the slice run. The "
+                + "initial mount is always synchronous by design, so only an update can be in "
+                + "flight. The scheduler is manual and the slice budget is 0 ms, so the "
+                + "sequence is identical on every run."));
 
             var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 10 } };
             row.Add(Button("1.  Run against the core as it ships", () => Run(bypassGuard: false)));
@@ -182,14 +184,23 @@ namespace Ruitk.Samples.UITKX.Editor
 
         // ── the component under test ────────────────────────────────────────
 
-        /// <summary>Wide enough that a 0 ms slice cannot finish it in one go.</summary>
+        /// <summary>Wide enough that a 0 ms slice cannot finish it in one go, and
+        /// stateful, because the initial MOUNT is always synchronous by design -
+        /// time slicing is reserved for state-driven updates, so only an update
+        /// can ever be in flight.</summary>
         private static VirtualNode BigTree(IProps props, IReadOnlyList<VirtualNode> children)
         {
+            var (generation, setGeneration) = Hooks.UseState(0);
+            s_bump = () => setGeneration((Func<int, int>)(g => g + 1));
             var rows = new VirtualNode[NodeCount];
             for (int i = 0; i < NodeCount; i++)
-                rows[i] = V.Label(new LabelProps { Text = "row " + i });
+                rows[i] = V.Label(new LabelProps { Text = "row " + i + " gen " + generation });
             return V.Box(null, null, rows);
         }
+
+        /// <summary>Set by the component on each render; calling it schedules a
+        /// real state-driven update, which is the only thing that time-slices.</summary>
+        private static Action s_bump;
 
         private const int NodeCount = 400;
 
@@ -266,6 +277,7 @@ namespace Ruitk.Samples.UITKX.Editor
                 Step($"forced time slicing on, slice budget {FiberConfig.TimeSliceMs} ms "
                      + $"(project default was restored by CreateHostContext, then overridden)");
 
+                s_bump = null;
                 renderer = new VNodeHostRenderer(ctx, host);
                 renderer.Render(V.Func(BigTree));
 
@@ -278,28 +290,37 @@ namespace Ruitk.Samples.UITKX.Editor
                 }
 
                 bool hasScheduler = Field(rec, "_scheduler") != null;
-                Step($"rendered a {NodeCount}-node tree; slices queued: {scheduler.Pending}; "
+                Step($"mounted a {NodeCount}-node tree SYNCHRONOUSLY (CreateRoot always is); "
                      + $"reconciler holds a scheduler: {hasScheduler}");
+
+                if (s_bump == null)
+                {
+                    Fail("the component never rendered, so there is no state setter to drive");
+                    Verdict("INCONCLUSIVE", Bad);
+                    return;
+                }
+
+                scheduler.DrainAll();
+                s_bump();
+                Step($"drove a state update; slices queued: {scheduler.Pending}");
 
                 if (scheduler.Pending == 0)
                 {
                     Fail(hasScheduler
-                        ? "nothing was queued even though the reconciler has a scheduler — "
-                          + "the render took the synchronous WorkLoop path"
-                        : "the reconciler has NO scheduler, so it rendered synchronously — "
-                          + "the host context did not carry it through");
+                        ? "the update did not go through the scheduler — it ran synchronously"
+                        : "the reconciler has NO scheduler, so everything renders synchronously");
                     Verdict("VACUOUS — the async path was never taken", Bad);
                     return;
                 }
 
                 scheduler.Step();
-                Step("ran one slice, then stopped");
+                Step("ran one slice of that update, then stopped");
 
                 object inFlight = Field(rec, "_nextUnitOfWork");
                 object wipRoot = Field(rec, "_workInProgressRoot");
                 if (inFlight == null)
                 {
-                    Fail($"the render finished inside one slice at {FiberConfig.TimeSliceMs} ms "
+                    Fail($"the update finished inside one slice at {FiberConfig.TimeSliceMs} ms "
                          + $"over {NodeCount} nodes — nothing was in flight, so this run proves "
                          + "nothing. Raise NodeCount and try again.");
                     Verdict("VACUOUS — precondition not met", Bad);
