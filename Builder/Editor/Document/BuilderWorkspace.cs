@@ -59,11 +59,40 @@ namespace Ruitk.Builder
         /// name prompt and the creation itself cannot disagree. Nothing needs an
         /// exception for "deleted but not saved yet": a deleted module is not in
         /// the tree, so its name is free the instant it goes.</summary>
+        /// <summary>Whether a path is free for a module to occupy.
+        ///
+        /// The TREE decides, not the disk. Disk is a projection of the tree and a
+        /// stale one until Save, so a file sitting at this path is only an
+        /// obstacle when the session cannot account for it. Two things it can
+        /// account for: a module that CAME FROM the path and has since moved
+        /// (Save vacates it), and an orphan (Save retires it first, which is
+        /// exactly why SaveAll clears dead paths before it writes).
+        ///
+        /// Reading File.Exists alone made moving a module BACK to where it
+        /// started fail with "already there" - pointing at the module's own
+        /// pre-move copy, which no amount of retrying could clear because only
+        /// Save can (UB-222).</summary>
         public bool IsPathAvailable(string filePath)
         {
             if (string.IsNullOrEmpty(filePath))
                 return false;
-            return _tree.ByPath(filePath) == null && !File.Exists(filePath);
+            if (_tree.ByPath(filePath) != null)
+                return false;
+            if (!File.Exists(filePath))
+                return true;
+
+            string full = BuilderTree.Canon(filePath);
+            foreach (var module in _tree.Modules)
+                if (module != null && module.HasMoved
+                    && string.Equals(BuilderTree.Canon(module.DiskPath), full,
+                        StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+            foreach (string orphan in _tree.OrphanedPaths())
+                if (string.Equals(orphan, full, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+            return false;
         }
 
         // ── Loading ──────────────────────────────────────────────────────────
