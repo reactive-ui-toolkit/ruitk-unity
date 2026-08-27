@@ -14,26 +14,31 @@ Defect history and per-item root causes live in `Plans~/UI_BUILDER_BUGS.md`
 
 ## 0. Getting in
 
-Two entry points:
+Three entry points:
 - **Right-click a `.uitkx` asset → "Open in RUITK UI Builder"** opens the tree
-  that file belongs to.
+  that file belongs to — the whole connected tree, not just the clicked file.
 - **The menu item** opens the builder with no tree, on a start screen offering
   the four module kinds. A tree begun this way lives entirely in memory; the
   first Save asks which folder it belongs in (refusing anywhere outside the
   Unity project), moves the pending modules there, and writes. Cancelling that
   prompt cancels the save and writes nothing.
+- **Right-click a `.uxml` asset → "Convert UXML to UITKX"** — one-way import.
+
+Double-clicking a `.uitkx` asset still opens the external editor; the builder
+never takes that route over.
 
 ## 1. What the builder is
 
 A canvas of CARDS, one per `.uitkx` module in the open tree, wired by IMPORT
-EDGES, with three side panes: a searchable library, a live preview, and a
-bidirectional source editor. Editing happens on the canvas, in the source pane,
-or by dragging from the library — all three land as text edits on the same
-document buffers.
+EDGES, with a folder tree and a searchable library down the left and a live
+preview over a bidirectional source editor on the right. Editing happens on the
+canvas, in the source pane, or by dragging from the library — all three land as
+text edits on the same document buffers.
 
 **Disk contract (load-bearing):** nothing reaches disk until Save. Every edit,
-including deletion, is a pending change on an in-memory buffer. Abort discards
-everything; closing without saving changes nothing on disk.
+including deletion, renaming and folder moves, is a pending change on an
+in-memory tree. Abort discards everything; closing without saving changes
+nothing on disk.
 
 ## 2. The canvas
 
@@ -48,16 +53,20 @@ everything; closing without saving changes nothing on disk.
   module still imports it, naming the referrers.
 
 ### Levels of detail (LOD)
-Driven by zoom, three bands:
-- **L0** (< 0.45) — pill: name + kind only. The architecture diagram.
-- **L1** (< 1.05) — signature, imports, hook chips, markup rows.
-- **L2** (>= 1.05) — adds per-row attributes, code islands, directive badges,
-  style entry lines.
+Driven by zoom, three bands, each selectable by name from a labelled toolbar
+dropdown:
+
+| Layer | Zoom preset | Applies at | Shows |
+|---|---|---|---|
+| **Layer 1 — Architecture** | 0.30 | zoom < 0.32 | Pill: name + kind only, and the edges between them. |
+| **Layer 2 — Cards** | 0.75 | zoom < 0.80 | Signature, imports, hook chips, markup rows. |
+| **Layer 3 — Edit** | 1.25 | zoom >= 0.80 | Adds per-row attributes, code islands, directive badges and style entry lines — and this is the layer at which those become clickable to edit. |
 
 ### Camera
-- Wheel zooms about the cursor; drag on empty canvas pans.
-- Zoom range 0.10–2.2. A tree with no saved layout opens at 1.0 (L1).
-- Toolbar presets jump to fixed zooms.
+- Wheel zooms about the cursor; drag on empty canvas pans. Over a section that
+  scrolls on its own, Ctrl+wheel zooms the canvas instead of scrolling it.
+- Zoom range 0.10–2.2. A tree with no saved layout opens at Layer 2.
+- The layer dropdown jumps straight to a layer's preset zoom.
 - Camera and zoom persist per tree.
 - Cards more than one viewport outside the visible rect render as a sized empty
   box (their sections are not built) — a pure performance behaviour, invisible
@@ -71,7 +80,62 @@ arrives at the target card's top-left — so a curve never starts over the card'
 own content, and every dot has a visible line. Edges are painted in a
 screen-space overlay so stroke weight is constant at every zoom.
 
-## 3. Reading a tree
+## 3. The folder pane
+
+The top-left pane shows the tree as FOLDERS — a second projection of the same
+modules the canvas draws, showing where each one lives rather than what imports
+it. Expanded by default, collapsible from its header when the library needs the
+height.
+
+- Clicking a file focuses it: the canvas selects its card, the preview switches
+  to it, and the source pane shows its buffer.
+- Dragging a file or a folder onto another folder re-files it. This is the only
+  gesture that moves anything.
+- What it shows is PENDING until Save — a move made here is a plan, not a
+  filesystem operation.
+
+### The folder convention
+A component owns a folder named after it; its children live in a `components/`
+folder inside that folder; its companions sit beside it.
+
+```
+Assets/UI/NewComponent/
+  NewComponent.uitkx            <- the tree root
+  newComponent.style.uitkx      <- companion
+  useNewComponent.hooks.uitkx   <- companion
+  components/
+    LeftSide/
+      LeftSide.uitkx
+      leftSide.style.uitkx
+    RightSide/
+      RightSide.uitkx
+      components/
+        Badge/Badge.uitkx       <- children nest the same way at any depth
+```
+
+| Kind | File name | Where it goes |
+|---|---|---|
+| Component | `PascalCase.uitkx` | its own folder, under the parent's `components/` |
+| Style module | `camelCase.style.uitkx` | beside the component it belongs to |
+| Hook module | `useSomething.hooks.uitkx` | beside the component it belongs to |
+| Util module | `camelCase.uitkx` | beside, and at the tree root by default |
+
+**Families.** A component and the style and hook modules named after it are one
+family — `NewComponent.uitkx`, `newComponent.style.uitkx`,
+`useNewComponent.hooks.uitkx`. A new companion whose name matches a family
+lands in that component's folder, wherever it lives. Because companions are
+siblings rather than pooled, `Card/button.style.uitkx` and
+`Panel/button.style.uitkx` coexist.
+
+**What moves a module.** Nothing, unless a gesture says so. Removing an import
+does not move a file, and nothing re-places itself. A drag in the folder tree
+re-files by TYPE — a component into `Target/components/Name/`, a companion into
+`Target/` — and rewrites the specifiers of everything that already imports it,
+from each importer's own position. It adds and removes no imports: dragging X
+onto Y does not make Y use X, and the old parent keeps its import because its
+markup still references X.
+
+## 4. Reading a tree
 
 - The tree is discovered from the focus file by walking imports. The language
   server supplies the inventory of modules on disk and, for a module the builder
@@ -90,7 +154,7 @@ screen-space overlay so stroke weight is constant at every zoom.
 - Hook chips show the hook name and the state names it returns; hovering one
   highlights every usage of those names in the markup rows and the source pane.
 
-## 4. Editing on the canvas
+## 5. Editing on the canvas
 
 All canvas edits are text edits on the buffer, committed through one funnel
 that also re-parses the card, re-syncs the language server and records an undo
@@ -107,6 +171,17 @@ lines, code islands (multiline), and element rows. The editor takes the size and
 position of the thing it edits - a code island editor replaces its island
 exactly, and a single-line editor matches its row's height and glyph size at any
 zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
+
+### Menus
+Context menus are drawn as a layer in the builder's own panel rather than as a
+separate window: they carry the builder's styling, nothing can lose focus to
+them, and they have real SUBMENUS rather than a flattened list. Rows, cards,
+import rows and the empty canvas each have their own menu.
+
+They are fully keyboard-drivable: up/down moves, Right or Enter opens a
+submenu, Left or Escape backs out one level, Escape again closes. Menus with a
+long vocabulary — style keys, elements, attributes — open with a search field
+instead, and keep the freeform fallback entry.
 
 ### Structural operations
 - **Add attribute** — searchable, typed from the schema for native elements and
@@ -126,6 +201,8 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
   the source pane.
 - **Add style/util export**, and **add style entry** with searchable keys and
   value helpers (Px/Pct/Hex/Rgba/flex/justify/align/font/text/display/position).
+  The key vocabulary is reflected from the real typed style surface, so a menu
+  can never offer a key the type does not have.
 - **Apply a style module** by dragging it onto an ELEMENT row: the element's
   `style` attribute is set to the chosen export and the import is added if the
   file lacks it, as one undoable action. A module with several exports asks
@@ -146,20 +223,32 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
   toolbar or from a `.uxml` asset's context menu. The result arrives as a
   pending module like anything else the builder creates: Save writes it,
   Abort drops it, Ctrl+Z takes it back.
-- **Create module** — component / style / hook / util, from the canvas
-  right-click or the library's "+ new", named through a validating prompt
-  (PascalCase components, camelCase style/util, `use…` hooks). A name is taken
-  only when the FILE it would produce is taken, so `SomeComponent` the component
-  and `someComponent` the style module coexist — they are
-  `SomeComponent.uitkx` and `someComponent.style.uitkx`, which is the pairing
-  the folder convention is built around.
-  A new COMPONENT gets its own folder under the current component's
-  `components/` directory; a style, hook or util module lands beside the
-  component it belongs to. Suffixes: `.style.uitkx`, `.hooks.uitkx`, plain
-  `.uitkx`. A component and a hook start with exactly the export just named
-  and the smallest legal body; a style and a util module start EMPTY. Like
-  every other edit, the file is a pending buffer with a real card on the
-  canvas - Save writes it, Abort and undo drop it.
+- **Create module** — component / style / hook / util, from a right-click or
+  the library's "+ new", named through a validating prompt (PascalCase
+  components, camelCase style/util, `use…` hooks). A name is taken only when the
+  FILE it would produce is taken, so `SomeComponent` the component and
+  `someComponent` the style module coexist. A component and a hook start with
+  exactly the export just named and the smallest legal body; a style and a util
+  module start EMPTY. Like every other edit, the file is a pending buffer with a
+  real card on the canvas.
+
+  **Where it is born follows from where you right-clicked**, never from what is
+  focused:
+
+  | Right-click on | Component | Style / hook / util |
+  |---|---|---|
+  | Empty canvas | at the tree root, `Root/components/Name/` | at the tree root, unless the name matches a family |
+  | A component card | a CHILD, `Parent/components/Name/` | a SIBLING, `Parent/` |
+  | A companion card | no create menu — a style module has no children | — |
+
+  The name prompt names the parent it is creating under, and the new card is
+  placed under its parent on the canvas.
+
+  **Create states placement; wiring states usage.** Creating a module never adds
+  an import. An import with no usage is an ERROR, so a create that imported
+  would also have to invent a usage — which means guessing where a style applies
+  or which element a hook belongs to. The builder places the file and stops; the
+  user wires it by dragging it in.
 
 ### Drag and drop
 - Library rows drag onto markup rows. The canvas lists markup flattened with
@@ -173,7 +262,9 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
   - **top band** — a dashed caret above the row: inserted before it, as a
     sibling.
 - Existing markup rows drag to reorder or re-parent, moving their whole line
-  range with re-indentation. Directive heads move their entire block.
+  range with re-indentation. Directive heads move their entire block. Every
+  outcome is reported, including refusals and a drop that landed between rows
+  rather than on one.
 - Hooks drop onto BODY; style/util modules drop onto a card and add the import.
 
 ### Selection and the keyboard
@@ -183,7 +274,8 @@ zoom. Focus never selects the whole text, so the first keystroke cannot wipe it.
 - **Delete** removes the selection: an element row, a directive clause, a whole
   directive block, a hook/import/island/entry line range, or — falling through
   to the card — the module itself.
-- **Escape** cancels the innermost active edit, then clears the selection.
+- **Escape** cancels the innermost active edit, then clears the selection. An
+  open menu is innermost of all, so Escape closes it first.
 - Both are inert while a text surface holds focus, so Delete still deletes
   characters inside an editor.
 - **Ctrl+S** save, **Ctrl+Z** undo, **Ctrl+Shift+Z** / **Ctrl+Y** redo. All
@@ -195,7 +287,33 @@ on disk. Save performs the deletion (to the OS trash, not an erase) in the same
 batch as the writes; Abort discards it; undo un-marks it. No asset is ever
 re-created, so file identity is never churned.
 
-## 5. Undo / redo
+## 6. Save and abort
+
+Save formats every dirty buffer, then writes them in ONE batch — one script
+reload for the whole batch instead of one per file, and no reload at all while
+HMR Mode is active. It performs the moves planned in the session (renames,
+folder re-filings) together with the import-specifier rewrites that keep them
+consistent.
+
+Save asks before anything irreversible:
+- **Deletion** — it names every file the save would delete, and they go to the
+  trash rather than being erased.
+- **An empty module** — an empty `.uitkx` is not an empty file but a broken one,
+  because the language requires a top-level declaration. Clearing a module while
+  working is legitimate; writing it is where the builder stops and asks.
+
+A tree begun from the start screen has no folder yet, so the first Save asks for
+one, once, and moves the whole pending tree there before writing. Until then its
+modules live at a provisional location the Asset Database cannot see, so a
+half-finished tree can never be picked up by a compile. The relocation is
+planned in full first, so a name collision cancels the whole move instead of
+leaving half the tree in the new folder.
+
+Abort discards every unsaved buffer and puts PATHS back as well as text: a
+renamed module returns to its old name, and a module that rode along inside a
+renamed folder returns with it.
+
+## 7. Undo / redo
 
 An action ledger records every builder action as one entry holding every change
 the gesture produced — text edits, and the structural ones: a creation, a
@@ -209,7 +327,7 @@ whole entries to that point — the same path undo and redo use, so a jump acros
 a rename or a delete moves the tree and not just the text. Redo is truncated by
 new work.
 
-## 6. Source pane
+## 8. Source pane
 
 - Full file with syntax colouring, line banding, and a diagnostics console.
 - Bidirectional: editing re-parses into the model and updates the card;
@@ -224,22 +342,25 @@ new work.
 - The diagnostics console is scrollable and selectable, holds every diagnostic,
   and supports Ctrl+A / Ctrl+C plus a copy-all menu.
 
-## 7. Preview pane
+## 9. Preview pane
 
 Live-renders the selected component by compiling the current buffers in-process
-and mounting the result. Compile failures are reported loudly rather than
-silently showing a stale tree. Clicking an element in the preview selects the
-markup row that produced it, and vice versa. Hook modules show their signature
-and consumers instead of a preview.
+and mounting the result through the real reconciler, on its own frame-budgeted
+scheduler. Compile failures are reported loudly rather than silently showing a
+stale tree, and the last good preview is kept. Primitive props on the focused
+component appear as knobs. Clicking an element in the preview selects the markup
+row that produced it, and vice versa. Hook modules show their signature and
+consumers instead of a preview.
 
-## 8. Library pane
+## 10. Library pane
 
 Searchable palette in sections: native elements (from the schema), hooks,
 custom components, style modules, util modules, hook modules. Entries drag onto
 the canvas. Double-clicking a workspace entry FRAMES its card — solving the
-zoom so the card fills the viewport, then centring on it.
+zoom so the card fills the viewport, then centring on it. "+ new" creates a
+module at the tree root.
 
-## 9. Diagnostics
+## 11. Diagnostics
 
 Three tiers, merged into the source console and the card overlays:
 1. Structural parse/validation diagnostics (`UITKX####`).
@@ -248,18 +369,39 @@ Three tiers, merged into the source console and the card overlays:
    reported unknown because the schema lags.
 3. C# compile errors (`CS####`) from the preview compile.
 
-## 10. Formatting
+A **Trace** toggle in the toolbar turns on a running log of what the preview
+pipeline decided — which modules were considered for a rebuild, which were
+rebuilt, and why. Off by default; it exists for when the preview is not showing
+what the user expects.
+
+## 12. Formatting
 
 Save reprints every dirty buffer through the AST formatter, so text spliced in
 by canvas edits ends up in the canonical shape. It is deliberately a SAVE-time
 pass, not per keystroke. A buffer that does not format cleanly is written
 exactly as it stands.
 
-## 11. Persistence
+## 13. Persistence
 
-- Card positions, camera and zoom per tree, in a local layout file.
-- Document buffers and pending deletions survive a domain reload.
+- Card positions, camera and zoom per tree, in a local layout file outside the
+  project's assets — per-user preference, not project content, so it is written
+  as soon as a card is dragged rather than waiting for Save.
+- A card's slot is decided once and then remembered, so adding a module never
+  reshuffles cards the user has already placed.
+- Renaming, moving or re-filing carries the layout with the files, and a tree is
+  recognised by its MEMBERSHIP, so a re-filed tree still finds its own layout
+  even when the re-filing changes which module is its root.
+- The tree is journalled while work is unsaved and dumped in full before a
+  domain reload, outside the project's assets. If the builder ever comes up
+  empty beside a journal it offers the unsaved work back; a session that ended
+  cleanly leaves no journal.
 - Nothing else is written outside Save.
+
+## 14. Read-only sources
+
+Modules that live in immutable packages open read-only: they render on the
+canvas and in the preview, and their cards can be inspected, but they cannot be
+edited or saved.
 
 ---
 
@@ -271,4 +413,10 @@ Recorded so a port does not go looking for them:
   C#. Full dogfooding is a planned future pass.
 - No multi-select. Exactly one thing is selected at a time.
 - No automatic graph layout ("tidy"); card positions are manual and persisted.
-- No rename-across-files refactor from the canvas.
+- No rename-across-files refactor from the canvas beyond the module rename.
+- `@uss` and `Asset<T>` references added since the last Save resolve only after
+  saving — the asset cache is disk-gated.
+- Moving an EXISTING markup row into another element is unreliable: the gesture
+  is armed and every band resolves, but landing the drop is difficult in
+  practice. Adding the same element from the library works normally. Every
+  outcome now reports itself, so a failed attempt says which one it took.
