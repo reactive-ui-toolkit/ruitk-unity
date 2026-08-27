@@ -253,23 +253,42 @@ namespace Ruitk.Samples.UITKX.Editor
 
             try
             {
-                FiberConfig.TimeSlicingEnabled = true;
-                FiberConfig.TimeSliceMs = 0f;
-                Step("time slicing on, slice budget 0 ms — a slice yields after one unit");
-
                 var scheduler = new ManualScheduler();
                 var ctx = RuitkBootstrap.CreateHostContext(
                     ElementRegistryProvider.GetDefaultRegistry(), null, scheduler, true);
-                renderer = new VNodeHostRenderer(ctx, host);
 
+                // AFTER CreateHostContext, never before: it ends in
+                // ApplyGlobalConfig(), which overwrites both knobs from the
+                // project settings. Setting them first is why the first cut of
+                // this demo rendered synchronously and reported itself vacuous.
+                FiberConfig.TimeSlicingEnabled = true;
+                FiberConfig.TimeSliceMs = 0f;
+                Step($"forced time slicing on, slice budget {FiberConfig.TimeSliceMs} ms "
+                     + $"(project default was restored by CreateHostContext, then overridden)");
+
+                renderer = new VNodeHostRenderer(ctx, host);
                 renderer.Render(V.Func(BigTree));
-                Step($"rendered a {NodeCount}-node tree; slices queued: {scheduler.Pending}");
 
                 object rec = FindReconciler(renderer);
                 if (rec == null)
                 {
                     Fail("could not reach the FiberReconciler — the demo needs updating");
                     Verdict("INCONCLUSIVE", Bad);
+                    return;
+                }
+
+                bool hasScheduler = Field(rec, "_scheduler") != null;
+                Step($"rendered a {NodeCount}-node tree; slices queued: {scheduler.Pending}; "
+                     + $"reconciler holds a scheduler: {hasScheduler}");
+
+                if (scheduler.Pending == 0)
+                {
+                    Fail(hasScheduler
+                        ? "nothing was queued even though the reconciler has a scheduler — "
+                          + "the render took the synchronous WorkLoop path"
+                        : "the reconciler has NO scheduler, so it rendered synchronously — "
+                          + "the host context did not carry it through");
+                    Verdict("VACUOUS — the async path was never taken", Bad);
                     return;
                 }
 
@@ -280,8 +299,9 @@ namespace Ruitk.Samples.UITKX.Editor
                 object wipRoot = Field(rec, "_workInProgressRoot");
                 if (inFlight == null)
                 {
-                    Fail("the render finished in one slice — nothing was in flight, so this "
-                         + "run proves nothing. Raise NodeCount and try again.");
+                    Fail($"the render finished inside one slice at {FiberConfig.TimeSliceMs} ms "
+                         + $"over {NodeCount} nodes — nothing was in flight, so this run proves "
+                         + "nothing. Raise NodeCount and try again.");
                     Verdict("VACUOUS — precondition not met", Bad);
                     return;
                 }
