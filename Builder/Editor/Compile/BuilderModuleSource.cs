@@ -66,9 +66,11 @@ namespace Ruitk.Builder
         ///
         /// The directory glob this replaces could not see a companion that has no
         /// file yet, and would additionally return same-prefixed files belonging to
-        /// nothing in the tree. Both answers are wrong for a builder session, and
-        /// the first is why a freshly created style module was invisible to the
-        /// component it was named after (ISO-1).</summary>
+        /// nothing in the tree. Both answers are wrong for a builder session.
+        ///
+        /// Not observed in the field: this closes the mechanism, it does not fix a
+        /// reported defect. Recorded that way on purpose — the wave it belongs to
+        /// cost three rounds to a claim asserted from reading (ISO-1).</summary>
         public IEnumerable<string> SiblingsWithPrefix(string directory, string prefix)
         {
             var found = new List<string>();
