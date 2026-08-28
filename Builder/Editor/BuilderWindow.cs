@@ -1092,6 +1092,11 @@ namespace Ruitk.Builder
                 _previewPane.UsageProvider = UsageFor;
                 _previewPane.ModuleInfoProvider = ModuleInfoFor;
                 _previewPane.ComponentPicked += OnPreviewComponentPicked;
+                _previewPane.Trace = message =>
+                {
+                    if (_tracePreview)
+                        Debug.Log(message);
+                };
                 _previewPane.Attach(previewSection);
                 _codeField = new CodeField();
                 _codeField.TextEdited += OnCodeEdited;
