@@ -134,17 +134,42 @@ Ordered so each stage is separately verifiable and none is a big-bang.
 | **ISO-B** | Builder implements it over `BuilderTree`; `BuilderPreviewCompiler` passes it. `SourceOverlay` becomes a thin adapter onto it. | preview renders unsaved trees with no disk read for module text |
 | **ISO-C** | Replace the two companion globs (ISO-1) with `SiblingsWithPrefix`. | an unsaved companion is found by its component |
 | **ISO-D** | Replace the `ResolveComponentFqn` fallback (ISO-2) with `ComponentNameOf`, keeping the scan only for hand-written package components with no import. | two trees sharing a component name cannot cross |
-| **ISO-E** | ~~Delete the ambient static overlay~~ — **NOT DOABLE, see 1.9** | n/a |
+| **ISO-E** | DONE — an installed overlay is AUTHORITATIVE; the static stays as transport, with one policy behind it (see 1.9) | the language lib no longer reads disk while the builder is driving |
+| **ISO-G** | DONE — every fall-through to disk is counted and named per compile | a memory-only tree reports zero |
 | **ISO-F** | Guard: a test that compiles a tree whose modules exist ONLY in memory, with the filesystem implementation deliberately throwing. | any new disk read on the builder path fails loudly |
 
 **ISO-F is the point of the campaign.** Everything before it fixes today's
 leaks; ISO-F is what stops tomorrow's. Without it this is discipline again, and
 discipline is what produced three bugs in one day.
 
-### 1.9 ISO-E: why the static overlay has to stay
+### 1.9 ISO-E: the static stays, but it is no longer a second policy
 
-The plan said delete it. It cannot be deleted, and the reason is worth
-recording rather than quietly dropping the row.
+RESOLVED 2026-08-28. My first read of this was wrong in a way worth keeping:
+I said "four parity layers" and treated it as a wall. It has exactly ONE
+consumer, `ImportScopeFacts.ReadTargetDirectives`, and the contract test guards
+the COMPILER surface, not this file.
+
+The field still exists, because it is how the language lib is told what a
+module says and its API is static. What changed is that it is no longer a
+second POLICY:
+
+- The builder overlay now delegates to `BuilderModuleSource`, so there is one
+  implementation of "tree first, disk only for what the tree does not own".
+- An installed overlay is AUTHORITATIVE: the lib no longer falls back to
+  `File.Exists` / `File.ReadAllText` behind it. A null means the module is
+  genuinely absent, rather than "ask the disk instead" - which is what used to
+  resurrect a module the builder had deleted or moved.
+- No overlay means HMR, whose truth IS the disk. That path is untouched.
+
+One hazard found while doing it, and the reason guard ORDER matters: the
+filesystem read retries eight times with exponential backoff, and a MISSING
+file throws `FileNotFoundException`, which is an `IOException`, which that loop
+treats as a lock worth waiting out. Roughly 635ms of sleeping to discover a
+file is absent, on a path that runs per import probe. `BuilderModuleSource`
+therefore tests existence BEFORE it reads.
+
+Verified: SG suite 1879/1879, LSP suite 180/180, ModelTests ALL PASS, builder
+smoke 0 errors, DLLs rebuilt Release after the test run clobbered them.
 
 The overlay is not the compiler's own state. It is pushed by reflection into a
 **public static field in the language library**:

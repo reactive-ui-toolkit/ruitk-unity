@@ -403,20 +403,18 @@ namespace Ruitk.Builder
         /// the component failed to compile with CS0103 on the alias name - so a
         /// component and a style module both created in the builder could not
         /// preview together until they had been saved.</summary>
+        /// <summary>The overlay the compiler and the language lib both read.
+        ///
+        /// It delegates to the module source rather than answering separately, so
+        /// there is ONE policy for what a module says: the tree, falling through to
+        /// disk only for files the tree does not own. Two implementations of that
+        /// rule is how they drift, and drift here is invisible until something
+        /// renders the wrong component.</summary>
         private string ReadBuffer(string path)
         {
             if (string.IsNullOrEmpty(path))
                 return null;
-            string full;
-            try
-            {
-                full = Path.GetFullPath(path);
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-            return _workspace?.TryGet(full)?.BufferText;
+            return _moduleSource?.ReadText(path);
         }
 
         /// <summary>Topological order over the dirty set: imported peers first.

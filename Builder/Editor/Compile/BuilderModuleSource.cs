@@ -90,6 +90,14 @@ namespace Ruitk.Builder
             if (module != null)
                 return module.BufferText;
             NoteFallThrough(uitkxPath);
+            // Existence FIRST. The filesystem read retries eight times with
+            // exponential backoff, because the editor holds a write lock for a
+            // few milliseconds after a save - and a missing file throws
+            // FileNotFoundException, which is an IOException, which that loop
+            // treats as a lock worth waiting out. Roughly 635ms of sleeping to
+            // discover a file is absent, on a path that runs per import probe.
+            if (!_fallback.Exists(uitkxPath))
+                return null;
             return _fallback.ReadText(uitkxPath);
         }
 
