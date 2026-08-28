@@ -209,26 +209,117 @@ against elsewhere.
 
 ## Part 2 — Component signatures (#2)
 
-**Gap:** there is no way to declare what props a component takes. The card shows
-`SomeComponent()` and the signature is parsed but read-only. Without it,
-components cannot be parameterised, and the preview's props knobs have nothing
-to bind to.
+**Settled in conversation 2026-08-28. Not started.**
 
-Not a bug — a missing authoring surface, and the same shape as the router work,
-which is why the owner grouped them.
+### 2.1 The gap
+
+There is no way to declare what props a component takes. The card shows
+`SomeComponent()`, the signature is parsed but read-only, and the preview's
+knobs therefore have nothing to bind to. Not a bug — a missing authoring
+surface.
+
+### 2.2 What props actually are
+
+Ordinary C# parameters on the export:
+
+```
+export VirtualNode DoomHUD(int health, int armor, WeaponType weapon, int[] ammo, ...)
+export VirtualNode ContextConsumer(string label = "Primary Panel")
+```
+
+Three facts from the research that shape everything below:
+
+1. **The type vocabulary is OPEN.** Style keys are a closed set of ~86; prop
+   types are arbitrary C# — `WeaponType`, `int[]`, `KeyCard`, user enums. So a
+   "pick a type" menu can never be exhaustive, and the answer is the idiom the
+   builder already uses for attributes: a searchable typed menu with a
+   free-text fallback.
+
+2. **The parser already records defaults.**
+   `FunctionParam(string Type, string Name, string? DefaultValue)` — so
+   "was a default written?" is answerable from the AST today.
+
+3. **The generator ERASES that distinction.** `int x` and `int x = 0` emit
+   identical code:
+
+   ```csharp
+   public sealed class FooProps : IProps
+   {
+       public int X { get; set; } = 0;             // from `int x`
+       public string Label { get; set; } = "hi";   // from `string label = "hi"`
+   }
+   ```
+
+   A missing prop silently becomes `default(T)`, and there is no diagnostic for
+   it anywhere in the codebase. That is the thing being changed.
+
+### 2.3 Decisions (owner, 2026-08-28)
+
+- **`required` means NO DEFAULT WRITTEN.** No new marker syntax. This makes
+  `int x` and `int x = 0` semantically different for the first time — a real,
+  quiet language change, and the reason it belongs in a minor rather than a
+  patch.
+- **A call site omitting a required prop is an ERROR**, project-wide, straight
+  to Error with no deprecation window. Considered and rejected: the builder
+  auto-supplying a default, which hides the mistake rather than surfacing it.
+- **In the preview an error keeps the LAST GOOD render**, which is already how
+  the preview handles a failed compile — no new mechanism needed.
+- **Removing a prop strips the attribute at every known call site**, as one
+  undoable action. The builder has the tree and the import edges, and module
+  rename already rewrites every importer, so this is the same machinery
+  pointed at attributes. Call sites OUTSIDE the open tree get the diagnostic;
+  that is the honest limit.
+- **All types plus free text**, as with style keys and attributes.
+- **v1 is the whole thing** — add, rename and remove together, not staged.
+
+### 2.4 Blast radius of the Error tier
+
+A Warning→Error bump is breaking by this repo's own rule (CLAUDE.md), so it was
+measured before being accepted. Spot-checked by hand across `Samples/`:
+
+```
+SectionHeading(string label)                <SectionHeading label="…" />      passes it
+SectionNote(string label)                   <SectionNote label="…" />         passes it
+DoomFace(int frame)                         <DoomFace frame={faceState} />    passes it
+ContextConsumer(string label = "Primary")   <ContextConsumer />               has a default
+```
+
+Where a prop has no default, callers pass it; where a caller omits one, the prop
+has a default. The convention is already being followed by hand, which is the
+strongest argument that enforcing it is correction rather than disruption.
+
+**No repo-wide number is recorded here on purpose.** Two attempts to automate
+the scan returned 0/46 and 46/46, both provably wrong against the source. The
+reliable measurement is the analyzer itself: run it over the samples and a real
+project before flipping severity. A number that cannot be trusted is worse than
+no number.
+
+### 2.5 The work
+
+It splits in two, and the halves are independent. The analyzer half has reach
+beyond the builder and should land first and separately.
+
+**Analyzer (language-wide, no codegen or runtime change):**
 
 | id | Work |
 |---|---|
-| **SIG-1** | Make the signature row editable: add / rename / remove a prop, with a type from the same typed vocabulary the style-key menu uses. |
-| **SIG-2** | Emit the props type and thread it through, so `V.Func<P>(…)` and the knobs pick it up. |
-| **SIG-3** | Call sites: adding a required prop invalidates existing usages — surface that rather than silently breaking importers, the way rename already does. |
-| **SIG-4** | Defaults, so an added prop does not break every existing usage at once. |
+| **SIG-A** | New `UITKX####`: a component call site omitting a parameter that has no written default. Error tier. Uses `FunctionParam.DefaultValue`, which the parser already carries. |
+| **SIG-B** | Parity across the four layers — SG, HMR, IDE virtual doc, shared parser — per the repo rule that a fix in one lands in all. |
+| **SIG-C** | CHANGELOG states plainly that a call omitting a no-default prop is now an error, so anyone relying on `default(T)` learns why. Minor version. |
 
-**Depends on isolation** only lightly, but SIG-3 needs the tree to answer "who
-uses this component", which is a data-model question and cleaner after Part 1.
+**Builder (the three gestures):**
+
+| id | Work |
+|---|---|
+| **SIG-1** | Signature row becomes editable: add a prop, with a searchable type menu and free-text fallback. |
+| **SIG-2** | Rename a prop — tree-wide, every call site's attribute, one undo. Reuses the module-rename machinery. |
+| **SIG-3** | Remove a prop — strips the attribute at every known call site, one undo, naming what it touched. |
+| **SIG-4** | Knobs: nothing to do. The preview mines them by reflecting the compiled props type, so a new prop appears as a knob once the buffer recompiles. Verified, not assumed. |
+
+SIG-4 being free is the reason to do this before the router: it turns the
+preview from a static picture into something you can drive.
 
 ---
-
 ## Part 3 — Router
 
 **Settled in conversation, 2026-08-27/28.**
