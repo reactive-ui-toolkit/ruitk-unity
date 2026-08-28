@@ -785,7 +785,8 @@ namespace Ruitk.EditorSupport.HMR
                     findBareJsxRanges,
                     findLhsStartForLogicalAnd,
                     ComputeEffectiveNs(directives, uitkxPath),
-                    BuildHookFamilyKeyMap(directives, uitkxPath)
+                    BuildHookFamilyKeyMap(directives, uitkxPath),
+                    BuildComponentFqnMap(directives, uitkxPath)
                 );
 
                 // Companion .uitkx pickup. EmitCompanionUitkxSources writes into
@@ -3476,25 +3477,41 @@ namespace Ruitk.EditorSupport.HMR
                     continue;
                 string targetNs = ComputeEffectiveNs(targetDs, targetFile);
 
-                // Only the target's exported COMPONENTS - a value or hook of the same
-                // name must not claim the tag.
-                var targetComponents = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var m in GetItems(GetProp(targetDs, "MemberDeclarations")))
-                    if (string.Equals(GetProp(m, "Kind")?.ToString(), "Component", StringComparison.Ordinal)
-                        && GetProp(m, "IsExported") is bool me && me
-                        && GetProp(m, "Name") is string mn && !string.IsNullOrEmpty(mn))
-                        targetComponents.Add(mn);
+                // The target's component is NOT in MemberDeclarations. ParseResult is
+                // explicit about it: a VirtualNode-returning declaration classifies as
+                // DeclKind.Component but is parsed into ComponentDeclaration, and the
+                // directives surface it as ComponentName. Reading MemberDeclarations
+                // here built an always-empty map, which silently left the assembly scan
+                // in charge and fixed nothing.
+                string targetComponent = GetProp(targetDs, "ComponentName") as string;
+                if (string.IsNullOrEmpty(targetComponent))
+                    continue;
 
                 var names = GetItems(GetProp(imp, "Names"));
                 var aliases = GetItems(GetProp(imp, "Aliases"));
                 for (int k = 0; k < names.Count; k++)
                 {
                     string nm = names[k] as string;
-                    if (string.IsNullOrEmpty(nm) || !targetComponents.Contains(nm))
+                    if (string.IsNullOrEmpty(nm)
+                        || !string.Equals(nm, targetComponent, StringComparison.Ordinal))
                         continue;
                     string bound = k < aliases.Count ? (aliases[k] as string) ?? nm : nm;
-                    map[bound] = string.IsNullOrEmpty(targetNs) ? nm : targetNs + "." + nm;
+                    map[bound] = string.IsNullOrEmpty(targetNs)
+                        ? nm
+                        : targetNs + "." + nm;
                 }
+            }
+            if (Trace != null)
+            {
+                var report = new System.Text.StringBuilder("[RUITK Builder] compile: child components of ")
+                    .Append(Path.GetFileName(filePath));
+                if (map.Count == 0)
+                    report.Append(" -> (none resolved through imports; the assembly scan decides)");
+                else
+                    foreach (var pair in map)
+                        report.Append("\n    ").Append(pair.Key)
+                              .Append("  ->  ").Append(pair.Value);
+                Trace(report.ToString());
             }
             return map;
         }
