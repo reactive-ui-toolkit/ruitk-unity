@@ -30,6 +30,28 @@ namespace Ruitk.Builder
     {
         private readonly Func<BuilderTree> _tree;
         private readonly IModuleSource _fallback;
+        private readonly List<string> _fellThrough = new List<string>();
+
+        /// <summary>Every module path this source could NOT answer from the tree
+        /// and handed to disk instead.
+        ///
+        /// A fall-through is not automatically wrong - a hand-written module
+        /// outside the open tree is a legitimate import target. It is wrong when
+        /// the tree should have known: that is the leak this campaign closed three
+        /// times, and each time it was invisible. Naming them makes an unexpected
+        /// one a line in the log rather than a wrong render three weeks later
+        /// (ISO-G).</summary>
+        internal IReadOnlyList<string> FellThroughToDisk => _fellThrough;
+
+        internal void ResetFallThroughLog() => _fellThrough.Clear();
+
+        private void NoteFallThrough(string path)
+        {
+            if (string.IsNullOrEmpty(path) || _fellThrough.Count >= 64)
+                return;
+            if (!_fellThrough.Contains(path))
+                _fellThrough.Add(path);
+        }
 
         /// <param name="tree">The open tree. Only the TREE is needed - the
         /// workspace adds disk and editor concerns this class must not have.</param>
@@ -58,6 +80,7 @@ namespace Ruitk.Builder
             // Not ours. A file the builder does not manage is still a legitimate
             // import target, so the question falls through rather than being
             // answered "no" on the strength of the tree alone.
+            NoteFallThrough(uitkxPath);
             return _fallback.Exists(uitkxPath);
         }
 
@@ -66,6 +89,7 @@ namespace Ruitk.Builder
             var module = Find(uitkxPath);
             if (module != null)
                 return module.BufferText;
+            NoteFallThrough(uitkxPath);
             return _fallback.ReadText(uitkxPath);
         }
 

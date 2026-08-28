@@ -75,7 +75,8 @@ namespace Ruitk.Builder
             // ISO-B: the compiler now asks the TREE, not the disk. The overlay stays
             // as the read fast-path; this is what answers existence and companion
             // discovery, which the overlay never could.
-            compiler.Modules = new BuilderModuleSource(() => _workspace?.Tree);
+            _moduleSource = new BuilderModuleSource(() => _workspace?.Tree);
+            compiler.Modules = _moduleSource;
             compiler.Trace = message => Trace?.Invoke(message);
             _compiler = compiler;
             return true;
@@ -95,6 +96,10 @@ namespace Ruitk.Builder
         /// all of it, whether or not that module had been touched. On Unity 6.5 each
         /// of those is an external csc process, so the editor got measurably slower
         /// with every module added to an unsaved tree.</summary>
+        /// <summary>Kept so a compile can report what it could not answer from the
+        /// tree (ISO-G).</summary>
+        private BuilderModuleSource _moduleSource;
+
         private readonly Dictionary<string, string> _compiledFrom =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -132,6 +137,10 @@ namespace Ruitk.Builder
         {
             if (_compiler == null || _workspace == null)
                 return null;
+
+            // ISO-G: a fresh log per compile, so the report below is about THIS
+            // round rather than everything since the window opened.
+            _moduleSource?.ResetFallThroughLog();
 
             // What needs rebuilding is what has changed since it was last BUILT -
             // not what is unsaved. Those differ in a case the owner hit head-on:
@@ -246,6 +255,21 @@ namespace Ruitk.Builder
                     failedRoots[path] = path;
                     summary.Failures.Add((path, result.Error));
                 }
+            }
+            // ISO-G. A fall-through is not automatically wrong -- a hand-written
+            // module outside the open tree is a legitimate import target. It is
+            // wrong when the TREE should have known, which is the leak this
+            // campaign closed three times while it was invisible each time. For a
+            // tree with no outside imports this reads zero; anything else is named.
+            var fellThrough = _moduleSource?.FellThroughToDisk;
+            if (Trace != null && fellThrough != null && fellThrough.Count > 0)
+            {
+                var report = new System.Text.StringBuilder(
+                    "[RUITK Builder] compile: asked DISK for " + fellThrough.Count
+                    + " module path(s) the tree could not answer");
+                foreach (string path in fellThrough)
+                    report.Append("\n    ").Append(path);
+                Trace(report.ToString());
             }
             return summary;
         }
