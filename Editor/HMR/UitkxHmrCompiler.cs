@@ -357,6 +357,7 @@ namespace Ruitk.EditorSupport.HMR
         /// </summary>
         public HmrCompileResult Compile(string uitkxPath, string[] companionCsFiles = null)
         {
+            _directivesThisCompile.Clear();
             var result = new HmrCompileResult();
             var sw = Stopwatch.StartNew();
             PublishSourceOverlay();
@@ -3695,15 +3696,34 @@ namespace Ruitk.EditorSupport.HMR
         }
 
         /// <summary>Parses a target file's directives (reflected DirectiveSet), null on failure.</summary>
+        /// <summary>Parsed directives for import targets, for the life of ONE
+        /// compile.
+        ///
+        /// The hook-family map and the component-FQN map walk the same imports, and
+        /// each read and parsed every target independently - so adding the second
+        /// map doubled a cost paid on every save, HMR included. Within a single
+        /// compile a target cannot change underneath us, so one parse per target is
+        /// the right number. Cleared per compile rather than held: a stale directive
+        /// set is exactly the class of bug this campaign spent the day removing.</summary>
+        private readonly Dictionary<string, object> _directivesThisCompile =
+            new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
         private object ParseDirectivesForFile(string targetFile)
         {
+            if (string.IsNullOrEmpty(targetFile))
+                return null;
+            if (_directivesThisCompile.TryGetValue(targetFile, out object cached))
+                return cached;
+            object parsed = null;
             try
             {
                 string src = ReadUitkxText(targetFile);
                 var diag = CreateDiagnosticList();
-                return InvokeWithDefaults(_directiveParse, null, src, targetFile, diag, true);
+                parsed = InvokeWithDefaults(_directiveParse, null, src, targetFile, diag, true);
             }
-            catch { return null; }
+            catch { parsed = null; }
+            _directivesThisCompile[targetFile] = parsed;
+            return parsed;
         }
 
         /// <summary>Maps bare custom-hook keys to their qualified form via <paramref name="map"/>.</summary>
