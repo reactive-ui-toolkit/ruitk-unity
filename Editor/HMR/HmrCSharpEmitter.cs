@@ -189,6 +189,15 @@ namespace Ruitk.EditorSupport.HMR
                 {
                     if (asm.IsDynamic)
                         continue;
+                    // ISO-D: this scan only runs for a tag with NO import behind
+                    // it - a hand-written component in a package. Those never live
+                    // in a swap assembly, which is a per-session build of a module
+                    // from someone's tree. Every previously opened tree leaves its
+                    // swaps loaded, so letting them answer is how a scan by simple
+                    // name reaches another tree's component (UB-223).
+                    string asmName = asm.GetName()?.Name ?? string.Empty;
+                    if (asmName.StartsWith("hmr_", StringComparison.Ordinal))
+                        continue;
                     Type[] types;
                     try { types = asm.GetTypes(); }
                     catch { continue; }

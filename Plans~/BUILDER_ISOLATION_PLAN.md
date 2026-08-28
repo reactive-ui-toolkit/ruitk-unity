@@ -134,12 +134,41 @@ Ordered so each stage is separately verifiable and none is a big-bang.
 | **ISO-B** | Builder implements it over `BuilderTree`; `BuilderPreviewCompiler` passes it. `SourceOverlay` becomes a thin adapter onto it. | preview renders unsaved trees with no disk read for module text |
 | **ISO-C** | Replace the two companion globs (ISO-1) with `SiblingsWithPrefix`. | an unsaved companion is found by its component |
 | **ISO-D** | Replace the `ResolveComponentFqn` fallback (ISO-2) with `ComponentNameOf`, keeping the scan only for hand-written package components with no import. | two trees sharing a component name cannot cross |
-| **ISO-E** | Delete the ambient static overlay (ISO-3). | `PublishSourceOverlay` gone; nothing static remains |
+| **ISO-E** | ~~Delete the ambient static overlay~~ — **NOT DOABLE, see 1.9** | n/a |
 | **ISO-F** | Guard: a test that compiles a tree whose modules exist ONLY in memory, with the filesystem implementation deliberately throwing. | any new disk read on the builder path fails loudly |
 
 **ISO-F is the point of the campaign.** Everything before it fixes today's
 leaks; ISO-F is what stops tomorrow's. Without it this is discipline again, and
 discipline is what produced three bugs in one day.
+
+### 1.9 ISO-E: why the static overlay has to stay
+
+The plan said delete it. It cannot be deleted, and the reason is worth
+recording rather than quietly dropping the row.
+
+The overlay is not the compiler's own state. It is pushed by reflection into a
+**public static field in the language library**:
+
+```csharp
+// ide-extensions~/language-lib/ImportScopeFacts.cs
+public static Func<string, string?>? SourceOverlay;
+```
+
+The language lib resolves import targets of its own when it computes the using
+aliases an import implies, and that is how it sees an unsaved one. Deleting the
+static without replacing the mechanism does not make the builder cleaner - it
+makes unsaved imports invisible to alias resolution, which is a regression.
+
+Replacing it means changing a public API on a file that is `<Compile Include>`-
+linked into the generator, the LSP server and the Unity runtime - four parity
+layers that must agree. That is its own campaign, not a stage of this one.
+
+What holds today: `PublishSourceOverlay` runs per compile and writes whatever
+that compiler instance has, so an HMR compile (overlay null) resets it and a
+builder compile sets it. Both are main-thread and serialized per compile, so
+the two instances cannot interleave. It is safe, but it is safe by timing
+rather than by construction, which is exactly the property ISO-F now guards
+against elsewhere.
 
 ### 1.8 Risk
 

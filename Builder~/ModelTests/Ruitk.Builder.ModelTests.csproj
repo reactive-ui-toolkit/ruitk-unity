@@ -33,6 +33,9 @@
   <ItemGroup>
     <Compile Include="Shims.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="IsolationChecks.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Editor\HMR\IModuleSource.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Compile\BuilderModuleSource.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderModule.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderTree.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderSpecifiers.cs" />

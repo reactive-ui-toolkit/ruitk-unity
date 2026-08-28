@@ -28,19 +28,26 @@ namespace Ruitk.Builder
     /// </summary>
     internal sealed class BuilderModuleSource : IModuleSource
     {
-        private readonly Func<BuilderWorkspace> _workspace;
+        private readonly Func<BuilderTree> _tree;
+        private readonly IModuleSource _fallback;
 
-        internal BuilderModuleSource(Func<BuilderWorkspace> workspace)
+        /// <param name="tree">The open tree. Only the TREE is needed - the
+        /// workspace adds disk and editor concerns this class must not have.</param>
+        /// <param name="fallback">What answers for paths the tree does not know.
+        /// Injected so a test can pass one that THROWS and prove the tree path
+        /// never reaches disk (ISO-F).</param>
+        internal BuilderModuleSource(Func<BuilderTree> tree, IModuleSource fallback = null)
         {
-            _workspace = workspace;
+            _tree = tree;
+            _fallback = fallback ?? FileSystemModuleSource.Instance;
         }
 
         private BuilderModule Find(string path)
         {
-            var workspace = _workspace?.Invoke();
-            if (workspace == null || string.IsNullOrEmpty(path))
+            var tree = _tree?.Invoke();
+            if (tree == null || string.IsNullOrEmpty(path))
                 return null;
-            try { return workspace.Tree?.ByPath(Path.GetFullPath(path)); }
+            try { return tree.ByPath(Path.GetFullPath(path)); }
             catch (Exception) { return null; }
         }
 
@@ -51,7 +58,7 @@ namespace Ruitk.Builder
             // Not ours. A file the builder does not manage is still a legitimate
             // import target, so the question falls through rather than being
             // answered "no" on the strength of the tree alone.
-            return FileSystemModuleSource.Instance.Exists(uitkxPath);
+            return _fallback.Exists(uitkxPath);
         }
 
         public string ReadText(string uitkxPath)
@@ -59,7 +66,7 @@ namespace Ruitk.Builder
             var module = Find(uitkxPath);
             if (module != null)
                 return module.BufferText;
-            return FileSystemModuleSource.Instance.ReadText(uitkxPath);
+            return _fallback.ReadText(uitkxPath);
         }
 
         /// <summary>Companions from the TREE, so an unsaved one is found.
@@ -75,15 +82,15 @@ namespace Ruitk.Builder
         {
             var found = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var workspace = _workspace?.Invoke();
+            var tree = _tree?.Invoke();
 
             string dir;
             try { dir = string.IsNullOrEmpty(directory) ? null : Path.GetFullPath(directory); }
             catch (Exception) { dir = null; }
 
-            if (workspace != null && dir != null)
+            if (tree != null && dir != null)
             {
-                foreach (var module in workspace.Modules)
+                foreach (var module in tree.Modules)
                 {
                     if (module?.FilePath == null)
                         continue;
@@ -105,12 +112,12 @@ namespace Ruitk.Builder
             // Files on disk the tree does not carry — a companion written by hand
             // and never opened here — still count. A module the tree HAS deleted or
             // moved away is deliberately not re-admitted: the tree already said so.
-            foreach (string path in FileSystemModuleSource.Instance.SiblingsWithPrefix(directory, prefix))
+            foreach (string path in _fallback.SiblingsWithPrefix(directory, prefix))
             {
                 string full;
                 try { full = Path.GetFullPath(path); }
                 catch (Exception) { continue; }
-                if (workspace != null && IsAccountedFor(workspace, full))
+                if (tree != null && IsAccountedFor(tree, full))
                     continue;
                 if (seen.Add(full))
                     found.Add(path);
@@ -122,11 +129,11 @@ namespace Ruitk.Builder
         /// — either a module sits there now, or one came FROM there and has since
         /// moved or been deleted. Either way the tree's answer wins over the
         /// file's.</summary>
-        private static bool IsAccountedFor(BuilderWorkspace workspace, string fullPath)
+        private static bool IsAccountedFor(BuilderTree tree, string fullPath)
         {
-            if (workspace.Tree?.ByPath(fullPath) != null)
+            if (tree.ByPath(fullPath) != null)
                 return true;
-            foreach (var module in workspace.Modules)
+            foreach (var module in tree.Modules)
             {
                 if (module?.DiskPath == null)
                     continue;

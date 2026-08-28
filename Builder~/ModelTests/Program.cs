@@ -183,6 +183,10 @@ static class Program
 
     static void Main()
     {
+        // ---- isolation: the tree answers, the disk is never asked ---------
+        Console.WriteLine("isolation (ISO-F)");
+        IsolationChecks.Run(Check);
+
         string comp = Path.Combine(Root, "Showcase");
         string child = Path.Combine(comp, "components", "Sub");
 
