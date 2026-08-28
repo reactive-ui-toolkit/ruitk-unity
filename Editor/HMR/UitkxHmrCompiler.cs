@@ -114,6 +114,21 @@ namespace Ruitk.EditorSupport.HMR
         /// rounds of guessing.</summary>
         internal Action<string> Trace { get; set; }
 
+        /// <summary>Every point where this compiler answers a question about a
+        /// module from something OTHER than the caller's data model - the disk, the
+        /// loaded assembly table, a parse of a file on disk - reports through here.
+        ///
+        /// The builder edits a tree in memory and this compiler resolves through
+        /// paths, so each of these is a boundary crossing. UB-203, UB-222 and UB-223
+        /// were each one crossing answering from the wrong world, and each cost a
+        /// round of guessing because the crossing was silent. They are not silent
+        /// now: with Trace on, the log names the question, the answer, and WHICH
+        /// world answered it.</summary>
+        private void TraceCross(string question, string detail)
+        {
+            Trace?.Invoke("[RUITK Builder] compile/" + question + ": " + detail);
+        }
+
         /// <summary>Hands the unsaved-buffer overlay to the language lib, which
         /// resolves import targets of its own when it computes the using aliases an
         /// import implies. Done per compile rather than once, so it cannot depend on
@@ -136,11 +151,16 @@ namespace Ruitk.EditorSupport.HMR
         private string ReadUitkxText(string path)
         {
             string overlay = SourceOverlay?.Invoke(path);
+            TraceCross("read", Path.GetFileName(path) + "  <- "
+                + (overlay != null ? "OVERLAY (the live buffer)" : "DISK"));
             return overlay ?? ReadTextWithRetry(path);
         }
 
         private bool UitkxSourceExists(string path)
         {
+            TraceCross("exists?", Path.GetFileName(path ?? "(null)") + "  overlay="
+                + (SourceOverlay?.Invoke(path) != null ? "yes" : "no")
+                + "  disk=" + (!string.IsNullOrEmpty(path) && File.Exists(path) ? "yes" : "no"));
             if (SourceOverlay?.Invoke(path) != null)
                 return true;
             return File.Exists(path);
@@ -1380,6 +1400,9 @@ namespace Ruitk.EditorSupport.HMR
                             targetFile = _importResolverMap.Invoke(null, args) as string;
                         }
                         catch { }
+                        TraceCross("resolve", Path.GetFileName(uitkxPath) + "  \"" + specifier
+                            + "\"  ->  " + (string.IsNullOrEmpty(targetFile)
+                                ? "(UNRESOLVED)" : targetFile));
                         if (string.IsNullOrEmpty(targetFile) || !UitkxSourceExists(targetFile))
                             continue;
                         if (seenCandidates.Add(Path.GetFullPath(targetFile)))
