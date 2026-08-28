@@ -471,6 +471,7 @@ namespace Ruitk.EditorSupport.HMR
                     findLhsStartForLogicalAnd,
                     effectiveNs,
                     BuildHookFamilyKeyMap(directives, uitkxPath),
+                    BuildComponentFqnMap(directives, uitkxPath),
                     InvokeTagMap(_starImportNamespacesFn, directives, uitkxPath),
                     InvokeTagMap(_importAliasTypeMapFn, directives, uitkxPath)
                 );
@@ -3421,6 +3422,81 @@ namespace Ruitk.EditorSupport.HMR
                 return (r as string) ?? rawNs;
             }
             catch { return rawNs; }
+        }
+
+        /// <summary>Bound-tag-name → the imported component's fully-qualified name,
+        /// resolved through the IMPORT rather than by scanning loaded assemblies.
+        ///
+        /// The emitter's fallback (ResolveComponentFqn) takes the first loaded type
+        /// whose SIMPLE name matches the tag, which is only correct while no two
+        /// trees share a component name. Open a second tree with a LeftSide in it and
+        /// the consumer publishes GetFamily against the OTHER tree's key, so the
+        /// registry hands back a stranger's component - correctly, because that is
+        /// what was asked for (UB-223).
+        ///
+        /// Resolution is importer-relative and tested through UitkxSourceExists, not
+        /// File.Exists: an unsaved sibling is not on disk by design, and a disk-gated
+        /// check cannot see it. Names with no import are left out, so hand-written
+        /// components (router types in the package) still reach the assembly scan.</summary>
+        internal Dictionary<string, string> BuildComponentFqnMap(object directives, string filePath)
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (directives == null || _importResolverMap == null)
+                return map;
+
+            var imports = GetItems(GetProp(directives, "Imports"));
+            if (imports.Count == 0)
+                return map;
+
+            string importerDir = (Path.GetDirectoryName(filePath) ?? filePath).Replace('\\', '/');
+            string rootDir = importerDir;
+            if (_uiSourceRootDir != null)
+            {
+                try { rootDir = (_uiSourceRootDir.Invoke(null, new object[] { filePath }) as string) ?? importerDir; }
+                catch { }
+            }
+
+            foreach (var imp in imports)
+            {
+                string specifier = (string)GetProp(imp, "Specifier");
+                if (string.IsNullOrEmpty(specifier))
+                    continue;
+                string targetFile = null;
+                try
+                {
+                    var args = new object[] { importerDir, specifier, rootDir, null };
+                    targetFile = _importResolverMap.Invoke(null, args) as string;
+                }
+                catch { }
+                if (string.IsNullOrEmpty(targetFile) || !UitkxSourceExists(targetFile))
+                    continue;
+
+                object targetDs = ParseDirectivesForFile(targetFile);
+                if (targetDs == null)
+                    continue;
+                string targetNs = ComputeEffectiveNs(targetDs, targetFile);
+
+                // Only the target's exported COMPONENTS - a value or hook of the same
+                // name must not claim the tag.
+                var targetComponents = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var m in GetItems(GetProp(targetDs, "MemberDeclarations")))
+                    if (string.Equals(GetProp(m, "Kind")?.ToString(), "Component", StringComparison.Ordinal)
+                        && GetProp(m, "IsExported") is bool me && me
+                        && GetProp(m, "Name") is string mn && !string.IsNullOrEmpty(mn))
+                        targetComponents.Add(mn);
+
+                var names = GetItems(GetProp(imp, "Names"));
+                var aliases = GetItems(GetProp(imp, "Aliases"));
+                for (int k = 0; k < names.Count; k++)
+                {
+                    string nm = names[k] as string;
+                    if (string.IsNullOrEmpty(nm) || !targetComponents.Contains(nm))
+                        continue;
+                    string bound = k < aliases.Count ? (aliases[k] as string) ?? nm : nm;
+                    map[bound] = string.IsNullOrEmpty(targetNs) ? nm : targetNs + "." + nm;
+                }
+            }
+            return map;
         }
 
         /// <summary>Bare-hook-name → qualified family key, matching UitkxPipeline.BuildHookFamilyKeyMap.</summary>

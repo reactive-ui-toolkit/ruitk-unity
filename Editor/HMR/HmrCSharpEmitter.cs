@@ -92,6 +92,7 @@ namespace Ruitk.EditorSupport.HMR
             FindLhsStartFunc findLhsStartForLogicalAnd = null,
             string effectiveNs = null,
             System.Collections.Generic.IReadOnlyDictionary<string, string> hookKeyMap = null,
+            System.Collections.Generic.IReadOnlyDictionary<string, string> componentFqnMap = null,
             System.Collections.Generic.IReadOnlyDictionary<string, string> starImportNamespaces = null,
             System.Collections.Generic.IReadOnlyDictionary<string, string> importAliasTypeMap = null
         )
@@ -104,7 +105,8 @@ namespace Ruitk.EditorSupport.HMR
                 findBareJsxRanges,
                 findLhsStartForLogicalAnd,
                 effectiveNs,
-                hookKeyMap
+                hookKeyMap,
+                componentFqnMap
             );
             ctx.StarImportNamespaces = starImportNamespaces;
             ctx.ImportAliasTypeMap = importAliasTypeMap;
@@ -226,6 +228,7 @@ namespace Ruitk.EditorSupport.HMR
             private bool _isRootElement = true;
 
             private readonly System.Collections.Generic.IReadOnlyDictionary<string, string> _hookKeyMap;
+            private readonly System.Collections.Generic.IReadOnlyDictionary<string, string> _componentFqnMap;
 
             public EmitCtx(
                 object directives,
@@ -235,7 +238,8 @@ namespace Ruitk.EditorSupport.HMR
                 FindJsxRangesFunc findBareJsxRanges = null,
                 FindLhsStartFunc findLhsStartForLogicalAnd = null,
                 string effectiveNs = null,
-                System.Collections.Generic.IReadOnlyDictionary<string, string> hookKeyMap = null
+                System.Collections.Generic.IReadOnlyDictionary<string, string> hookKeyMap = null,
+                System.Collections.Generic.IReadOnlyDictionary<string, string> componentFqnMap = null
             )
             {
                 _directives = directives;
@@ -247,6 +251,7 @@ namespace Ruitk.EditorSupport.HMR
                 _displayName = Path.GetFileName(filePath);
                 _linePath = filePath.Replace("\\", "/");
                 _hookKeyMap = hookKeyMap;
+                _componentFqnMap = componentFqnMap;
                 // Effective namespace (matches the SG) so the component's self family key
                 // {ns}.{ComponentName} and the emitted `namespace` agree with the project assembly.
                 _ns = effectiveNs ?? GP<string>(directives, "Namespace") ?? "Ruitk.Generated";
@@ -577,8 +582,17 @@ namespace Ruitk.EditorSupport.HMR
                         // to propagate because Register updates Family[FQN]
                         // while the consumer's __fam_X field points at
                         // Family[simpleName] -- two distinct instances.
-                        string famKey = ResolveComponentFqn(NormalizeFamilyKey(childFqn))
-                            ?? NormalizeFamilyKey(childFqn);
+                        // The IMPORT decides, not the loaded-assembly set. Scanning by
+                        // simple name silently picks another tree's component the moment
+                        // two trees share a name (UB-223); the scan stays only for tags
+                        // with no import behind them - hand-written components in the
+                        // package, which no import graph can resolve.
+                        string bare = NormalizeFamilyKey(childFqn);
+                        string famKey = null;
+                        if (_componentFqnMap != null && _componentFqnMap.TryGetValue(bare, out string mapped)
+                            && !string.IsNullOrEmpty(mapped))
+                            famKey = mapped;
+                        famKey ??= ResolveComponentFqn(bare) ?? bare;
                         // Fallback factory mirrors CSharpEmitter -- see the
                         // long comment there. SG-emitted children are
                         // satisfied by their companion's [ModuleInitializer]
