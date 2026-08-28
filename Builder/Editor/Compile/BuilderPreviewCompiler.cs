@@ -72,6 +72,10 @@ namespace Ruitk.Builder
                 return false;
             }
             compiler.SourceOverlay = ReadBuffer;
+            // ISO-B: the compiler now asks the TREE, not the disk. The overlay stays
+            // as the read fast-path; this is what answers existence and companion
+            // discovery, which the overlay never could.
+            compiler.Modules = new BuilderModuleSource(() => _workspace);
             compiler.Trace = message => Trace?.Invoke(message);
             _compiler = compiler;
             return true;

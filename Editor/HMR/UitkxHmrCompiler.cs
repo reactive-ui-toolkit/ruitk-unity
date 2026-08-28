@@ -108,6 +108,16 @@ namespace Ruitk.EditorSupport.HMR
         /// </summary>
         internal Func<string, string> SourceOverlay { get; set; }
 
+        /// <summary>Where module truth comes from. Defaults to the filesystem, which
+        /// is exactly what HMR wants and what every caller had before this existed.
+        /// The builder replaces it with one backed by its in-memory tree.
+        ///
+        /// The point of it being a FIELD rather than a set of remembered rules: an
+        /// overlay that is not passed cannot be enforced, and three defects in one
+        /// wave were call sites that forgot to consult it (ISO-3 in
+        /// Plans~/BUILDER_ISOLATION_PLAN.md).</summary>
+        internal IModuleSource Modules { get; set; } = FileSystemModuleSource.Instance;
+
         /// <summary>Optional diagnostic sink. What a swap unit INLINES is the one
         /// fact that decides whether an edit to an imported module can be seen,
         /// and it was invisible from outside - which is what made UB-203 take four
@@ -136,16 +146,25 @@ namespace Ruitk.EditorSupport.HMR
 
         private string ReadUitkxText(string path)
         {
+            // SourceOverlay is still consulted first so an existing caller that sets
+            // only the overlay keeps working; it is now an adapter ONTO the module
+            // source rather than a parallel truth (ISO-A).
             string overlay = SourceOverlay?.Invoke(path);
-            return overlay ?? ReadTextWithRetry(path);
+            return overlay ?? (Modules ?? FileSystemModuleSource.Instance).ReadText(path);
         }
 
         private bool UitkxSourceExists(string path)
         {
             if (SourceOverlay?.Invoke(path) != null)
                 return true;
-            return File.Exists(path);
+            return (Modules ?? FileSystemModuleSource.Instance).Exists(path);
         }
+
+        /// <summary>The companion set for a module: siblings sharing its name
+        /// prefix. A directory glob cannot answer this for an unsaved tree, where
+        /// the companion has no file to enumerate (ISO-1).</summary>
+        private IEnumerable<string> CompanionSiblings(string directory, string prefix) =>
+            (Modules ?? FileSystemModuleSource.Instance).SiblingsWithPrefix(directory, prefix);
 
         // ── Loaded pipeline assembly ──────────────────────────────────────────
         private Assembly _languageAsm;
@@ -816,9 +835,7 @@ namespace Ruitk.EditorSupport.HMR
                     // not a failure - but the unguarded scan threw
                     // DirectoryNotFoundException on every debounced recompile,
                     // which killed the preview and made typing crawl.
-                    foreach (var file in Directory.Exists(compDir)
-                        ? Directory.GetFiles(compDir, prefix + "*.uitkx")
-                        : System.Array.Empty<string>())
+                    foreach (var file in CompanionSiblings(compDir, prefix))
                     {
                         if (!string.Equals(file, uitkxPath, StringComparison.OrdinalIgnoreCase))
                             artifacts.CompanionUitkxPathsConsumed.Add(Path.GetFullPath(file));
@@ -1353,9 +1370,7 @@ namespace Ruitk.EditorSupport.HMR
             string prefix = componentName + ".";
             // Same reason as the companion scan above: a pending module may
             // have no directory on disk, which simply means no candidates.
-            foreach (var f in Directory.Exists(dir)
-                ? Directory.GetFiles(dir, prefix + "*.uitkx")
-                : System.Array.Empty<string>())
+            foreach (var f in CompanionSiblings(dir, prefix))
                 if (seenCandidates.Add(Path.GetFullPath(f)))
                     candidateFiles.Add(f);
             if (componentDirectives != null && _importResolverMap != null)
