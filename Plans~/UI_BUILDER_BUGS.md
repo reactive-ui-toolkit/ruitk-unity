@@ -114,6 +114,47 @@ optional `@switch` case terminator and is an error anywhere else.
 `@continue` and `@code` are always errors. Unknown directives raise
 **UITKX0305** (Error).
 
+### UB-223 — a new tree renders another tree's components `OPEN` `HIGH`
+
+Owner report: a brand-new, never-saved tree whose children are all empty
+rendered text from a DIFFERENT tree. A child named `BlaOne` - a name existing
+nowhere else - rendered nothing (correct). Children named `LeftSide` and
+`RightSide`, which DO exist in a saved tree, rendered that tree's content.
+Name-shaped behaviour out of a system whose keys are path-shaped.
+
+Three hypotheses died against evidence before the right question was asked:
+namespaces are distinct (every directory segment is used), family keys are
+distinct AND parent and child agree on them, and `RefreshRuntime.GetFamily` is
+an exact dictionary hit with no name fallback.
+
+DIAGNOSED by the family-binding probe (Trace). It prints, per child reference,
+the key the parent asked for and the declaring type + assembly of the body it
+received:
+
+```
+family bindings for NewBla  (asm hmr_NewBla_7)
+  asked for: ...__RuitkBuilderUnsaved___.NewBla.components.BlaOne.BlaOne.BlaOne
+    got:     ...__RuitkBuilderUnsaved___.NewBla.components.BlaOne...  asm=hmr_BlaOne_4
+  asked for: Ruitk.Uitkx.UI_Test.NewComponent.components.LeftSide.LeftSide.LeftSide
+    got:     Ruitk.Uitkx.UI_Test.NewComponent.components.LeftSide...  asm=Assembly-CSharp
+```
+
+ROOT CAUSE (located, not yet fixed): **the registry is innocent - every lookup
+returned exactly what was asked for. The parent asked for the wrong key.** The
+importer sits at the provisional unsaved root, and its `./components/LeftSide/
+LeftSide` specifier resolved to the SAVED tree's file instead of its own
+sibling. `BlaOne` resolved correctly only because no saved file shares its name.
+
+So component-child specifier resolution is not doing what the hook-family map
+beside it already does: resolve relative to the IMPORTER and test existence
+through the overlay (`UitkxSourceExists`) rather than the disk. Unsaved siblings
+are not on disk by design - that is the save-only contract - so a disk-gated
+existence check cannot see them and something falls back to a project-wide
+lookup by name.
+
+This is the same shape as UB-222: asking the DISK about a tree that only exists
+in memory. The fix belongs at the resolution point, not at the render.
+
 ### UB-01 — Builder exposes 2 of the 5 real directives `OPEN` `HIGH`
 
 The row context menu offers exactly `Wrap in @if` and `Wrap in @foreach`
