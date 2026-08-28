@@ -370,9 +370,23 @@ Three tiers, merged into the source console and the card overlays:
 3. C# compile errors (`CS####`) from the preview compile.
 
 A **Trace** toggle in the toolbar turns on a running log of what the preview
-pipeline decided — which modules were considered for a rebuild, which were
-rebuilt, and why. Off by default; it exists for when the preview is not showing
-what the user expects.
+pipeline decided. Off by default; it exists for when the preview is not showing
+what the user expects, and it reports four things:
+
+- which modules were considered for a rebuild, which were rebuilt, and why;
+- which component each child tag resolved to, through the importing file rather
+  than by name — and, explicitly, when nothing resolved;
+- which body each child reference actually received at render time, naming the
+  type and the assembly it came from, so a component rendering as something else
+  is one line rather than an inference;
+- any module path the builder could not answer from its own tree and asked the
+  filesystem about instead.
+
+The last one is worth understanding: the builder holds the open tree in memory,
+and everything it shows is computed from that tree. Falling through to the
+filesystem is legitimate for a module the tree does not own — a hand-written
+file elsewhere in the project that this tree imports — and a mistake for one it
+does. Naming them makes the difference visible.
 
 ## 12. Formatting
 
@@ -397,6 +411,13 @@ exactly as it stands.
   cleanly leaves no journal.
 - Nothing else is written outside Save.
 
+The same rule governs READS. From the moment a tree is open, everything the
+builder shows — every card, every edge, every preview render — is computed from
+the in-memory tree, never from the files behind it. A module that has been
+created, edited, renamed, moved or deleted in the session answers as the tree
+says it is, not as the file still on disk says. The filesystem is consulted only
+for modules the open tree does not own.
+
 ## 14. Read-only sources
 
 Modules that live in immutable packages open read-only: they render on the
@@ -416,6 +437,9 @@ Recorded so a port does not go looking for them:
 - No rename-across-files refactor from the canvas beyond the module rename.
 - `@uss` and `Asset<T>` references added since the last Save resolve only after
   saving — the asset cache is disk-gated.
+- Two `.uitkx` trees in the same project may share a component name; the builder
+  keeps them apart by where the file IS, not what it is called. (This was not
+  always true — a tree opened second could render the first one's components.)
 - Moving an EXISTING markup row into another element is unreliable: the gesture
   is armed and every band resolves, but landing the drop is difficult in
   practice. Adding the same element from the library works normally. Every
