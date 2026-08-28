@@ -114,7 +114,7 @@ optional `@switch` case terminator and is an error anywhere else.
 `@continue` and `@code` are always errors. Unknown directives raise
 **UITKX0305** (Error).
 
-### UB-223 — a new tree renders another tree's components `OPEN` `HIGH`
+### UB-223 — a new tree renders another tree's components `FIXED` `HIGH`
 
 Owner report: a brand-new, never-saved tree whose children are all empty
 rendered text from a DIFFERENT tree. A child named `BlaOne` - a name existing
@@ -154,6 +154,20 @@ lookup by name.
 
 This is the same shape as UB-222: asking the DISK about a tree that only exists
 in memory. The fix belongs at the resolution point, not at the render.
+FIXED. `HmrCSharpEmitter.ResolveComponentFqn` took the first loaded type whose
+SIMPLE name matched the tag, so a second tree with a `LeftSide` in it won.
+The compiler now builds a bound-name -> component-FQN map from the IMPORTS -
+resolved importer-relative, existence tested through `UitkxSourceExists` - and
+the emitter prefers it. Names with no import still reach the assembly scan,
+which is the one case it is right for (hand-written package components).
+
+Two defects in the first attempt, both worth remembering: components are NOT
+in `MemberDeclarations` (a VirtualNode-returning declaration parses into
+`ComponentDeclaration` and surfaces as `ComponentName`), so the map was built
+empty and fell through silently; and only one of the two component-emitter
+call sites received it. An empty map is this fix's failure mode, so the map
+now TRACES what it resolved, including an explicit "(none resolved through
+imports; the assembly scan decides)".
 
 ### UB-01 — Builder exposes 2 of the 5 real directives `OPEN` `HIGH`
 
