@@ -52,6 +52,18 @@ namespace Ruitk.Core
     /// </para>
     ///
     /// <para>
+    /// <b>Two classes of hook.</b> The CORE set (<see cref="CanonicalNames"/>)
+    /// lives on <c>Hooks</c>, has a camelCase shorthand, and is ambient - callable
+    /// bare with no import. The ROUTER set (<see cref="RouterHookNames"/>) lives
+    /// on <c>RouterHooks</c>, has NO shorthand, and is not ambient; it is written
+    /// <c>RouterHooks.UseNavigate()</c>. Router hooks join the DETECTION surfaces
+    /// (signature regex, validation patterns, call-site table, hover docs) because
+    /// they are hooks and obey the rules of hooks, and stay OUT of the alias table
+    /// and <see cref="AmbientHookNames"/> because neither applies to them. Adding
+    /// a router hook means <see cref="s_routerOrder"/>, one call-site row and one
+    /// hover-doc entry - not the six steps below.
+    /// </para>
+    /// <para>
     /// <b>Adding a hook.</b>  When a new hook is added to
     /// <c>Shared/Core/Hooks.cs</c>, update exactly one place — this file —
     /// in six sub-steps:
@@ -162,6 +174,61 @@ namespace Ruitk.Core
         /// </summary>
         private static readonly string[] s_validationOrder = s_signatureOrder;
 
+        /// <summary>
+        /// Router hooks (<c>Ruitk.Router.RouterHooks</c>). Kept in a SEPARATE list
+        /// from <see cref="s_signatureOrder"/> because they differ from the core
+        /// hooks in three ways that each table cares about:
+        ///
+        /// <list type="bullet">
+        ///   <item><b>Owner.</b> They live on <c>RouterHooks</c>, not <c>Hooks</c>,
+        ///     so the qualified validation form and the hover-doc key must name
+        ///     their own type.</item>
+        ///   <item><b>No camelCase shorthand.</b> The alias table rewrites
+        ///     <c>useState(</c> to <c>Hooks.UseState(</c>; there is no equivalent
+        ///     rewrite for these, and inventing one would add language surface.
+        ///     They are called <c>RouterHooks.UseNavigate()</c>, as every sample
+        ///     does today.</item>
+        ///   <item><b>Not ambient.</b> <see cref="AmbientHookNames"/> is the
+        ///     strict-import exemption for names a file may call BARE. A bare
+        ///     <c>UseNavigate()</c> does not compile, so exempting it would turn a
+        ///     clear UITKX2307 into a puzzling CS0103.</item>
+        /// </list>
+        ///
+        /// What they DO join: the signature pattern and the validation patterns.
+        /// Both match the qualified call through the bare <c>UseFoo(</c> form, and
+        /// router hooks are hooks - <c>UseBlocker</c> composes <c>UseEffect</c>, so
+        /// calling one inside an <c>@if</c> breaks effect ordering exactly as a
+        /// conditional <c>useEffect</c> would. Until now nothing said so.
+        /// </summary>
+        private static readonly string[] s_routerOrder =
+        {
+            "UseRouter", "UseLocationInfo", "UseLocation", "UseQuery",
+            "UseNavigationState", "UseParams", "UseRouteMatch", "UseNavigate",
+            "UseNavigationBase", "UseGo", "UseCanGo", "UseBlocker", "UseMatches",
+            "UseResolvedPath", "UseSearchParams", "UsePrompt",
+        };
+
+        /// <summary>The owning static class of a hook, for the qualified forms.</summary>
+        private const string RouterOwner = "RouterHooks";
+
+        private static readonly HashSet<string> s_routerSet =
+            new HashSet<string>(s_routerOrder, StringComparer.Ordinal);
+
+        internal static string OwnerOf(string pascalName) =>
+            s_routerSet.Contains(pascalName) ? RouterOwner : "Hooks";
+
+        /// <summary>Core hooks followed by router hooks - the order every
+        /// DETECTION surface uses (signature regex, validation patterns).</summary>
+        private static readonly string[] s_allDetectionOrder = BuildDetectionOrder();
+
+        private static string[] BuildDetectionOrder()
+        {
+            var all = new string[s_signatureOrder.Length + s_routerOrder.Length];
+            Array.Copy(s_signatureOrder, all, s_signatureOrder.Length);
+            Array.Copy(s_routerOrder, 0, all, s_signatureOrder.Length, s_routerOrder.Length);
+            return all;
+        }
+
         // ── Public accessors (return cached references — DO NOT MUTATE) ──────
 
         /// <summary>
@@ -271,6 +338,32 @@ namespace Ruitk.Core
             ("UseUiDocumentRoot", 1, "var docRoot = useUiDocumentRoot(\"context\");"),
             ("UseSfx", 1, "var playSfx = useSfx();"),
             ("ProvideContext", 0, "provideContext(\"key\", null);"),
+            // ── Router hooks (Ruitk.Router.RouterHooks) ──────────────────────
+            // FIBER SLOTS ARE ALL ZERO, and that is verified rather than assumed:
+            // every one composes Hooks.UseContext (0 slots), and UseBlocker adds
+            // Hooks.UseEffect (also 0). Nothing in RouterHooks.cs touches
+            // UseState, UseRef, UseMemo or UseCallback - the whole file was read,
+            // not sampled, because a wrong slot count here shifts hook ordering
+            // and corrupts state at runtime.
+            //
+            // Snippets use the QUALIFIED form because that is the only way these
+            // are callable - there is no camelCase alias (see s_routerOrder).
+            ("UseRouter", 0, "var router = RouterHooks.UseRouter();"),
+            ("UseLocationInfo", 0, "var location = RouterHooks.UseLocationInfo();"),
+            ("UseLocation", 0, "var path = RouterHooks.UseLocation();"),
+            ("UseQuery", 0, "var query = RouterHooks.UseQuery();"),
+            ("UseNavigationState", 0, "var navState = RouterHooks.UseNavigationState();"),
+            ("UseParams", 0, "var routeParams = RouterHooks.UseParams();"),
+            ("UseRouteMatch", 0, "var match = RouterHooks.UseRouteMatch();"),
+            ("UseNavigate", 0, "var navigate = RouterHooks.UseNavigate();"),
+            ("UseNavigationBase", 0, "var navBase = RouterHooks.UseNavigationBase();"),
+            ("UseGo", 0, "var go = RouterHooks.UseGo();"),
+            ("UseCanGo", 0, "var canGoBack = RouterHooks.UseCanGo(-1);"),
+            ("UseBlocker", 0, "RouterHooks.UseBlocker((from, to) => false);"),
+            ("UseMatches", 0, "var matches = RouterHooks.UseMatches();"),
+            ("UseResolvedPath", 0, "var resolved = RouterHooks.UseResolvedPath(\"./child\");"),
+            ("UseSearchParams", 0, "var (search, setSearch) = RouterHooks.UseSearchParams();"),
+            ("UsePrompt", 0, "RouterHooks.UsePrompt(false, \"Discard changes?\");"),
         };
 
         // ── Cached fields ────────────────────────────────────────────────────
@@ -333,15 +426,15 @@ namespace Ruitk.Core
             //   (?:Hooks\.)?\b(camel1|camel2|...|Pascal1|Pascal2|...)(?:<[^>]*>)?\s*\(
             var sb = new StringBuilder(512);
             sb.Append(@"(?:Hooks\.)?\b(");
-            for (int i = 0; i < s_signatureOrder.Length; i++)
+            for (int i = 0; i < s_allDetectionOrder.Length; i++)
             {
                 if (i > 0) sb.Append('|');
-                sb.Append(CamelOf(s_signatureOrder[i]));
+                sb.Append(CamelOf(s_allDetectionOrder[i]));
             }
-            for (int i = 0; i < s_signatureOrder.Length; i++)
+            for (int i = 0; i < s_allDetectionOrder.Length; i++)
             {
                 sb.Append('|');
-                sb.Append(s_signatureOrder[i]);
+                sb.Append(s_allDetectionOrder[i]);
             }
             sb.Append(@")(?:<[^>]*>)?\s*\(");
             return sb.ToString();
@@ -371,15 +464,15 @@ namespace Ruitk.Core
             //   UseFoo(
             //   useFoo(
             // (Matches the pre-0.5.23 HooksValidator.s_hookPatterns layout.)
-            int n = s_validationOrder.Length;
+            int n = s_allDetectionOrder.Length;
             var arr = new string[n * 3];
             int idx = 0;
             for (int i = 0; i < n; i++)
-                arr[idx++] = "Hooks." + s_validationOrder[i] + "(";
+                arr[idx++] = OwnerOf(s_allDetectionOrder[i]) + "." + s_allDetectionOrder[i] + "(";
             for (int i = 0; i < n; i++)
-                arr[idx++] = s_validationOrder[i] + "(";
+                arr[idx++] = s_allDetectionOrder[i] + "(";
             for (int i = 0; i < n; i++)
-                arr[idx++] = CamelOf(s_validationOrder[i]) + "(";
+                arr[idx++] = CamelOf(s_allDetectionOrder[i]) + "(";
             return arr;
         }
 
@@ -483,6 +576,42 @@ namespace Ruitk.Core
                     "## `useLayoutEffect(action, deps?)`\n\n**Shorthand for `Hooks.UseLayoutEffect`.** Runs `action` synchronously after layout but before paint.  Use this when an effect must observe or mutate layout values before the user sees the next frame.  For most side-effects prefer `useEffect`.\n\n```csharp\nuseLayoutEffect(() => { /* read layout, set styles */ return null; }, new object[] { width });\n```",
                 ["Hooks.UseLayoutEffect"] =
                     "## `Hooks.UseLayoutEffect(action, deps?)`\n\nRuns `action` synchronously after layout but before paint.  Use this when an effect must observe or mutate layout values before the user sees the next frame.  For most side-effects prefer `Hooks.UseEffect`.\n\n```csharp\nHooks.UseLayoutEffect(() => { /* read layout, set styles */ return null; }, new object[] { width });\n```",
+                // ── Router hooks (Ruitk.Router.RouterHooks) ──────────────────
+                // Keyed by the QUALIFIED form only. There is no camelCase
+                // shorthand for these, so a "useNavigate" key would document a
+                // spelling that does not compile.
+                ["RouterHooks.UseRouter"] =
+                    "## `RouterHooks.UseRouter()`\n\nThe ambient `RouterState`, or `null` outside a `<Router>`. Everything else in this list is built on it.",
+                ["RouterHooks.UseLocationInfo"] =
+                    "## `RouterHooks.UseLocationInfo()`\n\nThe full `RouterLocation` - path, query and navigation state - or `null` outside a `<Router>`.",
+                ["RouterHooks.UseLocation"] =
+                    "## `RouterHooks.UseLocation()`\n\nThe current path as a string, defaulting to `\"/\"`. For the query or the state, use `UseLocationInfo`.",
+                ["RouterHooks.UseQuery"] =
+                    "## `RouterHooks.UseQuery()`\n\nThe parsed query string as a read-only dictionary. Empty, never null.",
+                ["RouterHooks.UseNavigationState"] =
+                    "## `RouterHooks.UseNavigationState()`\n\nThe opaque state object passed to the navigation that produced this location, or `null`.",
+                ["RouterHooks.UseParams"] =
+                    "## `RouterHooks.UseParams()`\n\nPath parameters matched by the enclosing `<Route>` (`/user/:id` gives `id`). Empty, never null.",
+                ["RouterHooks.UseRouteMatch"] =
+                    "## `RouterHooks.UseRouteMatch()`\n\nThe `RouteMatch` for the enclosing `<Route>`, or `null` when there is none.",
+                ["RouterHooks.UseNavigate"] =
+                    "## `RouterHooks.UseNavigate(replace = false)`\n\nReturns a handler that navigates to a path. Pass `replace: true` to replace the current entry instead of pushing.\n\n```csharp\nvar navigate = RouterHooks.UseNavigate();\nnavigate(\"/settings\");\n```",
+                ["RouterHooks.UseNavigationBase"] =
+                    "## `RouterHooks.UseNavigationBase()`\n\nThe base path relative navigation resolves against - the enclosing route's matched prefix.",
+                ["RouterHooks.UseGo"] =
+                    "## `RouterHooks.UseGo()`\n\nReturns a handler that moves through history by a delta: `go(-1)` is back, `go(1)` is forward.",
+                ["RouterHooks.UseCanGo"] =
+                    "## `RouterHooks.UseCanGo(delta)`\n\nWhether a `go(delta)` would land anywhere - what a Back button's enabled state binds to.",
+                ["RouterHooks.UseBlocker"] =
+                    "## `RouterHooks.UseBlocker(blocker)`\n\nRegisters a predicate consulted before every navigation; returning `true` cancels it. Guarding unsaved work is the usual reason.\n\nIt composes `Hooks.UseEffect`, so it obeys the rules of hooks: never call it conditionally or in a loop.",
+                ["RouterHooks.UseMatches"] =
+                    "## `RouterHooks.UseMatches()`\n\nEvery `RouteMatch` from the root down to the current route - the data a breadcrumb trail is built from.",
+                ["RouterHooks.UseResolvedPath"] =
+                    "## `RouterHooks.UseResolvedPath(to)`\n\nResolves a relative path against the current route, the same way `<Link to>` does.",
+                ["RouterHooks.UseSearchParams"] =
+                    "## `RouterHooks.UseSearchParams()`\n\nThe query dictionary plus a setter, as a tuple - `useState` for the query string.\n\n```csharp\nvar (search, setSearch) = RouterHooks.UseSearchParams();\nsetSearch(new Dictionary<string, string> { [\"tab\"] = \"stats\" }, false);\n```",
+                ["RouterHooks.UsePrompt"] =
+                    "## `RouterHooks.UsePrompt(when, message?)`\n\nBlocks navigation while `when` is true. A thin wrapper over `UseBlocker`; the message is retained for parity and is not shown by any host dialog.",
             };
             return d;
         }
@@ -610,6 +739,24 @@ namespace Ruitk.Core
         /// the cached accessors above.
         /// </summary>
         public static IReadOnlyList<string> CanonicalNames => s_signatureOrder;
+
+        /// <summary>
+        /// Router hook names (PascalCase). A SECOND class of hook, distinguished
+        /// from <see cref="CanonicalNames"/> by three properties every consumer
+        /// has to respect: they are owned by <c>RouterHooks</c>, they have NO
+        /// camelCase shorthand, and they are not ambient (not callable bare).
+        /// They ARE hooks for the purposes of the rules of hooks.
+        /// </summary>
+        public static IReadOnlyList<string> RouterHookNames => s_routerOrder;
+
+        /// <summary>Every hook name any DETECTION surface knows - core followed
+        /// by router. This is what the signature regex and the validation
+        /// patterns are built from.</summary>
+        public static IReadOnlyList<string> DetectionNames => s_allDetectionOrder;
+
+        /// <summary>The static class a hook is called on: <c>Hooks</c> for the
+        /// core set, <c>RouterHooks</c> for the router set.</summary>
+        public static string OwnerTypeOf(string pascalName) => OwnerOf(pascalName);
 
         /// <summary>
         /// Every name a <c>.uitkx</c> file may use to call a BUILT-IN hook bare:
