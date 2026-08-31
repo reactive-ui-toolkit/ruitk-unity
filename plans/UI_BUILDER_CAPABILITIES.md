@@ -46,8 +46,8 @@ nothing on disk.
 - One card per module. Kinds: component, style module, hook module, util
   module — each with its own accent colour and badge.
 - Sections, top to bottom: title bar, signature (name + full props signature,
-  syntax-coloured), IMPORTS, BODY (hooks & state), RETURN (markup rows), and
-  for style/util modules, per-export detail entries.
+  syntax-coloured, and clickable - see Props), IMPORTS, BODY (hooks & state),
+  RETURN (markup rows), and for style/util modules, per-export detail entries.
 - Card position is user-draggable by the title bar and persisted per tree.
 - A card can be deleted (see Deletion). Deleting is refused while another
   module still imports it, naming the referrers.
@@ -182,6 +182,38 @@ They are fully keyboard-drivable: up/down moves, Right or Enter opens a
 submenu, Left or Escape backs out one level, Escape again closes. Menus with a
 long vocabulary — style keys, elements, attributes — open with a search field
 instead, and keep the freeform fallback entry.
+
+### Props (the signature row)
+The signature row is a gesture, not a label. Clicking it — or **Props…** on the
+card's own menu — opens the props of a component or hook module:
+
+- **Add a prop** — a searchable type menu offering the types this tree already
+  uses ahead of the handful every UI needs, with a free-text row for everything
+  else, because prop types are ordinary C# and no menu can be exhaustive. Then
+  the name, then whether it is required or carries a default. A required prop is
+  inserted BEFORE the first optional one, since C# rejects the other order.
+- **Rename a prop** — the declaration, its uses inside the component's own body,
+  and the attribute at every call site in the tree, as ONE undoable action.
+- **Remove a prop** — strips the attribute from every call site the tree knows
+  about, also one undo, and reports how many callers it touched. If the
+  component's own body still refers to the prop, the toast says so rather than
+  leaving the compile error to be discovered.
+- **Make required / make optional** — "required" is not a flag stored anywhere;
+  it IS the absence of a written default, so the toggle writes one or takes it
+  away.
+
+A parameter written without a default is REQUIRED: a call site that omits it is
+an error (`UITKX0115`) — in Unity's console at build time, in the IDE from the
+language server, and in the builder's own source pane while you type, where the
+required set is read from the open tree rather than from disk. `MutableRef<T>`
+parameters are exempt — `ref={x}` fills them, they are not an input the caller
+supplies.
+
+Every one of these gestures reads and writes the tree's in-memory buffers. A
+call site in a module the user never opened is still a call site, and the tree
+knows about it; nothing reaches disk before Save. Call sites OUTSIDE the open
+tree are not rewritten — they get the diagnostic instead, which is the honest
+limit of what the builder can see.
 
 ### Structural operations
 - **Add attribute** — searchable, typed from the schema for native elements and

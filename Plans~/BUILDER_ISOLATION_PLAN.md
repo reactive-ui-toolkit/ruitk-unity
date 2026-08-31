@@ -209,7 +209,7 @@ against elsewhere.
 
 ## Part 2 — Component signatures (#2)
 
-**Settled in conversation 2026-08-28. Not started.**
+**Settled 2026-08-28. IMPLEMENTED and shipped in 0.19.0 on 2026-08-29.**
 
 ### 2.1 The gap
 
@@ -272,66 +272,125 @@ Three facts from the research that shape everything below:
 - **All types plus free text**, as with style keys and attributes.
 - **v1 is the whole thing** — add, rename and remove together, not staged.
 
-### 2.4 Blast radius of the Error tier
+### 2.4 Blast radius of the Error tier — MEASURED
 
 A Warning→Error bump is breaking by this repo's own rule (CLAUDE.md), so it was
-measured before being accepted. Spot-checked by hand across `Samples/`:
+measured before being accepted. Two attempts to automate the scan by hand-rolled
+search returned 0/46 and 46/46, both provably wrong against the source; the
+reliable instrument is the analyzer itself.
+
+**The number, from the analyzer, over the whole bundled corpus: TWO props on ONE
+call site.** The `SamplesCorpusGateTests` gate — the same one that runs the real
+generator over `Samples/` the way a fresh Unity import does — failed on exactly:
 
 ```
-SectionHeading(string label)                <SectionHeading label="…" />      passes it
-SectionNote(string label)                   <SectionNote label="…" />         passes it
-DoomFace(int frame)                         <DoomFace frame={faceState} />    passes it
-ContextConsumer(string label = "Primary")   <ContextConsumer />               has a default
+GameScreen.uitkx(34,1): UITKX0115: <HUD> is missing required prop 'spriteSheet'
+GameScreen.uitkx(34,1): UITKX0115: <HUD> is missing required prop 'wave'
 ```
 
-Where a prop has no default, callers pass it; where a caller omits one, the prop
-has a default. The convention is already being followed by hand, which is the
-strongest argument that enforcing it is correction rather than disruption.
+Both were **genuine defects, not false positives**. `HUD` renders
+`$"WAVE {wave}"` and builds its life icons from `MakeSpriteStyle(spriteSheet, …)`,
+and the call site passed neither — so the shipped Galaga sample rendered
+"WAVE 0" with a null sprite sheet, and had since it was written. Both values were
+already in scope at the call site (`spriteSheet` on line 11, `state.Wave`). Fixed
+in 0.19.0.
 
-**No repo-wide number is recorded here on purpose.** Two attempts to automate
-the scan returned 0/46 and 46/46, both provably wrong against the source. The
-reliable measurement is the analyzer itself: run it over the samples and a real
-project before flipping severity. A number that cannot be trusted is worse than
-no number.
+The package's own `.uitkx` files (`Builder/Editor/**`) have **no
+component-to-component markup call sites at all** — every one of them is mounted
+from C# — so their blast radius is zero.
 
-### 2.5 The work
+The check finding two real bugs the first time it ran, and nothing else across
+the whole corpus, is the strongest evidence available that the convention was
+already being followed by hand and that enforcing it is correction rather than
+disruption.
 
-It splits in two, and the halves are independent. The analyzer half has reach
-beyond the builder and should land first and separately.
+### 2.5 The work — DONE (0.19.0)
 
-**Analyzer (language-wide, no codegen or runtime change):**
+**Analyzer (language-wide):**
 
-| id | Work |
-|---|---|
-| **SIG-A** | New `UITKX####`: a component call site omitting a parameter that has no written default. Error tier. Uses `FunctionParam.DefaultValue`, which the parser already carries. |
-| **SIG-B** | Parity across the four layers — SG, HMR, IDE virtual doc, shared parser — per the repo rule that a fix in one lands in all. |
-| **SIG-C** | CHANGELOG states plainly that a call omitting a no-default prop is now an error, so anyone relying on `default(T)` learns why. Minor version. |
+| id | Work | Where it landed |
+|---|---|---|
+| **SIG-A** | `UITKX0115` — a call site omitting a parameter with no written default. Error tier, no deprecation window. | `SourceGenerator~/Diagnostics/UitkxDiagnostics.cs`, `PropsResolver.GetRequiredPropNamesByQualifiedName`, `CSharpEmitter.EmitFuncComponent`; `language-lib/Diagnostics/DiagnosticCodes.cs` + `DiagnosticsAnalyzer.CheckElement` |
+| **SIG-B** | Parity. Only TWO of the four layers ever validated attributes — the SG emitter and the analyzer (`UITKX0109` lives in both). The HMR emitters and the IDE virtual doc do no attribute checking at all, so leaving them untouched is consistency, not drift. Verified by grep before writing anything. | — |
+| **SIG-C** | CHANGELOG states the breaking change with the migration and the exemptions; minor version 0.19.0; extensions 1.12.0. | `CHANGELOG.md`, `changelog.json`, `DISCORD_CHANGELOG.md` |
+
+The decisive design point: the generated `*Props` class **cannot** answer
+"was a default written", because it emits an initialiser either way. So the
+required set is read from the DECLARED PARAMETERS on both sides — from the
+same-pass peer's `FunctionParams` in the SG, and from `WorkspaceIndex.PropInfo`
+(which gained `ParamName` and `HasDefault`) in the LSP.
+
+The analyzer's `knownAttributes` map became a map of
+`ElementAttributeContract` rather than gaining a second parallel dictionary.
+Both facts are decided in one place because their **failure directions are
+opposite**: when a tag has several declarants and resolution is ambiguous,
+`Known` falls open to the UNION (never invent an unknown-attribute error) while
+`Required` falls open to EMPTY (never invent a missing-prop error). Two
+independent maps could have drifted into requiring a prop from the union.
 
 **Builder (the three gestures):**
 
-| id | Work |
-|---|---|
-| **SIG-1** | Signature row becomes editable: add a prop, with a searchable type menu and free-text fallback. |
-| **SIG-2** | Rename a prop — tree-wide, every call site's attribute, one undo. Reuses the module-rename machinery. |
-| **SIG-3** | Remove a prop — strips the attribute at every known call site, one undo, naming what it touched. |
-| **SIG-4** | Knobs: nothing to do. The preview mines them by reflecting the compiled props type, so a new prop appears as a knob once the buffer recompiles. Verified, not assumed. |
+| id | Work | Where it landed |
+|---|---|---|
+| **SIG-1** | Signature row is now a gesture: click it (or **Props…** on the card menu) → add a prop, with a searchable type menu seeded from the types the OPEN TREE already uses, plus a free-text row. Name, then required-or-default. A required prop is inserted before the first optional one, because C# rejects the other order. | `BuilderWindow.ShowPropsMenu` / `ShowAddPropTypeMenu`, `CanvasView.uitkx`, `BuilderCanvasHost.OnEditProps` |
+| **SIG-2** | Rename a prop — the declaration, its USES in the component's own body, and the attribute at every call site in the tree, as ONE ledger entry. | `RenamePropAcrossTree` |
+| **SIG-3** | Remove a prop — strips the attribute at every call site the tree knows about, one undo, naming how many callers it touched and warning when the body still uses it. | `RemovePropAcrossTree` |
+| **SIG-4** | Knobs: nothing to do. `BuildKnobs` reflects `_knobProps.GetType().GetProperties(...)`, so a new prop appears as a knob once the buffer recompiles. **Verified in the source, not assumed.** | — |
 
-SIG-4 being free is the reason to do this before the router: it turns the
-preview from a static picture into something you can drive.
+The builder reports `UITKX0115` itself, in the source pane, while you type. Its
+contracts are built from the TREE's buffers and carry a NULL accepted-set on
+purpose: the builder knows what a component declares, and therefore what is
+required, but the full set of what an element ACCEPTS lives in the schema, and
+an incomplete one would manufacture `UITKX0109` for legal attributes. So
+`ElementAttributeContract.Known` is nullable, and null means "skip the
+unknown-attribute check for this element" — which is not the same as empty. The
+contracts are recomputed per call rather than cached, because the buffers change
+with every keystroke and a snapshot handed over once would report a prop that has
+since been renamed.
+
+A fourth gesture fell out of the model: **make required / make optional**.
+"Required" is not a flag stored anywhere — it IS the absence of a written
+default — so the toggle writes one or takes it away.
+
+All of it is text surgery on the tree's in-memory buffers, in
+`Builder/Editor/Document/BuilderSignatureEdit.cs` — pure, Unity-free, and
+`Compile`-linked into `Builder~/ModelTests` so every parsing edge is checked
+outside the editor. Nothing opens a file: a caller the user has not opened is
+still a caller, and `EditSession` reaches it through the tree.
+
+What that scanner exists to survive, each pinned by a check: a generic argument
+list split on its own comma (`Dictionary<string, int> map`), a lambda default
+whose arrow is not an assignment (`Action<int> onPick = i => { }`), an attribute
+value with a brace inside it, a brace inside a *string* value, an attribute
+whose name is a prefix of another, and markup inside a C# string literal — which
+the builder's own `CodeFieldSpike` contains, and which a naive sweep would have
+rewritten. The same scanner now backs the existing attribute menu, which had the
+generic-comma bug.
+
+**Known limits, stated rather than hidden:**
+
+- Renaming a prop skips an identifier immediately followed by `=`, because in
+  markup that is an ATTRIBUTE NAME rather than a use. The trade is that
+  *assigning to* a parameter is missed; that is rare and fails loudly at compile
+  time, where silently rewriting an unrelated attribute name would change what
+  the component renders.
+- Call sites outside the open tree are not rewritten. They get `UITKX0115`.
 
 ---
+
 ## Part 3 — Router
 
-**Settled in conversation, 2026-08-27/28.**
+**Decisions settled 2026-08-27/28. Researched and costed 2026-08-29; not started.**
 
 ### 3.1 What exists
 
 - Elements: `Router`, `Routes`, `Route`, `Outlet`, `NavLink`, `Link`, `Navigate`
   — all in the schema with full typed attributes. **`Outlet` exists.**
-- 16 router hooks in the API: `UseNavigate`, `UseLocation`, `UseParams`,
-  `UseQuery`, `UseSearchParams`, `UseRouteMatch`, `UseMatches`, `UseGo`,
-  `UseCanGo`, `UseBlocker`, `UsePrompt`, `UseResolvedPath`, `UseRouter`,
-  `UseNavigationState`, `UseNavigationBase`, `UseLocationInfo`.
+- 16 router hooks in `Shared/Core/Router/RouterHooks.cs`: `UseRouter`,
+  `UseLocationInfo`, `UseLocation`, `UseQuery`, `UseNavigationState`,
+  `UseParams`, `UseRouteMatch`, `UseNavigate`, `UseNavigationBase`, `UseGo`,
+  `UseCanGo`, `UseBlocker`, `UseMatches`, `UseResolvedPath`, `UseSearchParams`,
+  `UsePrompt`.
 - **No object/config route definition.** `RoutesFunc` walks `<Route>` children;
   there is no `useRoutes(objects)` analogue. Not adding one.
 
@@ -343,27 +402,77 @@ preview from a static picture into something you can drive.
 - **`element` stays in the LANGUAGE.** It takes a `VirtualNode`, so it is the
   only way to pass a computed node (`element={flag ? A() : B()}`), hand-written
   C# uses it, and our own `MainMenuRouterDemoFunc` sample uses it twice.
-  Deprecating it would cost a minor and buy nothing.
 - **A file that already uses `element={…}` still displays it** as an opaque
   attribute row. No conversion: it is only possible for trivially-recognisable
-  calls and impossible for `element={someVar}`, and a half-working conversion is
-  worse than none.
-- **Dropping onto `<Router>` is fine** — those children are always-on shell, and
-  that is legitimate. Only `<Route>` subtrees are conditional.
+  calls and impossible for `element={someVar}`.
+- **Dropping onto `<Router>` is fine** — those children are always-on shell.
+  Only `<Route>` subtrees are conditional.
 
-### 3.3 Work
+### 3.3 Research findings that change the costing
 
-| id | Work | Notes |
-|---|---|---|
-| **RTR-1** | The 16 router hooks into `HookRegistry` | **Framework-wide, not builder-only.** Generator, analyzer, LSP hover/completion, HMR emitters and the builder palette all read that table. Needs the full parity pass. |
-| **RTR-2** | Auto-provide a router in the preview when a component references routing and does not supply its own | Guarded: nested `<Router>` throws by design. `<Router>` needs no props — `providedHistory ?? new MemoryHistory(initialPath ?? "/")`. |
-| **RTR-3** | Preview address bar feeding `initialPath`, showing the active match | Route branches are unreachable today even when rendering works. |
-| **RTR-4** | A "Routing" section in the library | The tags are all present but sit in a flat 79-entry list showing 5 + "+74 more". Present is not findable. |
-| **RTR-5** | `<Route>` rows show `path` as their identity; a `<Route>` subtree is visually distinct from shell | Conditional vs always-on is the whole point of a router and is invisible in a flat markup list. |
+Done 2026-08-29, before any code.
+
+**RTR-1 carries no arity risk.** The `FiberSlots` column in
+`HookRegistry.s_callSiteTable` is the dangerous one — a wrong number shifts hook
+ordering and corrupts state at runtime. Every router hook is built on
+`Hooks.UseContext` (0 slots) and, in `UseBlocker`'s case, `Hooks.UseEffect` (also
+0). Nothing in `RouterHooks.cs` touches `UseState`, `UseRef`, `UseMemo` or
+`UseCallback` — verified by scanning the whole file, not by sampling. **All 16
+entries are arity 0.** What looked like the risky half of Part 3 is a table
+append.
+
+**The table has 12 consumers**, which is the actual work of RTR-1:
+`HmrCSharpEmitter`, `HmrHookEmitter`, `BuilderWindow`, `BuilderPreviewPane`,
+SG `CSharpEmitter`, SG `HooksValidator`, `UitkxPipeline`, analyzer
+`DiagnosticsAnalyzer`, `VirtualDocumentGenerator`, LSP `DiagnosticsPublisher`,
+`HoverHandler`, plus the registry itself. `HookRegistry.cs` is
+`<Compile Include>`-linked into the language lib, so one edit reaches the
+generator, the analyzer, the LSP and the runtime together — that is the
+mechanism, and it is why the parity pass is mandatory rather than optional.
+
+Two columns beyond arity need real content per hook: the **insertion snippet**
+(compilable against the virtual-doc stubs — this is what the builder's "+ hook"
+palette pastes) and the **hover doc**, keyed by BOTH casings
+(`useNavigate` and `Hooks.UseNavigate`), as every existing entry is.
+
+**RTR-2 cannot simply always-wrap.** `RouterFunc.Render` throws
+`InvalidOperationException` on a nested `<Router>`, by design, disambiguated via
+an owner-stamp so a re-render is not mistaken for nesting. The previewed
+component may not declare a `<Router>` itself but may IMPORT a child that does —
+wrapping then puts a Router inside a Router and trips the guard.
+
+So the rule is: **provide a router only when no module in the focus closure
+declares one.** The closure is already computed for the union compile, and its
+buffers are the tree's — the check is a tag scan over text the builder already
+holds, with no disk access. When a Router IS found, provide nothing and let the
+component's own one run.
+
+**RTR-2's construction is settled by the runtime.** `RouterFunc.Render(IProps,
+IReadOnlyList<VirtualNode>)` is the ordinary component shape, and
+`RouterFuncProps` carries `History`, `InitialPath`, `Basename`, resolving
+`providedHistory ?? new MemoryHistory(initialPath)`.
+
+**RTR-3 should own the history, not re-mount with a new `InitialPath`.**
+`MemoryHistory` exposes `Push`, `Replace`, `Go`, `CanGo`, `Index`, `EntryCount`,
+`Location` and `Listen`. If the preview constructs the `MemoryHistory` and hands
+it in as `History`, the address bar is `history.Push(path)` and the active match
+is readable — with back/forward for free from `Go`/`CanGo`. Re-mounting with a
+different `InitialPath` would instead throw away all component state on every
+navigation, which is the opposite of what a preview is for.
+
+**RTR-4 is a one-line ordering change plus routing.** Sections come from
+`BuilderLibraryPane.s_sectionOrder`, today five entries: Native elements, Custom
+components, Hooks, Style modules, Util modules.
+
+**RTR-5's row text comes from `AttrsDisplay`/`AttrPairsOf`** in
+`BuilderGraphService` — a flat `name="value"` join. Route identity means giving
+`<Route>` a row label built from its `path` attribute rather than the generic
+attribute string.
 
 ### 3.4 The deeper point behind RTR-2
 
-The preview mounts the focused component **bare**:
+The preview mounts the focused component **bare** —
+`BuilderPreviewPane.cs:919`:
 
 ```csharp
 _renderer.Render(V.Func(_renderDelegate, _knobProps));
@@ -376,16 +485,113 @@ portal target, a signal scope). The router is the most visible instance.
 
 So RTR-2 should be the first provider of a general **preview environment**, not
 a router special case — otherwise the same hole sits next to it for the next
-context-dependent component.
+context-dependent component. The seam is one function that wraps the focused
+node in whatever ancestors the closure says it needs, with the router as its
+first and only implementation today.
+
+### 3.5 Work
+
+| id | Work | Cost | Risk |
+|---|---|---|---|
+| **RTR-1** | The 16 router hooks into `HookRegistry`: arity (all 0), insertion snippet, hover doc under both casings. Then the parity pass over all 12 consumers. | Medium — the table is small, the parity sweep is the work | LOW, now that arity is known |
+| **RTR-2** | Preview environment seam (2a), router provider (2b), missing-provider diagnosis (2c) — see §3.8. | Medium–Large | MED — the nesting guard throws; the gate must be right |
+| **RTR-3** | Preview address bar over a preview-owned `MemoryHistory`; back/forward from `Go`/`CanGo`; show the active match. | Medium | LOW |
+| **RTR-4** | A "Routing" section in the library. | Small | LOW |
+| **RTR-5** | `<Route>` rows identified by `path`; a `<Route>` subtree visually distinct from always-on shell. | Small–Medium | LOW |
+
+### 3.6 Sequence, and why
+
+1. **RTR-1 first.** It is framework-wide — completion, hover, the unused-hook
+   analyzer and the builder palette all improve the moment the table lands, with
+   or without the rest of Part 3. It is also the only item that touches the
+   generator and the LSP, so it wants its own commit and its own parity run.
+2. **RTR-2 next**, because until it exists a routed component renders EMPTY in
+   the preview and nothing else in Part 3 is observable.
+3. **RTR-3** turns a rendering router into a drivable one — the first point at
+   which route branches are reachable at all.
+4. **RTR-4 / RTR-5** are discoverability and legibility; they are worth least
+   when the thing they describe cannot yet render, and most once it can.
+
+### 3.7 What to verify before flipping each on
+
+- **RTR-1:** the SG and LSP suites, plus `HmrEmitterParityContractTests` — the
+  registry feeds both emitters. A new hook that the analyzer knows and the
+  generator does not is exactly the drift that test exists to catch.
+- **RTR-2:** a component with `<Routes>` renders its matching branch in the
+  preview; a component that declares its OWN `<Router>` still renders and does
+  not throw; a parent importing a child that declares one does not throw. That
+  third case is the one the gate exists for and the easiest to forget.
+  For 2c: a component reading a context key nothing provides reports THAT, by
+  name, instead of rendering blank - which is the whole reason 2c is in this
+  batch rather than a later one.
+- **RTR-3:** navigating the address bar preserves component state (that is the
+  reason for owning the history rather than re-mounting).
+- **RTR-5:** a `<Route>` with no `path` (index route) still gets a sensible row.
+
+### 3.8 The preview environment — scope, and a correction
+
+The first draft of this plan scoped RTR-2 as "auto-provide a router" and deferred
+everything else until "a real component needs a context value the builder cannot
+guess". The owner rejected that on 2026-08-29: *"why do we need to hit the issue
+before fixing it when we know what the issue is?"*
+
+That is right, and the error is worth recording because it is a reasoning error
+rather than a detail. **YAGNI applies to speculative features, not to a defect
+already diagnosed.** The draft bundled two different things under one heading and
+deferred both:
+
+- **The silence.** `UseContext` returns null when no ancestor provides the key,
+  so `RoutesFunc` renders nothing and the stage is blank with no error anywhere.
+  That is a known defect, it is general — `provideContext`, portal targets,
+  signal scopes — and this campaign has already spent three separate rounds on
+  failures whose only symptom was silence.
+- **Value entry.** A UI for supplying an actual context value. That genuinely
+  needs product design: where it lives, how values are typed, whether it persists
+  per component or per tree.
+
+Only the second is a feature. The first is a bug, and deferring it also meant
+shipping a seam with exactly ONE implementation — which is not a seam, it is a
+hook shaped like the router, and the second consumer would have forced a redesign
+of code that had just been settled.
+
+**Revised scope: the silence is fixed in the same batch.** None of it requires
+guessing a value.
+
+| id | Work |
+|---|---|
+| **RTR-2a** | The preview environment seam: one function that wraps the focused node in whatever ancestors the closure says it needs. |
+| **RTR-2b** | Router provider — the first implementation, gated on "no `<Router>` in the focus closure" (§3.3). |
+| **RTR-2c** | Missing-provider diagnosis: a context key CONSUMED anywhere in the previewed closure and PROVIDED nowhere in it is named in the preview banner. "reads context key 'theme'; nothing in the preview provides it" instead of a blank stage. |
+
+RTR-2c is what gives the seam two consumers on day one, so its shape is checked
+against two cases rather than fitted to one.
+
+**Honest limit:** the detection is STATIC — a scan of the tree's own buffers for
+`provideContext(...)` and `useContext(...)` keys, which is isolation-correct and
+needs no disk. A key computed at runtime cannot be matched and will not be
+reported. The alternative is instrumenting `Hooks.UseContext` in `Shared/` to
+record misses during a preview render; that is more accurate and is rejected —
+it puts builder machinery in the shipped runtime, and "everything we do should
+not hurt our current library" outranks a diagnostic's completeness. The static
+version catches every case a user can author by hand in the builder, which is
+the population that matters here.
+
+**Still deferred, deliberately:** user-entered context values. With RTR-2c in
+place that deferral no longer hides anything — the user is told exactly which key
+is missing, which is also the information the eventual UI would need to collect.
 
 ---
 
 ## Order
 
-1. **Part 1** — ISO-A through ISO-F.
-2. **Part 3** — RTR-1 first (framework-wide, benefits everything), then RTR-2/3
-   which make routed components actually renderable, then RTR-4/5.
-3. **Part 2** — SIG-1..4.
+1. ~~**Part 1** — ISO-A through ISO-F.~~ **DONE**, shipped 0.18.x.
+2. ~~**Part 2** — SIG-A..C and SIG-1..4.~~ **DONE**, shipped 0.19.0. It ran
+   before Part 3 rather than after: the signature gestures were what the owner
+   needed next, and they turned out to depend on nothing in Part 3.
+3. **Part 3** — RTR-1 first (framework-wide, benefits everything), then RTR-2/3
+   which make routed components renderable and drivable, then RTR-4/5.
 
-Parts 2 and 3 both add authoring surfaces to the same card, so whichever runs
-second inherits a settled pattern from the first.
+Part 2 landing first means Part 3 inherits a settled pattern for adding an
+authoring surface to a card: the gesture menu off the card and its row, edits as
+pure text transforms in `Builder/Editor/Document/`, and the out-of-Unity model
+checks that go with them.
