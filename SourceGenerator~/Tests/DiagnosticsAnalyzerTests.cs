@@ -40,6 +40,24 @@ public sealed class DiagnosticsAnalyzerTests
         return _analyzer.Analyze(Parse(source, path), path, projectElements, knownAttributes: null, sourceText: source);
     }
 
+    /// <summary>An element that accepts <paramref name="known"/> and requires nothing.</summary>
+    private static ElementAttributeContract Contract(params string[] known) =>
+        new ElementAttributeContract(
+            new HashSet<string>(known, System.StringComparer.OrdinalIgnoreCase)
+        );
+
+    /// <summary>An element that accepts <paramref name="known"/> and requires
+    /// every attribute in <paramref name="required"/> (each mapped to a
+    /// same-named declaring parameter).</summary>
+    private static ElementAttributeContract ContractRequiring(
+        string[] known,
+        params string[] required
+    ) =>
+        new ElementAttributeContract(
+            new HashSet<string>(known, System.StringComparer.OrdinalIgnoreCase),
+            required.ToDictionary(r => r, r => r, System.StringComparer.OrdinalIgnoreCase)
+        );
+
     private static bool HasDiag(IReadOnlyList<ParseDiagnostic> diags, string code) =>
         diags.Any(d => d.Code == code);
 
@@ -176,9 +194,9 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0109_UnknownAttribute_WhenMapProvided()
     {
-        var knownAttrs = new Dictionary<string, IReadOnlyCollection<string>>
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
         {
-            ["Label"] = new HashSet<string> { "text", "style" }
+            ["Label"] = Contract("text", "style")
         };
         var source = "VirtualNode C() {\n  return (\n    <Label bogus=\"hi\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
@@ -188,9 +206,9 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0109_KnownAttribute_NoWarning()
     {
-        var knownAttrs = new Dictionary<string, IReadOnlyCollection<string>>
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
         {
-            ["Label"] = new HashSet<string> { "text", "style" }
+            ["Label"] = Contract("text", "style")
         };
         var source = "VirtualNode C() {\n  return (\n    <Label text=\"hi\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
@@ -213,9 +231,9 @@ public sealed class DiagnosticsAnalyzerTests
     {
         // Foo declares only `text` — `style` (intrinsic-element attribute,
         // NOT structural-universal) must NOT be silently allowed.
-        var knownAttrs = new Dictionary<string, IReadOnlyCollection<string>>
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
         {
-            ["Foo"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "text", "key", "ref" },
+            ["Foo"] = Contract("text", "key", "ref"),
         };
         var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\" style=\"x\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
@@ -226,9 +244,9 @@ public sealed class DiagnosticsAnalyzerTests
     public void UITKX0109_UserComponent_KeyAndRefAlwaysAllowed()
     {
         // `key` and `ref` are structural-universal — must NEVER produce UITKX0109.
-        var knownAttrs = new Dictionary<string, IReadOnlyCollection<string>>
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
         {
-            ["Foo"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "text", "key", "ref" },
+            ["Foo"] = Contract("text", "key", "ref"),
         };
         var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\" key=\"k\" ref=\"r\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
@@ -238,9 +256,9 @@ public sealed class DiagnosticsAnalyzerTests
     [Fact]
     public void UITKX0109_UserComponent_DeclaredAttribute_NoDiagnostic()
     {
-        var knownAttrs = new Dictionary<string, IReadOnlyCollection<string>>
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
         {
-            ["Foo"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "text", "key", "ref" },
+            ["Foo"] = Contract("text", "key", "ref"),
         };
         var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
@@ -253,9 +271,9 @@ public sealed class DiagnosticsAnalyzerTests
         // `extraProps` is intrinsic-only (escape hatch for built-in elements
         // where the typed pipeline doesn't model the property). It MUST NOT
         // be allowed on user components — they have no underlying VisualElement.
-        var knownAttrs = new Dictionary<string, IReadOnlyCollection<string>>
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
         {
-            ["Foo"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) { "text", "key", "ref" },
+            ["Foo"] = Contract("text", "key", "ref"),
         };
         var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\" extraProps=\"x\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
@@ -268,16 +286,85 @@ public sealed class DiagnosticsAnalyzerTests
         // Built-in element attribute map (as built by DiagnosticsPublisher)
         // contains intrinsic + structural in addition to per-element attrs.
         // Sanity test: <Box style="x"/> must not error.
-        var knownAttrs = new Dictionary<string, IReadOnlyCollection<string>>
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
         {
-            ["Box"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
-            {
-                "style", "key", "ref", "name", "className", "extraProps",
-            },
+            ["Box"] = Contract(
+                "style", "key", "ref", "name", "className", "extraProps"
+            ),
         };
         var source = "VirtualNode C() {\n  return (\n    <Box style=\"x\" extraProps=\"y\"/>\n  );\n}";
         var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
         Assert.False(HasDiag(diags, DiagnosticCodes.UnknownAttribute));
+    }
+
+    // ── UITKX0115: Missing required prop ───────────────────────────────────
+
+    [Fact]
+    public void UITKX0115_OmittedRequiredProp_Errors()
+    {
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
+        {
+            ["Foo"] = ContractRequiring(new[] { "text", "label", "key", "ref" }, "label"),
+        };
+        var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\"/>\n  );\n}";
+        var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
+        Assert.True(HasDiag(diags, DiagnosticCodes.MissingRequiredProp));
+        Assert.Equal(
+            ParseSeverity.Error,
+            diags.First(d => d.Code == DiagnosticCodes.MissingRequiredProp).Severity
+        );
+    }
+
+    [Fact]
+    public void UITKX0115_SuppliedRequiredProp_NoDiagnostic()
+    {
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
+        {
+            ["Foo"] = ContractRequiring(new[] { "text", "label", "key", "ref" }, "label"),
+        };
+        var source = "VirtualNode C() {\n  return (\n    <Foo text=\"hi\" label=\"L\"/>\n  );\n}";
+        var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
+        Assert.False(HasDiag(diags, DiagnosticCodes.MissingRequiredProp));
+    }
+
+    [Fact]
+    public void UITKX0115_AnchorsAtTheOpeningTag_NotTheAttributes()
+    {
+        // The prop that is missing has no attribute to anchor to, so the range
+        // has to be the tag name itself.
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
+        {
+            ["Foo"] = ContractRequiring(new[] { "label", "key", "ref" }, "label"),
+        };
+        var source = "VirtualNode C() {\n  return (\n    <Foo/>\n  );\n}";
+        var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttrs);
+        var d = diags.First(x => x.Code == DiagnosticCodes.MissingRequiredProp);
+        Assert.Equal(3, d.SourceLine);
+        Assert.Equal(d.SourceColumn + 3, d.EndColumn);
+    }
+
+    [Fact]
+    public void UITKX0115_UnknownElement_NoRequiredPropError()
+    {
+        // An unknown element already reports UITKX0105; piling a missing-prop
+        // error on top of it would be noise about a component that is not there.
+        var projectElements = new HashSet<string> { "Bar" };
+        var knownAttrs = new Dictionary<string, ElementAttributeContract>
+        {
+            ["Foo"] = ContractRequiring(new[] { "label" }, "label"),
+        };
+        var source = "VirtualNode C() {\n  return (\n    <Foo/>\n  );\n}";
+        var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", projectElements, knownAttrs);
+        Assert.True(HasDiag(diags, DiagnosticCodes.UnknownElement));
+        Assert.False(HasDiag(diags, DiagnosticCodes.MissingRequiredProp));
+    }
+
+    [Fact]
+    public void UITKX0115_NoContract_NoDiagnostic()
+    {
+        var source = "VirtualNode C() {\n  return (\n    <Foo/>\n  );\n}";
+        var diags = _analyzer.Analyze(Parse(source), "Test.uitkx", null, knownAttributes: null);
+        Assert.False(HasDiag(diags, DiagnosticCodes.MissingRequiredProp));
     }
 
     // ── UITKX0111: Unused parameter ────────────────────────────────────────

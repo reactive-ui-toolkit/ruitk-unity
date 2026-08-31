@@ -59,7 +59,7 @@ namespace Ruitk.Language.Diagnostics
             ParseResult parseResult,
             string? filePath,
             HashSet<string>? projectElements = null,
-            IReadOnlyDictionary<string, IReadOnlyCollection<string>>? knownAttributes = null,
+            IReadOnlyDictionary<string, ElementAttributeContract>? knownAttributes = null,
             string? sourceText = null
         )
         {
@@ -244,7 +244,7 @@ namespace Ruitk.Language.Diagnostics
         public IReadOnlyList<ParseDiagnostic> AnalyzeNodes(
             ImmutableArray<AstNode> nodes,
             HashSet<string>? projectElements,
-            IReadOnlyDictionary<string, IReadOnlyCollection<string>>? knownAttributes,
+            IReadOnlyDictionary<string, ElementAttributeContract>? knownAttributes,
             string? sourceText = null)
         {
             var diags = new List<ParseDiagnostic>();
@@ -273,7 +273,7 @@ namespace Ruitk.Language.Diagnostics
             bool insideForeach,
             HookContext hookCtx,
             HashSet<string>? projectElements,
-            IReadOnlyDictionary<string, IReadOnlyCollection<string>>? knownAttributes,
+            IReadOnlyDictionary<string, ElementAttributeContract>? knownAttributes,
             string? sourceText,
             List<ParseDiagnostic> diags
         )
@@ -359,7 +359,7 @@ namespace Ruitk.Language.Diagnostics
             bool insideForeach,
             HookContext hookCtx,
             HashSet<string>? projectElements,
-            IReadOnlyDictionary<string, IReadOnlyCollection<string>>? knownAttributes,
+            IReadOnlyDictionary<string, ElementAttributeContract>? knownAttributes,
             string? sourceText,
             List<ParseDiagnostic> diags
         )
@@ -641,7 +641,7 @@ namespace Ruitk.Language.Diagnostics
             ElementNode el,
             bool insideForeach,
             HashSet<string>? projectElements,
-            IReadOnlyDictionary<string, IReadOnlyCollection<string>>? knownAttributes,
+            IReadOnlyDictionary<string, ElementAttributeContract>? knownAttributes,
             List<ParseDiagnostic> diags
         )
         {
@@ -682,15 +682,18 @@ namespace Ruitk.Language.Diagnostics
             }
 
             // UITKX0109 - Unknown attribute on a known element.
-            // Only check when the element is known (no double-error on unknown elements)
-            // and we have attribute data for it.
+            // UITKX0115 - A required prop the call site did not supply.
+            // Both only run when the element is known (no double-error on an
+            // unknown element) and we hold a contract for it.
             if (elementKnown
                 && knownAttributes != null
-                && knownAttributes.TryGetValue(el.TagName, out var validAttrs))
+                && knownAttributes.TryGetValue(el.TagName, out var contract))
             {
                 foreach (var attr in el.Attributes)
                 {
-                    if (!validAttrs.Contains(attr.Name))
+                    if (contract.Known == null)
+                        break;
+                    if (!contract.Known.Contains(attr.Name))
                     {
                         diags.Add(
                             MakeDiag(
@@ -702,6 +705,29 @@ namespace Ruitk.Language.Diagnostics
                                 attr.NameEndColumn > 0
                                     ? attr.NameEndColumn
                                     : attr.SourceColumn + attr.Name.Length
+                            )
+                        );
+                    }
+                }
+
+                if (contract.Required.Count > 0)
+                {
+                    var supplied = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                    foreach (var attr in el.Attributes)
+                        supplied.Add(attr.Name);
+
+                    foreach (var req in contract.Required)
+                    {
+                        if (supplied.Contains(req.Key))
+                            continue;
+                        diags.Add(
+                            MakeDiag(
+                                DiagnosticCodes.MissingRequiredProp,
+                                ParseSeverity.Error,
+                                $"<{el.TagName}> is missing required prop '{req.Key}' (parameter '{req.Value}' declares no default value).",
+                                el.SourceLine,
+                                el.SourceColumn + 1,
+                                el.SourceColumn + 1 + el.TagName.Length
                             )
                         );
                     }
