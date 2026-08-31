@@ -127,6 +127,13 @@ namespace Ruitk.Builder
             // The ledger is NonSerialized and comes back empty from a domain
             // reload, so this is re-wired here rather than at mount time.
             _ledger.IdOf = path => _workspace.TryGet(path)?.Id;
+            // Restored history can outlive the modules it names - a file deleted
+            // before the reload, or a tree that came back different. Those entries
+            // are dropped here rather than at the moment someone presses Ctrl+Z.
+            int dropped = _ledger.PruneMissing(path => _workspace.TryGet(path) != null);
+            if (dropped > 0)
+                Debug.Log("[RUITK Builder] history: dropped " + dropped
+                    + " entry(s) naming modules this tree no longer has");
             _workspace.Changed -= OnWorkspaceChanged;
             _workspace.Changed += OnWorkspaceChanged;
             BuilderLspService.DiagnosticsPublished -= OnLspDiagnosticsPublished;
@@ -199,7 +206,7 @@ namespace Ruitk.Builder
             if (focusChanged)
             {
                 var session = _workspace.TryGet(focusFull);
-                if (session != null && _sourceSnapshot == null)
+                if (session != null && !_sourceEdit.IsOpen)
                     _codeField?.SetContent(session.BufferText, _focusFile, KnownElementsOrNull());
                 ScheduleServerTokens();
             }
@@ -831,6 +838,7 @@ namespace Ruitk.Builder
             // only marks the intent, so Abort forgets it and Ctrl+Z un-marks it —
             // the asset is never re-created, so no GUID ever churns.
             _canvasHost.OnRenameCard = ShowRenamePrompt;
+            _canvasHost.OnEditProps = ShowPropsMenu;
             _canvasHost.Modules = () => _workspace.Modules;
             _canvasHost.ModuleAt = path => _workspace.TryGet(path);
             _canvasHost.OnDeleteFile = path =>
@@ -918,6 +926,84 @@ namespace Ruitk.Builder
                 return _knownElementsCache;
             _knownElementsCache = BuildKnownElements();
             return _knownElementsCache;
+        }
+
+        /// <summary>The REQUIRED props of every component in the open tree, so
+        /// the source pane reports UITKX0115 while you type rather than at the
+        /// next Unity compile.
+        ///
+        /// Built from the tree's buffers - a component renamed or given a prop
+        /// this session answers as the tree says it is. Each contract carries a
+        /// null accepted-set on purpose: the builder knows what a component
+        /// DECLARES, and therefore what is required, but the full set of what an
+        /// element ACCEPTS lives in the schema, and an incomplete one here would
+        /// manufacture UITKX0109 for perfectly legal attributes. The unknown-
+        /// attribute check keeps its own source of truth in the language server.
+        ///
+        /// Recomputed per call rather than cached: the buffers change under the
+        /// editor with every keystroke, and this walks a handful of already-open
+
+        /// <summary>Required props for one module, memoised on the BUFFER ITSELF.
+        ///
+        /// This is asked for every component in the tree on every settled
+        /// keystroke, and each answer means parsing that module's whole parameter
+        /// list. A buffer only becomes a new string when it is edited, so
+        /// reference equality is an exact and O(1) test for "has this changed" -
+        /// no hashing the text, and a miss costs only the parse it would have
+        /// done anyway.</summary>
+        private readonly System.Collections.Generic.Dictionary<
+            string, (string Text, System.Collections.Generic.Dictionary<string, string> Required)>
+            _requiredPropsCache = new System.Collections.Generic.Dictionary<
+                string, (string, System.Collections.Generic.Dictionary<string, string>)>(
+                    System.StringComparer.OrdinalIgnoreCase);
+
+        private System.Collections.Generic.Dictionary<string, string> RequiredPropsOf(
+            string filePath, string exportName, string bufferText)
+        {
+            if (_requiredPropsCache.TryGetValue(filePath, out var hit)
+                && ReferenceEquals(hit.Text, bufferText))
+                return hit.Required;
+
+            System.Collections.Generic.Dictionary<string, string> required = null;
+            foreach (var prop in BuilderSignatureEdit.Parse(bufferText, exportName))
+            {
+                if (!prop.IsRequired)
+                    continue;
+                // ref={x} fills a MutableRef parameter; it is an out-channel, not
+                // an input the caller supplies.
+                if (prop.Type.IndexOf("MutableRef", System.StringComparison.Ordinal) >= 0)
+                    continue;
+                (required ??= new System.Collections.Generic.Dictionary<string, string>(
+                    System.StringComparer.OrdinalIgnoreCase))[prop.PropName] = prop.Name;
+            }
+            _requiredPropsCache[filePath] = (bufferText, required);
+            return required;
+        }
+        /// strings.</summary>
+        private System.Collections.Generic.IReadOnlyDictionary<
+            string, Ruitk.Language.Diagnostics.ElementAttributeContract> PropContractsOrNull()
+        {
+            var nodes = _canvasHost?.Nodes;
+            if (nodes == null || nodes.Count == 0)
+                return null;
+            System.Collections.Generic.Dictionary<
+                string, Ruitk.Language.Diagnostics.ElementAttributeContract> map = null;
+            foreach (var node in nodes)
+            {
+                if (node.Kind != BuilderNodeKind.Component || string.IsNullOrEmpty(node.Title))
+                    continue;
+                var module = _workspace.TryGet(Path.GetFullPath(node.FilePath));
+                if (module == null)
+                    continue;
+                var required = RequiredPropsOf(node.FilePath, node.Title, module.BufferText);
+                if (required == null)
+                    continue;
+                (map ??= new System.Collections.Generic.Dictionary<
+                    string, Ruitk.Language.Diagnostics.ElementAttributeContract>(
+                        System.StringComparer.OrdinalIgnoreCase))[node.Title] =
+                    new Ruitk.Language.Diagnostics.ElementAttributeContract(null, required);
+            }
+            return map;
         }
 
         private System.Collections.Generic.HashSet<string> BuildKnownElements()
@@ -1101,6 +1187,7 @@ namespace Ruitk.Builder
                 _codeField = new CodeField();
                 _codeField.TextEdited += OnCodeEdited;
                 _codeField.CompletionProvider = RequestCompletions;
+                _codeField.PropContracts = PropContractsOrNull;
                 _codeField.EditingFinished += NotifyBufferChanged;
             _codeField.EditRequested += BeginSourceEdit;
                 _codeField.ApplyRequested += ApplySourceEdit;
@@ -1122,8 +1209,15 @@ namespace Ruitk.Builder
                 _previewCompiler?.BuiltAssemblyFor(_focusFile));
             _codeField.SetContent(session?.BufferText ?? "", _focusFile, KnownElementsOrNull());
             _codeField.SetEditable(session != null && !session.IsReadOnly);
-            // POC selectNode(): opening another file leaves source-edit mode.
-            _codeField.SetEditing(_sourceSnapshot != null);
+            // POC selectNode(): opening another file leaves source-edit mode. It
+            // used to say so and do the opposite - the session was CARRIED across,
+            // still holding the previous file's snapshot, and the next cancel
+            // wrote that text into this module. An edit session belongs to ONE
+            // file. Nothing is lost by ending it here:
+            // typing is applied to the buffer live, so the text is already in the
+            // file it was typed into, and the ledger still has it for Ctrl+Z.
+            _sourceEdit.FocusMovedTo(_focusFile);
+            SetSourceEditing(_sourceEdit.IsOpen);
             SyncLspBuffer(_focusFile, session?.BufferText);
             ScheduleServerTokens();
             // The preview resolves its component out of a COMPILED assembly, and a
@@ -1140,7 +1234,9 @@ namespace Ruitk.Builder
         [System.NonSerialized] private Label _editButton;
         [System.NonSerialized] private Label _applyButton;
         [System.NonSerialized] private Label _cancelButton;
-        [System.NonSerialized] private string _sourceSnapshot;
+        [System.NonSerialized]
+        private readonly BuilderSourceEditSession _sourceEdit = new BuilderSourceEditSession();
+
 
         /// <summary>POC source-pane edit mode: "edit" snapshots the buffer so
         /// "cancel (Esc)" restores it, and "apply (Ctrl+Enter)" runs the parser —
@@ -1155,17 +1251,21 @@ namespace Ruitk.Builder
                 Toast("Read-only file");
                 return;
             }
-            _sourceSnapshot = session.BufferText;
+            _sourceEdit.Begin(_focusFile, session.BufferText);
             SetSourceEditing(true);
             _codeField?.FocusEditor();
         }
 
         private void ApplySourceEdit()
         {
-            if (_sourceSnapshot == null)
+            if (!_sourceEdit.IsOpen)
                 return;
+            // Apply belongs to the file the session was opened on, for the same
+            // reason cancel does: the pane's text is that file's, whatever is
+            // focused by the time the button is pressed.
+            string target = _sourceEdit.FilePath;
             string text = _codeField?.TextLf ?? "";
-            var parsed = BuilderLanguage.Parse(text, _focusFile);
+            var parsed = BuilderLanguage.Parse(text, target);
             string failure = null;
             foreach (var diagnostic in parsed.Diagnostics)
             {
@@ -1182,29 +1282,32 @@ namespace Ruitk.Builder
                 return;
             }
             _codeField?.SetError(false);
-            _sourceSnapshot = null;
+            _sourceEdit.End();
             SetSourceEditing(false);
-            ScheduleCanvasRefresh(_focusFile);
+            ScheduleCanvasRefresh(target);
             NotifyBufferChanged();
         }
 
         private void CancelSourceEdit()
         {
-            if (_sourceSnapshot == null)
+            if (!_sourceEdit.IsOpen)
                 return;
-            string restore = _sourceSnapshot;
-            _sourceSnapshot = null;
+            string restore = _sourceEdit.Snapshot;
+            // The file the snapshot came from - NOT the focused one. Restoring into
+            // the focused file is what copied one module's whole text into another.
+            string target = _sourceEdit.End();
             _codeField?.SetError(false);
             SetSourceEditing(false);
-            var session = _workspace.TryGet(_focusFile);
+            var session = _workspace.TryGet(target);
             if (session != null && !session.IsReadOnly)
             {
                 string before = session.BufferText;
                 session.ApplyEdit(restore);
-                _ledger.Record(_focusFile, before, restore);
-                _codeField?.SetContent(restore, _focusFile, KnownElementsOrNull());
+                _ledger.Record(target, before, restore);
+                if (string.Equals(target, _focusFile, System.StringComparison.OrdinalIgnoreCase))
+                    _codeField?.SetContent(restore, target, KnownElementsOrNull());
                 RefreshChrome();
-                ScheduleCanvasRefresh(_focusFile);
+                ScheduleCanvasRefresh(target);
                 NotifyBufferChanged();
             }
         }
@@ -1340,7 +1443,12 @@ namespace Ruitk.Builder
             }
         }
 
-        [System.NonSerialized] private readonly BuilderActionLedger _ledger = new BuilderActionLedger();
+        /// <summary>Undo history. SerializeField, not NonSerialized: the tree
+        /// survives a domain reload, so its history must too - otherwise every
+        /// recompile silently discards the only record of an hour of unsaved
+        /// work. Entries the restored tree cannot honour are pruned by name on
+        /// the way back in, rather than the whole history being dropped.</summary>
+        [SerializeField] private BuilderActionLedger _ledger = new BuilderActionLedger();
 
         /// <summary>Applies ONE history entry in one direction, and is the only
         /// place that knows what each change kind means. Undo walks the changes in
@@ -2772,7 +2880,8 @@ namespace Ruitk.Builder
                     string srcPath = Path.GetFullPath(name.Substring(0, split));
                     if (!string.Equals(srcPath, full, System.StringComparison.OrdinalIgnoreCase))
                     {
-                        Toast("Moving across components isn't in the POC — delete and re-add.");
+                        Toast("Moving a row between components isn't supported yet - "
+                            + "delete it here and add it there.");
                         break;
                     }
                     var srcNode = _canvasHost?.FindNode(srcPath);
@@ -2831,12 +2940,31 @@ namespace Ruitk.Builder
                         : band == 0 ? BeforeAnchor(row)
                             : band == 2 || intoSelfClosing ? AfterAnchor(full, row)
                             : (row.EndLine > row.SourceLine ? row.EndLine - 1 : row.SourceLine);
-                    MoveLineRange(
-                        full, srcFrom, srcTo, destination,
-                        appendToRoot
-                            ? indent
-                            : indent + ((asFirstChild || (band == 1 && !intoSelfClosing)) ? "  " : ""),
-                        "moved " + srcRow.Text);
+                    bool didMove;
+                    if (intoSelfClosing)
+                    {
+                        // Re-open the target instead of silently landing after it.
+                        didMove = MoveIntoSelfClosing(
+                            full, srcFrom, srcTo, row, "moved " + srcRow.Text);
+                    }
+                    else
+                    {
+                        didMove = MoveLineRange(
+                            full, srcFrom, srcTo, destination,
+                            appendToRoot
+                                ? indent
+                                : indent + (asFirstChild || band == 1 ? "  " : ""),
+                            "moved " + srcRow.Text);
+                    }
+                    if (!didMove)
+                    {
+                        // Report the OUTCOME. Claiming a move that did not happen
+                        // is worse than refusing one: the user goes looking for
+                        // what they think they changed.
+                        Toast("Nothing to move - " + srcRow.Text.Trim()
+                            + " is already there.");
+                        break;
+                    }
                     // A drop that landed BETWEEN rows is still a move, and it is
                     // the one that reads as "the drag did something random": the
                     // row leaves where it was and reappears at the end of the
@@ -2871,15 +2999,80 @@ namespace Ruitk.Builder
         /// <summary>Relocates a 1-based inclusive line range to sit after
         /// <paramref name="afterLine1"/> (0 = top), guarding against moving a
         /// range into itself and re-indenting to the destination depth.</summary>
-        private void MoveLineRange(
+        /// <summary>
+        /// Moves a row INTO a self-closing target, re-opening the target on the
+        /// way: `<Router />` becomes `<Router>` … `</Router>` with the moved
+        /// block as its child.
+        ///
+        /// The INSERT path has always done this (InsertChildTag rewrites "/>"),
+        /// but the MOVE path degraded an inside-drop on a self-closing row to an
+        /// after-drop. Dropping a library `<Router />` in and then dragging the
+        /// rows that should live inside it is the obvious way to build a router,
+        /// and it did nothing at all - the rows were already after it, so the
+        /// move was a no-op that reported success.
+        ///
+        /// Done as ONE buffer rewrite so it is one undo entry: taking the block
+        /// out first means re-opening the target cannot shift the range out from
+        /// under the extraction.
+        /// </summary>
+        private bool MoveIntoSelfClosing(
+            string filePath, int fromLine1, int toLine1, BuilderCardLine target, string what)
+        {
+            var session = EditSession(filePath);
+            if (session == null || session.IsReadOnly)
+                return false;
+            var lines = new System.Collections.Generic.List<string>(
+                session.BufferText.Split('\n'));
+
+            int targetIdx = Mathf.Clamp(
+                (target.EndLine > 0 ? target.EndLine : target.SourceLine) - 1,
+                0, Mathf.Max(0, lines.Count - 1));
+            int from = Mathf.Clamp(fromLine1 - 1, 0, Mathf.Max(0, lines.Count - 1));
+            int to = Mathf.Clamp(toLine1 - 1, from, Mathf.Max(0, lines.Count - 1));
+            string tagName = target.Text.Trim().Trim('<', '>', '/', ' ').Split(' ')[0];
+
+            // The transform itself lives in BuilderText so the ordering rule it
+            // depends on is checked outside Unity; this end only resolves the
+            // buffer and commits the result.
+            if (!BuilderText.TryMoveIntoSelfClosingTag(
+                    lines, targetIdx, from, to, tagName, out var rewritten))
+                return false;
+
+            string next = string.Join("\n", rewritten);
+            if (string.Equals(next, session.BufferText, System.StringComparison.Ordinal))
+                return false;
+            ApplyProgrammaticEdit(filePath, next, what);
+            return true;
+        }
+
+        /// <summary>
+        /// Relocates a line range, re-indenting it for its new parent. Returns
+        /// TRUE when the buffer actually changed.
+        ///
+        /// The return value matters because the caller reports the outcome to the
+        /// user. This used to bail silently whenever the destination sat anywhere
+        /// from just-before to inside the source range, and the caller toasted
+        /// "Moved &lt;X&gt; into &lt;Y&gt;" regardless - so a drop that did nothing
+        /// was indistinguishable from one that worked, which is how "it said it
+        /// moved and nothing moved" happens.
+        ///
+        /// The old guard was also too broad. Dropping a row INTO the container
+        /// directly above it barely changes its line position but does change its
+        /// INDENT and its parent, which is the whole point of the gesture. Only a
+        /// destination strictly INSIDE the moved range is meaningless - a block
+        /// cannot be moved into itself - and whether anything changed is then
+        /// decided by comparing the result, which is exact.
+        /// </summary>
+        private bool MoveLineRange(
             string filePath, int fromLine1, int toLine1, int afterLine1, string destIndent,
             string what = null)
         {
-            if (afterLine1 >= fromLine1 - 1 && afterLine1 <= toLine1)
-                return;
+            // A block cannot be relocated inside itself.
+            if (afterLine1 >= fromLine1 && afterLine1 <= toLine1)
+                return false;
             var session = EditSession(filePath);
             if (session == null || session.IsReadOnly)
-                return;
+                return false;
             var lines = new System.Collections.Generic.List<string>(session.BufferText.Split('\n'));
             int from = Mathf.Clamp(fromLine1 - 1, 0, lines.Count - 1);
             int to = Mathf.Clamp(toLine1 - 1, from, lines.Count - 1);
@@ -2896,7 +3089,12 @@ namespace Ruitk.Builder
             int insertAt = afterLine1 > to ? afterLine1 - (to - from + 1) : afterLine1;
             insertAt = Mathf.Clamp(insertAt, 0, lines.Count);
             lines.InsertRange(insertAt, moved);
-            ApplyProgrammaticEdit(filePath, string.Join("\n", lines), what);
+
+            string next = string.Join("\n", lines);
+            if (string.Equals(next, session.BufferText, System.StringComparison.Ordinal))
+                return false;
+            ApplyProgrammaticEdit(filePath, next, what);
+            return true;
         }
 
 
@@ -3585,20 +3783,13 @@ namespace Ruitk.Builder
             int close = signature.LastIndexOf(')');
             if (open >= 0 && close > open)
             {
-                string inner = signature.Substring(open + 1, close - open - 1);
-                foreach (string raw in inner.Split(','))
-                {
-                    string part = raw.Trim();
-                    if (part.Length == 0)
-                        continue;
-                    int eq = part.IndexOf('=');
-                    if (eq >= 0)
-                        part = part.Substring(0, eq).Trim();
-                    int space = part.LastIndexOf(' ');
-                    if (space <= 0)
-                        continue;
-                    props.Add((part.Substring(space + 1), part.Substring(0, space)));
-                }
+                // Through the same scanner the prop gestures use, so a
+                // Dictionary<string, int> parameter is one prop here too - a
+                // plain Split(',') cut it in half and offered the attribute menu
+                // two nonsense rows.
+                foreach (var param in BuilderSignatureEdit.ParseList(
+                             signature.Substring(open + 1, close - open - 1)))
+                    props.Add((param.PropName, param.Type));
             }
             props.Add(("key", "list key"));
             return props;
@@ -3816,6 +4007,420 @@ namespace Ruitk.Builder
             var binding = new System.Text.RegularExpressions.Regex(
                 @"\b" + System.Text.RegularExpressions.Regex.Escape(oldName) + @"\b");
             return binding.Replace(updated, newName);
+        }
+
+        /// <summary>UB-231 / #2: the props a component declares, as a gesture
+        /// rather than a label. The signature row used to be read-only, so the
+        /// only way to give a component a prop was to open the source pane and
+        /// type it - and the preview's knobs, which are mined from the compiled
+        /// props type, had nothing to bind to until you did.
+        ///
+        /// All three gestures read and write the TREE's buffers. Nothing here
+        /// opens a file: a call site in a module the user has not opened is still
+        /// a call site, and the tree knows about it.</summary>
+        private void ShowPropsMenu(string filePath)
+        {
+            string full = Path.GetFullPath(filePath);
+            var node = _canvasHost?.FindNode(full);
+            if (node == null)
+            {
+                Toast("That module is not on this canvas");
+                return;
+            }
+            if (node.Kind != BuilderNodeKind.Component && node.Kind != BuilderNodeKind.Hook)
+            {
+                Toast("Only components and hooks declare props");
+                return;
+            }
+            var session = EditSession(full);
+            if (session == null || session.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+
+            var props = BuilderSignatureEdit.Parse(session.BufferText, node.Title);
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>
+            {
+                new BuilderSearchMenu.Item
+                {
+                    Label = "+ prop…",
+                    OnPick = () => ShowAddPropTypeMenu(full, node.Title),
+                },
+            };
+            if (props.Count > 0)
+            {
+                items.Add(BuilderSearchMenu.Separator);
+                items.Add(BuilderSearchMenu.SectionHeader(
+                    props.Count == 1 ? "1 prop" : props.Count + " props"));
+            }
+            foreach (var prop in props)
+            {
+                var captured = prop;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = captured.PropName + " : " + captured.Type,
+                    Detail = captured.IsRequired ? "required" : "= " + captured.Default,
+                    Children = new System.Collections.Generic.List<BuilderSearchMenu.Item>
+                    {
+                        new BuilderSearchMenu.Item
+                        {
+                            Label = "Rename…",
+                            OnPick = () => ShowRenamePropPrompt(full, node.Title, captured),
+                        },
+                        new BuilderSearchMenu.Item
+                        {
+                            Label = captured.IsRequired
+                                ? "Make optional…"
+                                : "Make required",
+                            OnPick = () => TogglePropRequired(full, node.Title, captured),
+                        },
+                        new BuilderSearchMenu.Item
+                        {
+                            Label = "Remove",
+                            OnPick = () => RemovePropAcrossTree(full, node.Title, captured),
+                        },
+                    },
+                });
+            }
+            BuilderSearchMenu.ShowSimple("props of " + node.Title, items);
+        }
+
+        /// <summary>Step 1 of adding a prop: the TYPE. Prop types are ordinary
+        /// C# - user enums, arrays, generics - so no menu can be exhaustive, and
+        /// the answer is the same one the attribute menu already gives: the types
+        /// this tree actually uses, plus a free-text row for everything
+        /// else.</summary>
+        private void ShowAddPropTypeMenu(string full, string exportName)
+        {
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>();
+            foreach (string type in PropTypeVocabulary())
+            {
+                string captured = type;
+                items.Add(new BuilderSearchMenu.Item
+                {
+                    Label = captured,
+                    OnPick = () => ShowAddPropNamePrompt(full, exportName, captured),
+                });
+            }
+            BuilderSearchMenu.Show(
+                "prop type", "search types…", items,
+                typed => string.IsNullOrWhiteSpace(typed)
+                    ? null
+                    : new BuilderSearchMenu.Item
+                    {
+                        Label = typed.Trim(),
+                        Detail = "use this type",
+                        OnPick = () => ShowAddPropNamePrompt(full, exportName, typed.Trim()),
+                    });
+        }
+
+        /// <summary>The types already declared as props anywhere in the OPEN
+        /// TREE, ahead of the handful every UI uses. Mined from the tree rather
+        /// than hard-coded, so a project's own vocabulary - its enums, its state
+        /// records - is what the menu offers first.</summary>
+        private System.Collections.Generic.List<string> PropTypeVocabulary()
+        {
+            var seen = new System.Collections.Generic.HashSet<string>(
+                System.StringComparer.Ordinal);
+            var ordered = new System.Collections.Generic.List<string>();
+            var nodes = _canvasHost?.Nodes;
+            if (nodes != null)
+            {
+                foreach (var other in nodes)
+                {
+                    if (other.Kind != BuilderNodeKind.Component
+                        && other.Kind != BuilderNodeKind.Hook)
+                        continue;
+                    var module = _workspace.TryGet(Path.GetFullPath(other.FilePath));
+                    if (module == null)
+                        continue;
+                    foreach (var prop in BuilderSignatureEdit.Parse(
+                                 module.BufferText, other.Title))
+                        if (prop.Type.Length > 0 && seen.Add(prop.Type))
+                            ordered.Add(prop.Type);
+                }
+            }
+            foreach (string common in s_commonPropTypes)
+                if (seen.Add(common))
+                    ordered.Add(common);
+            return ordered;
+        }
+
+        private static readonly string[] s_commonPropTypes =
+        {
+            "string", "int", "float", "bool", "Action", "Action<int>", "Action<string>",
+            "Color", "Texture2D", "VirtualNode", "Style",
+        };
+
+        /// <summary>Step 2: the NAME, then step 3: whether it is required. A
+        /// parameter written without a default IS the required one, so this is
+        /// not a separate flag to keep in step with anything - the answer chooses
+        /// which of the two forms gets written.</summary>
+        private void ShowAddPropNamePrompt(string full, string exportName, string type)
+        {
+            var session = EditSession(full);
+            if (session == null || session.IsReadOnly)
+                return;
+            var existing = BuilderSignatureEdit.Parse(session.BufferText, exportName);
+            BuilderSearchMenu.ShowNamePrompt(
+                "prop name",
+                "name…",
+                name => ValidatePropName(name, existing),
+                name => ShowAddPropDefaultMenu(full, exportName, type, name.Trim()));
+        }
+
+        private static string ValidatePropName(
+            string name, System.Collections.Generic.List<BuilderParam> existing)
+        {
+            string trimmed = (name ?? "").Trim();
+            if (trimmed.Length == 0)
+                return "a prop needs a name";
+            if (!char.IsLetter(trimmed[0]) && trimmed[0] != '_')
+                return "start with a letter";
+            foreach (char c in trimmed)
+                if (!char.IsLetterOrDigit(c) && c != '_')
+                    return "letters, digits and _ only";
+            foreach (var prop in existing)
+                if (string.Equals(prop.Name, trimmed, System.StringComparison.Ordinal))
+                    return trimmed + " is already declared";
+            return null;
+        }
+
+        private void ShowAddPropDefaultMenu(
+            string full, string exportName, string type, string name)
+        {
+            var items = new System.Collections.Generic.List<BuilderSearchMenu.Item>
+            {
+                new BuilderSearchMenu.Item
+                {
+                    Label = "required",
+                    Detail = "every call site must pass it",
+                    OnPick = () => AddProp(full, exportName, type, name, null),
+                },
+                new BuilderSearchMenu.Item
+                {
+                    Label = "optional…",
+                    Detail = "give it a default value",
+                    OnPick = () => BuilderSearchMenu.ShowNamePrompt(
+                        "default for " + name,
+                        DefaultSeedFor(type),
+                        value => string.IsNullOrWhiteSpace(value)
+                            ? "an optional prop needs a default"
+                            : null,
+                        value => AddProp(full, exportName, type, name, value.Trim()),
+                        initialValue: DefaultSeedFor(type)),
+                },
+            };
+            BuilderSearchMenu.ShowSimple(name + " : " + type, items);
+        }
+
+        private static string DefaultSeedFor(string type)
+        {
+            switch ((type ?? "").Trim())
+            {
+                case "string": return "\"\"";
+                case "int": return "0";
+                case "float": return "0f";
+                case "bool": return "false";
+                default: return "null";
+            }
+        }
+
+        private void AddProp(
+            string full, string exportName, string type, string name, string defaultValue)
+        {
+            var session = EditSession(full);
+            if (session == null || session.IsReadOnly)
+                return;
+            string updated = BuilderSignatureEdit.AddParam(
+                session.BufferText, exportName, type, name, defaultValue);
+            if (string.Equals(updated, session.BufferText, System.StringComparison.Ordinal))
+            {
+                Toast("Could not add " + name);
+                return;
+            }
+            ApplyProgrammaticEdit(full, updated, "added prop " + name);
+        }
+
+        private void ShowRenamePropPrompt(string full, string exportName, BuilderParam prop)
+        {
+            var session = EditSession(full);
+            if (session == null || session.IsReadOnly)
+                return;
+            var existing = BuilderSignatureEdit.Parse(session.BufferText, exportName);
+            BuilderSearchMenu.ShowNamePrompt(
+                "rename " + prop.PropName,
+                prop.Name,
+                name => string.Equals(name, prop.Name, System.StringComparison.Ordinal)
+                    ? "that is the current name"
+                    : ValidatePropName(name, existing),
+                name => RenamePropAcrossTree(full, exportName, prop, name.Trim()),
+                initialValue: prop.Name);
+        }
+
+        /// <summary>A prop rename is three edits that must land together: the
+        /// DECLARATION, its USES in the component's own body, and the ATTRIBUTE
+        /// at every call site in the tree. Recorded as ONE ledger entry, so a
+        /// single Ctrl+Z takes the whole rename back - the same contract module
+        /// rename already keeps.</summary>
+        private void RenamePropAcrossTree(
+            string full, string exportName, BuilderParam prop, string newName)
+        {
+            var nodes = _canvasHost?.Nodes;
+            if (nodes == null)
+                return;
+            string oldProp = prop.PropName;
+            string newProp = newName.Length > 1 && newName[0] == '_'
+                ? newName.Substring(1) : newName;
+
+            _ledger.Begin("rename prop " + oldProp + " to " + newProp);
+            var declaring = EditSession(full);
+            if (declaring != null && !declaring.IsReadOnly)
+            {
+                string before = declaring.BufferText;
+                string updated = BuilderSignatureEdit.RenameParam(
+                    before, exportName, prop.Name, newName);
+                updated = BuilderSignatureEdit.RenameParamUses(
+                    updated, exportName, prop.Name, newName);
+                if (!string.Equals(updated, before, System.StringComparison.Ordinal))
+                {
+                    declaring.ApplyEdit(updated);
+                    _ledger.Record(full, before, updated);
+                }
+            }
+
+            int touched = RewriteCallSitesAcrossTree(
+                nodes, exportName,
+                tag => BuilderSignatureEdit.RenameAttribute(tag, oldProp, newProp));
+            _ledger.End();
+
+            RefreshHistoryPanel();
+            RefreshChrome();
+            NotifyBufferChanged();
+            MountCanvas();
+            Toast(touched == 0
+                ? "Renamed " + oldProp + " to " + newProp
+                : "Renamed " + oldProp + " to " + newProp + " in "
+                    + touched + (touched == 1 ? " caller" : " callers"));
+        }
+
+        /// <summary>Removing a prop strips the attribute at every call site the
+        /// tree knows about, as one undoable action. Call sites OUTSIDE the open
+        /// tree are not rewritten and get UITKX0115 instead; that is the honest
+        /// limit of what the builder can see.</summary>
+        private void RemovePropAcrossTree(string full, string exportName, BuilderParam prop)
+        {
+            var nodes = _canvasHost?.Nodes;
+            if (nodes == null)
+                return;
+            var declaring = EditSession(full);
+            if (declaring == null || declaring.IsReadOnly)
+            {
+                Toast("Read-only file");
+                return;
+            }
+            int stillUsed = BuilderSignatureEdit.CountParamUses(
+                declaring.BufferText, exportName, prop.Name);
+
+            _ledger.Begin("remove prop " + prop.PropName);
+            string before = declaring.BufferText;
+            string updated = BuilderSignatureEdit.RemoveParam(before, exportName, prop.Name);
+            if (!string.Equals(updated, before, System.StringComparison.Ordinal))
+            {
+                declaring.ApplyEdit(updated);
+                _ledger.Record(full, before, updated);
+            }
+
+            int touched = RewriteCallSitesAcrossTree(
+                nodes, exportName,
+                tag => BuilderSignatureEdit.RemoveAttribute(tag, prop.PropName));
+            _ledger.End();
+
+            RefreshHistoryPanel();
+            RefreshChrome();
+            NotifyBufferChanged();
+            MountCanvas();
+            if (stillUsed > 0)
+            {
+                Toast("Removed " + prop.PropName + " - the body still uses it "
+                    + stillUsed + (stillUsed == 1 ? " time" : " times"));
+                return;
+            }
+            Toast(touched == 0
+                ? "Removed " + prop.PropName
+                : "Removed " + prop.PropName + " from "
+                    + touched + (touched == 1 ? " caller" : " callers"));
+        }
+
+        /// <summary>Applies <paramref name="transformTag"/> to every call site of
+        /// <paramref name="tagName"/> in every module of the tree, ONE edit per
+        /// file. EditSession, not TryGet: a module the user has not opened is
+        /// still a caller.</summary>
+        private int RewriteCallSitesAcrossTree(
+            System.Collections.Generic.IReadOnlyList<BuilderCanvasNode> nodes,
+            string tagName,
+            System.Func<string, string> transformTag)
+        {
+            int touched = 0;
+            foreach (var other in nodes)
+            {
+                string otherFull = Path.GetFullPath(other.FilePath);
+                var peer = EditSession(otherFull);
+                if (peer == null || peer.IsReadOnly)
+                    continue;
+                string peerBefore = peer.BufferText;
+                string peerAfter = BuilderSignatureEdit.RewriteCallSites(
+                    peerBefore, tagName, transformTag);
+                if (string.Equals(peerAfter, peerBefore, System.StringComparison.Ordinal))
+                    continue;
+                peer.ApplyEdit(peerAfter);
+                _ledger.Record(otherFull, peerBefore, peerAfter);
+                touched++;
+            }
+            return touched;
+        }
+
+        /// <summary>Flips a prop between the two forms. "Required" is not a flag
+        /// the builder stores anywhere - it IS the absence of a written default,
+        /// so making a prop optional writes one and making it required takes it
+        /// away.</summary>
+        private void TogglePropRequired(string full, string exportName, BuilderParam prop)
+        {
+            if (!prop.IsRequired)
+            {
+                ApplyPropDefault(full, exportName, prop, null);
+                return;
+            }
+            BuilderSearchMenu.ShowNamePrompt(
+                "default for " + prop.PropName,
+                DefaultSeedFor(prop.Type),
+                value => string.IsNullOrWhiteSpace(value)
+                    ? "an optional prop needs a default"
+                    : null,
+                value => ApplyPropDefault(full, exportName, prop, value.Trim()),
+                initialValue: DefaultSeedFor(prop.Type));
+        }
+
+        private void ApplyPropDefault(
+            string full, string exportName, BuilderParam prop, string defaultValue)
+        {
+            var session = EditSession(full);
+            if (session == null || session.IsReadOnly)
+                return;
+            string updated = BuilderSignatureEdit.RemoveParam(
+                session.BufferText, exportName, prop.Name);
+            updated = BuilderSignatureEdit.AddParam(
+                updated, exportName, prop.Type, prop.Name, defaultValue);
+            if (string.Equals(updated, session.BufferText, System.StringComparison.Ordinal))
+            {
+                Toast("Could not change " + prop.PropName);
+                return;
+            }
+            ApplyProgrammaticEdit(full, updated,
+                defaultValue == null
+                    ? "made " + prop.PropName + " required"
+                    : "gave " + prop.PropName + " a default");
         }
         /// <summary>Right-click on a style row. Deleting was the one thing a
         /// style card could not do: entries and whole exports could be added and
@@ -4603,13 +5208,54 @@ namespace Ruitk.Builder
         [SerializeField] private bool _tracePreview;
         [System.NonSerialized] private Button _traceButton;
 
+        /// <summary>Reports every buffer write while tracing is on, naming what
+        /// the module now DECLARES. A write that leaves MiddleSide.uitkx
+        /// declaring NewComponent is the corruption class this campaign has hit
+        /// twice; it now says so at the moment it happens, with the size delta
+        /// that distinguishes a keystroke from a whole-file replacement.</summary>
+        private void InstallBufferWriteLog()
+        {
+            BuilderModule.BufferWriteObserver = (module, before, after) =>
+            {
+                if (!_tracePreview)
+                    return;
+                string file = Path.GetFileName(module.FilePath ?? "");
+                string stem = Path.GetFileNameWithoutExtension(file)
+                    .Replace(".style", "").Replace(".hooks", "");
+                string declares = BuilderSignatureEdit.FirstExportName(after);
+                int delta = (after?.Length ?? 0) - (before?.Length ?? 0);
+                bool mismatch = !string.IsNullOrEmpty(declares)
+                    && !string.Equals(declares, stem, System.StringComparison.Ordinal);
+                string line = "[RUITK Builder] buffer write: " + file
+                    + "  " + (before?.Length ?? 0) + " -> " + (after?.Length ?? 0)
+                    + " chars (" + (delta >= 0 ? "+" : "") + delta + ")"
+                    + "  declares " + (declares ?? "<nothing>");
+                if (mismatch)
+                    Debug.LogWarning(line
+                        + "\n    MISMATCH - this file's name says '" + stem
+                        + "' but its text declares '" + declares
+                        + "'. That is one module holding another's content.");
+                else
+                    Debug.Log(line);
+            };
+        }
+
         private void TogglePreviewTrace()
         {
             _tracePreview = !_tracePreview;
             if (_traceButton != null)
                 _traceButton.text = _tracePreview ? "Trace ON" : "Trace";
+            // The same switch arms the per-second cost report. "Slow" has three
+            // possible causes with three different fixes - a real recompile, a
+            // canvas re-render per mouse-move, an analyzer pass per keystroke -
+            // and the report names which one is actually spending the time.
+            BuilderPerf.Enabled = _tracePreview;
+            InstallBufferWriteLog();
+            if (!_tracePreview)
+                BuilderPerf.Reset();
             Toast(_tracePreview
-                ? "Preview trace ON - the console names what each edit rebuilds"
+                ? "Preview trace ON - the console names what each edit rebuilds, "
+                    + "and reports where the time goes once a second"
                 : "Preview trace off");
         }
 
@@ -5644,7 +6290,7 @@ namespace Ruitk.Builder
                 _inlineEditor.Close(commitIfChanged: false);
                 return;
             }
-            if (_sourceSnapshot != null)
+            if (_sourceEdit.IsOpen)
             {
                 CancelSourceEdit();
                 return;
