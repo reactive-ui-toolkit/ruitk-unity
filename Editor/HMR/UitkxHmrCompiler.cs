@@ -297,6 +297,27 @@ namespace Ruitk.EditorSupport.HMR
             StringComparer.OrdinalIgnoreCase
         );
 
+        /// <summary>
+        /// The component names the compile in flight is DEFINING, so their own
+        /// previously-built swap assemblies are not also referenced.
+        ///
+        /// The single-file path expressed this as "skip self", comparing against
+        /// one componentName. A UNION compile defines several components at once
+        /// and is keyed by a synthetic batch name, so "self" matched nothing and
+        /// every member's previous assembly was referenced while the same types
+        /// were being recompiled - CS0433 on '__Exports' and on the component
+        /// types, every time. Defining and referencing the same type is the
+        /// error; the number of names is the only thing that changed.
+        /// </summary>
+        private readonly HashSet<string> s_definingNow = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>True when <paramref name="name"/> is being rebuilt by the
+        /// compile in flight and must not be cross-referenced.</summary>
+        private bool IsDefinedByThisCompile(string name, string componentName) =>
+            s_definingNow.Contains(name)
+            || name.Equals(componentName, StringComparison.OrdinalIgnoreCase);
+
         // Components that are genuinely new (not in any pre-existing assembly).
         // Only these need cross-references; existing components would cause CS0433.
         private readonly HashSet<string> _genuinelyNewComponents = new(
@@ -518,30 +539,7 @@ namespace Ruitk.EditorSupport.HMR
                 // path-derived. Optional handle: an older Language.dll simply skips (pre-0.8.1
                 // behavior); same-folder companions are already inlined above (same namespace →
                 // the helper's same-ns guard skips them too).
-                if (_importScopePayloads != null)
-                {
-                    try
-                    {
-                        var payloads = _importScopePayloads.Invoke(
-                            null, new object[] { directives, uitkxPath }) as System.Collections.IEnumerable;
-                        if (payloads != null)
-                        {
-                            var already = new HashSet<string>(System.StringComparer.Ordinal);
-                            var aliasLines = new List<string>();
-                            foreach (object p in payloads)
-                            {
-                                if (p is string payload && payload.Length > 0 && already.Add(payload))
-                                    aliasLines.Add(payload);
-                            }
-                            if (aliasLines.Count > 0)
-                                sources[0] = InjectUsings(sources[0], ns, aliasLines);
-                        }
-                    }
-                    catch
-                    {
-                        // Graceful: no injected import scope — matches pre-0.8.1 HMR behavior.
-                    }
-                }
+                sources[0] = WithImportScopeUsings(sources[0], directives, uitkxPath, ns);
 
                 // New-mode component files (ES-modules campaign, U-02): the file's own members
                 // (values/utils/hooks) and any imported-member bridges live on {ns}.__Exports.
@@ -690,6 +688,52 @@ namespace Ruitk.EditorSupport.HMR
         /// Hook/module-only files (no <c>component</c> keyword) are out of scope
         /// — callers must route them through <see cref="CompileHookModuleFile"/>.
         /// </summary>
+
+        /// <summary>
+        /// Applies the imported-scope <c>using</c> aliases to an emitted unit -
+        /// the cross-folder hook containers and the type aliases for imported
+        /// modules and components living in another effective namespace, exactly
+        /// what the source generator injects.
+        ///
+        /// Shared by BOTH compile paths on purpose. It used to live inline in the
+        /// single-file path only, so the UNION path emitted parents with no alias
+        /// for their own children and every union compile died on
+        /// <c>CS0103: The name LeftSide does not exist in the current context</c> -
+        /// then fell back to per-file, which is why the union looked like it was
+        /// never running. Two emission paths that must agree is exactly the drift
+        /// this repo keeps parity tests for.
+        ///
+        /// Returns the source unchanged when the language library is older than
+        /// the handle (pre-0.8.1 behaviour) or anything throws: a missing alias
+        /// degrades to the previous compile error, never to a crash.
+        /// </summary>
+        private string WithImportScopeUsings(
+            string emitted, object directives, string uitkxPath, string ns)
+        {
+            if (_importScopePayloads == null || string.IsNullOrEmpty(emitted))
+                return emitted;
+            try
+            {
+                var payloads = _importScopePayloads.Invoke(
+                    null, new object[] { directives, uitkxPath }) as System.Collections.IEnumerable;
+                if (payloads == null)
+                    return emitted;
+                var already = new HashSet<string>(System.StringComparer.Ordinal);
+                var aliasLines = new List<string>();
+                foreach (object p in payloads)
+                {
+                    if (p is string payload && payload.Length > 0 && already.Add(payload))
+                        aliasLines.Add(payload);
+                }
+                return aliasLines.Count > 0 ? InjectUsings(emitted, ns, aliasLines) : emitted;
+            }
+            catch
+            {
+                // Graceful: no injected import scope - matches pre-0.8.1 HMR behavior.
+                return emitted;
+            }
+        }
+
         private ComponentBuildArtifacts BuildComponentArtifacts(
             string uitkxPath,
             string[] companionCsFiles,
@@ -844,7 +888,10 @@ namespace Ruitk.EditorSupport.HMR
                 }
                 artifacts.CompanionUitkxSources = companionInline;
 
-                artifacts.EmittedComponentSource = csharp;
+                // Same import-scope aliases the single-file path applies. Without
+                // them a parent in this batch cannot name its own children.
+                artifacts.EmittedComponentSource =
+                    WithImportScopeUsings(csharp, directives, uitkxPath, ns);
 
                 if (companionCsFiles != null)
                 {
@@ -1040,7 +1087,25 @@ namespace Ruitk.EditorSupport.HMR
                 }
 
                 var compileSw = Stopwatch.StartNew();
-                var asm = CompileSources(allSources.ToArray(), batchKey, uitkxPaths[0], out string compileError);
+                string compileErrorLocal;
+                // Declare what this compile defines, so the cross-ref loops do not
+                // reference the members' own previous assemblies back into it.
+                s_definingNow.Clear();
+                foreach (var art in artifactsByPath.Values)
+                    s_definingNow.Add(art.ComponentName);
+                Assembly asm;
+                try
+                {
+                    asm = CompileSources(
+                        allSources.ToArray(), batchKey, uitkxPaths[0], out compileErrorLocal);
+                }
+                finally
+                {
+                    // Cleared unconditionally: a stale set would silently drop a
+                    // legitimate cross-reference from the NEXT compile.
+                    s_definingNow.Clear();
+                }
+                string compileError = compileErrorLocal;
                 compileSw.Stop();
                 double compileMs = compileSw.Elapsed.TotalMilliseconds;
 
@@ -1076,6 +1141,12 @@ namespace Ruitk.EditorSupport.HMR
                         Success = true,
                         ComponentName = art.ComponentName,
                         Namespace = art.Namespace ?? string.Empty,
+                        // The union path used to leave this null, so a batch build
+                        // reported no family and the one diagnostic that separates
+                        // "key mismatch" from "not mounted" went dark (UB-205).
+                        // FullyQualifiedName is built from the same effective
+                        // namespace the emitter's selfKey uses, so it IS the key.
+                        FamilyKey = art.FullyQualifiedName,
                         LoadedAssembly = asm,
                         ParseMs = art.ParseMs,
                         EmitMs = art.EmitMs,
@@ -2380,7 +2451,8 @@ namespace Ruitk.EditorSupport.HMR
 
         private void CacheRoslynHandles()
         {
-            // CSharpParseOptions — use Default (maps to latest stable C# for this Roslyn build)
+            // CSharpParseOptions — Default maps to the latest stable C# this Roslyn build
+            // knows; the language version is pinned to Unity's just below.
             var parseOptionsType = _roslynCSharpAsm.GetType(
                 "Microsoft.CodeAnalysis.CSharp.CSharpParseOptions"
             );
@@ -2389,6 +2461,35 @@ namespace Ruitk.EditorSupport.HMR
                 BindingFlags.Public | BindingFlags.Static
             );
             _parseOptions = defaultProp.GetValue(null);
+
+            // Pin the SAME language version Unity compiles the project with, so the
+            // hot compile cannot accept code the next real compile rejects. Default
+            // maps to the newest C# this Roslyn build knows, which is strictly more
+            // permissive than Unity's setting.
+            var withLanguageVersion = parseOptionsType.GetMethod(
+                "WithLanguageVersion",
+                BindingFlags.Public | BindingFlags.Instance
+            );
+            var facts = _roslynCSharpAsm.GetType(
+                "Microsoft.CodeAnalysis.CSharp.LanguageVersionFacts"
+            );
+            var tryParse = facts?.GetMethod(
+                "TryParse",
+                BindingFlags.Public | BindingFlags.Static
+            );
+            if (withLanguageVersion != null && tryParse != null)
+            {
+                var args = new object[] { ProjectLanguageVersion, null };
+                bool parsed = false;
+                try { parsed = (bool)tryParse.Invoke(null, args); }
+                catch (Exception) { parsed = false; }
+                if (parsed)
+                    _parseOptions = withLanguageVersion.Invoke(_parseOptions, new[] { args[1] });
+                else
+                    Debug.LogWarning(
+                        "[HMR] Could not parse language version '" + ProjectLanguageVersion
+                            + "' - the in-process compile will accept newer C# than Unity does.");
+            }
 
             // ── Define UNITY_EDITOR (and Unity's full editor-define list when
             //    available) so companion .cs `#if UNITY_EDITOR` blocks compile
@@ -2938,7 +3039,7 @@ namespace Ruitk.EditorSupport.HMR
             var crossRefs = new List<object>();
             foreach (var kvp in _hmrAssemblyPaths)
             {
-                if (kvp.Key.Equals(componentName, StringComparison.OrdinalIgnoreCase))
+                if (IsDefinedByThisCompile(kvp.Key, componentName))
                     continue;
                 if (!_genuinelyNewComponents.Contains(kvp.Key))
                     continue;
@@ -3105,7 +3206,7 @@ namespace Ruitk.EditorSupport.HMR
             {
                 rsp.WriteLine("-target:library");
                 rsp.WriteLine($"-out:\"{outputDll}\"");
-                rsp.WriteLine("-langversion:latest");
+                rsp.WriteLine($"-langversion:{ProjectLanguageVersion}");
                 rsp.WriteLine("-nowarn:0105,0436,8600,8601,8602,8603,8604");
                 rsp.WriteLine("-nullable:enable");
                 rsp.WriteLine("-deterministic");
@@ -3124,8 +3225,10 @@ namespace Ruitk.EditorSupport.HMR
                 // Add previously HMR-compiled assemblies for cross-component resolution (new components only)
                 foreach (var kvp in _hmrAssemblyPaths)
                 {
-                    if (kvp.Key.Equals(componentName, StringComparison.OrdinalIgnoreCase))
-                        continue; // skip self — it will be replaced
+                    // Skip everything this compile DEFINES - "self" for a
+                    // single-file build, every member for a union.
+                    if (IsDefinedByThisCompile(kvp.Key, componentName))
+                        continue;
                     // Only add cross-refs for genuinely new components;
                     // existing ones are already referenced and would cause CS0433
                     if (!_genuinelyNewComponents.Contains(kvp.Key))
@@ -3786,6 +3889,61 @@ namespace Ruitk.EditorSupport.HMR
         /// etc. there). Fall back to a minimum viable set of just
         /// <c>UNITY_EDITOR</c> if the API is unavailable or returns nothing.
         /// </para>
+
+        // ── Project language version ──────────────────────────────────────────
+        //
+        // The hot compile MUST use the language version Unity compiles the
+        // project with. It used to pass "latest", which is strictly more
+        // permissive: the preview accepted code that the next real compile
+        // rejected, and said nothing. C# 10's inferred delegate type is the
+        // one that surfaced it -
+        //
+        //     var handler = () => { ... };   // fine at latest, CS8773 at 9.0
+        //
+        // - so a component previewed clean and then failed to build on Save.
+        // A preview that accepts more than the compiler is not a preview.
+        //
+        // Unity owns the answer: every assembly's ScriptCompilerOptions carries
+        // the version Unity itself passes to Roslyn. Asked once and cached; the
+        // fallback matches every Unity this package supports (floor 6000.2).
+        private static string s_languageVersion;
+
+        private const string LanguageVersionFallback = "9.0";
+
+        internal static string ProjectLanguageVersion
+        {
+            get
+            {
+                if (s_languageVersion != null)
+                    return s_languageVersion;
+                s_languageVersion = QueryUnityLanguageVersion() ?? LanguageVersionFallback;
+                return s_languageVersion;
+            }
+        }
+
+        private static string QueryUnityLanguageVersion()
+        {
+            try
+            {
+                var assemblies = UnityEditor.Compilation.CompilationPipeline.GetAssemblies(
+                    UnityEditor.Compilation.AssembliesType.Editor
+                );
+                if (assemblies == null)
+                    return null;
+                foreach (var assembly in assemblies)
+                {
+                    string version = assembly?.compilerOptions?.LanguageVersion;
+                    if (!string.IsNullOrEmpty(version))
+                        return version;
+                }
+            }
+            catch (Exception)
+            {
+                // Unity has moved this before. A wrong-but-conservative version is
+                // recoverable; throwing out of the compile path is not.
+            }
+            return null;
+        }
         /// </summary>
         private static string[] ResolveEditorPreprocessorSymbols()
         {
