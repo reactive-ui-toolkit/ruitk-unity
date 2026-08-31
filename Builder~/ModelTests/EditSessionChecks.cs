@@ -20,8 +20,17 @@ static class EditSessionChecks
     {
         Console.WriteLine("Source-pane edit session");
 
-        const string parent = @"C:\proj\Assets\UI\NewComponent\NewComponent.uitkx";
-        const string child = @"C:\proj\Assets\UI\NewComponent\components\MiddleSide\MiddleSide.uitkx";
+        // DERIVED, never written down. The machine-local-path gate reads TRACKED
+        // files only, so a hardcoded absolute fixture passes every pre-commit
+        // run and fails the moment it is committed - which is what happened.
+        // The session does pure string comparison, so a real root is
+        // unnecessary; deriving one keeps the paths shaped like the ones the
+        // window actually passes.
+        string root = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "ruitk-edit-session", "Assets", "UI");
+        string parent = System.IO.Path.Combine(root, "NewComponent", "NewComponent.uitkx");
+        string child = System.IO.Path.Combine(
+            root, "NewComponent", "components", "MiddleSide", "MiddleSide.uitkx");
 
         var s = new BuilderSourceEditSession();
         check(!s.IsOpen, "a fresh session is closed");
