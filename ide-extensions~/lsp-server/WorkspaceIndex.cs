@@ -36,6 +36,23 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
 
         /// <summary>1-based line number of the declaration in the source file.</summary>
         public int Line { get; init; }
+
+        /// <summary>
+        /// Raw declaring parameter name, which differs from <see cref="Name"/>
+        /// only when the leading-underscore unused marker is present
+        /// (<c>_count</c> declares the prop <c>count</c>). Empty for props that
+        /// come from a hand-written C# <c>*Props</c> class.
+        /// </summary>
+        public string ParamName { get; init; } = "";
+
+        /// <summary>
+        /// False only when the declaring parameter was written WITHOUT a
+        /// default value, which makes the prop required at every call site
+        /// (UITKX0115). Defaults to <c>true</c> so any prop whose origin cannot
+        /// answer the question - a hand-written C# props class has no notion of
+        /// "no default written" - stays optional.
+        /// </summary>
+        public bool HasDefault { get; init; } = true;
     }
 
     /// <summary>All info gathered for one UITKX element (its <c>*Props</c> class).</summary>
@@ -910,6 +927,8 @@ public sealed class WorkspaceIndex : IOnLanguageServerStarted
                                     Name = Ruitk.Language.Parser.FunctionParam
                                         .ToPropSourceName(tokens[tokens.Length - 1]),
                                     Type = string.Join(" ", tokens, 0, tokens.Length - 1),
+                                    ParamName = tokens[tokens.Length - 1],
+                                    HasDefault = param.IndexOf('=') >= 0,
                                     Line = lineNumber,
                                 }
                             );

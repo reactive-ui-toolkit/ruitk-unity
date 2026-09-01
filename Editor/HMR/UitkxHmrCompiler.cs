@@ -108,11 +108,22 @@ namespace Ruitk.EditorSupport.HMR
         /// </summary>
         internal Func<string, string> SourceOverlay { get; set; }
 
+        /// <summary>Where module truth comes from. Defaults to the filesystem, which
+        /// is exactly what HMR wants and what every caller had before this existed.
+        /// The builder replaces it with one backed by its in-memory tree.
+        ///
+        /// The point of it being a FIELD rather than a set of remembered rules: an
+        /// overlay that is not passed cannot be enforced, and three defects in one
+        /// wave were call sites that forgot to consult it (ISO-3 in
+        /// Plans~/BUILDER_ISOLATION_PLAN.md).</summary>
+        internal IModuleSource Modules { get; set; } = FileSystemModuleSource.Instance;
+
         /// <summary>Optional diagnostic sink. What a swap unit INLINES is the one
         /// fact that decides whether an edit to an imported module can be seen,
         /// and it was invisible from outside - which is what made UB-203 take four
         /// rounds of guessing.</summary>
         internal Action<string> Trace { get; set; }
+
 
         /// <summary>Hands the unsaved-buffer overlay to the language lib, which
         /// resolves import targets of its own when it computes the using aliases an
@@ -135,16 +146,25 @@ namespace Ruitk.EditorSupport.HMR
 
         private string ReadUitkxText(string path)
         {
+            // SourceOverlay is still consulted first so an existing caller that sets
+            // only the overlay keeps working; it is now an adapter ONTO the module
+            // source rather than a parallel truth (ISO-A).
             string overlay = SourceOverlay?.Invoke(path);
-            return overlay ?? ReadTextWithRetry(path);
+            return overlay ?? (Modules ?? FileSystemModuleSource.Instance).ReadText(path);
         }
 
         private bool UitkxSourceExists(string path)
         {
             if (SourceOverlay?.Invoke(path) != null)
                 return true;
-            return File.Exists(path);
+            return (Modules ?? FileSystemModuleSource.Instance).Exists(path);
         }
+
+        /// <summary>The companion set for a module: siblings sharing its name
+        /// prefix. A directory glob cannot answer this for an unsaved tree, where
+        /// the companion has no file to enumerate (ISO-1).</summary>
+        private IEnumerable<string> CompanionSiblings(string directory, string prefix) =>
+            (Modules ?? FileSystemModuleSource.Instance).SiblingsWithPrefix(directory, prefix);
 
         // ── Loaded pipeline assembly ──────────────────────────────────────────
         private Assembly _languageAsm;
@@ -277,6 +297,27 @@ namespace Ruitk.EditorSupport.HMR
             StringComparer.OrdinalIgnoreCase
         );
 
+        /// <summary>
+        /// The component names the compile in flight is DEFINING, so their own
+        /// previously-built swap assemblies are not also referenced.
+        ///
+        /// The single-file path expressed this as "skip self", comparing against
+        /// one componentName. A UNION compile defines several components at once
+        /// and is keyed by a synthetic batch name, so "self" matched nothing and
+        /// every member's previous assembly was referenced while the same types
+        /// were being recompiled - CS0433 on '__Exports' and on the component
+        /// types, every time. Defining and referencing the same type is the
+        /// error; the number of names is the only thing that changed.
+        /// </summary>
+        private readonly HashSet<string> s_definingNow = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>True when <paramref name="name"/> is being rebuilt by the
+        /// compile in flight and must not be cross-referenced.</summary>
+        private bool IsDefinedByThisCompile(string name, string componentName) =>
+            s_definingNow.Contains(name)
+            || name.Equals(componentName, StringComparison.OrdinalIgnoreCase);
+
         // Components that are genuinely new (not in any pre-existing assembly).
         // Only these need cross-references; existing components would cause CS0433.
         private readonly HashSet<string> _genuinelyNewComponents = new(
@@ -337,6 +378,7 @@ namespace Ruitk.EditorSupport.HMR
         /// </summary>
         public HmrCompileResult Compile(string uitkxPath, string[] companionCsFiles = null)
         {
+            _directivesThisCompile.Clear();
             var result = new HmrCompileResult();
             var sw = Stopwatch.StartNew();
             PublishSourceOverlay();
@@ -471,6 +513,7 @@ namespace Ruitk.EditorSupport.HMR
                     findLhsStartForLogicalAnd,
                     effectiveNs,
                     BuildHookFamilyKeyMap(directives, uitkxPath),
+                    BuildComponentFqnMap(directives, uitkxPath),
                     InvokeTagMap(_starImportNamespacesFn, directives, uitkxPath),
                     InvokeTagMap(_importAliasTypeMapFn, directives, uitkxPath)
                 );
@@ -496,30 +539,7 @@ namespace Ruitk.EditorSupport.HMR
                 // path-derived. Optional handle: an older Language.dll simply skips (pre-0.8.1
                 // behavior); same-folder companions are already inlined above (same namespace →
                 // the helper's same-ns guard skips them too).
-                if (_importScopePayloads != null)
-                {
-                    try
-                    {
-                        var payloads = _importScopePayloads.Invoke(
-                            null, new object[] { directives, uitkxPath }) as System.Collections.IEnumerable;
-                        if (payloads != null)
-                        {
-                            var already = new HashSet<string>(System.StringComparer.Ordinal);
-                            var aliasLines = new List<string>();
-                            foreach (object p in payloads)
-                            {
-                                if (p is string payload && payload.Length > 0 && already.Add(payload))
-                                    aliasLines.Add(payload);
-                            }
-                            if (aliasLines.Count > 0)
-                                sources[0] = InjectUsings(sources[0], ns, aliasLines);
-                        }
-                    }
-                    catch
-                    {
-                        // Graceful: no injected import scope — matches pre-0.8.1 HMR behavior.
-                    }
-                }
+                sources[0] = WithImportScopeUsings(sources[0], directives, uitkxPath, ns);
 
                 // New-mode component files (ES-modules campaign, U-02): the file's own members
                 // (values/utils/hooks) and any imported-member bridges live on {ns}.__Exports.
@@ -668,6 +688,52 @@ namespace Ruitk.EditorSupport.HMR
         /// Hook/module-only files (no <c>component</c> keyword) are out of scope
         /// — callers must route them through <see cref="CompileHookModuleFile"/>.
         /// </summary>
+
+        /// <summary>
+        /// Applies the imported-scope <c>using</c> aliases to an emitted unit -
+        /// the cross-folder hook containers and the type aliases for imported
+        /// modules and components living in another effective namespace, exactly
+        /// what the source generator injects.
+        ///
+        /// Shared by BOTH compile paths on purpose. It used to live inline in the
+        /// single-file path only, so the UNION path emitted parents with no alias
+        /// for their own children and every union compile died on
+        /// <c>CS0103: The name LeftSide does not exist in the current context</c> -
+        /// then fell back to per-file, which is why the union looked like it was
+        /// never running. Two emission paths that must agree is exactly the drift
+        /// this repo keeps parity tests for.
+        ///
+        /// Returns the source unchanged when the language library is older than
+        /// the handle (pre-0.8.1 behaviour) or anything throws: a missing alias
+        /// degrades to the previous compile error, never to a crash.
+        /// </summary>
+        private string WithImportScopeUsings(
+            string emitted, object directives, string uitkxPath, string ns)
+        {
+            if (_importScopePayloads == null || string.IsNullOrEmpty(emitted))
+                return emitted;
+            try
+            {
+                var payloads = _importScopePayloads.Invoke(
+                    null, new object[] { directives, uitkxPath }) as System.Collections.IEnumerable;
+                if (payloads == null)
+                    return emitted;
+                var already = new HashSet<string>(System.StringComparer.Ordinal);
+                var aliasLines = new List<string>();
+                foreach (object p in payloads)
+                {
+                    if (p is string payload && payload.Length > 0 && already.Add(payload))
+                        aliasLines.Add(payload);
+                }
+                return aliasLines.Count > 0 ? InjectUsings(emitted, ns, aliasLines) : emitted;
+            }
+            catch
+            {
+                // Graceful: no injected import scope - matches pre-0.8.1 HMR behavior.
+                return emitted;
+            }
+        }
+
         private ComponentBuildArtifacts BuildComponentArtifacts(
             string uitkxPath,
             string[] companionCsFiles,
@@ -784,7 +850,8 @@ namespace Ruitk.EditorSupport.HMR
                     findBareJsxRanges,
                     findLhsStartForLogicalAnd,
                     ComputeEffectiveNs(directives, uitkxPath),
-                    BuildHookFamilyKeyMap(directives, uitkxPath)
+                    BuildHookFamilyKeyMap(directives, uitkxPath),
+                    BuildComponentFqnMap(directives, uitkxPath)
                 );
 
                 // Companion .uitkx pickup. EmitCompanionUitkxSources writes into
@@ -813,9 +880,7 @@ namespace Ruitk.EditorSupport.HMR
                     // not a failure - but the unguarded scan threw
                     // DirectoryNotFoundException on every debounced recompile,
                     // which killed the preview and made typing crawl.
-                    foreach (var file in Directory.Exists(compDir)
-                        ? Directory.GetFiles(compDir, prefix + "*.uitkx")
-                        : System.Array.Empty<string>())
+                    foreach (var file in CompanionSiblings(compDir, prefix))
                     {
                         if (!string.Equals(file, uitkxPath, StringComparison.OrdinalIgnoreCase))
                             artifacts.CompanionUitkxPathsConsumed.Add(Path.GetFullPath(file));
@@ -823,7 +888,10 @@ namespace Ruitk.EditorSupport.HMR
                 }
                 artifacts.CompanionUitkxSources = companionInline;
 
-                artifacts.EmittedComponentSource = csharp;
+                // Same import-scope aliases the single-file path applies. Without
+                // them a parent in this batch cannot name its own children.
+                artifacts.EmittedComponentSource =
+                    WithImportScopeUsings(csharp, directives, uitkxPath, ns);
 
                 if (companionCsFiles != null)
                 {
@@ -1019,7 +1087,25 @@ namespace Ruitk.EditorSupport.HMR
                 }
 
                 var compileSw = Stopwatch.StartNew();
-                var asm = CompileSources(allSources.ToArray(), batchKey, uitkxPaths[0], out string compileError);
+                string compileErrorLocal;
+                // Declare what this compile defines, so the cross-ref loops do not
+                // reference the members' own previous assemblies back into it.
+                s_definingNow.Clear();
+                foreach (var art in artifactsByPath.Values)
+                    s_definingNow.Add(art.ComponentName);
+                Assembly asm;
+                try
+                {
+                    asm = CompileSources(
+                        allSources.ToArray(), batchKey, uitkxPaths[0], out compileErrorLocal);
+                }
+                finally
+                {
+                    // Cleared unconditionally: a stale set would silently drop a
+                    // legitimate cross-reference from the NEXT compile.
+                    s_definingNow.Clear();
+                }
+                string compileError = compileErrorLocal;
                 compileSw.Stop();
                 double compileMs = compileSw.Elapsed.TotalMilliseconds;
 
@@ -1055,6 +1141,12 @@ namespace Ruitk.EditorSupport.HMR
                         Success = true,
                         ComponentName = art.ComponentName,
                         Namespace = art.Namespace ?? string.Empty,
+                        // The union path used to leave this null, so a batch build
+                        // reported no family and the one diagnostic that separates
+                        // "key mismatch" from "not mounted" went dark (UB-205).
+                        // FullyQualifiedName is built from the same effective
+                        // namespace the emitter's selfKey uses, so it IS the key.
+                        FamilyKey = art.FullyQualifiedName,
                         LoadedAssembly = asm,
                         ParseMs = art.ParseMs,
                         EmitMs = art.EmitMs,
@@ -1350,9 +1442,7 @@ namespace Ruitk.EditorSupport.HMR
             string prefix = componentName + ".";
             // Same reason as the companion scan above: a pending module may
             // have no directory on disk, which simply means no candidates.
-            foreach (var f in Directory.Exists(dir)
-                ? Directory.GetFiles(dir, prefix + "*.uitkx")
-                : System.Array.Empty<string>())
+            foreach (var f in CompanionSiblings(dir, prefix))
                 if (seenCandidates.Add(Path.GetFullPath(f)))
                     candidateFiles.Add(f);
             if (componentDirectives != null && _importResolverMap != null)
@@ -2361,7 +2451,8 @@ namespace Ruitk.EditorSupport.HMR
 
         private void CacheRoslynHandles()
         {
-            // CSharpParseOptions — use Default (maps to latest stable C# for this Roslyn build)
+            // CSharpParseOptions — Default maps to the latest stable C# this Roslyn build
+            // knows; the language version is pinned to Unity's just below.
             var parseOptionsType = _roslynCSharpAsm.GetType(
                 "Microsoft.CodeAnalysis.CSharp.CSharpParseOptions"
             );
@@ -2370,6 +2461,35 @@ namespace Ruitk.EditorSupport.HMR
                 BindingFlags.Public | BindingFlags.Static
             );
             _parseOptions = defaultProp.GetValue(null);
+
+            // Pin the SAME language version Unity compiles the project with, so the
+            // hot compile cannot accept code the next real compile rejects. Default
+            // maps to the newest C# this Roslyn build knows, which is strictly more
+            // permissive than Unity's setting.
+            var withLanguageVersion = parseOptionsType.GetMethod(
+                "WithLanguageVersion",
+                BindingFlags.Public | BindingFlags.Instance
+            );
+            var facts = _roslynCSharpAsm.GetType(
+                "Microsoft.CodeAnalysis.CSharp.LanguageVersionFacts"
+            );
+            var tryParse = facts?.GetMethod(
+                "TryParse",
+                BindingFlags.Public | BindingFlags.Static
+            );
+            if (withLanguageVersion != null && tryParse != null)
+            {
+                var args = new object[] { ProjectLanguageVersion, null };
+                bool parsed = false;
+                try { parsed = (bool)tryParse.Invoke(null, args); }
+                catch (Exception) { parsed = false; }
+                if (parsed)
+                    _parseOptions = withLanguageVersion.Invoke(_parseOptions, new[] { args[1] });
+                else
+                    Debug.LogWarning(
+                        "[HMR] Could not parse language version '" + ProjectLanguageVersion
+                            + "' - the in-process compile will accept newer C# than Unity does.");
+            }
 
             // ── Define UNITY_EDITOR (and Unity's full editor-define list when
             //    available) so companion .cs `#if UNITY_EDITOR` blocks compile
@@ -2919,7 +3039,7 @@ namespace Ruitk.EditorSupport.HMR
             var crossRefs = new List<object>();
             foreach (var kvp in _hmrAssemblyPaths)
             {
-                if (kvp.Key.Equals(componentName, StringComparison.OrdinalIgnoreCase))
+                if (IsDefinedByThisCompile(kvp.Key, componentName))
                     continue;
                 if (!_genuinelyNewComponents.Contains(kvp.Key))
                     continue;
@@ -3086,7 +3206,7 @@ namespace Ruitk.EditorSupport.HMR
             {
                 rsp.WriteLine("-target:library");
                 rsp.WriteLine($"-out:\"{outputDll}\"");
-                rsp.WriteLine("-langversion:latest");
+                rsp.WriteLine($"-langversion:{ProjectLanguageVersion}");
                 rsp.WriteLine("-nowarn:0105,0436,8600,8601,8602,8603,8604");
                 rsp.WriteLine("-nullable:enable");
                 rsp.WriteLine("-deterministic");
@@ -3105,8 +3225,10 @@ namespace Ruitk.EditorSupport.HMR
                 // Add previously HMR-compiled assemblies for cross-component resolution (new components only)
                 foreach (var kvp in _hmrAssemblyPaths)
                 {
-                    if (kvp.Key.Equals(componentName, StringComparison.OrdinalIgnoreCase))
-                        continue; // skip self — it will be replaced
+                    // Skip everything this compile DEFINES - "self" for a
+                    // single-file build, every member for a union.
+                    if (IsDefinedByThisCompile(kvp.Key, componentName))
+                        continue;
                     // Only add cross-refs for genuinely new components;
                     // existing ones are already referenced and would cause CS0433
                     if (!_genuinelyNewComponents.Contains(kvp.Key))
@@ -3423,6 +3545,97 @@ namespace Ruitk.EditorSupport.HMR
             catch { return rawNs; }
         }
 
+        /// <summary>Bound-tag-name → the imported component's fully-qualified name,
+        /// resolved through the IMPORT rather than by scanning loaded assemblies.
+        ///
+        /// The emitter's fallback (ResolveComponentFqn) takes the first loaded type
+        /// whose SIMPLE name matches the tag, which is only correct while no two
+        /// trees share a component name. Open a second tree with a LeftSide in it and
+        /// the consumer publishes GetFamily against the OTHER tree's key, so the
+        /// registry hands back a stranger's component - correctly, because that is
+        /// what was asked for (UB-223).
+        ///
+        /// Resolution is importer-relative and tested through UitkxSourceExists, not
+        /// File.Exists: an unsaved sibling is not on disk by design, and a disk-gated
+        /// check cannot see it. Names with no import are left out, so hand-written
+        /// components (router types in the package) still reach the assembly scan.</summary>
+        internal Dictionary<string, string> BuildComponentFqnMap(object directives, string filePath)
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (directives == null || _importResolverMap == null)
+                return map;
+
+            var imports = GetItems(GetProp(directives, "Imports"));
+            if (imports.Count == 0)
+                return map;
+
+            string importerDir = (Path.GetDirectoryName(filePath) ?? filePath).Replace('\\', '/');
+            string rootDir = importerDir;
+            if (_uiSourceRootDir != null)
+            {
+                try { rootDir = (_uiSourceRootDir.Invoke(null, new object[] { filePath }) as string) ?? importerDir; }
+                catch { }
+            }
+
+            foreach (var imp in imports)
+            {
+                string specifier = (string)GetProp(imp, "Specifier");
+                if (string.IsNullOrEmpty(specifier))
+                    continue;
+                string targetFile = null;
+                try
+                {
+                    var args = new object[] { importerDir, specifier, rootDir, null };
+                    targetFile = _importResolverMap.Invoke(null, args) as string;
+                }
+                catch { }
+                if (string.IsNullOrEmpty(targetFile) || !UitkxSourceExists(targetFile))
+                    continue;
+
+                object targetDs = ParseDirectivesForFile(targetFile);
+                if (targetDs == null)
+                    continue;
+                string targetNs = ComputeEffectiveNs(targetDs, targetFile);
+
+                // The target's component is NOT in MemberDeclarations. ParseResult is
+                // explicit about it: a VirtualNode-returning declaration classifies as
+                // DeclKind.Component but is parsed into ComponentDeclaration, and the
+                // directives surface it as ComponentName. Reading MemberDeclarations
+                // here built an always-empty map, which silently left the assembly scan
+                // in charge and fixed nothing.
+                string targetComponent = GetProp(targetDs, "ComponentName") as string;
+                if (string.IsNullOrEmpty(targetComponent))
+                    continue;
+
+                var names = GetItems(GetProp(imp, "Names"));
+                var aliases = GetItems(GetProp(imp, "Aliases"));
+                for (int k = 0; k < names.Count; k++)
+                {
+                    string nm = names[k] as string;
+                    if (string.IsNullOrEmpty(nm)
+                        || !string.Equals(nm, targetComponent, StringComparison.Ordinal))
+                        continue;
+                    string bound = k < aliases.Count ? (aliases[k] as string) ?? nm : nm;
+                    map[bound] = string.IsNullOrEmpty(targetNs)
+                        ? nm
+                        : targetNs + "." + nm;
+                }
+            }
+            if (Trace != null)
+            {
+                var report = new System.Text.StringBuilder("[RUITK Builder] compile: child components of ")
+                    .Append(Path.GetFileName(filePath));
+                if (map.Count == 0)
+                    report.Append(" -> (none resolved through imports; the assembly scan decides)");
+                else
+                    foreach (var pair in map)
+                        report.Append("\n    ").Append(pair.Key)
+                              .Append("  ->  ").Append(pair.Value);
+                Trace(report.ToString());
+            }
+            return map;
+        }
+
         /// <summary>Bare-hook-name → qualified family key, matching UitkxPipeline.BuildHookFamilyKeyMap.</summary>
         internal Dictionary<string, string> BuildHookFamilyKeyMap(object directives, string filePath)
         {
@@ -3586,15 +3799,34 @@ namespace Ruitk.EditorSupport.HMR
         }
 
         /// <summary>Parses a target file's directives (reflected DirectiveSet), null on failure.</summary>
+        /// <summary>Parsed directives for import targets, for the life of ONE
+        /// compile.
+        ///
+        /// The hook-family map and the component-FQN map walk the same imports, and
+        /// each read and parsed every target independently - so adding the second
+        /// map doubled a cost paid on every save, HMR included. Within a single
+        /// compile a target cannot change underneath us, so one parse per target is
+        /// the right number. Cleared per compile rather than held: a stale directive
+        /// set is exactly the class of bug this campaign spent the day removing.</summary>
+        private readonly Dictionary<string, object> _directivesThisCompile =
+            new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
         private object ParseDirectivesForFile(string targetFile)
         {
+            if (string.IsNullOrEmpty(targetFile))
+                return null;
+            if (_directivesThisCompile.TryGetValue(targetFile, out object cached))
+                return cached;
+            object parsed = null;
             try
             {
                 string src = ReadUitkxText(targetFile);
                 var diag = CreateDiagnosticList();
-                return InvokeWithDefaults(_directiveParse, null, src, targetFile, diag, true);
+                parsed = InvokeWithDefaults(_directiveParse, null, src, targetFile, diag, true);
             }
-            catch { return null; }
+            catch { parsed = null; }
+            _directivesThisCompile[targetFile] = parsed;
+            return parsed;
         }
 
         /// <summary>Maps bare custom-hook keys to their qualified form via <paramref name="map"/>.</summary>
@@ -3657,6 +3889,61 @@ namespace Ruitk.EditorSupport.HMR
         /// etc. there). Fall back to a minimum viable set of just
         /// <c>UNITY_EDITOR</c> if the API is unavailable or returns nothing.
         /// </para>
+
+        // ── Project language version ──────────────────────────────────────────
+        //
+        // The hot compile MUST use the language version Unity compiles the
+        // project with. It used to pass "latest", which is strictly more
+        // permissive: the preview accepted code that the next real compile
+        // rejected, and said nothing. C# 10's inferred delegate type is the
+        // one that surfaced it -
+        //
+        //     var handler = () => { ... };   // fine at latest, CS8773 at 9.0
+        //
+        // - so a component previewed clean and then failed to build on Save.
+        // A preview that accepts more than the compiler is not a preview.
+        //
+        // Unity owns the answer: every assembly's ScriptCompilerOptions carries
+        // the version Unity itself passes to Roslyn. Asked once and cached; the
+        // fallback matches every Unity this package supports (floor 6000.2).
+        private static string s_languageVersion;
+
+        private const string LanguageVersionFallback = "9.0";
+
+        internal static string ProjectLanguageVersion
+        {
+            get
+            {
+                if (s_languageVersion != null)
+                    return s_languageVersion;
+                s_languageVersion = QueryUnityLanguageVersion() ?? LanguageVersionFallback;
+                return s_languageVersion;
+            }
+        }
+
+        private static string QueryUnityLanguageVersion()
+        {
+            try
+            {
+                var assemblies = UnityEditor.Compilation.CompilationPipeline.GetAssemblies(
+                    UnityEditor.Compilation.AssembliesType.Editor
+                );
+                if (assemblies == null)
+                    return null;
+                foreach (var assembly in assemblies)
+                {
+                    string version = assembly?.compilerOptions?.LanguageVersion;
+                    if (!string.IsNullOrEmpty(version))
+                        return version;
+                }
+            }
+            catch (Exception)
+            {
+                // Unity has moved this before. A wrong-but-conservative version is
+                // recoverable; throwing out of the compile path is not.
+            }
+            return null;
+        }
         /// </summary>
         private static string[] ResolveEditorPreprocessorSymbols()
         {

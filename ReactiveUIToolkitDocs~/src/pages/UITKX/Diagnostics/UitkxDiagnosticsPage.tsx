@@ -252,6 +252,12 @@ export const UitkxDiagnosticsPage: FC = () => (
             <TableCell>A leading underscore marks a parameter deliberately unused without renaming its prop, so <code>_count</code> and <code>count</code> both expose the prop <code>count</code>. Rename or remove one of the parameters.</TableCell>
           </TableRow>
           <TableRow>
+            <TableCell><Chip label="UITKX0115" size="small" color="error" variant="outlined" /></TableCell>
+            <TableCell><Chip label="Error" size="small" color="error" /></TableCell>
+            <TableCell>Missing required prop at a call site</TableCell>
+            <TableCell>A parameter written without a default value is required. Pass the attribute at the call site, or give the parameter a default in the component declaration (<code>string label = "Untitled"</code>) to make it optional. Before this check an omitted prop silently became <code>default(T)</code>.</TableCell>
+          </TableRow>
+          <TableRow>
             <TableCell><Chip label="UITKX0112" size="small" color="error" variant="outlined" /></TableCell>
             <TableCell><Chip label="Error" size="small" color="error" /></TableCell>
             <TableCell>Unused variable in setup code</TableCell>

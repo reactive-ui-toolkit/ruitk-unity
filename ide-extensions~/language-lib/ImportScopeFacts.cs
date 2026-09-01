@@ -65,6 +65,7 @@ namespace Ruitk.Language
         private static DirectiveSet? ReadTargetDirectives(string target)
         {
             string? text = null;
+            bool overlaid = SourceOverlay != null;
             try
             {
                 text = SourceOverlay?.Invoke(target);
@@ -73,6 +74,17 @@ namespace Ruitk.Language
 
             if (text == null)
             {
+                // An installed overlay is AUTHORITATIVE. It speaks for a caller
+                // that holds its modules in memory (the RUITK Builder), and it
+                // already falls through to disk itself for anything it does not
+                // own - so a null here means the module genuinely is not there.
+                // Reading the file anyway resurrects what that caller has
+                // deleted or moved away, which is the one module question this
+                // file could still answer from the wrong world.
+                //
+                // No overlay means HMR, whose truth IS the disk: unchanged.
+                if (overlaid)
+                    return null;
                 if (!File.Exists(target))
                     return null;
                 try

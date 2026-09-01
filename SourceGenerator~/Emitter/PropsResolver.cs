@@ -547,6 +547,54 @@ namespace Ruitk.SourceGenerator.Emitter
         }
 
         /// <summary>
+        /// Returns the props a user component REQUIRES: the declared parameters
+        /// written without a default value, keyed by prop name and carrying the
+        /// declaring parameter for the diagnostic message (UITKX0115).
+        ///
+        /// Only .uitkx peers can answer this. The generated <c>*Props</c> class
+        /// erases the distinction — <c>int x</c> and <c>int x = 0</c> both emit
+        /// <c>public int X { get; set; } = 0;</c> — so a symbol lookup cannot tell
+        /// required from optional, and a hand-written C# props class has no notion
+        /// of "no default written" at all. Both cases return empty and are silently
+        /// exempt, which is the correct fail-open: the check only bites where the
+        /// source of truth is actually available.
+        /// </summary>
+        public Dictionary<string, FunctionParam> GetRequiredPropNamesByQualifiedName(
+            string? qualifiedTypeName
+        )
+        {
+            var required = new Dictionary<string, FunctionParam>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(qualifiedTypeName))
+                return required;
+
+            string sourceQualified = qualifiedTypeName!.StartsWith("global::", StringComparison.Ordinal)
+                ? qualifiedTypeName
+                : "global::" + qualifiedTypeName;
+
+            foreach (var peer in _peerComponentsByMetadataName.Values)
+            {
+                if (peer.SourceQualifiedPropsTypeName != sourceQualified)
+                    continue;
+                if (peer.FunctionParams.IsDefaultOrEmpty)
+                    break;
+                foreach (var p in peer.FunctionParams)
+                {
+                    if (p.DefaultValue != null)
+                        continue;
+                    // A MutableRef parameter is an out-channel filled by ref={x},
+                    // not an input the caller supplies; requiring one would be a
+                    // separate policy from "this prop has no default".
+                    if (IsMutableRefTypeName(p.Type))
+                        continue;
+                    required[ToPropName(p.PropSourceName)] = p;
+                }
+                break;
+            }
+
+            return required;
+        }
+
+        /// <summary>
         /// Returns the simple type name of the companion props class for a PascalCase
         /// function component (convention: "{ComponentName}Props"), or <c>null</c> when
         /// no such class is found in the compilation.

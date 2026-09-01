@@ -71,6 +71,9 @@ the defects AS FOUND; current state lives here.
 | UB-40 | `CLOSED` | layer dropdown seen in rounds 2 and 3 |
 | UB-50/51 | `UNVERIFIED` | carried from round 1; round 3's style-card frame was invalid |
 | UB-60..66 | `UNVERIFIED` | interactive surfaces, review-only as before |
+| UB-224 | `FIXED` | edit-session overwrite; snapshot now carries its file, 22 out-of-Unity checks |
+| UB-225 | `FIXED` | library refreshes on every graph change, not only on mount |
+| UB-226 | `UNVERIFIED` | union compile wired; owner saw the parent render its children unsaved, wants a clean run |
 
 ---
 
@@ -113,6 +116,211 @@ A directive is a **child block in markup**, and its body is **raw C# containing
 optional `@switch` case terminator and is an error anywhere else.
 `@continue` and `@code` are always errors. Unknown directives raise
 **UITKX0305** (Error).
+
+### UB-223 — a new tree renders another tree's components `FIXED` `HIGH`
+
+Owner report: a brand-new, never-saved tree whose children are all empty
+rendered text from a DIFFERENT tree. A child named `BlaOne` - a name existing
+nowhere else - rendered nothing (correct). Children named `LeftSide` and
+`RightSide`, which DO exist in a saved tree, rendered that tree's content.
+Name-shaped behaviour out of a system whose keys are path-shaped.
+
+Three hypotheses died against evidence before the right question was asked:
+namespaces are distinct (every directory segment is used), family keys are
+distinct AND parent and child agree on them, and `RefreshRuntime.GetFamily` is
+an exact dictionary hit with no name fallback.
+
+DIAGNOSED by the family-binding probe (Trace). It prints, per child reference,
+the key the parent asked for and the declaring type + assembly of the body it
+received:
+
+```
+family bindings for NewBla  (asm hmr_NewBla_7)
+  asked for: ...__RuitkBuilderUnsaved___.NewBla.components.BlaOne.BlaOne.BlaOne
+    got:     ...__RuitkBuilderUnsaved___.NewBla.components.BlaOne...  asm=hmr_BlaOne_4
+  asked for: Ruitk.Uitkx.UI_Test.NewComponent.components.LeftSide.LeftSide.LeftSide
+    got:     Ruitk.Uitkx.UI_Test.NewComponent.components.LeftSide...  asm=Assembly-CSharp
+```
+
+ROOT CAUSE (located, not yet fixed): **the registry is innocent - every lookup
+returned exactly what was asked for. The parent asked for the wrong key.** The
+importer sits at the provisional unsaved root, and its `./components/LeftSide/
+LeftSide` specifier resolved to the SAVED tree's file instead of its own
+sibling. `BlaOne` resolved correctly only because no saved file shares its name.
+
+So component-child specifier resolution is not doing what the hook-family map
+beside it already does: resolve relative to the IMPORTER and test existence
+through the overlay (`UitkxSourceExists`) rather than the disk. Unsaved siblings
+are not on disk by design - that is the save-only contract - so a disk-gated
+existence check cannot see them and something falls back to a project-wide
+lookup by name.
+
+This is the same shape as UB-222: asking the DISK about a tree that only exists
+in memory. The fix belongs at the resolution point, not at the render.
+FIXED. `HmrCSharpEmitter.ResolveComponentFqn` took the first loaded type whose
+SIMPLE name matched the tag, so a second tree with a `LeftSide` in it won.
+The compiler now builds a bound-name -> component-FQN map from the IMPORTS -
+resolved importer-relative, existence tested through `UitkxSourceExists` - and
+the emitter prefers it. Names with no import still reach the assembly scan,
+which is the one case it is right for (hand-written package components).
+
+Two defects in the first attempt, both worth remembering: components are NOT
+in `MemberDeclarations` (a VirtualNode-returning declaration parses into
+`ComponentDeclaration` and surfaces as `ComponentName`), so the map was built
+empty and fell through silently; and only one of the two component-emitter
+call sites received it. An empty map is this fix's failure mode, so the map
+now TRACES what it resolved, including an explicit "(none resolved through
+imports; the assembly scan decides)".
+
+### UB-224 — a source edit follows the FOCUS, and overwrites another module `FIXED` `CRITICAL`
+
+Owner report, 2026-08-29: a `MiddleSide` card showed `NewComponent()` — its
+signature, its imports, its whole markup — while `MiddleSide.uitkx` on disk was
+perfectly correct. The library grew a second `<NewComponent>` and lost
+`<MiddleSide>`. The owner diagnosed it before the code did: *"when you edit the
+text, and click to select another component the edit still stay there, it doesnt
+cancel the edit, and somewhere along those line its got copied and saved there."*
+
+**Root cause: a snapshot that could not name its own file.** `_sourceSnapshot`
+was a bare string, and every consumer resolved the target as
+`_workspace.TryGet(_focusFile)` — whatever was focused at the moment they ran.
+The focus-change block made that reachable, and its comment claimed the opposite
+of what it did:
+
+```csharp
+// POC selectNode(): opening another file leaves source-edit mode.
+_codeField.SetEditing(_sourceSnapshot != null);   // ← CARRIED the session across
+```
+
+So: edit NewComponent (snapshot taken), click the MiddleSide card (focus moves,
+session survives, snapshot still NewComponent's), press Esc — `CancelSourceEdit`
+restored NewComponent's text into MiddleSide's buffer. `ApplySourceEdit` had the
+same defect, parsing the pane's text against `_focusFile`.
+
+Three ordinary clicks, silent whole-file loss, in a save-only editor. Only the
+buffer was hit; disk was never wrong, so Abort (or a Save from a clean state)
+recovers.
+
+**Fix:** the snapshot is not allowed to exist without its file.
+`BuilderSourceEditSession` (`Builder/Editor/Document/`) carries both, cancel and
+apply act on `session.FilePath` and never on the focus, and a focus change to a
+different file ENDS the session — which is what the comment always said. Nothing
+is lost by ending it: typing is applied to the buffer live, so the text is
+already in the file it was typed into, and the ledger still holds it for undo.
+
+**Regression cover:** the type is Unity-free and `Compile`-linked into
+`Builder~/ModelTests` (`EditSessionChecks`, 22 checks) — including the corruption
+itself as a check, plus the case-insensitive path comparison the window depends
+on. `BuilderWindow` cannot be tested outside Unity, which is exactly why the
+state moved out of it.
+
+---
+
+### UB-225 — the library list keeps the exports the tree had at MOUNT `FIXED` `MED`
+
+Seen beside UB-224 and initially mistaken for its leftovers. The card corrected
+itself the moment its buffer did; the LIBRARY went on listing `<NewComponent>`
+twice and no `<MiddleSide>`, disagreeing with the tree it is drawn from.
+
+**Root cause:** `SetWorkspaceEntries(graph)` — which rebuilds the Custom
+components / Style modules / Util modules / hook-module sections from
+`graph.Nodes` — was invoked from exactly one place, `Mount`'s `onGraphLoaded`
+callback. But the graph changes after the mount: `RefreshGraph(path)` re-runs
+`PopulateCardDetail`, which re-runs `FillExportsFromSource`, so a card's
+**exports** can differ from a keystroke ago. It redrew the canvas and told
+nobody. Every other graph-derived surface rides the same callback — the
+known-element set (which UITKX0105 is checked against) and the preview's module
+notes — so all of them held whatever was true at mount.
+
+**Fix:** `BuilderCanvasHost` remembers the callback and fires it from
+`RefreshGraph` as well as from `Mount`. A projection of the graph now updates
+whenever the graph does, rather than once.
+
+Renaming an export is the everyday way in: the library offered the old name
+until the tree was remounted.
+
+---
+
+### UB-226 — a parent previews against its child's SAVED props, not the tree's `FIXED` `HIGH`
+
+Owner report, 2026-08-29, while giving a component its first props through the
+new signature gestures (#2). Every child compiled and previewed correctly on its
+own; the PARENT would not compile:
+
+```
+NewComponent.uitkx(17,104): error CS0426:
+  The type name 'LeftSideProps' does not exist in the type 'LeftSide'
+```
+
+The owner's answer to "just save it" is the whole point of the tool:
+*"i dont want to save!!! thats the whole freaking point!!"*
+
+**Root cause: the hot compile asked whether a child was NEW when the question was
+whether its SHAPE had changed.** In `UitkxHmrCompiler`'s response-file build:
+
+```csharp
+// Only add cross-refs for genuinely new components;
+// existing ones are already referenced and would cause CS0433
+if (!_genuinelyNewComponents.Contains(kvp.Key))
+    continue;
+```
+
+A component is "genuinely new" only when its FQN is in no pre-existing assembly.
+`LeftSide` was not new — it was in the project assembly, compiled from the
+version still on DISK, which had no parameters and therefore no nested
+`LeftSideProps`. So its freshly built swap was deliberately not referenced and
+the parent compiled against the stale type. That assumption held for as long as
+HMR only ever swapped method bodies; adding a prop to a child became a
+first-class gesture in 0.19.0, so it is now the main path, not an edge.
+
+It is also the isolation principle with one seam left in it: the builder rendered
+children from unsaved buffers, but a parent's compile still took each child's
+TYPE from the assemblies Unity built from disk.
+
+**Considered and rejected — inlining the child's source into the parent's
+compilation.** It looks like the obvious fix and it is a trap the codebase had
+already documented:
+
+> *"An imported COMPONENT file is a candidate now too but is never inlined —
+> component types resolve via the real assembly + alias payloads."*
+
+Generated bodies read props with `__rawProps as FooProps` — an `as`, not a cast.
+Two same-named props types in two assemblies do not throw; the match fails, the
+null-coalesce substitutes a fresh instance, and the component renders with EVERY
+PROP DEFAULTED, silently. That is the UB-223 class of failure with no error to
+follow.
+
+**Fix: compile the batch's components as ONE assembly** (`CompileBatch`, which
+already existed for TECH_DEBT_20_21_22 §5.2.1 and was simply never wired to the
+builder). One assembly means one definition of each component and therefore one
+props type, so a parent cannot be handed a type from somewhere else. It is also
+parity: a real Unity compile puts every component of an asmdef in one DLL, and
+splitting them into per-module swaps is what manufactured the staleness. Style
+and hook modules are not union-eligible and keep their per-file path, building
+first in import order; when the union declines, the per-file loop still runs,
+because that is what surfaces the real error to the user.
+
+**Same-assembly is an invariant, not an optimisation.** Preview the parent (group
+in one assembly), then a child alone (its own assembly), then the parent again:
+every buffer matches what it was built from, so nothing is dirty and nothing
+rebuilds — while the group is now split and the parent's props silently stop
+matching. `ForceRebuildOnSplitAssembly` catches that, and the empty-dirty early
+return had to move BELOW it or the check would never run in the one case it
+exists for.
+
+**Two diagnostics landed with it,** after a round of diagnosis was lost to their
+absence: every compile round logs its composition (module count, component count,
+whether the union was eligible) and a declined union logs its reason — both to
+the console, unconditionally, not to the Trace toggle. A round that quietly
+carried one module looked exactly like a round that carried five.
+
+**Related, fixed in the same wave:** the preview compiled at `-langversion:latest`
+while Unity compiles the project at 9.0 (confirmed against Unity's own generated
+csproj), so the preview accepted C# 10 syntax that failed the next real build —
+`var handler = () => { }` was the owner's live case. Both compile paths now pin
+to the version Unity reports via `CompilationPipeline`.
+
+---
 
 ### UB-01 — Builder exposes 2 of the 5 real directives `OPEN` `HIGH`
 
@@ -2912,6 +3120,40 @@ Both are needed: the scheduler holds the closure and cannot be made to forget
 it, so the reconciler has to be able to say the slice is void. Two tests in
 `SharedTests~` reproduce it - verified failing without the fix.
 
+PROVEN 2026-08-28, after the owner challenged the diagnosis - a shipped game
+has run on this reconciler for months without hitting it. A temporary editor
+demo drove the scenario deterministically and settled three things:
+
+1. **The mechanism is certain, not a race.** `AppendToEffectList` dereferences
+   `_root` unconditionally on its first line. With in-flight work and a null
+   root the NullReferenceException is guaranteed. Reproduced with the guard
+   skipped; the stack frame is `FiberReconciler.AppendToEffectList`.
+
+2. **It is unreachable on mount, and unreachable without state.** `CreateRoot`
+   renders synchronously by design ("the initial mount is always synchronous;
+   time-slicing is reserved for subsequent state-driven updates"), so nothing
+   can ever be in flight during a mount. The trigger needs a STATE UPDATE whose
+   render exceeds the frame budget, torn down before the next slice runs. That
+   is far narrower than the original write-up implied, and it is the best
+   explanation of why a shipped game never saw it.
+
+3. **The fix cannot cost anything.** `_root` is assigned only in `CreateRoot`
+   and nulled only in `UnmountRoot`, so `_root == null` means nothing is
+   mounted and any in-flight work is orphaned by definition - the tree it
+   points at was already deleted by `CommitDeletion`. A later render goes
+   through `CreateRoot`, which sets the WIP root fresh. Cost is one null check
+   per slice, and guard 2 also stops `Slice()` re-scheduling itself forever.
+
+The demo was removed once it had answered the question (owner decision - the
+fix stays, the harness does not). To recreate it: force `TimeSliceMs = 0`
+AFTER `RuitkBootstrap.CreateHostContext` (it ends in `ApplyGlobalConfig()`,
+which restores the project values), mount a stateful component through a
+manual `IScheduler`, drive its setter, step one slice, unmount, then let the
+queued slice run. Both of those ordering traps cost a round each.
+
+STILL SHARP: `AppendToEffectList` has no null guard of its own. It is
+unreachable today because the two guards above stand in front of it, but the
+next path that reaches it will find the same edge (REMAINING_WORK: CORE-1).
 ### UB-180 — adding a component rearranged the canvas `FIXED` `MEDIUM`
 
 Owner report 2026-08-23: "when you add new component, it rearranges the canvas,

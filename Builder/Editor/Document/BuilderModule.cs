@@ -173,6 +173,21 @@ namespace Ruitk.Builder
         /// <summary>Replaces the buffer. Rejected on read-only modules - callers
         /// gate the UI, this is the last line of defense - and rejects CR,
         /// because every buffer in the builder is LF-normalized.</summary>
+        /// <summary>
+        /// Every buffer write passes here, so this is the one place that can see
+        /// a module being handed another module's content.
+        ///
+        /// That has happened twice (UB-224), and both times the only evidence was
+        /// a card that looked wrong long after the write. The observer reports the
+        /// write AS IT HAPPENS, with what the text now declares - so a module that
+        /// suddenly exports a different component names itself immediately instead
+        /// of being reconstructed from a screenshot.
+        ///
+        /// A hook rather than a log call because this type is Unity-free and
+        /// linked into the out-of-Unity model tests; the window supplies the sink.
+        /// </summary>
+        internal static Action<BuilderModule, string, string> BufferWriteObserver;
+
         public void ApplyEdit(string newTextLf)
         {
             if (IsReadOnly)
@@ -182,7 +197,10 @@ namespace Ruitk.Builder
                 throw new ArgumentNullException(nameof(newTextLf));
             if (newTextLf.IndexOf('\r') >= 0)
                 throw new ArgumentException("builder buffers are LF-normalized", nameof(newTextLf));
+            string before = BufferText;
             BufferText = newTextLf;
+            if (BufferWriteObserver != null && !string.Equals(before, newTextLf, StringComparison.Ordinal))
+                BufferWriteObserver(this, before, newTextLf);
         }
 
         /// <summary>Records that the module now matches what is on disk at
