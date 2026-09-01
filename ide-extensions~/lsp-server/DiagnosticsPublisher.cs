@@ -1118,25 +1118,27 @@ public sealed class DiagnosticsPublisher
     /// opts in by declaring the parameter explicitly. This mirrors React/Vue/
     /// Svelte (typed) component-prop semantics.</para>
     /// </summary>
-    internal IReadOnlyDictionary<string, IReadOnlyCollection<string>> BuildKnownAttributes(
+    internal IReadOnlyDictionary<string, ElementAttributeContract> BuildKnownAttributes(
         HashSet<string> projectElements,
         DirectiveSet? directives = null,
         string? localPath = null,
         string? backend = null
     )
     {
-        var result = new Dictionary<string, IReadOnlyCollection<string>>(
+        var result = new Dictionary<string, ElementAttributeContract>(
             StringComparer.OrdinalIgnoreCase
         );
 
         // Built-in elements — schema per-element + intrinsic + structural.
+        // Nothing on a built-in is required: the schema records what an element
+        // ACCEPTS, and every *Props property has an initialiser.
         foreach (var tagName in _schema.GetElements(backend).Keys)
         {
             var attrs = _schema
                 .GetAttributesForElement(tagName, backend)
                 .Select(a => a.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            result[tagName] = attrs;
+            result[tagName] = new ElementAttributeContract(attrs);
         }
 
         // User components (workspace elements) — declared params + structural ONLY.
@@ -1149,16 +1151,60 @@ public sealed class DiagnosticsPublisher
                 continue; // schema wins if there's a conflict
 
             var declarants = _index.GetAllElementInfo(tagName);
-            IReadOnlyList<WorkspaceIndex.PropInfo> props = declarants.Count > 1
-                ? ResolveVisibleProps(tagName, declarants, directives, localPath)
-                : declarants.Count == 1 ? declarants[0].Props : _index.GetProps(tagName);
+            IReadOnlyList<WorkspaceIndex.PropInfo> props;
+            bool resolved;
+            if (declarants.Count > 1)
+            {
+                (props, resolved) = ResolveVisibleProps(tagName, declarants, directives, localPath);
+            }
+            else
+            {
+                props = declarants.Count == 1 ? declarants[0].Props : _index.GetProps(tagName);
+                resolved = declarants.Count == 1;
+            }
+
             var attrs = props.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var sa in _schema.Root.StructuralAttributes)
                 attrs.Add(sa.Name);
-            result[tagName] = attrs;
+
+            result[tagName] = new ElementAttributeContract(attrs, BuildRequired(props, resolved));
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The props a call site MUST supply: parameters written without a default.
+    ///
+    /// Empty unless the tag resolved to ONE declarant. Attribute validation
+    /// fails open to the union of every candidate's props, which is safe for
+    /// "is this attribute known" and exactly wrong for "is this attribute
+    /// required" — a prop required by one candidate and optional in another
+    /// would be reported against a call site that is correct for the component
+    /// it actually binds to.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string>? BuildRequired(
+        IReadOnlyList<WorkspaceIndex.PropInfo> props,
+        bool resolved
+    )
+    {
+        if (!resolved)
+            return null;
+
+        Dictionary<string, string>? required = null;
+        foreach (var p in props)
+        {
+            if (p.HasDefault)
+                continue;
+            // A MutableRef parameter is an out-channel filled by ref={x}, not an
+            // input the caller supplies.
+            if (p.Type.Contains("MutableRef", StringComparison.Ordinal))
+                continue;
+            (required ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase))[
+                p.Name
+            ] = string.IsNullOrEmpty(p.ParamName) ? p.Name : p.ParamName;
+        }
+        return required;
     }
 
     /// <summary>
@@ -1174,7 +1220,7 @@ public sealed class DiagnosticsPublisher
     /// file's component (the strict-import diagnostics own the missing-import
     /// case).
     /// </summary>
-    private IReadOnlyList<WorkspaceIndex.PropInfo> ResolveVisibleProps(
+    private (IReadOnlyList<WorkspaceIndex.PropInfo> Props, bool Resolved) ResolveVisibleProps(
         string tagName,
         IReadOnlyList<WorkspaceIndex.ElementInfo> declarants,
         DirectiveSet? directives,
@@ -1184,7 +1230,7 @@ public sealed class DiagnosticsPublisher
         {
             foreach (var d in declarants)
                 if (PathsEqual(d.FilePath, localPath!))
-                    return d.Props;
+                    return (d.Props, true);
         }
 
         if (directives != null && !string.IsNullOrEmpty(localPath))
@@ -1218,7 +1264,7 @@ public sealed class DiagnosticsPublisher
                     continue;
                 foreach (var d in declarants)
                     if (PathsEqual(d.FilePath, target))
-                        return d.Props;
+                        return (d.Props, true);
             }
 
             var visibleNs = new HashSet<string>(StringComparer.Ordinal);
@@ -1257,7 +1303,7 @@ public sealed class DiagnosticsPublisher
                 }
             }
             if (single != null && !ambiguous)
-                return single.Props;
+                return (single.Props, true);
         }
 
         var union = new List<WorkspaceIndex.PropInfo>();
@@ -1266,7 +1312,7 @@ public sealed class DiagnosticsPublisher
             foreach (var p in d.Props)
                 if (seen.Add(p.Name))
                     union.Add(p);
-        return union;
+        return (union, false);
     }
 
     private static bool PathsEqual(string a, string b)

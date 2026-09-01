@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System;
+using UnityEngine;
 using System.Collections.Generic;
 
 namespace Ruitk.Builder
@@ -15,17 +16,27 @@ namespace Ruitk.Builder
     /// triples a single gesture produced, so one Ctrl+Z reverts all of them or
     /// none.
     ///
-    /// The ledger is NOT serialized - the window holds it NonSerialized, so a
-    /// domain reload keeps the tree and drops the history. That is deliberate:
-    /// an undo whose other half was compiled away is worse than no undo, and it
-    /// is why an entry may hold a live module reference.
+    /// The ledger SURVIVES a domain reload, because the tree does. It used to be
+    /// NonSerialized on the reasoning that "an undo whose other half was compiled
+    /// away is worse than no undo" - true of a live object reference, but an
+    /// entry is (file, before, after) TEXT, which reloads perfectly well. Dropping
+    /// it meant an unsaved tree kept an hour of work with no way to step back
+    /// through it, and every recompile - including one caused by a package edit
+    /// the user did not make - silently threw the history away.
+    ///
+    /// What does NOT survive is the OPEN entry (a gesture interrupted mid-flight)
+    /// and any entry naming a file the restored tree no longer has: see
+    /// <see cref="PruneMissing"/>. Those are the cases the old comment was right
+    /// about, and they are handled by name rather than by discarding everything.
     ///
     /// Redo is the tail past the cursor. Recording a new action truncates it,
     /// which is the standard linear-history rule — a branch the user walked away
     /// from is not reachable again.
     /// </summary>
+    [Serializable]
     internal sealed class BuilderActionLedger
     {
+        [Serializable]
         internal sealed class Change
         {
             public string FilePath;
@@ -61,10 +72,20 @@ namespace Ruitk.Builder
             public string ModuleId;
         }
 
+        [Serializable]
         internal sealed class Entry
         {
             public string Description;
-            public DateTime At;
+
+            /// <summary>Unity serializes fields, not DateTime, so the timestamp
+            /// travels as ticks and <see cref="At"/> stays the API.</summary>
+            public long AtTicks;
+
+            public DateTime At
+            {
+                get => AtTicks == 0 ? DateTime.MinValue : new DateTime(AtTicks);
+                set => AtTicks = value.Ticks;
+            }
 
             /// <summary>Free typing, as opposed to a discrete gesture. Consecutive
             /// keystrokes in the same file merge into one of these.</summary>
@@ -83,29 +104,90 @@ namespace Ruitk.Builder
             }
         }
 
-        private readonly List<Entry> _entries = new List<Entry>();
+        [SerializeField] private List<Entry> _entries = new List<Entry>();
 
         /// <summary>Entries BELOW the cursor are applied; entries at or above it
         /// have been undone and form the redo tail.</summary>
-        private int _cursor;
+        [SerializeField] private int _cursor;
 
-        private Entry _open;
+        /// <summary>The gesture currently being recorded. Deliberately NOT
+        /// serialized: a reload lands mid-gesture at most once, and a half-open
+        /// entry restored as if complete would undo half a move.</summary>
+        [NonSerialized] private Entry _open;
 
         /// <summary>Resolves a path to the owning module's stable identity, set by
         /// the window. Capturing it at record time is what makes replay immune to
         /// the paths moving underneath it.</summary>
-        internal Func<string, string> IdOf;
-        private int _depth;
+        [NonSerialized] internal Func<string, string> IdOf;
+        [NonSerialized] private int _depth;
 
         /// <summary>Suppresses recording while the ledger itself is rewriting
         /// buffers — an undo must not be logged as a new action.</summary>
-        public bool Replaying { get; private set; }
+        [NonSerialized] private bool _replaying;
 
-        public event Action Changed;
+        public bool Replaying
+        {
+            get => _replaying;
+            private set => _replaying = value;
+        }
+
+        [NonSerialized] private Action _changed;
+
+        public event Action Changed
+        {
+            add => _changed += value;
+            remove => _changed -= value;
+        }
 
         public IReadOnlyList<Entry> Entries => _entries;
 
         public int Cursor => _cursor;
+
+        /// <summary>
+        /// Drops history that the restored tree cannot honour: entries naming a
+        /// file no longer in it. An undo that would write into a module that does
+        /// not exist is the failure the old no-serialization rule avoided by
+        /// throwing everything away; this removes only the entries that actually
+        /// have the problem.
+        ///
+        /// An entry is dropped whole. Half-applying a gesture would leave the
+        /// tree in a state the user never authored, which is the one thing undo
+        /// must never do. If dropping breaks the run, the cursor is clamped so
+        /// what remains is still a straight line.
+        /// </summary>
+        public int PruneMissing(Func<string, bool> stillPresent)
+        {
+            if (stillPresent == null || _entries.Count == 0)
+                return 0;
+            int removed = 0;
+            for (int i = _entries.Count - 1; i >= 0; i--)
+            {
+                bool ok = true;
+                foreach (var change in _entries[i].Changes)
+                {
+                    if (change.IsCreation || change.IsDeletion || change.IsMove)
+                        continue;
+                    if (!stillPresent(change.FilePath))
+                    {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok)
+                    continue;
+                _entries.RemoveAt(i);
+                if (i < _cursor)
+                    _cursor--;
+                removed++;
+            }
+            if (_cursor > _entries.Count)
+                _cursor = _entries.Count;
+            if (_cursor < 0)
+                _cursor = 0;
+            if (removed > 0)
+                _changed?.Invoke();
+            return removed;
+        }
 
         public bool CanUndo => _cursor > 0;
 
@@ -161,7 +243,7 @@ namespace Ruitk.Builder
             {
                 last.Changes[0].After = after;
                 last.At = DateTime.Now;
-                Changed?.Invoke();
+                _changed?.Invoke();
                 return;
             }
 
@@ -296,7 +378,7 @@ namespace Ruitk.Builder
                 _entries.RemoveRange(0, drop);
                 _cursor -= drop;
             }
-            Changed?.Invoke();
+            _changed?.Invoke();
         }
 
         private const int MaxEntries = 400;
@@ -308,7 +390,7 @@ namespace Ruitk.Builder
             if (!CanUndo)
                 return null;
             _cursor--;
-            Changed?.Invoke();
+            _changed?.Invoke();
             return _entries[_cursor];
         }
 
@@ -318,7 +400,7 @@ namespace Ruitk.Builder
                 return null;
             var entry = _entries[_cursor];
             _cursor++;
-            Changed?.Invoke();
+            _changed?.Invoke();
             return entry;
         }
 
@@ -345,7 +427,7 @@ namespace Ruitk.Builder
             _cursor = 0;
             _open = null;
             _depth = 0;
-            Changed?.Invoke();
+            _changed?.Invoke();
         }
     }
 }

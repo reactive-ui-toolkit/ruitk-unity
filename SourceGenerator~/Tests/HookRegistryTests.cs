@@ -10,7 +10,8 @@
 //
 //  Whenever you add or remove a hook in Shared/Core/Hooks.cs:
 //    1. Update HookRegistry.cs (see its docs comment for the 5-step checklist).
-//    2. Regenerate the golden files (the README in the golden dir explains how).
+//    2. Extend the expected-additions list in the golden DIFF tests - the
+//       fixtures are immutable; see the README in the golden dir.
 //    3. Bump ExpectedHookCount below.
 //    4. If a hook's docs change, regenerate hover_docs.golden.json.
 //
@@ -88,13 +89,24 @@ public sealed class HookRegistryTests
     public void Registry_DocMap_HasBothFormsPerHook()
     {
         var map = HookRegistry.GetDocMap();
-        // Two entries per canonical hook (camelCase + qualified Hooks.PascalCase).
-        Assert.Equal(ExpectedHookCount * 2, map.Count);
+        // Core hooks get TWO entries (camelCase shorthand + qualified). Router
+        // hooks get ONE, the qualified form, because they have no shorthand - a
+        // "useNavigate" key would document a spelling that does not compile.
+        Assert.Equal(
+            ExpectedHookCount * 2 + HookRegistry.RouterHookNames.Count, map.Count);
         foreach (var pascal in HookRegistry.CanonicalNames)
         {
             var camel = char.ToLower(pascal[0]) + pascal.Substring(1);
             Assert.True(map.ContainsKey(camel),          $"Doc map missing '{camel}'");
             Assert.True(map.ContainsKey("Hooks." + pascal), $"Doc map missing 'Hooks.{pascal}'");
+        }
+        foreach (var pascal in HookRegistry.RouterHookNames)
+        {
+            var camel = char.ToLower(pascal[0]) + pascal.Substring(1);
+            Assert.True(map.ContainsKey("RouterHooks." + pascal),
+                $"Doc map missing 'RouterHooks.{pascal}'");
+            Assert.False(map.ContainsKey(camel),
+                $"Doc map documents '{camel}', a spelling router hooks do not have");
         }
     }
 
@@ -102,12 +114,25 @@ public sealed class HookRegistryTests
     public void Registry_ValidationPatterns_HaveThreeFormsPerHook()
     {
         var patterns = HookRegistry.GetValidationPatterns();
-        Assert.Equal(ExpectedHookCount * 3, patterns.Length);
-        // Section ordering: Hooks.UseFoo(, then UseFoo(, then useFoo(
-        int n = ExpectedHookCount;
-        for (int i = 0; i < n; i++) Assert.StartsWith("Hooks.", patterns[i]);
+        var detection = HookRegistry.DetectionNames;
+        Assert.Equal(detection.Count * 3, patterns.Length);
+        // Section ordering: <Owner>.UseFoo(, then UseFoo(, then useFoo(
+        int n = detection.Count;
+        for (int i = 0; i < n; i++)
+        {
+            // The qualified form names the hook's OWNER. A router hook is only
+            // ever written RouterHooks.UseNavigate(, never Hooks.UseNavigate(.
+            string owner = HookRegistry.OwnerTypeOf(detection[i]);
+            Assert.StartsWith(owner + ".", patterns[i]);
+        }
         for (int i = n; i < 2 * n; i++) Assert.DoesNotContain(".", patterns[i]);
         for (int i = 2 * n; i < 3 * n; i++) Assert.True(char.IsLower(patterns[i][0]));
+
+        // Rules of hooks must reach the router set: UseBlocker composes
+        // Hooks.UseEffect, so a conditional call breaks effect ordering exactly
+        // as a conditional useEffect would. Nothing said so before RTR-1.
+        Assert.Contains("RouterHooks.UseBlocker(", patterns);
+        Assert.Contains("UseNavigate(", patterns);
     }
 
     [Fact]
@@ -138,8 +163,11 @@ public sealed class HookRegistryTests
         // generic fallback call.
         var arity = HookRegistry.GetStateSlotArity();
         var snippets = HookRegistry.GetInsertionSnippets();
-        Assert.Equal(ExpectedHookCount * 2, arity.Count);
-        Assert.Equal(ExpectedHookCount * 2, snippets.Count);
+        // Both casings per hook, core and router alike: the Builder's STATE panel
+        // and palette look hooks up by whatever spelling the source used.
+        int expectedRows = (ExpectedHookCount + HookRegistry.RouterHookNames.Count) * 2;
+        Assert.Equal(expectedRows, arity.Count);
+        Assert.Equal(expectedRows, snippets.Count);
         foreach (var pascal in HookRegistry.CanonicalNames)
         {
             var camel = char.ToLower(pascal[0]) + pascal.Substring(1);
@@ -157,6 +185,20 @@ public sealed class HookRegistryTests
         Assert.Equal(0, arity["useEffect"]);
         Assert.Equal(0, arity["useContext"]);
         Assert.Equal(0, arity["useSafeArea"]);
+
+        // Every router hook is ZERO fiber slots, verified against the source
+        // rather than assumed: they compose Hooks.UseContext (0) and, in
+        // UseBlocker's case, Hooks.UseEffect (0). Nothing in RouterHooks.cs
+        // touches UseState/UseRef/UseMemo/UseCallback. A wrong count here shifts
+        // hook ordering and corrupts state at runtime, so it is pinned.
+        foreach (var pascal in HookRegistry.RouterHookNames)
+        {
+            Assert.True(arity.ContainsKey(pascal), $"Arity missing '{pascal}'");
+            Assert.Equal(0, arity[pascal]);
+            Assert.True(snippets.ContainsKey(pascal), $"Snippet missing '{pascal}'");
+            Assert.StartsWith("RouterHooks." + pascal + "(",
+                snippets[pascal].Substring(snippets[pascal].IndexOf("RouterHooks.")));
+        }
     }
 
     [Fact]
@@ -226,8 +268,44 @@ public sealed class HookRegistryTests
     [Fact]
     public void Golden_SignatureRegex_MatchesGoldenFile()
     {
-        var expected = ReadGolden("signature_regex.golden.txt").TrimEnd('\n');
-        Assert.Equal(expected, HookRegistry.GetSignatureRegexPattern());
+        // The golden is a 0.6.0 fixture and stays immutable, so this is a DIFF
+        // test rather than a byte-compare - the same shape the validation-pattern
+        // golden already uses. What it guards is what actually matters: every
+        // alternative the fixture captured is still detected, in its original
+        // relative order, and anything new is named explicitly. A byte-compare
+        // would have to be regenerated on every hook addition, which turns the
+        // fixture into a record of the last change instead of a guard.
+        static string[] Alternatives(string pattern)
+        {
+            int open = pattern.IndexOf(@"\b(", StringComparison.Ordinal) + 3;
+            int close = pattern.IndexOf(")(?:<", StringComparison.Ordinal);
+            return pattern.Substring(open, close - open).Split('|');
+        }
+
+        var golden = Alternatives(ReadGolden("signature_regex.golden.txt").TrimEnd('\n'));
+        var actual = Alternatives(HookRegistry.GetSignatureRegexPattern());
+
+        // Nothing lost.
+        foreach (var name in golden)
+            Assert.Contains(name, actual);
+
+        // Original relative order preserved (a reorder reshapes the regex and is
+        // exactly what the fixture exists to catch).
+        int at = -1;
+        foreach (var name in golden)
+        {
+            int next = Array.IndexOf(actual, name);
+            Assert.True(next > at, $"'{name}' moved relative to the golden ordering");
+            at = next;
+        }
+
+        // Additions are exactly the router hooks, both casings.
+        var added = actual.Except(golden).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var expectedAdded = HookRegistry.RouterHookNames
+            .SelectMany(n => new[] { n, char.ToLower(n[0]) + n.Substring(1) })
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expectedAdded, added);
     }
 
     [Fact]
@@ -254,9 +332,26 @@ public sealed class HookRegistryTests
         var removed = goldenLines.Except(actualLines).ToList();
 
         Assert.Empty(removed); // never lose a pattern silently
+
+        // Expected additions since the 0.6.0 fixture:
+        //   - the three useLayoutEffect forms (a pre-refactor coverage bug)
+        //   - three forms per ROUTER hook (RTR-1). Router hooks are hooks:
+        //     UseBlocker composes Hooks.UseEffect, so a conditional call breaks
+        //     effect ordering. The qualified form names RouterHooks, since
+        //     Hooks.UseNavigate( is a spelling that does not exist.
+        var expectedAdded = new List<string>
+        {
+            "Hooks.UseLayoutEffect(", "UseLayoutEffect(", "useLayoutEffect(",
+        };
+        foreach (var n in HookRegistry.RouterHookNames)
+        {
+            expectedAdded.Add("RouterHooks." + n + "(");
+            expectedAdded.Add(n + "(");
+            expectedAdded.Add(char.ToLower(n[0]) + n.Substring(1) + "(");
+        }
         Assert.Equal(
-            new[] { "Hooks.UseLayoutEffect(", "UseLayoutEffect(", "useLayoutEffect(" }.OrderBy(x => x).ToArray(),
-            added.OrderBy(x => x).ToArray());
+            expectedAdded.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
+            added.OrderBy(x => x, StringComparer.Ordinal).ToArray());
     }
 
     [Fact]

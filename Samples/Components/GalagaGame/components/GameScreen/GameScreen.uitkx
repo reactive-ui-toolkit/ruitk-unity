@@ -31,7 +31,12 @@ export VirtualNode GameScreen(int restartVersion = 0, Action? onQuit = null) {
 
   return (
     <VisualElement style={GameScreenStyles.Container}>
-      <HUD score={state.Score} lives={state.Lives} />
+      <HUD
+        spriteSheet={spriteSheet}
+        score={state.Score}
+        lives={state.Lives}
+        wave={state.Wave}
+      />
       <VisualElement style={GameScreenStyles.TopBar}>
         <Button
           text="Quit"

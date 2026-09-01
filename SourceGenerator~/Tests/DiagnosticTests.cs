@@ -38,6 +38,55 @@ public class DiagnosticTests
         );
     }
 
+    /// <summary>
+    /// RTR-1: router hooks are HOOKS, and the rules of hooks now reach them.
+    ///
+    /// Before the router set joined the registry, `RouterHooks.UseNavigate()`
+    /// inside an `@if` was invisible to UITKX0013 - the validation patterns
+    /// listed only the 21 core hooks. That is not a cosmetic gap: `UseBlocker`
+    /// composes `Hooks.UseEffect`, so a conditional call shifts effect ordering
+    /// exactly as a conditional `useEffect` would, and nothing reported it.
+    /// </summary>
+    [Fact]
+    public void UITKX0013_RouterHookInConditional()
+    {
+        var src = Wrap("""
+            @if (true) {
+                return (
+                    {RouterHooks.UseNavigate()}
+                );
+            }
+            <box/>
+            """);
+        var result = GeneratorTestHelper.Run(src);
+        Assert.True(
+            result.HasDiagnostic("UITKX0013"),
+            "Expected UITKX0013 for a router hook called inside an @if branch. "
+                + "Diagnostics: "
+                + string.Join(", ", result.Diagnostics.Select(d => d.Id))
+        );
+    }
+
+    [Fact]
+    public void UITKX0014_RouterHookInLoop()
+    {
+        var src = Wrap("""
+            @foreach (var i in items) {
+                return (
+                    {RouterHooks.UseBlocker((a, b) => false)}
+                );
+            }
+            <box/>
+            """);
+        var result = GeneratorTestHelper.Run(src);
+        Assert.True(
+            result.HasDiagnostic("UITKX0014"),
+            "Expected UITKX0014 for a router hook called inside a loop. "
+                + "Diagnostics: "
+                + string.Join(", ", result.Diagnostics.Select(d => d.Id))
+        );
+    }
+
     [Fact]
     public void UITKX0014_HookInLoop()
     {

@@ -118,8 +118,8 @@ namespace UitkxLanguageServer.Tests
                 new HashSet<string>(), ds, importer);
 
             Assert.True(known.TryGetValue("MainMenu", out var attrs));
-            Assert.Contains("onStartGame", attrs);
-            Assert.DoesNotContain("onNewGame", attrs);
+            Assert.Contains("onStartGame", attrs.Known);
+            Assert.DoesNotContain("onNewGame", attrs.Known);
         }
 
         [Fact]
@@ -141,8 +141,8 @@ namespace UitkxLanguageServer.Tests
                 new HashSet<string>(), ds, importer);
 
             Assert.True(known.TryGetValue("MainMenu", out var attrs));
-            Assert.Contains("onStartGame", attrs);
-            Assert.Contains("onNewGame", attrs);
+            Assert.Contains("onStartGame", attrs.Known);
+            Assert.Contains("onNewGame", attrs.Known);
         }
 
         [Fact]
@@ -162,8 +162,112 @@ namespace UitkxLanguageServer.Tests
                 new HashSet<string>(), ds, self);
 
             Assert.True(known.TryGetValue("GameScreen", out var attrs));
-            Assert.Contains("restartVersion", attrs);
-            Assert.DoesNotContain("onQuit", attrs);
+            Assert.Contains("restartVersion", attrs.Known);
+            Assert.DoesNotContain("onQuit", attrs.Known);
+        }
+
+        [Fact]
+        public void RequiredProps_SingleDeclarant_ListsParamsWithNoDefault()
+        {
+            string self = F("SnakeGame/Screen.uitkx",
+                "export VirtualNode Screen() {\n  return (<VisualElement />);\n}\n");
+            F("SnakeGame/Hud.uitkx",
+                "export VirtualNode Hud(int score, int lives = 3) {\n"
+                + "  return (<VisualElement />);\n}\n");
+
+            var publisher = MakePublisher(out _);
+            var ds = Parse(File.ReadAllText(self), self);
+
+            var known = publisher.BuildKnownAttributes(
+                new HashSet<string>(), ds, self);
+
+            Assert.True(known.TryGetValue("Hud", out var attrs));
+            Assert.Contains("score", attrs.Required.Keys);
+            Assert.DoesNotContain("lives", attrs.Required.Keys);
+        }
+
+        [Fact]
+        public void RequiredProps_AmbiguousDeclarant_IsEmpty()
+        {
+            // The union fallback is right for "is this attribute known" and
+            // exactly wrong for "is this attribute required" — requiring a prop
+            // that only one candidate declares would error on a call site that
+            // is correct for the component it actually binds to.
+            F("MarioGame/MainMenu/MainMenu.uitkx",
+                "export VirtualNode MainMenu(System.Action onStartGame) {\n"
+                + "  return (<VisualElement />);\n}\n");
+            F("GalagaGame/MainMenu/MainMenu.uitkx",
+                "export VirtualNode MainMenu(System.Action onNewGame) {\n"
+                + "  return (<VisualElement />);\n}\n");
+            string importer = F("Elsewhere/Screen.uitkx",
+                "export VirtualNode Screen() {\n  return (<VisualElement />);\n}\n");
+
+            var publisher = MakePublisher(out _);
+            var ds = Parse(File.ReadAllText(importer), importer);
+
+            var known = publisher.BuildKnownAttributes(
+                new HashSet<string>(), ds, importer);
+
+            Assert.True(known.TryGetValue("MainMenu", out var attrs));
+            Assert.Contains("onStartGame", attrs.Known);
+            Assert.Contains("onNewGame", attrs.Known);
+            Assert.Empty(attrs.Required);
+        }
+
+        [Fact]
+        public void RequiredProps_BuiltInElement_IsEmpty()
+        {
+            string self = F("SnakeGame/Screen.uitkx",
+                "export VirtualNode Screen() {\n  return (<VisualElement />);\n}\n");
+
+            var publisher = MakePublisher(out _);
+            var ds = Parse(File.ReadAllText(self), self);
+
+            var known = publisher.BuildKnownAttributes(
+                new HashSet<string>(), ds, self);
+
+            Assert.True(known.TryGetValue("Label", out var attrs));
+            Assert.Empty(attrs.Required);
+        }
+
+        [Fact]
+        public void RequiredProps_MutableRefParam_IsExempt()
+        {
+            string self = F("SnakeGame/Screen.uitkx",
+                "export VirtualNode Screen() {\n  return (<VisualElement />);\n}\n");
+            F("SnakeGame/Field.uitkx",
+                "export VirtualNode Field(Hooks.MutableRef<object> inputRef, string label) {\n"
+                + "  return (<VisualElement />);\n}\n");
+
+            var publisher = MakePublisher(out _);
+            var ds = Parse(File.ReadAllText(self), self);
+
+            var known = publisher.BuildKnownAttributes(
+                new HashSet<string>(), ds, self);
+
+            Assert.True(known.TryGetValue("Field", out var attrs));
+            Assert.Contains("label", attrs.Required.Keys);
+            Assert.DoesNotContain("inputRef", attrs.Required.Keys);
+        }
+
+        [Fact]
+        public void RequiredProps_UnderscoreParam_KeyedByPropName()
+        {
+            string self = F("SnakeGame/Screen.uitkx",
+                "export VirtualNode Screen() {\n  return (<VisualElement />);\n}\n");
+            F("SnakeGame/Counter.uitkx",
+                "export VirtualNode Counter(int _count) {\n"
+                + "  return (<VisualElement />);\n}\n");
+
+            var publisher = MakePublisher(out _);
+            var ds = Parse(File.ReadAllText(self), self);
+
+            var known = publisher.BuildKnownAttributes(
+                new HashSet<string>(), ds, self);
+
+            Assert.True(known.TryGetValue("Counter", out var attrs));
+            Assert.True(attrs.Required.TryGetValue("count", out string paramName));
+            Assert.Equal("_count", paramName);
         }
     }
 }

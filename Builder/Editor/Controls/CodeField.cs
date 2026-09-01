@@ -30,6 +30,15 @@ namespace Ruitk.Builder
         private readonly ScrollView _diagnosticsScroll;
         private string _filePath = "";
         private HashSet<string> _knownElements;
+
+        /// <summary>Supplies the prop contracts of the OPEN TREE - which props
+        /// each component declares and which of them are required. A delegate
+        /// rather than a snapshot: the tree changes under the editor with every
+        /// keystroke, and a copy handed over once would report a prop that has
+        /// since been renamed. Null until the window wires it, which the
+        /// diagnostics path treats as "no contracts", not "no props".</summary>
+        public System.Func<System.Collections.Generic.IReadOnlyDictionary<
+            string, Ruitk.Language.Diagnostics.ElementAttributeContract>> PropContracts;
         private bool _suppressChange;
         private bool _editing;
         private bool _coloredEdit;
@@ -935,6 +944,7 @@ namespace Ruitk.Builder
             UnityEditor.EditorApplication.update -= RunDiagnosticsWhenQuiet;
             _diagnosticsScheduled = false;
 
+            using var __perf = BuilderPerf.Measure("diagnostics pass");
             string textLf = _diagnosticsText;
             if (textLf == null || FragmentMode)
                 return;
@@ -948,7 +958,8 @@ namespace Ruitk.Builder
                 {
                     var parsed = BuilderLanguage.Parse(textLf, _filePath);
                     var sb = new StringBuilder();
-                    foreach (var d in BuilderLanguage.Diagnose(parsed, _filePath, _knownElements))
+                    foreach (var d in BuilderLanguage.Diagnose(
+                        parsed, _filePath, _knownElements, PropContracts?.Invoke()))
                         sb.Append(d.Code).Append(" L").Append(d.SourceLine)
                             .Append(": ").Append(d.Message).Append('\n');
                     _localDiagnosticsText = sb.ToString();

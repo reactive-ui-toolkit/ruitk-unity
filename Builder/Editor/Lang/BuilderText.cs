@@ -42,6 +42,68 @@ namespace Ruitk.Builder
 
         public static string LeadingIndent(string line) =>
             string.IsNullOrEmpty(line) ? "" : line.Substring(0, LeadingSpaceCount(line));
+
+        /// <summary>
+        /// Moves the line range [<paramref name="fromIndex"/>,
+        /// <paramref name="toIndex"/>] INSIDE the self-closing tag at
+        /// <paramref name="targetIndex"/>, re-opening it: a line ending "/>"
+        /// becomes ">", the moved block follows as its children, and a closing
+        /// tag is written after them.
+        ///
+        /// Pure list-to-list so the rule is checked outside Unity. The ORDER is
+        /// the whole subtlety: the block is lifted out FIRST, because re-opening
+        /// the target inserts a line and would otherwise shift the range out from
+        /// under the extraction when the target sits above it.
+        ///
+        /// Returns false, leaving <paramref name="result"/> null, when the target
+        /// is not self-closing or lies inside the range being moved - a tag
+        /// cannot be moved into itself.
+        /// </summary>
+        public static bool TryMoveIntoSelfClosingTag(
+            System.Collections.Generic.IReadOnlyList<string> lines,
+            int targetIndex,
+            int fromIndex,
+            int toIndex,
+            string tagName,
+            out System.Collections.Generic.List<string> result)
+        {
+            result = null;
+            if (lines == null || string.IsNullOrEmpty(tagName))
+                return false;
+            if (targetIndex < 0 || targetIndex >= lines.Count)
+                return false;
+            if (fromIndex < 0 || toIndex < fromIndex || toIndex >= lines.Count)
+                return false;
+            if (targetIndex >= fromIndex && targetIndex <= toIndex)
+                return false;
+
+            int slash = lines[targetIndex].LastIndexOf("/>", System.StringComparison.Ordinal);
+            if (slash < 0)
+                return false;
+
+            var working = new System.Collections.Generic.List<string>(lines);
+            string targetIndent = LeadingIndent(working[targetIndex]);
+
+            var moved = working.GetRange(fromIndex, toIndex - fromIndex + 1);
+            string srcIndent = LeadingIndent(moved[0]);
+            for (int i = 0; i < moved.Count; i++)
+            {
+                if (moved[i].StartsWith(srcIndent, System.StringComparison.Ordinal))
+                    moved[i] = targetIndent + "  " + moved[i].Substring(srcIndent.Length);
+            }
+
+            working.RemoveRange(fromIndex, toIndex - fromIndex + 1);
+            int target = targetIndex > toIndex
+                ? targetIndex - (toIndex - fromIndex + 1)
+                : targetIndex;
+
+            working[target] = working[target].Remove(slash, 2).TrimEnd() + ">";
+            working.InsertRange(target + 1, moved);
+            working.Insert(target + 1 + moved.Count, targetIndent + "</" + tagName + ">");
+
+            result = working;
+            return true;
+        }
     }
 }
 #endif

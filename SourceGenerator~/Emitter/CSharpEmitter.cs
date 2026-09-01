@@ -1320,7 +1320,14 @@ namespace Ruitk.SourceGenerator.Emitter
                     break;
 
                 case TagResolutionKind.FuncComponent:
-                    EmitFuncComponent(res, el.Attributes, keyExpr, el.Children, searchNamespaces);
+                    EmitFuncComponent(
+                        res,
+                        el.Attributes,
+                        keyExpr,
+                        el.Children,
+                        searchNamespaces,
+                        el.SourceLine
+                    );
                     break;
 
                 case TagResolutionKind.Unknown:
@@ -1608,7 +1615,8 @@ namespace Ruitk.SourceGenerator.Emitter
             ImmutableArray<AttributeNode> attrs,
             string keyExpr,
             ImmutableArray<AstNode> children,
-            ImmutableArray<string> searchNamespaces
+            ImmutableArray<string> searchNamespaces,
+            int elementSourceLine
         )
         {
             string typeName = res.FuncTypeName!;
@@ -1670,6 +1678,42 @@ namespace Ruitk.SourceGenerator.Emitter
                                 )
                             );
                         }
+                    }
+                }
+
+                // -- UITKX0115 - every parameter written WITHOUT a default is
+                // required, so a call site that omits one is an error. The
+                // generated *Props class cannot answer this (it emits an
+                // initialiser either way), so the required set comes from the
+                // peer's declared parameters; components the resolver cannot
+                // reach that way return empty and are exempt.
+                var requiredProps = _resolver.GetRequiredPropNamesByQualifiedName(
+                    res.FuncPropsTypeName
+                );
+                if (requiredProps.Count > 0)
+                {
+                    var supplied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var attr in attrs)
+                    {
+                        if (IsKey(attr.Name) || IsRefAttr(attr.Name))
+                            continue;
+                        supplied.Add(ToPropName(attr.Name));
+                    }
+
+                    foreach (var kv in requiredProps)
+                    {
+                        if (supplied.Contains(kv.Key))
+                            continue;
+                        var loc = MakeLoc(_filePath, elementSourceLine);
+                        _diagnostics.Add(
+                            Diagnostic.Create(
+                                UitkxDiagnostics.MissingRequiredProp,
+                                loc,
+                                displayName,
+                                kv.Value.PropSourceName,
+                                kv.Value.Name
+                            )
+                        );
                     }
                 }
             }

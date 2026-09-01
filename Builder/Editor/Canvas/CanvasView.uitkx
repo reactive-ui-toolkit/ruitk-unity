@@ -33,6 +33,7 @@ export VirtualNode CanvasView(
   Action<string> onAddStyleExport = null,
   Action<string> onAddUtilExport = null,
   Action<string> onTraceStates = null,
+  Action<string> onEditProps = null,
   float viewZoom = 0f,
   float viewCamX = 0f,
   float viewCamY = 0f,
@@ -196,7 +197,10 @@ export VirtualNode CanvasView(
           Scale = new UnityEngine.UIElements.Scale(new Vector2(zoom, zoom)),
         }}
       >
-        @for (int i = 0; i < graph.Nodes.Count; i++) {
+        @for (int slot = 0; slot < graph.Nodes.Count; slot++) {
+          // Paint order, not list order: UI Toolkit has no z-index, so the
+          // selected card is drawn LAST or the cards after it cover it.
+          int i = BuilderCanvasDrawing.PaintOrderAt(graph.Nodes.Count, selected, slot);
           var node = graph.Nodes[i];
           int index = i;
           bool isSelected = selected == index;
@@ -430,6 +434,18 @@ export VirtualNode CanvasView(
                     <Label
                       text={BuilderCanvasDrawing.SignatureRichText(node.Signature)}
                       enableRichText={true}
+                      tooltip={node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook ? "click to edit props" : null}
+                      onPointerDown={e => {
+                        if (e.Button == 1) {
+                          return;
+                        }
+                        if (onEditProps != null
+                            && (node.Kind == BuilderNodeKind.Component
+                                || node.Kind == BuilderNodeKind.Hook)) {
+                          onEditProps(node.FilePath);
+                          e.StopPropagation();
+                        }
+                      }}
                       style={CanvasStyles.CardSignature}
                     />
                   </VisualElement>

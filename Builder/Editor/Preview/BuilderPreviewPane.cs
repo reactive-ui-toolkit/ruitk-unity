@@ -47,6 +47,10 @@ namespace Ruitk.Builder
         private HostContext _hostContext;
         private Func<IProps, IReadOnlyList<VirtualNode>, VirtualNode> _renderDelegate;
         private Type _componentType;
+
+        /// <summary>Set by the window while the Trace toggle is on. Reports which
+        /// child body each family reference actually resolved to.</summary>
+        internal Action<string> Trace { get; set; }
         private IProps _knobProps;
         private string _filePath;
         private bool _showingNoPreview;
@@ -919,6 +923,7 @@ namespace Ruitk.Builder
                 // all, silently, because no work throws. UnmountPreview already
                 // pumps for the same reason on the way out.
                 _scheduler.PumpNow();
+                TraceFamilyBindings();
                 if (_previewHost.childCount == 0)
                     UnityEngine.Debug.LogWarning(
                         "[RUITK Builder] preview mounted "
@@ -934,6 +939,70 @@ namespace Ruitk.Builder
                 // EditorApplication.update with a blank preview.
                 SetStatus("Render failed: " + ex.Message
                     + "\nMost often a required prop — seed it in PROPS above.");
+            }
+        }
+
+        /// <summary>The one question three dead hypotheses were circling: for each
+        /// child the rendered component references, WHICH key did it ask for and
+        /// WHICH body did it get?
+        ///
+        /// The generator emits one `__fam_&lt;SanitizedFqn&gt;` static per child
+        /// reference, holding a Family resolved by exact key. If the id below is the
+        /// child in THIS tree but the body's declaring type belongs to another, the
+        /// registry handed back someone else's component and the mismatch is visible
+        /// on one line instead of inferable from a rendered label.</summary>
+        private void TraceFamilyBindings()
+        {
+            var trace = Trace;
+            if (trace == null || _componentType == null)
+                return;
+            try
+            {
+                var fields = _componentType.GetFields(
+                    BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static);
+                var report = new System.Text.StringBuilder();
+                report.Append("[RUITK Builder] preview: family bindings for ")
+                      .Append(_componentType.Name)
+                      .Append("  (asm ")
+                      .Append(_componentType.Assembly?.GetName()?.Name ?? "?")
+                      .Append(")");
+                int found = 0;
+                foreach (var field in fields)
+                {
+                    if (field == null || !field.Name.StartsWith("__fam_", StringComparison.Ordinal))
+                        continue;
+                    found++;
+                    var family = field.GetValue(null) as Ruitk.Refresh.Family;
+                    if (family == null)
+                    {
+                        report.Append("\n    ").Append(field.Name).Append("  ->  (null family)");
+                        continue;
+                    }
+                    report.Append("\n    asked for: ").Append(family.Id);
+                    Delegate body = null;
+                    try { body = family.Current; } catch (Exception ex)
+                    {
+                        report.Append("\n      got:     THREW ").Append(ex.GetType().Name);
+                        continue;
+                    }
+                    if (body == null)
+                    {
+                        report.Append("\n      got:     (no body registered)");
+                        continue;
+                    }
+                    var owner = body.Method?.DeclaringType;
+                    report.Append("\n      got:     ")
+                          .Append(owner?.FullName ?? "?")
+                          .Append("   asm=")
+                          .Append(owner?.Assembly?.GetName()?.Name ?? "?");
+                }
+                if (found == 0)
+                    report.Append("\n    (no child references — this component composes nothing)");
+                trace(report.ToString());
+            }
+            catch (Exception ex)
+            {
+                trace("[RUITK Builder] preview: family probe failed — " + ex.Message);
             }
         }
 
