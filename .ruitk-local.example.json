@@ -1,5 +1,6 @@
 {
   "_comment": "Copy this file to .ruitk-local.json and fill in the paths for THIS machine. That file is gitignored. Every key is optional -- omit one and the tool is discovered the normal way (npm from PATH, the Unity editor from the standard Hub install roots). See the \"Machine-local paths\" section of CLAUDE.md.",
   "npmPath": "<absolute path to npm, e.g. a version-manager shim; overridden by $RUITK_NPM>",
-  "unityEditor": "<absolute path to the Unity editor executable; normally auto-probed, override only if that fails>"
+  "unityEditor": "<absolute path to the Unity editor executable; normally auto-probed, override only if that fails>",
+  "storePublisherProject": "<absolute path to the Unity project the Asset Store package is uploaded from -- the one holding Assets/ReactiveUIToolkit; see the asset-store-upload skill>"
 }
