@@ -2109,6 +2109,193 @@ public class EmitterTests
         );
     }
 
+    // ── UITKX0115 — Missing required prop ───────────────────────────────────
+    //
+    // A parameter written WITHOUT a default value is required: every call site
+    // must pass it. Before this check an omitted prop silently became
+    // default(T), because the generated *Props class emits an initialiser
+    // either way and so cannot tell the two apart. The required set therefore
+    // comes from the declared parameters, not from the props type.
+
+    [Fact]
+    public void UITKX0115_OmittedRequiredProp_EmitsDiagnostic()
+    {
+        const string childSrc = """
+            VirtualNode ChildComp(string label) {
+                return (<Label text={label} />);
+            }
+            """;
+
+        const string parentSrc = """
+            VirtualNode ParentComp() {
+                return (
+                    <ChildComp />
+                );
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunMultiple(
+            new[] { ("ChildComp.uitkx", childSrc), ("ParentComp.uitkx", parentSrc) },
+            primaryFileName: "ParentComp.uitkx"
+        );
+
+        Assert.True(
+            result.HasDiagnostic("UITKX0115"),
+            "Expected UITKX0115 for omitted required prop 'label'.\n"
+                + string.Join("\n", result.Diagnostics.Select(d => d.Id + ':' + d.GetMessage()))
+        );
+
+        var diag = result.Diagnostics.First(d => d.Id == "UITKX0115");
+        Assert.Contains("label", diag.GetMessage());
+        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Error, diag.Severity);
+    }
+
+    [Fact]
+    public void UITKX0115_RequiredPropPassed_NoDiagnostic()
+    {
+        const string childSrc = """
+            VirtualNode ChildComp(string label) {
+                return (<Label text={label} />);
+            }
+            """;
+
+        const string parentSrc = """
+            VirtualNode ParentComp() {
+                return (
+                    <ChildComp label="hi" />
+                );
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunMultiple(
+            new[] { ("ChildComp.uitkx", childSrc), ("ParentComp.uitkx", parentSrc) },
+            primaryFileName: "ParentComp.uitkx"
+        );
+
+        Assert.False(
+            result.HasDiagnostic("UITKX0115"),
+            "A passed required prop must not raise UITKX0115.\n"
+                + string.Join("\n", result.Diagnostics.Select(d => d.Id + ':' + d.GetMessage()))
+        );
+    }
+
+    [Fact]
+    public void UITKX0115_WrittenDefault_MakesPropOptional()
+    {
+        // Both forms of default: a literal and an explicit null.
+        const string childSrc = """
+            VirtualNode ChildComp(string label = "Primary", string? note = null) {
+                return (<Label text={label} />);
+            }
+            """;
+
+        const string parentSrc = """
+            VirtualNode ParentComp() {
+                return (
+                    <ChildComp />
+                );
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunMultiple(
+            new[] { ("ChildComp.uitkx", childSrc), ("ParentComp.uitkx", parentSrc) },
+            primaryFileName: "ParentComp.uitkx"
+        );
+
+        Assert.False(
+            result.HasDiagnostic("UITKX0115"),
+            "A parameter with a written default is optional.\n"
+                + string.Join("\n", result.Diagnostics.Select(d => d.Id + ':' + d.GetMessage()))
+        );
+    }
+
+    [Fact]
+    public void UITKX0115_OnlyTheMissingPropIsReported()
+    {
+        const string childSrc = """
+            VirtualNode ChildComp(string label, int count) {
+                return (<Label text={label} />);
+            }
+            """;
+
+        const string parentSrc = """
+            VirtualNode ParentComp() {
+                return (
+                    <ChildComp label="hi" />
+                );
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunMultiple(
+            new[] { ("ChildComp.uitkx", childSrc), ("ParentComp.uitkx", parentSrc) },
+            primaryFileName: "ParentComp.uitkx"
+        );
+
+        var missing = result.Diagnostics.Where(d => d.Id == "UITKX0115").ToList();
+        Assert.Single(missing);
+        Assert.Contains("count", missing[0].GetMessage());
+    }
+
+    [Fact]
+    public void UITKX0115_MutableRefParam_IsExempt()
+    {
+        // A MutableRef parameter is an out-channel filled by ref={x}, not an
+        // input the caller supplies — omitting it is not a missing prop.
+        const string childSrc = """
+            VirtualNode ChildComp(Hooks.MutableRef<object> inputRef) {
+                return (<Label text="child" />);
+            }
+            """;
+
+        const string parentSrc = """
+            VirtualNode ParentComp() {
+                return (
+                    <ChildComp />
+                );
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunMultiple(
+            new[] { ("ChildComp.uitkx", childSrc), ("ParentComp.uitkx", parentSrc) },
+            primaryFileName: "ParentComp.uitkx"
+        );
+
+        Assert.False(
+            result.HasDiagnostic("UITKX0115"),
+            "A MutableRef parameter must not be treated as a required prop.\n"
+                + string.Join("\n", result.Diagnostics.Select(d => d.Id + ':' + d.GetMessage()))
+        );
+    }
+
+    [Fact]
+    public void UITKX0115_UnderscoreParam_ReportsThePropName()
+    {
+        // The leading underscore marks the parameter unused without renaming
+        // its prop, so the call site writes `count`, not `_count`.
+        const string childSrc = """
+            VirtualNode ChildComp(int _count) {
+                return (<Label text="child" />);
+            }
+            """;
+
+        const string parentSrc = """
+            VirtualNode ParentComp() {
+                return (
+                    <ChildComp />
+                );
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunMultiple(
+            new[] { ("ChildComp.uitkx", childSrc), ("ParentComp.uitkx", parentSrc) },
+            primaryFileName: "ParentComp.uitkx"
+        );
+
+        var diag = result.Diagnostics.FirstOrDefault(d => d.Id == "UITKX0115");
+        Assert.NotNull(diag);
+        Assert.Contains("'count'", diag!.GetMessage());
+    }
+
     [Fact]
     public void UITKX0109_UserComponent_NoParams_AnyAttrIsUnknown()
     {

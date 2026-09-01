@@ -141,6 +141,16 @@ namespace Ruitk.Language.Diagnostics
         public const string DuplicatePropName = "UITKX0114";
 
         /// <summary>
+        /// A component call site omits a parameter that was written WITHOUT a
+        /// default value. Such a parameter is required: before this check the
+        /// omitted prop silently became <c>default(T)</c>, because the generated
+        /// <c>*Props</c> class emits an initialiser either way and so cannot
+        /// tell the two forms apart. Anchored at the element's opening tag.
+        /// Severity: Error.
+        /// </summary>
+        public const string MissingRequiredProp = "UITKX0115";
+
+        /// <summary>
         /// An <c>Asset&lt;T&gt;("path")</c>, <c>Ast&lt;T&gt;("path")</c>, or
         /// <c>@uss "path"</c> references a file that does not exist on disk.
         /// Severity: Error.

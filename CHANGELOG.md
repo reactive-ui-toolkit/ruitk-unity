@@ -6,6 +6,176 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.19.0] - 2026-08-31
+
+### Added
+
+- **Component props are now an authoring gesture.** The signature row on a
+  component or hook card was read-only: the only way to give a component a prop
+  was to open the source pane and type it, and the preview's knobs &mdash; which
+  are mined from the compiled props type &mdash; had nothing to bind to until
+  you did. Clicking the signature row (or **Props…** on the card menu) now opens
+  the three gestures:
+  - **Add** &mdash; a searchable type menu offering the types this tree already
+    uses ahead of the common ones, with a free-text row for everything else,
+    then the name, then required-or-default. A required prop is inserted before
+    the first optional one, because C# rejects the other order.
+  - **Rename** &mdash; the declaration, its uses in the component's own body,
+    and the attribute at every call site in the tree, as ONE undoable action.
+  - **Remove** &mdash; strips the attribute from every call site the tree knows
+    about, also one undo, and says how many callers it touched. Call sites
+    outside the open tree are not rewritten and get `UITKX0115` instead; that is
+    the honest limit of what the builder can see.
+  - **Make required / make optional** &mdash; "required" is not a flag stored
+    anywhere; it IS the absence of a written default, so the gesture writes one
+    or takes it away.
+
+  Every gesture reads and writes the tree's in-memory buffers, never a file: a
+  caller the user has not opened is still a caller. Nothing reaches disk until
+  Save.
+
+- **Router hooks are hooks now, as far as the tooling is concerned.** All 16 of
+  `RouterHooks` (`UseNavigate`, `UseParams`, `UseBlocker`, …) joined the shared
+  `HookRegistry`, so they get hover documentation, completion, and — the part
+  that matters — **the rules of hooks**. `UseBlocker` composes `Hooks.UseEffect`,
+  so calling a router hook inside an `@if` or a loop shifts effect ordering
+  exactly as a conditional `useEffect` would, and until now nothing said so;
+  `UITKX0013`/`UITKX0014` catch it. Their fiber-slot arity is zero, verified
+  against every hook in the source rather than assumed. No new syntax: they are
+  still written `RouterHooks.UseNavigate()`, with no camelCase shorthand, and
+  they are deliberately not added to the bare-call exemption set — a bare
+  `UseNavigate()` still reports as an unresolved reference rather than becoming a
+  puzzling `CS0103`.
+
+- **Trace reports what the builder decided, not just that it decided.** The
+  toolbar's **Trace** toggle now names, in the console: which modules a compile
+  round considered and whether they built as one assembly or per file (and, when
+  a union declines, why); which component each child tag resolved to, through the
+  importing file rather than by name; which BODY each child reference actually
+  received at render time, naming the type and the assembly it came from; how
+  long canvas renders, compile rounds and analyzer passes are taking, once a
+  second; and every buffer write, with its size delta and what the text now
+  DECLARES &mdash; which is a whole-module overwrite naming itself as it happens
+  rather than being reconstructed afterwards. Off by default, so a normal session
+  pays nothing.
+
+### Fixed &mdash; RUITK UI Builder
+
+- **A new tree could render another tree's components.** A brand-new, never-saved
+  tree whose children were all empty rendered text from a DIFFERENT tree: a child
+  named `BlaOne` correctly rendered nothing, while children named `LeftSide` and
+  `RightSide` &mdash; names another open tree also used &mdash; rendered that
+  tree's content. Every hot-swap leaves its assemblies loaded for the life of the
+  Unity process, so resolving a child component by SIMPLE NAME across the loaded
+  assembly table reached whatever tree happened to be opened first. A child is
+  now resolved through the IMPORT that names it; the by-name scan survives only
+  for a tag with no import behind it &mdash; a hand-written component in a
+  package, which no import graph can resolve &mdash; and swap assemblies are
+  excluded from even that.
+- **The builder asks the TREE, not the disk.** The open tree is the model and
+  disk is a projection of it written only on Save, but several paths still asked
+  the filesystem about modules the tree owned &mdash; so a module created,
+  renamed, moved or deleted in the session could answer as the stale file on disk
+  still said. Module existence, reads and companion discovery now come from the
+  tree; the language library's import resolution no longer falls back to
+  `File.Exists`/`File.ReadAllText` behind an installed source overlay, which was
+  the last question it could answer from the wrong world. The filesystem is
+  consulted only for modules the open tree does not own, and **every such
+  fall-through is named in the compile report** rather than being invisible.
+- **Moving a module back where it came from was refused.** Moving
+  `newComponent.style.uitkx` into a folder and then back reported "already there"
+  and did nothing: the availability check asked the DISK, where the original file
+  still sat, instead of asking the tree, which knew it had moved.
+- **HMR parses each import target once per compile, not twice.** The
+  component-FQN map added for the fix above runs on the shared compile entry, so
+  it cost ordinary HMR a second parse of every import target on every save. Both
+  consumers now share one per-compile memo, cleared per compile rather than held
+  &mdash; a stale directive set is exactly the class of bug this wave removed.
+- **A source edit could overwrite a different module.** Editing a component,
+  clicking another card, then pressing Esc restored the first module's entire
+  text into the second's buffer &mdash; a card that said `MiddleSide` holding
+  `NewComponent`, imports and all, while the file on disk stayed correct. Three
+  ordinary clicks, silent whole-file loss, in a save-only editor. The snapshot
+  now carries the file it was taken from and a focus change ends the session,
+  which is what the code always claimed to do. Nothing is lost by ending it:
+  typing is applied to the buffer live and the ledger still holds it for undo.
+- **A parent could not see a child's current props without saving.** Giving a
+  child a prop and previewing its parent failed with `CS0426: the type name
+  'FooProps' does not exist` &mdash; the hot compile asked whether the child was
+  NEW when the question was whether its SHAPE had changed, so the parent compiled
+  against the version still on disk. Components in a batch now compile into ONE
+  assembly, which is also what a real Unity compile does. One assembly means one
+  props type, so a parent can never be handed a type from somewhere else; that
+  mattered because generated bodies read props with `as`, and a mismatch renders
+  every prop defaulted rather than throwing.
+- **Every click rebuilt every component.** The same-assembly check counted style
+  and hook modules, which are compiled one assembly each by design, so the group
+  looked permanently split and forced a full rebuild &mdash; and selecting or
+  dragging a card asks for a compile round. Only components are considered now,
+  and a round that follows no build skips the closure walk entirely.
+- **The preview accepted code Unity rejects.** The hot compile ran at
+  `-langversion:latest` while Unity compiles the project at C# 9, so
+  `var handler = () => { }` previewed clean and failed the next real build. Both
+  compile paths now pin to the version Unity reports.
+- **Dropping a row into a self-closing tag did nothing.** Dragging `<Router />`
+  in from the library and then dragging rows onto it silently landed them
+  *after* it instead of inside, because only the insert path knew how to re-open
+  a `/>`. The move path re-opens it too, in one undoable edit.
+- **A move that did not happen said it did.** The row-move toast reported intent
+  rather than outcome, so a refused drop was indistinguishable from a working
+  one. It now reports what actually happened.
+- **The library list could disagree with the tree.** It was rebuilt only when the
+  canvas mounted, so renaming an export left the old name in the palette &mdash;
+  and the known-element set that `UITKX0105` is checked against was equally
+  stale. Both refresh whenever the graph changes.
+- **Undo history no longer dies on a domain reload.** The tree survives a
+  recompile; its history now survives with it. Entries naming modules the
+  restored tree no longer has are dropped by name, whole gestures at a time,
+  rather than the whole history being discarded.
+- **The selected card is drawn on top.** UI Toolkit has no z-index, so a selected
+  card early in the list was covered by every card after it.
+- A toast still described a limitation as being "in the POC".
+
+### Breaking
+
+- **A component parameter written without a default value is now REQUIRED, and
+  a call site that omits it is an error (`UITKX0115`).** `int x` and
+  `int x = 0` were indistinguishable to the generator &mdash; both emit
+  `public int X { get; set; } = 0;` &mdash; so a caller that forgot a prop
+  silently rendered `default(T)` with no diagnostic anywhere. The required set
+  is now read from the DECLARED PARAMETERS rather than from the generated props
+  class, which cannot answer the question. Enforced at build time by the source
+  generator and live in the editor by the language server.
+
+  To make a prop optional, give the parameter a default in the component
+  declaration:
+
+  ```
+  export VirtualNode Card(string label)              // required at every call site
+  export VirtualNode Card(string label = "Untitled") // optional
+  ```
+
+  Exempt, deliberately: a `MutableRef<T>` parameter, which is an out-channel
+  filled by `ref={x}` rather than an input the caller supplies; components whose
+  props class is hand-written C#, which has no notion of "no default written";
+  and any tag whose declarant the editor cannot resolve unambiguously, where
+  requiring a prop one candidate declares would error on a call site that is
+  correct for the component it actually binds to.
+
+  Measured blast radius before the severity was accepted: across the whole
+  bundled `Samples/` corpus, TWO props on ONE call site &mdash; and both were
+  genuine defects, not false positives. `<HUD score lives />` never passed
+  `spriteSheet` or `wave`, so the Galaga sample rendered "WAVE 0" and built its
+  life icons from a null sprite sheet. Fixed in this release. The package's own
+  `.uitkx` files have no component-to-component markup call sites at all, so
+  their blast radius is zero.
+
+### Fixed
+
+- **The attribute menu mis-read generic props.** A `Dictionary<string, int>`
+  parameter was split on its own comma and offered as two nonsense rows; the
+  signature scanner the prop gestures use now backs that menu too.
+
 ## [0.18.1] - 2026-08-27
 
 ### Fixed

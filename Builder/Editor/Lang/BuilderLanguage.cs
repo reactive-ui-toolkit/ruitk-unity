@@ -108,14 +108,17 @@ namespace Ruitk.Builder
         public static IReadOnlyList<ParseDiagnostic> Diagnose(
             ParseResult parseResult,
             string filePath,
-            HashSet<string> knownElements = null
+            HashSet<string> knownElements = null,
+            IReadOnlyDictionary<string, Ruitk.Language.Diagnostics.ElementAttributeContract>
+                propContracts = null
         )
         {
             var merged = new List<ParseDiagnostic>(parseResult.Diagnostics);
             try
             {
                 var analyzer = new Ruitk.Language.Diagnostics.DiagnosticsAnalyzer();
-                merged.AddRange(analyzer.Analyze(parseResult, filePath, knownElements));
+                merged.AddRange(analyzer.Analyze(
+                    parseResult, filePath, knownElements, propContracts));
             }
             catch (Exception)
             {

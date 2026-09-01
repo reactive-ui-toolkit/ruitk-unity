@@ -135,6 +135,20 @@ namespace Ruitk.SourceGenerator
                 + "On user components this is checked against the declared parameters — user components do not inherit BaseProps, so style/onClick/etc. must be explicitly declared as parameters to be accepted (key and ref are always allowed)."
         );
 
+        /// <summary>UITKX0115 — A component call site omits a parameter that has no
+        /// written default. Aligned with analyzer's <c>DiagnosticCodes.MissingRequiredProp</c>.</summary>
+        public static readonly DiagnosticDescriptor MissingRequiredProp = new DiagnosticDescriptor(
+            id: "UITKX0115",
+            title: "Missing required prop",
+            messageFormat: "<{0}> is missing required prop '{1}' (parameter '{2}' declares no default value)",
+            category: Category,
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true,
+            description: "A component parameter written without a default value is required: every call site must pass it. "
+                + "Give the parameter a default in the component declaration to make it optional, or pass the attribute at the call site. "
+                + "Before this check existed an omitted prop silently became default(T)."
+        );
+
         /// <summary>UITKX0106 — A direct element child of a loop (@foreach/@for/@while) lacks a key attribute. Aligned with analyzer's <c>DiagnosticCodes.MissingKey</c>.</summary>
         public static readonly DiagnosticDescriptor ForeachMissingKey = new DiagnosticDescriptor(
             id: "UITKX0106",

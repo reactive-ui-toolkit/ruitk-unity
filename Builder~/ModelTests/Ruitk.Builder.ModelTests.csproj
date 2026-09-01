@@ -33,10 +33,19 @@
   <ItemGroup>
     <Compile Include="Shims.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="IsolationChecks.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Editor\HMR\IModuleSource.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Compile\BuilderModuleSource.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderModule.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderTree.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderSpecifiers.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderNaming.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderSignatureEdit.cs" />
+    <Compile Include="SignatureChecks.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Document\BuilderSourceEditSession.cs" />
+    <Compile Include="EditSessionChecks.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\Builder\Editor\Lang\BuilderText.cs" />
+    <Compile Include="MoveChecks.cs" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)..\..\ide-extensions~\language-lib\UitkxLanguage.csproj" />
   </ItemGroup>
 

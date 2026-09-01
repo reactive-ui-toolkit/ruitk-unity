@@ -77,6 +77,16 @@ namespace Ruitk.Builder
         /// <summary>UB-124: rename the module a card stands for - its export,
         /// its file, its folder when it owns one, and every importer.</summary>
         public Action<string> OnRenameCard;
+
+        /// <summary>#2: open the props gesture for the module a card stands for -
+        /// add, rename, make required/optional, remove.</summary>
+        public Action<string> OnEditProps;
+
+        /// <summary>Fired whenever the graph changes, mount or re-populate. The
+        /// library list, the known-element set and the preview's module notes are
+        /// all PROJECTIONS of the graph, and a projection that only updates on
+        /// mount tells the user something the tree stopped saying.</summary>
+        private Action<BuilderGraph> _onGraphChanged;
         public Action<string> OnDeleteFile;
 
         /// <summary>The tree the canvas draws. The graph is a PROJECTION of it,
@@ -156,6 +166,12 @@ namespace Ruitk.Builder
             }
 
             _graph = graph;
+            // Remembered, not just called: the graph changes AFTER the mount too,
+            // every time a card is re-populated from its buffer, and everything
+            // built FROM the graph - the library list, the known-element set, the
+            // preview notes - has to move with it. Firing only here left the
+            // library showing exports the tree no longer had.
+            _onGraphChanged = onGraphLoaded;
             onGraphLoaded?.Invoke(graph);
             // Root FIRST, then the WHOLE membership. The root is derived, so it
             // is not a stable name for a tree - a re-filed folder or a mount that
@@ -381,6 +397,10 @@ namespace Ruitk.Builder
             // The card's imports may have changed, and an import is structure:
             // rebuild what this node points at before the canvas redraws.
             BuilderGraphService.RefreshEdgesFor(_graph, index);
+            // A re-populated card can declare different EXPORTS than it did a
+            // keystroke ago, so every graph-derived surface is now stale. Same
+            // notification the mount uses, for the same reason.
+            _onGraphChanged?.Invoke(_graph);
             RenderCanvas();
         }
 
@@ -612,6 +632,7 @@ namespace Ruitk.Builder
 
         private void RenderCanvas()
         {
+            using var __perf = BuilderPerf.Measure("canvas render");
             var onOpenFile = _onOpenFile;
             EditorRootRendererUtility.Render(
                 _container,
@@ -675,6 +696,7 @@ namespace Ruitk.Builder
                             OnStyleRowContext?.Invoke(path, from, to, label),
                         ArmedAddFile = _armedAddFile,
                         ArmedAddStyle = _armedAddStyle,
+                        OnEditProps = path => OnEditProps?.Invoke(path),
                         OnAddHook = path => OnAddHook?.Invoke(path),
                         OnAddCode = path => OnAddCode?.Invoke(path),
                         OnCopyImportAlias = text => OnCopyImportAlias?.Invoke(text),
@@ -871,6 +893,15 @@ namespace Ruitk.Builder
                     OnPick = () => OnDeleteFile?.Invoke(targetPath),
                 },
             };
+            if (node.Kind == BuilderNodeKind.Component || node.Kind == BuilderNodeKind.Hook)
+            {
+                items.Insert(0, new BuilderSearchMenu.Item
+                {
+                    Label = "Props…",
+                    Detail = "add, rename or remove a prop",
+                    OnPick = () => OnEditProps?.Invoke(targetPath),
+                });
+            }
             // A real submenu, opening BESIDE the menu rather than on top of it.
             // The kinds will not stay at four, so they belong behind one row.
             if (node.Kind == BuilderNodeKind.Component)

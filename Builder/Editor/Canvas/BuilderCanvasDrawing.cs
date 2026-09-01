@@ -303,6 +303,30 @@ namespace Ruitk.Builder
         }
 
         /// <summary>POC ".card-section:last-child { border-bottom: none }" —
+        /// <summary>
+        /// The node index to draw at paint position <paramref name="slot"/>, so
+        /// the SELECTED card is drawn last.
+        ///
+        /// UI Toolkit has no z-index: absolutely-positioned siblings paint in
+        /// document order, so a selected card sitting early in the list is
+        /// covered by every card after it - exactly when the user most needs to
+        /// see it whole. This is the identity permutation with the selected index
+        /// moved to the end, computed per slot rather than materialised, because
+        /// the card loop runs on every canvas render.
+        ///
+        /// The value returned is the ORIGINAL node index: card names, selection
+        /// and the edge painter's "card-{index}" lookup all still address the same
+        /// node they always did.
+        /// </summary>
+        public static int PaintOrderAt(int count, int selected, int slot)
+        {
+            if (selected < 0 || selected >= count)
+                return slot;
+            if (slot >= count - 1)
+                return selected;
+            return slot < selected ? slot : slot + 1;
+        }
+
         /// which section index is the bottom-most one this card renders
         /// (0 signature, 1 imports, 2 body, 3 exports, 4 markup).</summary>
         public static int LastSectionOf(BuilderCanvasNode node)
