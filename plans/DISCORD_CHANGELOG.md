@@ -3,9 +3,8 @@
 ### Component props, router hooks, and a builder that stops lying to you
 
 **Props are an authoring gesture now.** The signature row was a label. Click it
-to add a prop (searchable type menu seeded from your own tree, free text for the
-rest), rename one, or remove one. A rename rewrites the declaration, its uses in
-the body, and the attribute at every call site as ONE undo.
+to add, rename or remove a prop. A rename rewrites the declaration, its uses in
+the body, and every call site's attribute as ONE undo.
 
 **Breaking - a parameter with no default is REQUIRED.**
 
@@ -16,26 +15,27 @@ export VirtualNode Card(string label = "Untitled")  // optional
 
 `int x` and `int x = 0` were indistinguishable to the generator - both emit
 `public int X { get; set; } = 0;` - so a forgotten prop silently rendered
-`default(T)`. Omitting one is now `UITKX0115`. Measured before accepting the
-severity: two props on one call site across all Samples, both real bugs.
+`default(T)`. Omitting one is now `UITKX0115`.
 
 **Router hooks are hooks.** All 16 joined the shared registry: hover,
 completion, and the rules of hooks. `UseBlocker` composes `UseEffect`, so
-calling one inside an `@if` breaks effect ordering - and nothing reported it
-until now. No new syntax.
+calling one in an `@if` breaks effect ordering - and nothing said so.
 
 **Builder fixes, all the same shape - the editor said one thing, did another:**
 
+- A NEW tree rendered ANOTHER tree's components. Every hot swap stays loaded,
+  so resolving a child by simple name reached whichever tree opened first. A
+  child now resolves through the import that names it.
+- The builder asks the TREE, not the disk. A module created, renamed, moved or
+  deleted in the session could still answer as the stale file on disk said.
 - A source edit could overwrite a DIFFERENT module: edit one, click another
   card, press Esc, and the first one's whole text landed in the second.
-- A parent could not see a child's new props without saving. Components in a
-  batch now compile into one assembly.
+- A parent could not see a child's new props without saving.
 - Every click rebuilt every component.
-- The preview compiled at `latest` while Unity compiles at C# 9, so it accepted
-  code that failed the next build.
+- The preview compiled at `latest` while Unity compiles at C# 9.
 - Dropping a row into a self-closing tag did nothing, and said it worked.
 - The library list kept exports the tree no longer had.
-- Undo history died on every domain reload. It survives now.
+- Undo history died on every domain reload.
 
 **Tests.** 1892/1892 SG, 185/185 LSP, plus out-of-Unity model checks.
 

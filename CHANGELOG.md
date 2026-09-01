@@ -47,8 +47,50 @@ For IDE extension changelogs (VS Code, Visual Studio 2022), see
   `UseNavigate()` still reports as an unresolved reference rather than becoming a
   puzzling `CS0103`.
 
+- **Trace reports what the builder decided, not just that it decided.** The
+  toolbar's **Trace** toggle now names, in the console: which modules a compile
+  round considered and whether they built as one assembly or per file (and, when
+  a union declines, why); which component each child tag resolved to, through the
+  importing file rather than by name; which BODY each child reference actually
+  received at render time, naming the type and the assembly it came from; how
+  long canvas renders, compile rounds and analyzer passes are taking, once a
+  second; and every buffer write, with its size delta and what the text now
+  DECLARES &mdash; which is a whole-module overwrite naming itself as it happens
+  rather than being reconstructed afterwards. Off by default, so a normal session
+  pays nothing.
+
 ### Fixed &mdash; RUITK UI Builder
 
+- **A new tree could render another tree's components.** A brand-new, never-saved
+  tree whose children were all empty rendered text from a DIFFERENT tree: a child
+  named `BlaOne` correctly rendered nothing, while children named `LeftSide` and
+  `RightSide` &mdash; names another open tree also used &mdash; rendered that
+  tree's content. Every hot-swap leaves its assemblies loaded for the life of the
+  Unity process, so resolving a child component by SIMPLE NAME across the loaded
+  assembly table reached whatever tree happened to be opened first. A child is
+  now resolved through the IMPORT that names it; the by-name scan survives only
+  for a tag with no import behind it &mdash; a hand-written component in a
+  package, which no import graph can resolve &mdash; and swap assemblies are
+  excluded from even that.
+- **The builder asks the TREE, not the disk.** The open tree is the model and
+  disk is a projection of it written only on Save, but several paths still asked
+  the filesystem about modules the tree owned &mdash; so a module created,
+  renamed, moved or deleted in the session could answer as the stale file on disk
+  still said. Module existence, reads and companion discovery now come from the
+  tree; the language library's import resolution no longer falls back to
+  `File.Exists`/`File.ReadAllText` behind an installed source overlay, which was
+  the last question it could answer from the wrong world. The filesystem is
+  consulted only for modules the open tree does not own, and **every such
+  fall-through is named in the compile report** rather than being invisible.
+- **Moving a module back where it came from was refused.** Moving
+  `newComponent.style.uitkx` into a folder and then back reported "already there"
+  and did nothing: the availability check asked the DISK, where the original file
+  still sat, instead of asking the tree, which knew it had moved.
+- **HMR parses each import target once per compile, not twice.** The
+  component-FQN map added for the fix above runs on the shared compile entry, so
+  it cost ordinary HMR a second parse of every import target on every save. Both
+  consumers now share one per-compile memo, cleared per compile rather than held
+  &mdash; a stale directive set is exactly the class of bug this wave removed.
 - **A source edit could overwrite a different module.** Editing a component,
   clicking another card, then pressing Esc restored the first module's entire
   text into the second's buffer &mdash; a card that said `MiddleSide` holding
