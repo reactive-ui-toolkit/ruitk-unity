@@ -12,6 +12,8 @@
     "Samples/Showcase/Editor/EditorUitkxDoomGameDemoWindow.cs",
     "Samples/Showcase/Editor/EditorUitkxGalagaGameDemoWindow.cs",
     "Samples/Showcase/Editor/EditorUitkxMarioGameDemoWindow.cs",
+    "CHANGELOG.md",
+    "THIRDPARTY.md",
     "CLAUDE.md",
     "AUTOMATION.md",
     "RELEASE_OPS.md",

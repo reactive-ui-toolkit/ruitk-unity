@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Ruitk.Language")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+333195da6e7a1e7cacfdabef7dc37fd0624471ef")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c0f2016897c7b19a5bfa16538a029fa1cdc8b884")]
 [assembly: System.Reflection.AssemblyProductAttribute("Ruitk.Language")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Ruitk.Language")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
