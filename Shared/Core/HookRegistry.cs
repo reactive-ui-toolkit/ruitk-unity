@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: LicenseRef-ReactiveUI-Community-1.0
-// ReactiveUIToolkit — see THIRDPARTY.md
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;

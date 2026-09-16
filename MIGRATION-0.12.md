@@ -203,5 +203,3 @@ Apply in this order:
 
 - The editor-prefs key `ReactiveUITK.UitkxNavVerbose` is now `Ruitk.UitkxNavVerbose`;
   your saved value resets once. `RUITK_*` and `UITKX_HMR_*` keys are unchanged.
-- Old versions keep the license and terms they shipped with; 0.12.0 ships under the
-  Reactive UI Toolkit Community License 1.1 (see `LICENSE.md`).

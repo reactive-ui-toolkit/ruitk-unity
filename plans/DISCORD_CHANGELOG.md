@@ -1,3 +1,23 @@
+## [0.19.3] - 2026-09-16
+
+### Store compliance - licence files removed
+
+**The package no longer ships its own licence files.** The Unity Asset Store
+requires every package to be governed solely by its End User License
+Agreement, and declines any package that carries a separate licence for the
+publisher's own files. Removed: `LICENSE.md`, `LICENSE-COMMERCIAL.md`,
+`CLA.md`, the README licence section, the `package.json` licence field and
+an SPDX header. `Third-Party Notices.txt` now covers third-party content only.
+
+**`CHANGELOG.md` and `THIRDPARTY.md` are left out of the Asset Store build.**
+The changelog's history records earlier licensing changes; `THIRDPARTY.md`
+indexes the whole repo's tooling, none of which is in the package, and names
+Apache-2.0, which store guideline 1.2.b disallows. Both stay in the repository.
+
+No code changes. Nothing in the API, the compiler or the builder moved.
+
+---
+
 ## [0.19.2] - 2026-09-12
 
 ### Store compliance - new icon, and three samples pulled

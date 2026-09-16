@@ -12,7 +12,7 @@ namespace Ruitk
     /// stripping the <c>readonly</c> keyword.
     ///
     /// Why the <c>readonly</c> is stripped: when a field is emitted with the
-    /// <c>initonly</c> IL flag, Mono's JIT is licensed to inline the field's
+    /// <c>initonly</c> IL flag, Mono's JIT is permitted to inline the field's
     /// reference into machine code after the type initializer has run.
     /// Subsequent reflection-based slot updates (used by HMR to refresh the
     /// field across edit-save cycles) are then invisible to already-JIT'd
