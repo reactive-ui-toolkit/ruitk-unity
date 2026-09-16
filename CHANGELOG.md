@@ -6,6 +6,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.19.3] - 2026-09-16
+
+### Changed
+
+- **The package no longer includes its own licence files.** The Unity Asset
+  Store requires every package it distributes to be governed solely by the
+  Asset Store End User License Agreement, and declines any package containing
+  a separate licence for the publisher's own files. Removed: `LICENSE.md`,
+  `LICENSE-COMMERCIAL.md`, `CLA.md`, the licence section of `README.md`, the
+  `license` field of `package.json`, the SPDX header in `HookRegistry.cs`, and
+  a closing note in `MIGRATION-0.12.md`. `Third-Party Notices.txt` no longer
+  refers to a licence of the package's own; it covers third-party content only,
+  which is what it is for.
+
+- **`CHANGELOG.md` and `THIRDPARTY.md` are no longer part of the Asset Store
+  build.** The changelog's history records earlier licensing changes, which a
+  store review reads as licence text. `THIRDPARTY.md` indexes dependencies of
+  the whole repository — the language server, the IDE extensions, the docs site
+  and the test tooling — none of which is in the Unity package, and it names
+  Apache-2.0, which the Asset Store's submission guideline 1.2.b lists as not
+  permitted. Both files are unchanged and remain in the repository.
+  `Third-Party Notices.txt` stays: guideline 1.2.a requires it. It now lists
+  only what the package itself redistributes or depends on.
+
+No code changes. The API, the compiler and the builder are untouched.
+
+---
+
 ## [0.19.2] - 2026-09-12
 
 ### Changed
