@@ -37,6 +37,7 @@ namespace Ruitk.Editor
             "Assets/ReactiveUITK/Resources/__uitkx_registry.asset";
 
         private static bool s_warnedStaleRegistry;
+        private static bool s_warnedBackslashRegistryFolder;
 
         private static readonly Regex s_assetCallRe = new(
             @"(?:Asset|Ast)\s*<\s*(\w+)\s*>\s*\(\s*""([^""]+)""\s*\)",
@@ -115,6 +116,7 @@ namespace Ruitk.Editor
         public static void FullRescan()
         {
             WarnIfStaleRegistryExists();
+            WarnIfBackslashRegistryFolderExists();
 
             var scanTargets = new List<(string absRoot, string assetRoot)>();
             string dataPath = Application.dataPath; // …/Assets
@@ -301,7 +303,7 @@ namespace Ruitk.Editor
             var registry = AssetDatabase.LoadAssetAtPath<UitkxAssetRegistry>(RegistryAssetPath);
             if (registry != null) return registry;
 
-            string absFolder = Path.Combine(GetProjectRoot(), RegistryFolder.Replace('/', '\\'));
+            string absFolder = Path.Combine(GetProjectRoot(), RegistryFolder);
             if (!Directory.Exists(absFolder))
             {
                 Directory.CreateDirectory(absFolder);
@@ -350,6 +352,37 @@ namespace Ruitk.Editor
                     + "builds. FIX: delete the whole 'Assets/ReactiveUITK' folder (and its .meta). "
                     + "It also holds the obsolete UITKX_GeneratorTrigger.g.cs. "
                     + "See MIGRATION-0.12.md, 'Upgrade steps'.");
+        }
+
+        /// <summary>
+        /// Pre-0.19.4 cleanup guard. <see cref="GetOrCreateRegistry"/> used to convert the asset
+        /// path's separators to <c>\</c> before combining it with the project root. On Windows that
+        /// was a no-op; everywhere else <c>\</c> is an ordinary filename character, so
+        /// <c>Directory.CreateDirectory</c> created ONE directory literally named
+        /// <c>Assets\Ruitk\Resources</c> in the project root while <c>AssetDatabase.CreateAsset</c>
+        /// still expected <c>Assets/Ruitk/Resources</c> to exist. The registry was never written, so
+        /// <c>Asset&lt;T&gt;()</c>/<c>Ast&lt;T&gt;()</c> and <c>@uss</c> lookups silently returned
+        /// null in player builds. The directory is left in place and named rather than deleted —
+        /// removing a directory the user can see, without being asked, is not this code's business.
+        /// </summary>
+        private static void WarnIfBackslashRegistryFolderExists()
+        {
+            if (s_warnedBackslashRegistryFolder) return;
+            if (Path.DirectorySeparatorChar == '\\') return;
+
+            string windowsSpelling = RegistryFolder.Replace('/', '\\'); // separator-gate-allow: reproduces the pre-0.19.4 spelling to find what it created
+            string junk = Path.Combine(GetProjectRoot(), windowsSpelling);
+            if (!Directory.Exists(junk)) return;
+
+            s_warnedBackslashRegistryFolder = true;
+            Debug.LogWarning(
+                "[UITKX] A directory whose NAME contains backslashes is present at "
+                    + $"'{junk}'. Versions before 0.19.4 built the registry folder path with "
+                    + "Windows separators, so on this platform they created one directory with "
+                    + $"'\\' in its name instead of the folder tree '{RegistryFolder}'. The "
+                    + "registry is now written to the correct location and this leftover does "
+                    + "nothing. FIX: delete it. It is outside Assets/ as far as the Asset "
+                    + "Database is concerned, so Unity will not remove it for you.");
         }
 
         private static string GetProjectRoot()
