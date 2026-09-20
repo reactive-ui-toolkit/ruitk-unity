@@ -1598,13 +1598,16 @@ namespace Ruitk.Core.Fiber
 
         private FiberNode UpdatePortal(FiberNode fiber)
         {
-            if (fiber.Children != null && fiber.Children.Count > 0)
+            // Null means "no information, keep what is there"; EMPTY is a render
+            // result and must delete. Same correction as FiberFragment.UpdateFragment,
+            // which carries the full note - including why it holds only while the
+            // VNode pool stays dormant.
+            if (fiber.Children != null)
             {
                 ReconcileChildren(fiber, fiber.Children);
             }
             else if (fiber.Alternate?.Child != null)
             {
-                // Bailout: Children cleared after commit.
                 FiberFactory.CloneChildrenForBailout(fiber);
             }
 
