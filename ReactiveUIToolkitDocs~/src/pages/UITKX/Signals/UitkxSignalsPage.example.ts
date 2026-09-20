@@ -21,3 +21,18 @@ export const UITKX_SIGNALS_RUNTIME_EXAMPLE = `using Ruitk.Signals;
 SignalsRuntime.EnsureInitialized();
 var counter = SignalFactory.Get<int>("demo.counter", 0);
 counter.Dispatch(previous => previous + 1);`
+
+export const UITKX_SIGNALS_OWNED_EXAMPLE = `using Ruitk.Signals;
+
+// Keyed: shared by everything that asks for this key, and kept by the registry
+// for the lifetime of the process.
+var theme = SignalFactory.Get<string>("app.theme", "dark");
+
+// Owner-scoped: no key, not in the registry, not reachable through TryGet.
+// It is collected with whatever holds it.
+public sealed class InventoryPresenter
+{
+    private readonly Signal<int> selected = SignalFactory.Create<int>(-1);
+
+    public Signal<int> Selected => selected;
+}`

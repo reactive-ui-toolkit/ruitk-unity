@@ -271,7 +271,7 @@ export const sections: DocSection[] = [
         title: 'Signals',
         path: '/tooling/signals',
         keywords: ['signals', 'shared state', 'reactive'],
-        searchContent: 'signals lightweight named reactive values process-wide registry observable store single source of truth global registry keyed by string SignalFactory.Get Signal Subscribe useSignal Dispatch updates event handlers SignalsRuntime.EnsureInitialized selector overloads useSignal signal selector comparer project slice custom equality useMemo SignalCounterDemo counterSignal count Increment Reset Style StyleKeys.FlexDirection row thread safety lock-based synchronization',
+        searchContent: 'signals lightweight named reactive values process-wide registry observable store single source of truth global registry keyed by string SignalFactory.Get Signal Subscribe useSignal Dispatch updates event handlers SignalsRuntime.EnsureInitialized selector overloads useSignal signal selector comparer project slice custom equality useMemo SignalCounterDemo counterSignal count Increment Reset Style StyleKeys.FlexDirection row thread safety lock-based synchronization SignalFactory.Create owner-scoped unkeyed signal no registry entry presenter lifetime leak TryGet not discoverable comparer',
         element: () => <UitkxSignalsPage />,
       },
       {

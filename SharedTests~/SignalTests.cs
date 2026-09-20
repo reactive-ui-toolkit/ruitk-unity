@@ -227,5 +227,81 @@ namespace Ruitk.Shared.Tests
 
             Assert.Equal(1, renders);
         }
+        // ── Owner-scoped signals ────────────────────────────────────────────
+        //
+        // SignalFactory.Get parks its signal in a process-wide registry that has no
+        // Remove, so a short-lived owner had to invent a unique key and then leak the
+        // entry and its last value for the lifetime of the process. Create is the
+        // un-keyed alternative: the caller owns it, nothing else can reach it.
+
+        [Fact]
+        public void CreateReturnsADistinctSignalEachTime()
+        {
+            var a = SignalFactory.Create(1);
+            var b = SignalFactory.Create(1);
+
+            Assert.NotSame(a, b);
+        }
+
+        [Fact]
+        public void ACreatedSignalIsNotDiscoverableThroughTheRegistry()
+        {
+            var owned = SignalFactory.Create(7);
+
+            Assert.Equal(string.Empty, owned.Key);
+            Assert.False(SignalFactory.TryGet(string.Empty, out Signal<int> _));
+            Assert.False(SignalFactory.TryGet(Key("never-registered"), out Signal<int> _));
+        }
+
+        [Fact]
+        public void ACreatedSignalPublishesLikeAnyOther()
+        {
+            var owned = SignalFactory.Create(0);
+            int observed = -1;
+            using (owned.Subscribe(v => observed = v))
+            {
+                owned.Set(42);
+            }
+
+            Assert.Equal(42, observed);
+            Assert.Equal(42, owned.Value);
+        }
+
+        [Fact]
+        public void ACreatedSignalHonoursACustomComparer()
+        {
+            var owned = SignalFactory.Create("a", StringComparer.OrdinalIgnoreCase);
+            int publishes = 0;
+            using (owned.Subscribe(_ => publishes++))
+            {
+                owned.Set("A");
+                owned.Set("b");
+            }
+
+            Assert.Equal(1, publishes);
+            Assert.Equal("b", owned.Value);
+        }
+
+        [Fact]
+        public void ACreatedSignalDrivesAComponentLikeAKeyedOne()
+        {
+            var (_, container, reconciler) = Rig();
+            var owned = SignalFactory.Create("before");
+
+            var node = V.Func(
+                (props, children) =>
+                    El(
+                        "Label",
+                        props: new Dictionary<string, object> { ["text"] = Hooks.UseSignal(owned) }
+                    )
+            );
+
+            reconciler.CreateRoot(container, node);
+            Assert.Equal("before", container.Children[0].Prop("text"));
+
+            owned.Set("after");
+            Assert.Equal("after", container.Children[0].Prop("text"));
+        }
+
     }
 }
