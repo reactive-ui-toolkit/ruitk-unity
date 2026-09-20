@@ -1,3 +1,43 @@
+## [0.20.0] - 2026-09-20
+
+### Seven reported issues, and the gates that would have caught them
+
+**An empty fragment or portal kept its children on screen.** N -> N-1 unmounted
+correctly; N -> 0 did not, so a loop over an emptied collection left its last
+render mounted. Both read an empty children list as "no information" and bailed out to a clone
+of the previous children. They branch on null alone now - what host components
+always did, and why they never had the bug.
+
+**HMR could not start on macOS.** It built the editor's data directory as
+`dirname(applicationPath) + "/Data"`, the Windows shape. One locator now probes `applicationContentsPath`, with env and
+`.ruitk-local.json` overrides, and lists every path it tried when all fail.
+macOS HMR is still UNVERIFIED - the code no longer depends on the layout, but
+nothing has run there yet.
+
+**The asset registry folder used Windows separators**, so off Windows it made
+one directory named `Assets\Ruitk\Resources` and the registry was never written
+- `Asset<T>()`, `Ast<T>()` and `@uss` returned null in player builds. A second
+instance turned up in the csproj postprocessor.
+
+**IL2CPP refused the multi-column trackers**: a `TState` constrained only to an
+interface, assigned through. All five generic trackers now carry `class`.
+
+**Seven assets shipped with no `.meta`**, which in an immutable package means
+the editor loads none of the package's assemblies.
+
+**Added.** `SignalFactory.Create<T>()` - a signal owned by its caller, never
+registered, collected with whatever holds it. And `WhyDidYouRender` now reports
+WHY each component rendered, as `RenderReason` flags, to the console or to a
+subscriber; `None` means the bailout fired. One static bool when unsubscribed.
+
+**Gates.** `.meta` coverage, path separators, and a real Unity batch-mode
+compile of every assembly definition - the first coverage `Editor/` and
+`Builder/` have ever had.
+
+**Tests.** 1915/1915 SG, 93/93 shared core.
+
+---
+
 ## [0.19.3] - 2026-09-16
 
 ### Store compliance - licence files removed

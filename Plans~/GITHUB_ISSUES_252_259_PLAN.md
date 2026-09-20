@@ -15,6 +15,52 @@ covers the case its tests omit.
 
 ---
 
+## 0a. Status - SHIPPED in 0.20.0, 2026-09-20
+
+Everything below was written before the work. It is kept as written; this section
+records what actually happened, including the four things the plan did not predict.
+
+| # | Status | Commit |
+|---|---|---|
+| 256 | **done** - and the gate found 6 more than the 3 reported | `fix(package): every Unity-visible tracked file now carries a .meta` |
+| 254 | **done** - plus a second instance in the csproj postprocessor | `fix(editor): build paths with the platform's separator` |
+| 253 | **done** - all five generic trackers, not just the one reported | `fix(elements): constrain tracker state parameters to reference types` |
+| 252 | **done** - five tests, all failing beforehand | `fix(fiber): an empty fragment or portal now unmounts its children` |
+| 255 | **done** - one locator, probing; macOS still unverified | `fix(editor): probe for the bundled runtime` |
+| 257 | **done** - `SignalFactory.Create<T>` | `feat(signals): SignalFactory.Create` |
+| 259 | **done** - wired the dead `WhyDidYouRender` seam | `feat(diagnostics): report why each component rendered` |
+| 258 | **deferred**, as recommended in 8 - consumer compile break, own release |  |
+
+**Found during the work, not in the reports.** Each is in `Plans~/REMAINING_WORK.md`:
+
+- **PKG-DEPS** - `package.json` declares only newtonsoft-json while `Ruitk.Ugui`
+  needs `com.unity.ugui` and the Doom sample needs `com.unity.inputsystem`. A
+  project without them gets assemblies that do not compile. Found by the new
+  editor-compile gate on its first run.
+- **SG-HMR-LOOP** - the two emitters give `@foreach` different tree shapes, so
+  sibling positional identity differs between the Editor and a build. The parity
+  contract does not cover loop emission at all.
+- **VNODE-POOL** - the #252 fix is correct only while the VNode pool stays
+  dormant. Reciprocal comments are in place at all three sites; the decision
+  (wire it up, or delete it) is still open.
+- **DIST-TILDE** - `publish.yml` ships most `~` folders to UPM consumers,
+  including `SourceGenerator~/`, `ide-extensions~/` and `Plans~/`. `~` hides a
+  folder from Unity, not from the packer.
+
+**The gap in 10, partly closed.** Three gates shipped:
+`check-meta-files.mjs`, `check-path-separators.mjs` and
+`unity-editor-compile.mjs` (wired into `.github/workflows/unity-editor.yml`,
+inert until `UNITY_EMAIL`/`UNITY_PASSWORD` are set, not yet a required context).
+Still open from that list: the git-URL install smoke test and the WebGL/IL2CPP
+build job - the latter is the only thing that can confirm #253's fix or settle
+IL2CPP-BIND.
+
+**Verification.** SG 1915/1915, LSP 185/185, shared core 93/93 (78 before),
+`unity-compile-check` green on both configurations, and a real Unity batch-mode
+import building 20 assemblies with 0 missing and 0 compile errors.
+
+---
+
 ## 0. Summary
 
 | # | Kind | Claim verified? | Fix risk | Consumer-visible? | Wave |

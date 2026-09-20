@@ -6,6 +6,104 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.20.0] - 2026-09-20
+
+Seven reported issues, fixed with the gates that would have caught them. Every
+one of the five bugs lived somewhere nothing tested: macOS, IL2CPP, or installing
+the package from a git URL.
+
+### Fixed
+
+- **An empty fragment or portal kept its children on screen.** `N -> N-1`
+  unmounted correctly; `N -> 0` did not. A fragment whose children all disappeared
+  — a `@foreach` over an emptied collection, or conditional children with every
+  condition false — left its last render mounted. `UpdateFragment` and
+  `UpdatePortal` treated an empty children list the same as "no information" and
+  bailed out to a clone of the previous children. Both now branch on null alone,
+  which is what host components have always done and why they never had the bug.
+  Null still means "keep what is there"; empty is a render result and deletes.
+
+- **The asset registry folder was built with Windows separators.** On macOS and
+  Linux a backslash is an ordinary filename character, so
+  `Directory.CreateDirectory` created one directory literally named
+  `Assets\Ruitk\Resources` beside `Assets/` while `AssetDatabase.CreateAsset` went
+  on expecting the folder tree. The registry was never written, so `Asset<T>()`,
+  `Ast<T>()` and `@uss` lookups returned null in player builds. Auditing the
+  pattern found a second instance nobody had reported: the csproj postprocessor
+  wrote every `<AdditionalFiles Include>` as `\Users\...` on those platforms. A
+  project that already hit this has a junk directory with backslashes in its name;
+  the package now names it once per domain reload with the remedy, and does not
+  delete it.
+
+- **Hot Module Replacement could not start on macOS.** It computed the editor's
+  data directory as `dirname(applicationPath) + "/Data"`, the Windows install
+  shape. The same assumption was in a second place — the check that decides
+  whether Unity's bundled runtime can host the language server — so both now go
+  through one locator that probes `EditorApplication.applicationContentsPath`,
+  Unity's own answer and correct on every platform, with overrides via
+  `$RUITK_UNITY_DATA` and `.ruitk-local.json`. When every candidate fails, the
+  error lists all of them instead of naming one path. **macOS HMR is still
+  unverified** — the code no longer depends on knowing the layout, but nothing has
+  run there yet.
+
+- **WebGL and other IL2CPP builds failed to compile the multi-column trackers.**
+  `MultiColumnLayoutTracker<TView, TState>` constrained `TState` to an interface
+  with no `class`, then assigned through it; IL2CPP's generic sharing cannot emit
+  that for a `TState` that might be a value type. All five generic trackers have
+  the same shape and all five now carry the constraint. Every instantiation
+  already passed a sealed class, and the trackers are `internal`, so no consumer
+  code changes.
+
+- **Three Builder files, and four more assets, shipped without a `.meta`.** Unity
+  cannot write a `.meta` into an immutable package, so installing by git URL left
+  those scripts unimported, their assembly definition failing, and the editor
+  loading none of the package's assemblies — with an error naming a missing type
+  rather than a missing file. Embedded and Asset Store installs are writable, so
+  Unity generated the metas there and the defect was invisible on both paths a
+  developer actually tests.
+
+### Added
+
+- **`SignalFactory.Create<T>(initialValue, comparer)`** — a signal owned by its
+  caller. `SignalFactory.Get` parks its signal in a process-wide registry that has
+  no remove, so a short-lived owner had to invent a unique key and then leak a
+  registry entry plus its last value for the lifetime of the process. A created
+  signal is never registered, is not reachable through `TryGet`, cannot collide
+  with a key, and is collected with whatever holds it. Identical in every other
+  respect, `useSignal` included.
+
+- **`Ruitk.Diagnostics.WhyDidYouRender` now reports why each component rendered.**
+  `FiberReconciler.MetricsEmitted` gives per-commit totals with no component
+  names; this gives the names and the reasons. The reconciler's bailout already
+  decided on exactly four facts — first mount, a queued state update, unequal
+  props, changed context, a different children list — and discarded them; they are
+  now a `RenderReason` flags value, delivered to the console via `Enabled` or to a
+  subscriber via the `Rendered` event. `RenderReason.None` means the bailout fired
+  and the body did not run, which is what you want to see for a component you have
+  just memoised. When nothing is subscribed the reconciler tests one static bool
+  and does nothing else; component names resolve only inside the reporting call
+  and are cached per component function.
+
+### Changed
+
+- **Three CI gates, because each of these defects is mechanical and invisible on
+  the platform we develop on.** `check-meta-files.mjs` requires a committed
+  `.meta` for every Unity-visible tracked asset — files and directories — and
+  rejects orphaned metas and duplicate GUIDs. `check-path-separators.mjs` bans
+  rewriting a path's separators to backslashes, with an inline opt-out that
+  carries a reason. `unity-editor-compile.mjs` imports the package into a
+  throwaway project and compiles every assembly definition in batch mode, then
+  checks each one actually produced an assembly — the first compile coverage
+  `Editor/` and `Builder/` have ever had, and the check that turns a missing
+  `.meta` into a failure instead of a silence.
+
+- **The browser prototype no longer ships.** `ruitkUiBuiler/` — a design
+  proof-of-concept whose folder name misspelled "Builder" — sat at the package
+  root where Unity imported it. It has moved to `Builder~/poc-visual-editor/`,
+  which the Asset Database ignores.
+
+---
+
 ## [0.19.3] - 2026-09-16
 
 ### Changed
