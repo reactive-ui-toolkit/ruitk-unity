@@ -1,0 +1,143 @@
+# Compiles the package the way a consumer's editor does, and records where a given
+# platform keeps the editor's bundled .NET runtime.
+#
+# Why this exists: test.yml's `gates` job runs unity-compile-check.mjs, which builds
+# Shared/ + Runtime/ in a standalone csproj -- fast, no licence, and unable to reach
+# Editor/ or Builder/. Ruitk.Editor references Ruitk.Ugui, Ruitk.Ugui needs
+# UnityEngine.UI and Unity.TextMeshPro, and those live in a PROJECT's package cache
+# rather than the editor install, so the cheap route stops at the assembly boundary.
+# Everything under Editor/ (HMR, the asset registry, the csproj postprocessor) and
+# everything under Builder/ therefore has zero compile coverage today. Both instances
+# of #254 were in Editor/; #256 was three Editor-assembly files with no .meta, which
+# shows up here as an asmdef that produced no assembly at all.
+#
+# This workflow is DELIBERATELY NOT one of test.yml's four required contexts
+# (gates/tests/extensions/docs). Those are named in the branch rulesets, and a fifth
+# required context would have to be added there before it could block anything. Until
+# the owner decides to require it, a failure here is visible but not blocking.
+#
+# INERT UNTIL ARMED, exactly like publish.yml's build-unitypackage: Unity discontinued
+# manual (.alf/.ulf) activation for Personal licences, so a run activates a named-user
+# seat and returns it afterwards. Set UNITY_EMAIL + UNITY_PASSWORD (a Unity ID WITHOUT
+# two-factor auth) to arm it; verify with the "Unity license check" workflow. Without
+# the secrets every job prints a notice and passes, so nobody pays for CI they did not
+# ask for.
+name: Unity editor
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ── Every asmdef compiles, in a real editor ────────────────────────────────
+  editor-compile:
+    name: editor-compile
+    runs-on: ubuntu-latest
+    env:
+      # Keep in lockstep with publish.yml's build-unitypackage and
+      # unity-license-check.yml -- one editor version across every Unity-in-CI lane.
+      UNITY_VERSION: "6000.2.6f1"
+      HAS_LICENSE: ${{ secrets.UNITY_EMAIL != '' && secrets.UNITY_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check licence arming
+        id: check
+        run: |
+          if [ "$HAS_LICENSE" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Unity editor compile::INERT -- add UNITY_EMAIL + UNITY_PASSWORD repo secrets (a no-2FA Unity ID) to arm it; verify with the Unity license check workflow."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compile every asmdef in a shell project
+        if: steps.check.outputs.skip == 'false'
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          set -e
+          docker run --rm \
+            -v "$PWD:/workspace" -w /workspace \
+            -e UNITY_EMAIL -e UNITY_PASSWORD \
+            unityci/editor:ubuntu-${UNITY_VERSION}-base-3 \
+            bash -lc '
+              set -e
+              # The seat is returned whatever happens -- a leaked activation blocks the
+              # next run, and there is only one seat.
+              trap "unity-editor -batchmode -nographics -quit -returnlicense -username \"$UNITY_EMAIL\" -password \"$UNITY_PASSWORD\" -logFile - || true" EXIT
+
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends nodejs
+
+              unity-editor -batchmode -nographics -quit \
+                -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" \
+                -createProject /tmp/licence-warmup -logFile - > /dev/null
+
+              RUITK_UNITY_EXE=unity-editor node scripts/unity-editor-compile.mjs --clean
+            '
+
+  # ── Where does this platform keep the bundled runtime? ─────────────────────
+  #
+  # #255: HMR computed the editor's data directory as
+  # `dirname(EditorApplication.applicationPath) + "/Data"`, which is the Windows
+  # install shape, so it could not start on macOS. The fix probes
+  # EditorApplication.applicationContentsPath -- Unity's own answer, correct on every
+  # platform -- and falls back through a list of candidate subdirectories, so it no
+  # longer depends on knowing any particular layout.
+  #
+  # This job records the layout as FACT rather than as the issue's assertion, and
+  # guards the next Windows-only path assumption. It is workflow_dispatch only:
+  # macos runners have no Unity preinstalled, so every run pays for an editor
+  # install. Run it once per Unity major, not per pull request.
+  macos-layout:
+    name: macos-layout
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    env:
+      UNITY_VERSION: "6000.2.6f1"
+      HAS_LICENSE: ${{ secrets.UNITY_EMAIL != '' && secrets.UNITY_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check licence arming
+        id: check
+        run: |
+          if [ "$HAS_LICENSE" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=macOS layout::INERT -- needs UNITY_EMAIL + UNITY_PASSWORD."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install the Unity editor
+        if: steps.check.outputs.skip == 'false'
+        uses: game-ci/unity-builder@v4
+        with:
+          unityVersion: ${{ env.UNITY_VERSION }}
+          targetPlatform: StandaloneOSX
+          allowDirtyBuild: true
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Record the bundled-runtime layout and compile
+        if: steps.check.outputs.skip == 'false'
+        run: node scripts/unity-editor-compile.mjs --clean --print-layout

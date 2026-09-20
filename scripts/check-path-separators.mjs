@@ -9,8 +9,9 @@
  * on expecting the folder tree. The asset registry was never written and every Asset<T>()/Ast<T>()
  * and @uss lookup returned null in player builds -- on the two platforms this project cannot test.
  * Auditing for the pattern turned up a second, unreported instance the same afternoon
- * (UitkxCsprojPostprocessor turning "/Users/..." into "\Users\..."), which is the whole argument for
- * a gate: the defect is mechanical, invisible on Windows, and nobody finds the second one.
+ * (UitkxCsprojPostprocessor turning "/Users/..." into "\Users\..."). path-gate-allow: the damage
+ * this gate describes, not a machine path. That second instance is the whole argument for a gate:
+ * the defect is mechanical, invisible on Windows, and nobody ever finds the second one.
  *
  * THE RULE. Exactly one direction is banned: forward slash TO backslash. Its opposite
  * (`Replace('\\', '/')`, normalising to Unity's asset-path form) is correct and ubiquitous here, as

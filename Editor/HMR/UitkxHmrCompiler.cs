@@ -2671,69 +2671,41 @@ namespace Ruitk.EditorSupport.HMR
 
         private void FindCompilerPaths()
         {
-            // Unity Editor path: EditorApplication.applicationPath → .../Unity.exe
-            string editorDir = Path.GetDirectoryName(EditorApplication.applicationPath);
-            string dataDir = Path.Combine(editorDir, "Data");
-
-            _dotnetPath = Path.Combine(dataDir, "NetCoreRuntime", "dotnet.exe");
-            if (!File.Exists(_dotnetPath))
+            if (
+                !Ruitk.EditorSupport.UnityBundledRuntime.TryFindScriptingRoot(
+                    out string scriptingRoot,
+                    out string dotnetHost,
+                    out var runtimeProbed
+                )
+            )
             {
-                // macOS/Linux fallback
-                _dotnetPath = Path.Combine(dataDir, "NetCoreRuntime", "dotnet");
-            }
-            if (!File.Exists(_dotnetPath))
                 throw new FileNotFoundException(
-                    $"dotnet runtime not found at {Path.Combine(dataDir, "NetCoreRuntime")}"
+                    "UITKX HMR could not find the Unity editor's bundled .NET runtime. Probed:\n"
+                        + Ruitk.EditorSupport.UnityBundledRuntime.DescribeProbe(runtimeProbed)
+                        + "\n"
+                        + Ruitk.EditorSupport.UnityBundledRuntime.OverrideHint
                 );
-
-            _cscPath = FindBundledCsc(dataDir);
-        }
-
-        /// <summary>
-        /// Locates the editor's bundled Roslyn compiler across Unity layouts.
-        /// Through 6000.4 it lives in a dedicated <c>Data/DotNetSdkRoslyn</c> folder;
-        /// 6000.5 removed that folder and ships Roslyn inside the full bundled .NET
-        /// SDK under a VERSION-NUMBERED directory (e.g.
-        /// <c>Data/DotNetSdk/sdk/8.0.318/Roslyn/bincore/csc.dll</c>), so the SDK
-        /// segment is enumerated rather than hardcoded — highest version wins when
-        /// several are present. The existing <c>NetCoreRuntime</c> host runs either
-        /// csc (verified against 6000.5.6f1: Roslyn 4.10.0 under the bundled host).
-        /// </summary>
-        private static string FindBundledCsc(string dataDir)
-        {
-            string legacy = Path.Combine(dataDir, "DotNetSdkRoslyn", "csc.dll");
-            if (File.Exists(legacy))
-                return legacy;
-
-            string sdkRoot = Path.Combine(dataDir, "DotNetSdk", "sdk");
-            if (Directory.Exists(sdkRoot))
-            {
-                string bestCsc = null;
-                Version bestVer = null;
-                foreach (string dir in Directory.GetDirectories(sdkRoot))
-                {
-                    string candidate = Path.Combine(dir, "Roslyn", "bincore", "csc.dll");
-                    if (!File.Exists(candidate))
-                        continue;
-                    Version.TryParse(Path.GetFileName(dir), out Version ver);
-                    if (bestCsc == null
-                        || (ver != null && (bestVer == null || ver > bestVer)))
-                    {
-                        bestCsc = candidate;
-                        bestVer = ver;
-                    }
-                }
-                if (bestCsc != null)
-                    return bestCsc;
             }
+            _dotnetPath = dotnetHost;
 
-            throw new FileNotFoundException(
-                "Roslyn csc.dll not found — probed "
-                    + legacy
-                    + " (Unity <= 6000.4 layout) and "
-                    + Path.Combine(sdkRoot, "<version>", "Roslyn", "bincore", "csc.dll")
-                    + " (Unity 6000.5+ layout)"
-            );
+            if (
+                !Ruitk.EditorSupport.UnityBundledRuntime.TryFindBundledCsc(
+                    scriptingRoot,
+                    out string cscPath,
+                    out var cscProbed
+                )
+            )
+            {
+                throw new FileNotFoundException(
+                    "UITKX HMR found the bundled .NET runtime at "
+                        + dotnetHost
+                        + " but no Roslyn csc.dll beside it. Probed:\n"
+                        + Ruitk.EditorSupport.UnityBundledRuntime.DescribeProbe(cscProbed)
+                        + "\n"
+                        + Ruitk.EditorSupport.UnityBundledRuntime.OverrideHint
+                );
+            }
+            _cscPath = cscPath;
         }
 
         // ── Compilation ───────────────────────────────────────────────────────
