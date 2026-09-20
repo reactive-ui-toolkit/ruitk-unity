@@ -40,8 +40,9 @@ sitting in the project.
 
 Proof this is not hypothetical: `ruitkUiBuiler/` (the browser POC at the package
 root) shipped in 0.18.1 and was still in the staged project afterwards. It was
-excluded from 0.19.1 onward in `config.json` — and that fix only lands if the old
-folder is deleted before the import.
+excluded from 0.19.1 onward in `config.json`, and has since moved to
+`Builder~/poc-visual-editor/` where Unity does not import it at all — and that
+fix only lands if the old folder is deleted before the import.
 
 ### 2. Import the new package
 
@@ -56,8 +57,9 @@ upload is exactly what CI validated.
 Three checks, all in `Assets/ReactiveUIToolkit/`:
 
 - `package.json` shows the **new version**
-- `Builder/` **is** present (the editor tool — not to be confused with
-  `ruitkUiBuiler/`, the POC, whose folder name is a typo of "Builder")
+- `Builder/` **is** present (the editor tool). `ruitkUiBuiler/` — the POC, whose
+  folder name was a typo of "Builder" — must be **absent**; a project staged
+  before the move still has it, so delete it by hand per the warning above
 - anything newly added to the omit lists is **gone**
 
 ### 4. Validator, then Uploader

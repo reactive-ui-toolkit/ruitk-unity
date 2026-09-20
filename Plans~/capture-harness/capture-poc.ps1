@@ -1,4 +1,4 @@
-# Captures the POC (ruitkUiBuiler/index.html) in a set of scripted UI states via
+# Captures the POC (Builder~/poc-visual-editor/index.html) in a set of scripted UI states via
 # headless Edge/Chrome. Each state is produced by copying the POC to a temp file
 # with a boot script appended, then screenshotting that copy — the POC exposes
 # its driver functions globally, so any state it can reach interactively is
@@ -16,7 +16,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$poc = Join-Path $repoRoot 'ruitkUiBuiler\index.html'
+$poc = Join-Path $repoRoot 'Builder~\poc-visual-editor\index.html'
 if (-not (Test-Path $poc)) { throw "POC not found at $poc" }
 
 $browser = @(
