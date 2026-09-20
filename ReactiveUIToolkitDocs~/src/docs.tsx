@@ -493,7 +493,7 @@ export const sections: DocSection[] = [
         title: 'Debugging Guide',
         path: '/debugging',
         keywords: ['debugging', 'troubleshooting', 'logs', 'generated code'],
-        searchContent: 'debugging guide diagnose fix common issues inspecting generated code .uitkx .uitkx.g.cs roslyn source generator vs code definition f12 generatedfiles analyzers #line directives breakpoint stack trace ui toolkit debugger lsp server logs trace level uitkx.trace.server verbose output panel json-rpc missing completions stale diagnostics crashes formatter issues format-on-save reporting bugs',
+        searchContent: 'debugging guide diagnose fix common issues why did this render whydidyourender renderreason bailout props changed context changed children changed state update first mount rendered event metricsemitted component name inspecting generated code .uitkx .uitkx.g.cs roslyn source generator vs code definition f12 generatedfiles analyzers #line directives breakpoint stack trace ui toolkit debugger lsp server logs trace level uitkx.trace.server verbose output panel json-rpc missing completions stale diagnostics crashes formatter issues format-on-save reporting bugs',
         element: () => <UitkxDebuggingPage />,
       },
     ],

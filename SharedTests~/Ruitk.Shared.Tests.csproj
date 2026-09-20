@@ -89,6 +89,7 @@
     <Compile Include="../Shared/Core/Util/SafeAreaUtility.cs" Link="Linked/Util/SafeAreaUtility.cs" />
     <Compile Include="../Shared/Core/Diagnostics/InternalLogOptions.cs" Link="Linked/Diagnostics/InternalLogOptions.cs" />
     <Compile Include="../Shared/Core/Diagnostics/DiagnosticsConfig.cs" Link="Linked/Diagnostics/DiagnosticsConfig.cs" />
+    <Compile Include="../Shared/Diagnostics/WhyDidYouRender.cs" Link="Linked/Diagnostics/WhyDidYouRender.cs" />
     <Compile Include="../Shared/Elements/ElementRegistry.cs" Link="Linked/Elements/ElementRegistry.cs" />
     <Compile Include="../Shared/Elements/IElementAdapter.cs" Link="Linked/Elements/IElementAdapter.cs" />
     <Compile Include="../Shared/Props/Typed/ErrorBoundaryProps.cs" Link="Linked/Props/ErrorBoundaryProps.cs" />
