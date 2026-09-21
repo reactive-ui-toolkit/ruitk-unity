@@ -1,15 +1,6 @@
 {
-  "name": "Ruitk.Samples",
-  "references": [
-    "Ruitk.Signals",
-    "Ruitk.Editor",
-    "Ruitk.Shared",
-    "Ruitk.Runtime",
-    "Ruitk.Ugui",
-    "UnityEngine.UI",
-    "Unity.TextMeshPro",
-    "Unity.InputSystem"
-  ],
+  "name": "Ruitk.Signals",
+  "references": [],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

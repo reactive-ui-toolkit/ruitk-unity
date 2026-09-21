@@ -43,18 +43,44 @@ namespace Ruitk.SourceGenerator.Emitter
     /// </summary>
     public static class CSharpEmitter
     {
+        /// <param name="emitSignalHookAliases">
+        /// Whether this unit needs the two <c>useSignal</c> wrappers. One of them names
+        /// <c>Ruitk.Signals.Signal&lt;T&gt;</c>, and since 0.21.0 that type lives in its own
+        /// assembly -- so emitting it unconditionally would force EVERY assembly containing
+        /// a .uitkx file to reference Ruitk.Signals, including assemblies that never heard
+        /// of a signal. Defaults to true so that any caller which does not know about the
+        /// distinction keeps the pre-0.21.0 output exactly.
+        /// </param>
         public static string Emit(
             string filePath,
             DirectiveSet directives,
             ImmutableArray<AstNode> rootNodes,
             PropsResolver resolver,
             IList<Diagnostic> diagnostics,
-            IReadOnlyDictionary<string, string>? hookKeyMap = null
+            IReadOnlyDictionary<string, string>? hookKeyMap = null,
+            bool emitSignalHookAliases = true
         )
         {
-            var ctx = new EmitContext(filePath, directives, resolver, diagnostics, hookKeyMap);
+            var ctx = new EmitContext(
+                filePath,
+                directives,
+                resolver,
+                diagnostics,
+                hookKeyMap,
+                emitSignalHookAliases
+            );
             return ctx.BuildSource(rootNodes);
         }
+
+        /// <summary>
+        /// Whether a source file could possibly call one of the <c>useSignal</c> wrappers.
+        /// They are private static members of the generated partial class, so the ONLY way
+        /// to reach one is to spell its name -- which makes a plain substring test exact in
+        /// the direction that matters. A false positive (the word in a comment) merely
+        /// restores the old output; a false negative is not reachable.
+        /// </summary>
+        public static bool SourceUsesSignalHook(string source) =>
+            source != null && source.IndexOf("useSignal", System.StringComparison.Ordinal) >= 0;
     }
 
     // -- Implementation --------------------------------------------------------
@@ -150,9 +176,11 @@ namespace Ruitk.SourceGenerator.Emitter
             DirectiveSet directives,
             PropsResolver resolver,
             IList<Diagnostic> diagnostics,
-            IReadOnlyDictionary<string, string>? hookKeyMap = null
+            IReadOnlyDictionary<string, string>? hookKeyMap = null,
+            bool emitSignalHookAliases = true
         )
         {
+            _emitSignalHookAliases = emitSignalHookAliases;
             _filePath = filePath;
             _directives = directives;
             _resolver = resolver;
@@ -166,6 +194,7 @@ namespace Ruitk.SourceGenerator.Emitter
             _factory = _isUgui ? "global::Ruitk.Ugui.U" : "V";
         }
 
+        private readonly bool _emitSignalHookAliases;
         private readonly bool _isUgui;
         private readonly string _factory;
 
@@ -1211,13 +1240,21 @@ namespace Ruitk.SourceGenerator.Emitter
             L(
                 $"{I2}private static void provideContext(string key, object value) => Hooks.ProvideContext(key, value);"
             );
-            // useSignal (two overloads)
-            L(
-                $"{I2}private static T useSignal<T>(global::Ruitk.Signals.Signal<T> signal) => Hooks.UseSignal(signal);"
-            );
-            L(
-                $"{I2}private static T useSignal<T>(string key, T initialValue = default) => Hooks.UseSignal(key, initialValue);"
-            );
+            // useSignal (two overloads) -- emitted only when the file actually names
+            // useSignal. The first overload mentions Ruitk.Signals.Signal<T>, which since
+            // 0.21.0 is a separate assembly; emitting it into every generated file would
+            // make every .uitkx-bearing assembly reference Ruitk.Signals whether or not it
+            // uses signals. Both go together: a file that calls useSignal may call either
+            // overload, and a file that never names it cannot call either.
+            if (_emitSignalHookAliases)
+            {
+                L(
+                    $"{I2}private static T useSignal<T>(global::Ruitk.Signals.Signal<T> signal) => Hooks.UseSignal(signal);"
+                );
+                L(
+                    $"{I2}private static T useSignal<T>(string key, T initialValue = default) => Hooks.UseSignal(key, initialValue);"
+                );
+            }
             // useReducer
             L(
                 $"{I2}private static (TState state, global::System.Action<TAction> dispatch) useReducer<TState, TAction>(global::System.Func<TState, TAction, TState> reducer, TState initialState) => Hooks.UseReducer(reducer, initialState);"

@@ -1,6 +1,8 @@
 {
   "name": "Ruitk.Shared",
-  "references": [],
+  "references": [
+    "Ruitk.Signals"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

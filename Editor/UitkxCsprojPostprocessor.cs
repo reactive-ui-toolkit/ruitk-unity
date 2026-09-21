@@ -59,10 +59,11 @@ namespace Ruitk.Editor
 
                 foreach (string uitkxPath in uitkxPaths)
                 {
-                    // XDocument.Parse can fail if the content has an XML declaration
-                    // with encoding. Use an absolute, back-slash path so MSBuild and
-                    // Roslyn's AdditionalFiles mechanism can locate the file.
-                    string absolutePath = Path.GetFullPath(uitkxPath).Replace('/', '\\');
+                    // Absolute so MSBuild and Roslyn's AdditionalFiles mechanism can locate the
+                    // file regardless of the csproj's own directory. GetFullPath already returns
+                    // the platform's separator; forcing '\' here was a no-op on Windows and turned
+                    // "/Users/…" into "\Users\…" everywhere else.
+                    string absolutePath = Path.GetFullPath(uitkxPath);
 
                     itemGroup.Add(
                         new XElement(

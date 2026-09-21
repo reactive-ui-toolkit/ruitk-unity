@@ -53,8 +53,8 @@
     <Compile Include="../Shared/Core/Router/RouterState.cs" Link="Linked/Router/RouterState.cs" />
     <Compile Include="../Shared/Core/Router/RouterTagAliases.cs" Link="Linked/Router/RouterTagAliases.cs" />
     <Compile Include="../Shared/Core/Router/RouterContextKeys.cs" Link="Linked/Router/RouterContextKeys.cs" />
-    <Compile Include="../Shared/Core/Signals/Signal.cs" Link="Linked/Signals/Signal.cs" />
-    <Compile Include="../Shared/Core/Signals/SignalsRuntime.cs" Link="Linked/Signals/SignalsRuntime.cs" />
+    <Compile Include="../Signals/Signal.cs" Link="Linked/Signals/Signal.cs" />
+    <Compile Include="../Signals/SignalsRuntime.cs" Link="Linked/Signals/SignalsRuntime.cs" />
     <Compile Include="../Shared/Core/Util/ShallowCompare.cs" Link="Linked/Util/ShallowCompare.cs" />
   </ItemGroup>
 
@@ -89,6 +89,7 @@
     <Compile Include="../Shared/Core/Util/SafeAreaUtility.cs" Link="Linked/Util/SafeAreaUtility.cs" />
     <Compile Include="../Shared/Core/Diagnostics/InternalLogOptions.cs" Link="Linked/Diagnostics/InternalLogOptions.cs" />
     <Compile Include="../Shared/Core/Diagnostics/DiagnosticsConfig.cs" Link="Linked/Diagnostics/DiagnosticsConfig.cs" />
+    <Compile Include="../Shared/Diagnostics/WhyDidYouRender.cs" Link="Linked/Diagnostics/WhyDidYouRender.cs" />
     <Compile Include="../Shared/Elements/ElementRegistry.cs" Link="Linked/Elements/ElementRegistry.cs" />
     <Compile Include="../Shared/Elements/IElementAdapter.cs" Link="Linked/Elements/IElementAdapter.cs" />
     <Compile Include="../Shared/Props/Typed/ErrorBoundaryProps.cs" Link="Linked/Props/ErrorBoundaryProps.cs" />

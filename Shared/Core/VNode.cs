@@ -278,6 +278,14 @@ namespace Ruitk.Core
         /// <summary>
         /// Schedule a VirtualNode for return to pool on next flush.
         /// Nodes with generation 0 (user-created via public constructor) are ignored.
+        ///
+        /// DORMANT: nothing calls this, so <c>s_pool</c> is always empty, <c>__Rent</c>
+        /// always allocates and <c>__Reset</c> never runs. Waking it up is not a local
+        /// decision. <c>__Reset</c> sets <c>_children</c> to the shared empty list, and
+        /// <c>FiberFragment.UpdateFragment</c> / <c>FiberReconciler.UpdatePortal</c> now
+        /// read an empty children list as "delete my children" - correct while a fiber
+        /// can only ever hold a live node, wrong the moment a recycled one can reach it.
+        /// Re-enable the returns and those two guards must be revisited together.
         /// </summary>
         internal static void __ScheduleReturn(VirtualNode v)
         {

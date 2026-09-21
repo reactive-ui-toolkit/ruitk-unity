@@ -11,6 +11,10 @@ namespace Ruitk.Signals
             Key = key ?? string.Empty;
         }
 
+        /// <summary>
+        /// The registry key this signal is addressed by, or empty for one made with
+        /// <c>SignalFactory.Create</c>, which is owned by its caller and never registered.
+        /// </summary>
         public string Key { get; }
         internal abstract Type ValueType { get; }
         internal abstract object UntypedValue { get; }

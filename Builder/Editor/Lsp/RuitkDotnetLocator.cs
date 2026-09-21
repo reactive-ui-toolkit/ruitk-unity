@@ -94,28 +94,20 @@ namespace Ruitk.Builder
             dotnetPath = null;
             try
             {
-                string editorDir = Path.GetDirectoryName(EditorApplication.applicationPath);
-                if (editorDir == null)
-                    return false;
-                string exe = Path.Combine(editorDir, "Data", "NetCoreRuntime",
-                    Application.platform == RuntimePlatform.WindowsEditor ? "dotnet.exe" : "dotnet");
-                if (!File.Exists(exe))
+                if (
+                    !Ruitk.EditorSupport.UnityBundledRuntime.TryFindScriptingRoot(
+                        out string scriptingRoot,
+                        out string host,
+                        out _
+                    )
+                )
                     return false;
 
-                string sharedDir = Path.Combine(
-                    editorDir, "Data", "NetCoreRuntime", "shared", "Microsoft.NETCore.App");
-                if (!Directory.Exists(sharedDir))
+                if (Ruitk.EditorSupport.UnityBundledRuntime.BundledSharedFrameworkMajor(scriptingRoot) < 8)
                     return false;
-                foreach (string dir in Directory.GetDirectories(sharedDir))
-                {
-                    string name = Path.GetFileName(dir);
-                    if (Version.TryParse(name, out var v) && v.Major >= 8)
-                    {
-                        dotnetPath = exe;
-                        return true;
-                    }
-                }
-                return false;
+
+                dotnetPath = host;
+                return true;
             }
             catch
             {

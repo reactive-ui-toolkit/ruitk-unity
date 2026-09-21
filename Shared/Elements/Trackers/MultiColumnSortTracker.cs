@@ -11,7 +11,7 @@ namespace Ruitk.Elements
     internal sealed class MultiColumnSortTracker<TView, TState>
         : IElementStateTracker<TView, TState>
         where TView : UnityEngine.UIElements.VisualElement
-        where TState : ISortState
+        where TState : class, ISortState
     {
         public void Attach(TView tv, TState state, IReadOnlyDictionary<string, object> props)
         {

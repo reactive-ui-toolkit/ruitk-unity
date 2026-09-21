@@ -7,7 +7,7 @@ namespace Ruitk.Elements
 {
     internal sealed class ExpansionStateTracker<TView, TState>
         where TView : VisualElement
-        where TState : IExpansionState
+        where TState : class, IExpansionState
     {
         public void Attach(
             TView view,
