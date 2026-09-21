@@ -40,6 +40,14 @@ const ALLOW_MISSING = args.includes('--allow-missing')
 
 const shellProject = join(tmpdir(), 'ruitk-editor-compile')
 
+// CI needs this path to aim a -executeMethod run at the SAME project, which is the only
+// one that references the package. Printing it beats recomputing tmpdir() in bash, where
+// macOS TMPDIR carries a trailing slash and the two spellings silently disagree.
+if (args.includes(String.fromCharCode(45,45) + 'print-project-path')) {
+  console.log(shellProject)
+  process.exit(0)
+}
+
 // ---------------------------------------------------------------------------
 // Unity discovery
 // ---------------------------------------------------------------------------
