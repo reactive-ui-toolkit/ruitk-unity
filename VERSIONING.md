@@ -9,6 +9,18 @@
 
 All releases follow [Semantic Versioning 2.0.0](https://semver.org/).
 
+### Before 1.0.0
+
+While the leading digit is `0`, a breaking change bumps the MINOR digit rather
+than the major one: `0.20.x` -> `0.21.0`. SemVer leaves `0.y.z` deliberately
+unconstrained, and reserving `1.0.0` for the API-stability promise is worth more
+than spending it on the first breaking change that comes along.
+
+Everything below describes the post-1.0.0 rules, and applies today with that one
+substitution. A breaking change still earns a **Breaking** changelog entry, a
+migration note, and - where the edit is mechanical - a codemod. The version digit
+is the only thing this clause changes.
+
 ### Major (X.0.0)
 
 A major bump signals breaking changes. Users may need to update code.

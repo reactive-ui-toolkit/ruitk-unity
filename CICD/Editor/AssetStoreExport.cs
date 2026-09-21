@@ -79,6 +79,7 @@ namespace Ruitk.CICD
                 // Must-ship guard rails: a store install is broken without these.
                 RequirePrefix(paths, PackageRoot + "/Runtime");
                 RequirePrefix(paths, PackageRoot + "/Shared");
+                RequirePrefix(paths, PackageRoot + "/Signals");
                 RequirePrefix(paths, PackageRoot + "/Editor");
                 RequirePrefix(paths, PackageRoot + "/Analyzers");
 

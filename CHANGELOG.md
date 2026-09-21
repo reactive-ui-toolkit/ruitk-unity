@@ -6,6 +6,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.21.0] - 2026-09-21
+
+### Breaking
+
+- **`Signal<T>`, `SignalFactory` and `SignalsRuntime` now live in their own
+  assembly, `Ruitk.Signals`.** They were inside `Ruitk.Shared`, so referencing a
+  signal also handed you the virtual DOM, every hook and the reconciler. The point
+  of the split is that it no longer does: an assembly can now hold presentation
+  logic that publishes state through signals and is *unable* to touch the
+  renderer — not by convention, by the compiler.
+
+  **Who is affected.** Only projects that define their own assembly definitions.
+  `Ruitk.Signals` is `autoReferenced`, so code in `Assembly-CSharp` — anything not
+  inside an `.asmdef` — is untouched. Among the rest, only assemblies that name a
+  signal type, or whose `.uitkx` files call `useSignal`, need anything.
+
+  **The fix is one line** in each affected `.asmdef`: add `"Ruitk.Signals"` to
+  `references`. Three ways to get it done, in increasing order of effort:
+
+  - the editor offers it. A check runs once per domain reload, names every
+    assembly definition that needs the reference, and
+    `Assets > Reactive UI Toolkit > Fix Signals Assembly References` applies it;
+  - the codemod does a whole project at once:
+    `dotnet run --project SourceGenerator~/Tools/RuitkMigrateSignalsAsmdef -- <projectPath>`,
+    with `--dry-run` to look first. Idempotent, and it never touches the package's
+    own assembly definitions;
+  - or add the line by hand.
+
+  Unity offers no type-forwarding between assembly definitions, so there is no way
+  to make this transparent. The codemod and the in-editor check exist because the
+  edit is mechanical and nobody should have to find out about it from a `CS0246`
+  in a file they did not write.
+
+### Changed
+
+- **The generated `useSignal` wrappers are emitted only into files that use them.**
+  Every `.uitkx` file compiles to a partial class carrying lowercase hook
+  shortcuts, and one of them names `Ruitk.Signals.Signal<T>`. Emitted
+  unconditionally — as it was — that single line would have made **every** assembly
+  containing **any** `.uitkx` file reference `Ruitk.Signals`, signals or not. It is
+  now emitted only when the file actually names `useSignal`, which it must in order
+  to call one: they are private members of the generated class.
+
+  The difference is not theoretical. In this repository it is the difference
+  between all 167 sample files needing the reference and 4 of them needing it, and
+  it is why `Ruitk.Builder.Editor` — 5 `.uitkx` files, none of which use signals —
+  needs no reference at all.
+
+### Fixed
+
+- **The Unity editor-compile CI job never ran.** It installed Ubuntu's default
+  `nodejs` package, which is Node 12, and the check scripts use `??` — so the
+  container failed with `SyntaxError: Unexpected token '?'` before Unity was asked
+  to do anything. It now installs a supported Node, pinned by major, and prints the
+  version it got.
+
+---
+
 ## [0.20.0] - 2026-09-20
 
 Seven reported issues, fixed with the gates that would have caught them. Every

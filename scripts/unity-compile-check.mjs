@@ -121,7 +121,12 @@ function sourcesFor() {
   // Editor/ and Ugui/ are deliberately out of scope for now: they need UnityEditor and
   // uGUI module references and their own define sets. Shared/ + Runtime/ is where the
   // reconciler and every element adapter live, which is what this gate is protecting.
-  return ['Shared', 'Runtime']
+  //
+  // Signals/ is its own assembly (Ruitk.Signals) but belongs in the SAME csproj here:
+  // this gate compiles source, not assemblies, and Shared/ names signal types. Leaving
+  // it out turns every Shared/ file that touches a Signal into a compile error that has
+  // nothing to do with what the gate is checking.
+  return ['Shared', 'Runtime', 'Signals']
 }
 
 function run(config, managedDir) {

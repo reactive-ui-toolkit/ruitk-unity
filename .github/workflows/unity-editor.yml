@@ -87,8 +87,17 @@ jobs:
               # next run, and there is only one seat.
               trap "unity-editor -batchmode -nographics -quit -returnlicense -username \"$UNITY_EMAIL\" -password \"$UNITY_PASSWORD\" -logFile - || true" EXIT
 
+              # Ubuntu 22.04's default `nodejs` package is Node 12, which predates the
+              # nullish-coalescing operator. The check scripts use `??`, so the container
+              # died with "SyntaxError: Unexpected token '?'" before Unity was ever asked
+              # to do anything. Install a supported Node instead of writing the scripts
+              # down to an EOL runtime -- and pin the major so a future image change
+              # cannot move it.
               apt-get update -qq
+              apt-get install -y -qq --no-install-recommends curl ca-certificates
+              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
               apt-get install -y -qq --no-install-recommends nodejs
+              node --version
 
               unity-editor -batchmode -nographics -quit \
                 -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" \
