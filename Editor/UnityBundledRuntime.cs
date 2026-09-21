@@ -111,7 +111,13 @@ namespace Ruitk.EditorSupport
                 }
 
                 string sdkRoot = Path.Combine(root, "DotNetSdk", "sdk");
-                attempted.Add(Path.Combine(sdkRoot, "<version>", "Roslyn", "bincore", "csc.dll"));
+                // Built by concatenation, NOT Path.Combine: "<version>" is a human placeholder
+                // for the enumerated SDK folder, and '<' is an illegal path character. Mono's
+                // .NET Framework profile - which the Unity editor runs - throws
+                // ArgumentException("Illegal characters in path") from Path.Combine on it, so
+                // composing this diagnostic string used to kill HMR initialisation outright.
+                // .NET Core dropped that validation, which is why no test on net10.0 sees it.
+                attempted.Add(sdkRoot + "/<version>/Roslyn/bincore/csc.dll");
                 if (!Directory.Exists(sdkRoot))
                 {
                     continue;

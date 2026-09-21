@@ -1,3 +1,46 @@
+## [0.21.0] - 2026-09-21
+
+### Signals get their own assembly
+
+**BREAKING, and most of you will not notice.** `Signal<T>`, `SignalFactory` and
+`SignalsRuntime` moved out of `Ruitk.Shared` into their own assembly,
+`Ruitk.Signals`. Asmdef references are not transitive, so one that uses signals
+now has to say so.
+
+**Who is affected.** Only projects with their own `.asmdef` files.
+`Ruitk.Signals` is `autoReferenced`, so ordinary game code outside one already
+sees it. Among the rest, only assemblies naming a signal type - or whose
+`.uitkx` files call `useSignal` - need anything.
+
+**The fix is one line:** add `"Ruitk.Signals"` to that asmdef's `references`.
+Three ways:
+
+- the editor offers it. A check runs each domain reload, names every asmdef that
+  needs it, and `Assets > Reactive UI Toolkit > Fix Signals Assembly References`
+  applies it - it works even while your own code will not compile;
+- the codemod does a whole project:
+  `dotnet run --project SourceGenerator~/Tools/RuitkMigrateSignalsAsmdef -- <projectPath>`
+  (`--dry-run` to look first). Idempotent;
+- or type the line yourself.
+
+**Why bother.** Before, reaching for a signal handed you the whole toolkit - the
+virtual DOM, every hook, the reconciler. Now you can build an assembly that owns
+state, publishes it through signals, and is UNABLE to name `VirtualNode` or any
+hook. Not by convention - the compiler stops you. Unity has no type-forwarding
+between asmdefs, so this could not be made transparent; hence the tooling.
+
+**Also.** The generated `useSignal` wrappers are now emitted only into files that
+call `useSignal`. Every `.uitkx` used to get one naming `Signal<T>`, which would
+have made EVERY `.uitkx`-bearing assembly need the reference. Here that is the
+difference between 167 sample files and 4.
+
+**Fixed.** The Unity editor-compile CI job never ran: it installed Ubuntu's
+default `nodejs` (Node 12) and the check scripts use `??`.
+
+**Tests.** 1913 SG, 185 LSP, 93 core, 21 assemblies in a real editor.
+
+---
+
 ## [0.20.0] - 2026-09-20
 
 ### Seven reported issues, and the gates that would have caught them

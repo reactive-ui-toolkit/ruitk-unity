@@ -53,8 +53,8 @@
     <Compile Include="../Shared/Core/Router/RouterState.cs" Link="Linked/Router/RouterState.cs" />
     <Compile Include="../Shared/Core/Router/RouterTagAliases.cs" Link="Linked/Router/RouterTagAliases.cs" />
     <Compile Include="../Shared/Core/Router/RouterContextKeys.cs" Link="Linked/Router/RouterContextKeys.cs" />
-    <Compile Include="../Shared/Core/Signals/Signal.cs" Link="Linked/Signals/Signal.cs" />
-    <Compile Include="../Shared/Core/Signals/SignalsRuntime.cs" Link="Linked/Signals/SignalsRuntime.cs" />
+    <Compile Include="../Signals/Signal.cs" Link="Linked/Signals/Signal.cs" />
+    <Compile Include="../Signals/SignalsRuntime.cs" Link="Linked/Signals/SignalsRuntime.cs" />
     <Compile Include="../Shared/Core/Util/ShallowCompare.cs" Link="Linked/Util/ShallowCompare.cs" />
   </ItemGroup>
 

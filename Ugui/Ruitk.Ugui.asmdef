@@ -1,6 +1,7 @@
 {
   "name": "Ruitk.Ugui",
   "references": [
+    "Ruitk.Signals",
     "Ruitk.Shared",
     "Ruitk.Runtime",
     "UnityEngine.UI",

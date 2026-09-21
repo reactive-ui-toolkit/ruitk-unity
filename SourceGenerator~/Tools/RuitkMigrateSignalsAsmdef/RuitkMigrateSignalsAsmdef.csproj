@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RuitkMigrateSignalsAsmdef — the 0.21.0 signals-split codemod.
+
+    0.21.0 moved Signal<T>, SignalFactory and SignalsRuntime out of Ruitk.Shared into
+    their own assembly, Ruitk.Signals, so that a consumer can depend on signals WITHOUT
+    pulling in the virtual DOM. Unity assembly references are not transitive for the
+    compiler, so a user assembly definition that referenced Ruitk.Shared and named a
+    signal type stops compiling until it also references Ruitk.Signals.
+
+    This adds that reference to exactly the assembly definitions that need it: those
+    that reference Ruitk.Shared (directly or via Ruitk.Runtime / Ruitk.Ugui /
+    Ruitk.Editor) AND whose own sources name a signal type.
+
+    It does NOT touch code that lives outside an assembly definition. Ruitk.Signals is
+    autoReferenced, so the predefined assemblies (Assembly-CSharp and friends) already
+    see it and never broke in the first place.
+
+    Edits the references array TEXTUALLY rather than round-tripping the JSON: these
+    files are hand-written and hand-read, and a reformat would bury the one-line change
+    in a whole-file diff. Idempotent — a second run reports 0.
+
+    Modeled on Tools/RuitkMigrateBrand. Not shipped to Unity (under a `~` tools folder).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>RuitkMigrateSignalsAsmdef</AssemblyName>
+    <RootNamespace>Ruitk.SourceGenerator.Tools</RootNamespace>
+  </PropertyGroup>
+
+</Project>
