@@ -3,5 +3,6 @@
   "npmPath": "<absolute path to npm, e.g. a version-manager shim; overridden by $RUITK_NPM>",
   "unityEditor": "<absolute path to the Unity editor executable; normally auto-probed, override only if that fails>",
   "unityDataPath": "<absolute path to the directory holding NetCoreRuntime inside the Unity install -- Editor/Data on Windows, Unity.app/Contents on macOS; normally taken from EditorApplication.applicationContentsPath, override only if HMR reports it could not find the bundled runtime; overridden by $RUITK_UNITY_DATA>",
+  "embeddedClone": "<absolute path to the PACKAGE folder inside your test Unity project, e.g. <project>/Packages/com.reactiveuitoolkit; used by scripts/deploy-embedded-clone.mjs; overridden by $RUITK_EMBEDDED_CLONE>",
   "storePublisherProject": "<absolute path to the Unity project the Asset Store package is uploaded from -- the one holding Assets/ReactiveUIToolkit; see the asset-store-upload skill>"
 }

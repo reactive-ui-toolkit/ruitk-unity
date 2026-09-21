@@ -88,6 +88,11 @@ namespace Ruitk.SourceGenerator
             // emitter (producer + consumer) so RegisterHook ids and customHookFamilyKeys agree.
             var hookFamilyKeyMap = BuildHookFamilyKeyMap(directives, peerHookContainers, filePath);
 
+            // The useSignal wrappers name Ruitk.Signals.Signal<T>, which is its own assembly
+            // since 0.21.0. Emitting them into every generated file would force every
+            // .uitkx-bearing assembly to reference Ruitk.Signals, signals or not.
+            bool usesSignalHook = CSharpEmitter.SourceUsesSignalHook(source);
+
             ct.ThrowIfCancellationRequested();
 
             // ── Stage 1b2: cross-backend import guard (UITKX2113) ─────────────
@@ -366,7 +371,7 @@ namespace Ruitk.SourceGenerator
             if (!multiOrMixed)
             {
                 // Single component, no hooks/modules — byte-identical to the pre-mixed-decl path.
-                string generatedSource = CSharpEmitter.Emit(filePath, directives, rootNodes, resolver, diagnostics, hookFamilyKeyMap);
+                string generatedSource = CSharpEmitter.Emit(filePath, directives, rootNodes, resolver, diagnostics, hookFamilyKeyMap, usesSignalHook);
                 ct.ThrowIfCancellationRequested();
                 return new UitkxPipelineResult(hintName, generatedSource, diagnostics.ToImmutableArray());
             }
@@ -438,7 +443,7 @@ namespace Ruitk.SourceGenerator
                         StructureValidator.ValidateNodes(cSetupJsx, filePath, diagnostics);
                 }
 
-                string compSrc = CSharpEmitter.Emit(filePath, cd, cRoots, resolver, diagnostics, hookFamilyKeyMap);
+                string compSrc = CSharpEmitter.Emit(filePath, cd, cRoots, resolver, diagnostics, hookFamilyKeyMap, usesSignalHook);
                 if (ci == 0)
                     primarySource = compSrc; // main component keeps the canonical {file}.g.cs hint
                 else

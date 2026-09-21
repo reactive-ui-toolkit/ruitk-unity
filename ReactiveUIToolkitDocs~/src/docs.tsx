@@ -5,6 +5,7 @@ import { PAGE_VERSIONS, isAvailableIn, compareVersions } from './versionManifest
 import { KnownIssuesPage } from './pages/KnownIssues/KnownIssuesPage'
 import { MigrationPage } from './pages/Migration/MigrationPage'
 import { Migration016Page } from './pages/Migration/Migration016Page'
+import { Migration021Page } from './pages/Migration/Migration021Page'
 import { MountingPage } from './pages/Mounting/MountingPage'
 import { RoadmapPage } from './pages/Roadmap/RoadmapPage'
 import { UitkxAPIPage } from './pages/UITKX/API/UitkxAPIPage'
@@ -533,6 +534,16 @@ export const sections: DocSection[] = [
     id: 'migration',
     title: 'Migration',
     pages: [
+      {
+        id: 'migration-0-21-page',
+        canonicalId: 'migration-0-21-page',
+        title: 'Migrating to 0.21',
+        path: '/migration-0-21',
+        keywords: ['migration', '0.21', 'signals', 'assembly', 'asmdef', 'codemod', 'breaking'],
+        searchContent:
+          'migrating 0.21 signals assembly split Ruitk.Signals Signal<T> SignalFactory SignalsRuntime moved out of Ruitk.Shared own assembly definition asmdef references not transitive CS0246 type or namespace could not be found missing assembly reference autoReferenced Assembly-CSharp unaffected most projects nothing to do codemod RuitkMigrateSignalsAsmdef dotnet run --dry-run idempotent in-editor check Assets Reactive UI Toolkit Fix Signals Assembly References menu domain reload GUID references CHECK by hand useSignal generated wrapper .uitkx thin view presentation assembly cannot touch renderer VirtualNode compile error testable without unity type forwarding not possible runtime versus compile time breaking change one line',
+        element: () => <Migration021Page />,
+      },
       {
         id: 'migration-0-16-page',
         canonicalId: 'migration-0-16-page',

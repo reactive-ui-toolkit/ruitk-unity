@@ -34,6 +34,7 @@
     <Compile Include="../Tools/RuitkMigrateBrand/BrandMigrator.cs" Link="Tools/BrandMigrator.cs" />
     <Compile Include="../Tools/RuitkMigrateBrand/ScanRules.cs" Link="Tools/ScanRules.cs" />
     <Compile Include="../Tools/RuitkMigrateBrand/FileEncodings.cs" Link="Tools/FileEncodings.cs" />
+    <Compile Include="../Tools/RuitkMigrateSignalsAsmdef/SignalsAsmdefMigrator.cs" Link="Tools/SignalsAsmdefMigrator.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Use the same Roslyn version so types unify correctly. -->

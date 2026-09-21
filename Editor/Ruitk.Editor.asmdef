@@ -1,6 +1,7 @@
 {
   "name": "Ruitk.Editor",
   "references": [
+    "Ruitk.Signals",
     "Ruitk.Shared",
     "Ruitk.Runtime",
     "Ruitk.Ugui"
