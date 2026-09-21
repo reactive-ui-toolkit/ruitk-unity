@@ -21,10 +21,9 @@
 //
 //   node scripts/unity-editor-compile.mjs            compile, reusing the shell project
 //   node scripts/unity-editor-compile.mjs --clean    delete the shell project first
-//   node scripts/unity-editor-compile.mjs --print-layout
-//                                                    also dump where the editor keeps its
-//                                                    bundled runtime -- the #255 question,
-//                                                    answered by the platform rather than guessed
+//   (where the editor keeps its bundled runtime is answered by the SHIPPED locator, via
+//    CICD/Editor/BundledRuntimeReport.cs and -executeMethod -- not re-implemented here,
+//    because a copy of that logic cannot fail the way the real one does)
 //   node scripts/unity-editor-compile.mjs --allow-missing
 //                                                    skip (exit 0) when no Unity is installed
 
@@ -37,7 +36,6 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
 const CLEAN = args.includes('--clean')
-const PRINT_LAYOUT = args.includes('--print-layout')
 const ALLOW_MISSING = args.includes('--allow-missing')
 
 const shellProject = join(tmpdir(), 'ruitk-editor-compile')
@@ -255,28 +253,3 @@ if (result.status !== 0 && result.status !== null) {
 }
 
 console.log(`\n\u2713 unity editor compile: ${produced.size} assemblies built, ${missing.length} missing.`)
-
-if (PRINT_LAYOUT) {
-  console.log('\nBundled runtime layout (the #255 question, answered by this platform):')
-  // The same candidate grid Ruitk.EditorSupport.UnityBundledRuntime walks, so what this
-  // prints is what HMR will find. The editor executable sits at a different depth on each
-  // platform (Editor/Unity.exe, Unity.app/Contents/MacOS/Unity, Editor/Unity), so the walk
-  // starts from its directory and climbs rather than assuming one of them.
-  const roots = [dirname(unity.exe), resolve(unity.exe, '..', '..'), resolve(unity.exe, '..', '..', '..')]
-  const relatives = ['', 'Data', 'Resources/Scripting', 'Contents', 'Contents/Resources/Scripting']
-  let found = 0
-  for (const root of roots) {
-    for (const relative of relatives) {
-      const candidate = relative ? join(root, relative) : root
-      const netCore = join(candidate, 'NetCoreRuntime')
-      const hit = existsSync(netCore)
-      if (hit) found++
-      console.log(`  ${hit ? 'FOUND  ' : 'absent '} ${netCore}`)
-    }
-  }
-  if (found === 0) {
-    console.error('\nx no NetCoreRuntime under any candidate — HMR cannot start on this platform.')
-    console.error('  Add the real location to UnityBundledRuntime.s_relativeRoots and to this list.')
-    process.exit(1)
-  }
-}

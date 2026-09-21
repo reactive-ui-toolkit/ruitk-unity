@@ -156,6 +156,32 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
-      - name: Record the bundled-runtime layout and compile
+      # Runs the SHIPPED locator through -executeMethod, not a re-implementation of it.
+      # An earlier version walked the same candidate grid in JavaScript, which would have
+      # reported success while the real code threw: the 0.21.0 Path.Combine("<version>")
+      # regression was an illegal-character exception that only Mono raises, on this exact
+      # path, and it killed the Builder on open. Testing a copy of the logic answers a
+      # question nobody asked.
+      - name: Probe the bundled runtime with the shipped locator
         if: steps.check.outputs.skip == 'false'
-        run: node scripts/unity-editor-compile.mjs --clean --print-layout
+        run: |
+          UNITY="$(find /Applications/Unity/Hub/Editor -maxdepth 4 -name Unity -type f -path '*MacOS*' | head -1)"
+          echo "editor: $UNITY"
+          mkdir -p /tmp/probe/Assets /tmp/probe/ProjectSettings
+          echo "m_EditorVersion: ${UNITY_VERSION}" > /tmp/probe/ProjectSettings/ProjectVersion.txt
+          # ONE run. The log goes to a file rather than a pipe so the method's exit code
+          # reaches the shell -- piping into grep would hand back grep's status instead --
+          # and the probe lines are echoed into the CI output afterwards.
+          set +e
+          "$UNITY" -batchmode -nographics -quit \
+            -projectPath /tmp/probe \
+            -executeMethod Ruitk.CICD.BundledRuntimeReport.Run \
+            -logFile /tmp/probe/probe.log
+          code=$?
+          set -e
+          grep -E "RUNTIME-PROBE|error CS" /tmp/probe/probe.log || true
+          exit $code
+
+      - name: Compile every asmdef on macOS
+        if: steps.check.outputs.skip == 'false'
+        run: node scripts/unity-editor-compile.mjs --clean
