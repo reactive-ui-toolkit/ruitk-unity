@@ -12,9 +12,28 @@ concurrency:
 
 jobs:
   # ════════════════════════════════════════════════════════════════════════════
+  # Release gate — the package must compile in a real editor before anything ships.
+  #
+  # test.yml's gates job builds Shared/ + Runtime/ in a standalone csproj, which
+  # cannot reach Editor/ or Builder/ (Ruitk.Editor references Ruitk.Ugui, which needs
+  # UPM packages that live in a project's cache, not the editor install). This imports
+  # the package into a throwaway project and compiles EVERY assembly definition, then
+  # checks each one produced an assembly — a tracked script with no committed .meta is
+  # never imported, its asmdef fails silently, and that is #256, which shipped.
+  #
+  # One definition, two entry points: the same workflow can be dispatched by hand.
+  # The macOS job stays off here (include_macos defaults false) — it installs an
+  # editor per run and answers a question that does not change per release.
+  # ════════════════════════════════════════════════════════════════════════════
+  editor-compile:
+    uses: ./.github/workflows/unity-editor.yml
+    secrets: inherit
+
+  # ════════════════════════════════════════════════════════════════════════════
   # Dist branch — publishes only if version changed
   # ════════════════════════════════════════════════════════════════════════════
   deploy-dist:
+    needs: editor-compile
     runs-on: ubuntu-latest
     # Consumed by the discord job below, which reads `version` on EVERY dispatch — the check
     # step writes it before deciding `skip`, so it is there whether or not a tag ships. `skip`
@@ -498,6 +517,7 @@ jobs:
   # verify with the "Unity license check" workflow. Idempotent via the store-v<ver> tag.
   # ════════════════════════════════════════════════════════════════════════════
   build-unitypackage:
+    needs: editor-compile
     runs-on: ubuntu-latest
     env:
       # Floor Unity version (store compatibility floor, see the plan §6). Needs a

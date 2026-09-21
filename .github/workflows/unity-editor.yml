@@ -11,32 +11,41 @@
 # of #254 were in Editor/; #256 was three Editor-assembly files with no .meta, which
 # shows up here as an asmdef that produced no assembly at all.
 #
-# This workflow is DELIBERATELY NOT one of test.yml's four required contexts
-# (gates/tests/extensions/docs). Those are named in the branch rulesets, and a fifth
-# required context would have to be added there before it could block anything. Until
-# the owner decides to require it, a failure here is visible but not blocking.
+# It does NOT run on push or pull_request. It is a release gate and an on-demand
+# check: publish.yml calls it before anything ships, and it can be dispatched by hand.
+# That keeps it off the per-PR path, where a full editor import per push is a lot of
+# CI for a tree that test.yml's gates job already compile-checks.
 #
-# INERT UNTIL ARMED, exactly like publish.yml's build-unitypackage: Unity discontinued
-# manual (.alf/.ulf) activation for Personal licences, so a run activates a named-user
-# seat and returns it afterwards. Set UNITY_EMAIL + UNITY_PASSWORD (a Unity ID WITHOUT
-# two-factor auth) to arm it; verify with the "Unity license check" workflow. Without
-# the secrets every job prints a notice and passes, so nobody pays for CI they did not
-# ask for.
+# Needs UNITY_EMAIL + UNITY_PASSWORD (a Unity ID WITHOUT two-factor auth - headless
+# activation cannot answer a 2FA prompt); a run activates a named-user seat and
+# returns it afterwards. Without the secrets every job prints a notice and passes.
+# Verify the credentials with the "Unity license check" workflow.
 name: Unity editor
 
 on:
-  push:
-    branches: [master, dev]
-  pull_request:
-    branches: [master, dev]
+  # Two entry points, one definition. publish.yml calls this workflow so that no
+  # release ships a package that does not compile in a real editor; the dispatch
+  # form is for running it by hand between releases.
   workflow_dispatch:
+    inputs:
+      include_macos:
+        description: "Also run the macOS layout job (installs a macOS editor - slow)"
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      include_macos:
+        description: "Also run the macOS layout job"
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
 
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   # ── Every asmdef compiles, in a real editor ────────────────────────────────
@@ -98,12 +107,12 @@ jobs:
   # longer depends on knowing any particular layout.
   #
   # This job records the layout as FACT rather than as the issue's assertion, and
-  # guards the next Windows-only path assumption. It is workflow_dispatch only:
-  # macos runners have no Unity preinstalled, so every run pays for an editor
-  # install. Run it once per Unity major, not per pull request.
+  # guards the next Windows-only path assumption. It is opt-in via include_macos,
+  # and off by default even on publish: macos runners have no Unity preinstalled, so
+  # every run pays for an editor install. Run it once per Unity major.
   macos-layout:
     name: macos-layout
-    if: github.event_name == 'workflow_dispatch'
+    if: inputs.include_macos
     runs-on: macos-latest
     env:
       UNITY_VERSION: "6000.2.6f1"
