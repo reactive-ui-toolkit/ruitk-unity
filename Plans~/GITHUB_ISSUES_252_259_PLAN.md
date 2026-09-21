@@ -61,7 +61,7 @@ editor-only sample compiled into the all-platforms samples assembly, which break
 a PLAYER build for every consumer on every platform. Still open from that list:
 the git-URL install smoke test.
 
-**Verification.** SG 1915/1915, LSP 185/185, shared core 93/93 (78 before),
+**Verification.** SG 1913/1913, LSP 185/185, shared core 93/93 (78 before),
 `unity-compile-check` green on both configurations, and a real Unity batch-mode
 import building 20 assemblies with 0 missing and 0 compile errors.
 

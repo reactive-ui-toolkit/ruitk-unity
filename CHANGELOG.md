@@ -59,6 +59,18 @@ the package from a git URL.
   generic `MultiColumnLayoutTracker_2_Attach_..._gshared`. `scripts/unity-il2cpp-check.mjs`
   runs that check.
 
+- **A player build of any project using this package failed to compile.** The
+  `EditorControlsDemoFunc` sample used `<TwoPaneSplitView>`, a control that exists
+  only in the Unity editor, from a file that shipped in the all-platforms samples
+  assembly and was not marked editor-only. Pressing Play was fine; building a
+  player stopped with `CS0103: The name 'TwoPaneSplitView' does not exist in the
+  current context` on a file the developer never wrote. It affected every platform
+  and both scripting backends — the package as shipped, not a bad install path. The
+  sample and its editor window are removed; everything they demonstrated is covered
+  by the remaining editor samples. Found by the first player build this repository
+  has ever run, which is also the answer to why it survived: importing the package
+  in the editor, which is what CI did, cannot see it.
+
 - **Three Builder files, and four more assets, shipped without a `.meta`.** Unity
   cannot write a `.meta` into an immutable package, so installing by git URL left
   those scripts unimported, their assembly definition failing, and the editor
