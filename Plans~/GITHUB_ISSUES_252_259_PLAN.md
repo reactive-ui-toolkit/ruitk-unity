@@ -24,7 +24,7 @@ records what actually happened, including the four things the plan did not predi
 |---|---|---|
 | 256 | **done** - and the gate found 6 more than the 3 reported | `fix(package): every Unity-visible tracked file now carries a .meta` |
 | 254 | **done** - plus a second instance in the csproj postprocessor | `fix(editor): build paths with the platform's separator` |
-| 253 | **done** - all five generic trackers, not just the one reported | `fix(elements): constrain tracker state parameters to reference types` |
+| 253 | **done + PROVEN on IL2CPP 2026-09-21** - all five generic trackers, not just the one reported | `fix(elements): constrain tracker state parameters to reference types` |
 | 252 | **done** - five tests, all failing beforehand | `fix(fiber): an empty fragment or portal now unmounts its children` |
 | 255 | **done** - one locator, probing; macOS still unverified | `fix(editor): probe for the bundled runtime` |
 | 257 | **done** - `SignalFactory.Create<T>` | `feat(signals): SignalFactory.Create` |
@@ -51,9 +51,15 @@ records what actually happened, including the four things the plan did not predi
 `check-meta-files.mjs`, `check-path-separators.mjs` and
 `unity-editor-compile.mjs` (wired into `.github/workflows/unity-editor.yml`,
 inert until `UNITY_EMAIL`/`UNITY_PASSWORD` are set, not yet a required context).
-Still open from that list: the git-URL install smoke test and the WebGL/IL2CPP
-build job - the latter is the only thing that can confirm #253's fix or settle
-IL2CPP-BIND.
+**The IL2CPP job now exists** (`scripts/unity-il2cpp-check.mjs` plus a `-executeMethod`
+entry point in `CICD/Editor/`), and it did three jobs on its first use: it PROVED
+#253 - the pre-fix build stops with `IL2CPP error for method
+MultiColumnLayoutTracker`2::Attach`, the exact method reported, and the post-fix
+build succeeds with the shared generic emitted in the generated C++ - it settled
+IL2CPP-BIND as a non-defect on the same evidence, and it found SAMPLES-PLAYER: an
+editor-only sample compiled into the all-platforms samples assembly, which breaks
+a PLAYER build for every consumer on every platform. Still open from that list:
+the git-URL install smoke test.
 
 **Verification.** SG 1915/1915, LSP 185/185, shared core 93/93 (78 before),
 `unity-compile-check` green on both configurations, and a real Unity batch-mode

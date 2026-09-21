@@ -52,7 +52,12 @@ the package from a git URL.
   that for a `TState` that might be a value type. All five generic trackers have
   the same shape and all five now carry the constraint. Every instantiation
   already passed a sealed class, and the trackers are `internal`, so no consumer
-  code changes.
+  code changes. **Proven, not inferred:** a Windows IL2CPP player built from the
+  commit before the fix stops with `IL2CPP error for method
+  'MultiColumnLayoutTracker`2::Attach'`, the exact method reported; the same build
+  from the commit after it succeeds, and the generated C++ contains the shared
+  generic `MultiColumnLayoutTracker_2_Attach_..._gshared`. `scripts/unity-il2cpp-check.mjs`
+  runs that check.
 
 - **Three Builder files, and four more assets, shipped without a `.meta`.** Unity
   cannot write a `.meta` into an immutable package, so installing by git URL left
