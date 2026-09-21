@@ -59,6 +59,23 @@ jobs:
       - name: Check for machine-local paths in tracked files
         run: node scripts/check-machine-paths.mjs
 
+      # Unity cannot write a .meta inside an immutable package, so a tracked asset with no
+      # committed .meta is never imported -- and a .cs file that is never imported fails its
+      # asmdef, which makes the Editor load NONE of the package assemblies. Three Builder files
+      # shipped that way and the package was simply dead on any git-URL install (#256). Embedded
+      # and Asset Store installs are writable, so Unity generates the metas there and the defect
+      # is invisible on both paths a developer actually tests.
+      - name: Check .meta coverage of Unity-visible tracked files
+        run: node scripts/check-meta-files.mjs
+
+      # A backslash is an ordinary filename character off Windows, so rewriting a path's
+      # separators to backslashes builds one long filename instead of a path -- silently, on the
+      # two platforms with no CI coverage. #254 was one instance (the asset registry folder, so
+      # every Asset<T>()/@uss lookup returned null in player builds); auditing for the pattern
+      # found a second, unreported one in the csproj postprocessor the same afternoon.
+      - name: Check path separators in tracked C#
+        run: node scripts/check-path-separators.mjs
+
       # Family gate (mirrored in ruitk-godot / ruitk-unreal): every plans/DISCORD_CHANGELOG.md
       # entry must fit Discord's 2000-char message cap, carry no masked [text](url) links (they
       # do not render in plain Discord messages), and keep its `## [<version>]` header unique —

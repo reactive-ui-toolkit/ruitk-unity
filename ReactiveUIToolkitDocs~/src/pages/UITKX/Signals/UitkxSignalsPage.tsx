@@ -4,6 +4,7 @@ import { CodeBlock } from '../../../components/CodeBlock/CodeBlock'
 import Styles from '../../Signals/SignalsPage.style'
 import {
   UITKX_SIGNALS_COMPONENT_EXAMPLE,
+  UITKX_SIGNALS_OWNED_EXAMPLE,
   UITKX_SIGNALS_RUNTIME_EXAMPLE,
 } from './UitkxSignalsPage.example'
 
@@ -28,6 +29,9 @@ export const UitkxSignalsPage: FC = () => (
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<>Call <code>{'SignalFactory.Get<T>(key, initialValue)'}</code> to create or return a <code>{'Signal<T>'}</code> instance.</>} />
+        </ListItem>
+        <ListItem disablePadding>
+          <ListItemText primary={<>Call <code>{'SignalFactory.Create<T>(initialValue, comparer)'}</code> for a signal with no key, owned by whatever holds it.</>} />
         </ListItem>
         <ListItem disablePadding>
           <ListItemText primary={<>Call <code>signal.Subscribe(...)</code> to watch changes outside of components; use <code>useSignal(...)</code> inside components.</>} />
@@ -72,6 +76,28 @@ export const UitkxSignalsPage: FC = () => (
         </ListItem>
       </List>
       <CodeBlock language="jsx" code={UITKX_SIGNALS_COMPONENT_EXAMPLE} />
+    </Box>
+
+    <Box sx={Styles.section}>
+      <Typography variant="h5" component="h2" gutterBottom>
+        Keyed or owner-scoped
+      </Typography>
+      <Typography variant="body1" paragraph>
+        <code>{'SignalFactory.Get<T>(key, ...)'}</code> puts the signal in the process-wide
+        registry, which is what makes it shared: everything that asks for the same key gets the
+        same instance. The registry has no remove, so a keyed signal and its last value live for
+        as long as the process does.
+      </Typography>
+      <Typography variant="body1" paragraph>
+        That is the right trade for application-wide state and the wrong one for state owned by
+        something short-lived — a presenter, a window, one screen. Those had to invent a unique
+        key and then leak a registry entry per instance.{' '}
+        <code>{'SignalFactory.Create<T>(initialValue, comparer)'}</code> is the alternative: no
+        key, never registered, not reachable through <code>TryGet</code>, and collected with
+        whatever holds it. It behaves identically in every other respect, <code>useSignal</code>
+        {' '}included.
+      </Typography>
+      <CodeBlock language="csharp" code={UITKX_SIGNALS_OWNED_EXAMPLE} />
     </Box>
 
     <Box sx={Styles.section}>

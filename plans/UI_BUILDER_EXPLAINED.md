@@ -9,7 +9,7 @@ failure is named, because the rule is not memorable without it.
 what the builder can do, stated flatly. This document is the *explanation* — why
 it is shaped this way and how the parts relate. `Plans~/UI_BUILDER_BUGS.md` is
 the defect register (UB-## ids referenced throughout).
-`ruitkUiBuiler/index.html` is the browser prototype the interaction design came
+`Builder~/poc-visual-editor/index.html` is the browser prototype the interaction design came
 from; hundreds of code comments cite it as "POC ...", and §2.1 explains what it
 is authoritative for and what it is not.
 
@@ -81,7 +81,7 @@ Without it those comments are unreadable; with it they are precise.
 
 | Path | Lines | What it is |
 |---|---|---|
-| `ruitkUiBuiler/index.html` | ~2970 | **The live one.** Newest; kept in step as the design evolved. (The folder name is misspelled - "Builer" - and it sits at the package root, so it currently ships inside the `.unitypackage`. Both are known and neither is load-bearing.) |
+| `Builder~/poc-visual-editor/index.html` | ~2970 | **The live one.** Newest; kept in step as the design evolved. It used to sit at the package root as `ruitkUiBuiler/` - a misspelling of "Builder" - where Unity imported it and it shipped inside the `.unitypackage`. Under `Builder~/` the Asset Database ignores it, and `config.json` omits the whole folder from dist. |
 | `Plans~/ruitk-ui-builder-poc/index.html` | ~2050 | The original snapshot, moved under `Plans~/` at campaign start (VE-R7) so Unity and the dist ignore it. Ships with a `README.md` describing the interaction model. |
 
 Open either by double-clicking. **No server, no build, no dependencies** - a

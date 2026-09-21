@@ -1,4 +1,4 @@
-# POC parity spec — extracted from ruitkUiBuiler/index.html
+# POC parity spec — extracted from Builder~/poc-visual-editor/index.html
 
 > The parity contract for the RUITK Builder (owner mandate 2026-08-15: the Unity
 > builder must match this POC top to bottom). Extracted by exhaustive read of the

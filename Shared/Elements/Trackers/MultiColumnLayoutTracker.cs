@@ -9,7 +9,7 @@ namespace Ruitk.Elements
     internal sealed class MultiColumnLayoutTracker<TView, TState>
         : IElementStateTracker<TView, TState>
         where TView : UnityEngine.UIElements.VisualElement
-        where TState : IColumnLayoutState
+        where TState : class, IColumnLayoutState
     {
         private static System.Collections.Generic.IEnumerable<Column> GetColumns(TView tv)
         {

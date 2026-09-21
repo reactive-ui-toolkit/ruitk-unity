@@ -7,7 +7,12 @@ namespace Ruitk.Shared.Tests.Fiber
 {
     // POCO host element. The reconciler only ever sees it as an opaque `object`
     // through the FiberHostConfig seam, which is exactly the contract under test.
-    public sealed class MockElement
+    //
+    // It derives from the shimmed VisualElement for one reason: V.Portal takes its
+    // target as a VisualElement, so a portal is untestable without it. The shim
+    // spells its members lowercase (name, parent, childCount, Add), so nothing here
+    // collides, and the reconciler still only ever sees an object.
+    public sealed class MockElement : UnityEngine.UIElements.VisualElement
     {
         public string Type;
         public MockElement Parent;

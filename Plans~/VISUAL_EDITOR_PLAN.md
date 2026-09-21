@@ -35,7 +35,7 @@ Status: **RESEARCH COMPLETE — implementation not started**
 | VE-D11 | Typed attribute menus offer everything (typed set + undeclared-native section + freeform fallback), searchable. Library searchable. Positional drag & drop and row reordering. Style authoring with key + CssHelpers value autocomplete. |
 | VE-D12 | UXML import is one-way (UI Builder asset → generated `.uitkx`). |
 | VE-D13 | World-space UI: authoring fully supported (host concern, not markup concern); the preview renders flat — a visible "flat preview" note appears when a tree is known to target world-space. Portals render on the canvas as dashed edges from portal site to named target slot, and inline in the preview with a portal badge (owned by VE-09/VE-10/VE-13). |
-| VE-D14 | The POC at `ruitkUiBuiler/` is the UX spec the implementation is held against. |
+| VE-D14 | The POC at `Builder~/poc-visual-editor/` is the UX spec the implementation is held against. |
 
 ---
 

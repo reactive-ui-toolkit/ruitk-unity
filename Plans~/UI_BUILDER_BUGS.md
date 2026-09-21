@@ -332,7 +332,7 @@ The row context menu offers exactly `Wrap in @if` and `Wrap in @foreach`
 `@if`'s `@else if` / `@else` chain.
 
 This is **not** a POC-parity gap. The POC only ever knew `@if` and `@foreach`
-(`ruitkUiBuiler/index.html` contains those two strings and no others). Copying
+(`Builder~/poc-visual-editor/index.html` contains those two strings and no others). Copying
 the POC here copies a mock's toy vocabulary into a real editor. A file using
 `@switch` opens in the builder today and the builder cannot describe, edit, or
 preserve that construct through a move.
