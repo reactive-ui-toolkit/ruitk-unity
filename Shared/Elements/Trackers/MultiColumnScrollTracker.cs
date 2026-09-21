@@ -7,7 +7,7 @@ namespace Ruitk.Elements
     internal sealed class MultiColumnScrollTracker<TView, TState>
         : IElementStateTracker<TView, TState>
         where TView : VisualElement
-        where TState : IScrollState
+        where TState : class, IScrollState
     {
         private readonly IScrollOps<TView> _ops;
         private readonly Action<

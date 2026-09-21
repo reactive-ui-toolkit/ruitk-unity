@@ -7,7 +7,7 @@ namespace Ruitk.Elements
     internal sealed class MultiColumnAdjustmentTracker<TView, TState>
         : IElementStateTracker<TView, TState>
         where TView : VisualElement
-        where TState : IAdjustmentSuspendState
+        where TState : class, IAdjustmentSuspendState
     {
         private readonly IHeaderOps<TView> _headerOps;
         private readonly Action<

@@ -71,6 +71,35 @@ namespace Ruitk.Core.Fiber
                 !ReferenceEquals(prevChildren, nextChildren)
                 && !ChildrenListEqual(prevChildren, nextChildren);
 
+            // Every input the "why did this render?" question needs has just been computed and
+            // was previously discarded. Active is one static bool; nothing below it runs, and no
+            // component name is resolved, unless something is listening.
+            if (Ruitk.Diagnostics.WhyDidYouRender.Active)
+            {
+                var reason = Ruitk.Diagnostics.RenderReason.None;
+                if (cp == null)
+                {
+                    reason |= Ruitk.Diagnostics.RenderReason.FirstMount;
+                }
+                else if (!propsEqual)
+                {
+                    reason |= Ruitk.Diagnostics.RenderReason.PropsChanged;
+                }
+                if (wipFiber.HasPendingStateUpdate)
+                {
+                    reason |= Ruitk.Diagnostics.RenderReason.StateUpdate;
+                }
+                if (!contextUnchanged)
+                {
+                    reason |= Ruitk.Diagnostics.RenderReason.ContextChanged;
+                }
+                if (childrenChanged)
+                {
+                    reason |= Ruitk.Diagnostics.RenderReason.ChildrenChanged;
+                }
+                Ruitk.Diagnostics.WhyDidYouRender.Report(DescribeComponent(wipFiber), reason);
+            }
+
             // Bailout check: if no state update and props match AND context unchanged AND children unchanged, skip rendering
             if (
                 !wipFiber.HasPendingStateUpdate
@@ -563,5 +592,42 @@ namespace Ruitk.Core.Fiber
 
             return false;
         }
+
+        /// <summary>
+        /// A human name for a fiber, for WhyDidYouRender. Reached only when something is
+        /// listening, and cached by the render delegate's method rather than by fiber: one
+        /// entry per component function, however many times it renders. Reflection on
+        /// DeclaringType is the expensive part and runs once per component, ever.
+        /// </summary>
+        private static string DescribeComponent(FiberNode fiber)
+        {
+            if (!string.IsNullOrEmpty(fiber.ElementType))
+            {
+                return fiber.ElementType;
+            }
+
+            var method = fiber.TypedRender?.Method;
+            if (method == null)
+            {
+                return "<anonymous>";
+            }
+
+            lock (s_componentNameGate)
+            {
+                if (s_componentNames.TryGetValue(method, out string cached))
+                {
+                    return cached;
+                }
+                string declaring = method.DeclaringType?.Name;
+                string name = string.IsNullOrEmpty(declaring) ? method.Name : declaring + "." + method.Name;
+                s_componentNames[method] = name;
+                return name;
+            }
+        }
+
+        private static readonly object s_componentNameGate = new object();
+
+        private static readonly Dictionary<System.Reflection.MethodInfo, string> s_componentNames =
+            new Dictionary<System.Reflection.MethodInfo, string>();
     }
 }

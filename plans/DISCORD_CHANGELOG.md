@@ -1,3 +1,47 @@
+## [0.20.0] - 2026-09-20
+
+### Seven reported issues, and the gates that would have caught them
+
+**A player build of any project using this package failed to compile.** The
+`EditorControlsDemoFunc` sample used `<TwoPaneSplitView>`, an editor-only
+control, from a file shipped in the all-platforms samples assembly. Play mode was
+fine; building a player stopped on a file you never wrote. Every platform, both
+backends. The sample is removed.
+
+**An empty fragment or portal kept its children on screen.** N -> N-1 unmounted
+correctly; N -> 0 did not, so a loop over an emptied collection left its last
+render mounted. Both branch on null alone now: null keeps what is there, empty
+deletes.
+
+**HMR could not start on macOS.** It built the editor's data directory the
+Windows way. One locator now probes `applicationContentsPath`, with overrides,
+and lists every path it tried on failure. macOS HMR is still UNVERIFIED -
+nothing has run there yet.
+
+**The asset registry folder used Windows separators**, so off Windows it made
+one directory named `Assets\Ruitk\Resources` and the registry was never written
+- `Asset<T>()` and `@uss` returned null in player builds. A second instance
+turned up in the csproj postprocessor.
+
+**IL2CPP refused the multi-column trackers** - a `TState` constrained only to an
+interface, assigned through. All five generic trackers carry `class` now, and it
+is PROVEN: the pre-fix build stops naming `MultiColumnLayoutTracker::Attach`,
+the post-fix build succeeds.
+
+**Seven assets shipped with no `.meta`** - in an immutable package the editor
+then loads none of our assemblies at all.
+
+**Added.** `SignalFactory.Create<T>()` - a signal owned by its caller, never
+registered. And `WhyDidYouRender` now reports WHY each component rendered, as
+`RenderReason` flags; `None` means the bailout fired.
+
+**Gates.** `.meta` coverage, path separators, a real Unity batch-mode compile of
+every assembly definition, and an IL2CPP player build.
+
+**Tests.** 1913/1913 SG, 93/93 core.
+
+---
+
 ## [0.19.3] - 2026-09-16
 
 ### Store compliance - licence files removed

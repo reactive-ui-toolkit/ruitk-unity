@@ -312,6 +312,115 @@ namespace Ruitk.Shared.Tests
             Assert.Equal(new[] { 100, 101, 102 }, observed);
         }
 
+        // ── Emptying a fragment or portal ───────────────────────────────────
+        //
+        // An empty children list is a legitimate render result - a loop over a
+        // collection that just emptied, or a fragment whose children are all
+        // conditional. UpdateFragment and UpdatePortal used to treat empty the same
+        // as "no information" and bail out to a clone of the previous children, so
+        // N -> N-1 unmounted correctly and N -> 0 left the last children on screen.
+        // Host components never had the bug: they branch on null alone.
+
+        [Fact]
+        public void EmptyingAFragmentUnmountsItsChildren()
+        {
+            var root = Mount(
+                El("Box", children: new[] { V.Fragment(null, El("Label"), El("Button")) })
+            );
+            Assert.Equal("root(Box(Label,Button))", MockHostConfig.Dump(_container));
+
+            Update(root, El("Box", children: new[] { V.Fragment() }));
+
+            Assert.Equal("root(Box)", MockHostConfig.Dump(_container));
+            Assert.Equal(2, _host.RemovedElements.Count);
+        }
+
+        [Fact]
+        public void EmptyingAFragmentLeavesItsHostSiblingsAlone()
+        {
+            var root = Mount(
+                El(
+                    "Box",
+                    children: new[]
+                    {
+                        El("Label", key: "before"),
+                        V.Fragment("frag", El("Button"), El("Button")),
+                        El("Label", key: "after"),
+                    }
+                )
+            );
+            Assert.Equal("root(Box(Label,Button,Button,Label))", MockHostConfig.Dump(_container));
+
+            Update(
+                root,
+                El(
+                    "Box",
+                    children: new[]
+                    {
+                        El("Label", key: "before"),
+                        V.Fragment("frag"),
+                        El("Label", key: "after"),
+                    }
+                )
+            );
+
+            Assert.Equal("root(Box(Label,Label))", MockHostConfig.Dump(_container));
+        }
+
+        [Fact]
+        public void AFragmentShrinksOneChildAtATimeDownToEmpty()
+        {
+            var root = Mount(
+                El(
+                    "Box",
+                    children: new[]
+                    {
+                        V.Fragment(null, El("Label", key: "a"), El("Label", key: "b")),
+                    }
+                )
+            );
+
+            Update(
+                root,
+                El("Box", children: new[] { V.Fragment(null, El("Label", key: "a")) })
+            );
+            Assert.Equal("root(Box(Label))", MockHostConfig.Dump(_container));
+
+            Update(root, El("Box", children: new[] { V.Fragment() }));
+            Assert.Equal("root(Box)", MockHostConfig.Dump(_container));
+        }
+
+        [Fact]
+        public void ARefilledFragmentMountsItsNewChildren()
+        {
+            var root = Mount(El("Box", children: new[] { V.Fragment(null, El("Label")) }));
+
+            Update(root, El("Box", children: new[] { V.Fragment() }));
+            Assert.Equal("root(Box)", MockHostConfig.Dump(_container));
+
+            Update(root, El("Box", children: new[] { V.Fragment(null, El("Button")) }));
+            Assert.Equal("root(Box(Button))", MockHostConfig.Dump(_container));
+        }
+
+        [Fact]
+        public void EmptyingAPortalUnmountsItsChildrenFromTheTarget()
+        {
+            var target = new MockElement { Type = "target" };
+
+            var root = Mount(
+                El(
+                    "Box",
+                    children: new[] { V.Portal(target, null, El("Label"), El("Button")) }
+                )
+            );
+            Assert.Equal("target(Label,Button)", MockHostConfig.Dump(target));
+
+            Update(root, El("Box", children: new[] { V.Portal(target) }));
+
+            Assert.Equal("target", MockHostConfig.Dump(target));
+            Assert.Equal("root(Box)", MockHostConfig.Dump(_container));
+        }
+
         // ── Unmount ─────────────────────────────────────────────────────────
 
         [Fact]

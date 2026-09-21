@@ -271,7 +271,7 @@ export const sections: DocSection[] = [
         title: 'Signals',
         path: '/tooling/signals',
         keywords: ['signals', 'shared state', 'reactive'],
-        searchContent: 'signals lightweight named reactive values process-wide registry observable store single source of truth global registry keyed by string SignalFactory.Get Signal Subscribe useSignal Dispatch updates event handlers SignalsRuntime.EnsureInitialized selector overloads useSignal signal selector comparer project slice custom equality useMemo SignalCounterDemo counterSignal count Increment Reset Style StyleKeys.FlexDirection row thread safety lock-based synchronization',
+        searchContent: 'signals lightweight named reactive values process-wide registry observable store single source of truth global registry keyed by string SignalFactory.Get Signal Subscribe useSignal Dispatch updates event handlers SignalsRuntime.EnsureInitialized selector overloads useSignal signal selector comparer project slice custom equality useMemo SignalCounterDemo counterSignal count Increment Reset Style StyleKeys.FlexDirection row thread safety lock-based synchronization SignalFactory.Create owner-scoped unkeyed signal no registry entry presenter lifetime leak TryGet not discoverable comparer',
         element: () => <UitkxSignalsPage />,
       },
       {
@@ -493,7 +493,7 @@ export const sections: DocSection[] = [
         title: 'Debugging Guide',
         path: '/debugging',
         keywords: ['debugging', 'troubleshooting', 'logs', 'generated code'],
-        searchContent: 'debugging guide diagnose fix common issues inspecting generated code .uitkx .uitkx.g.cs roslyn source generator vs code definition f12 generatedfiles analyzers #line directives breakpoint stack trace ui toolkit debugger lsp server logs trace level uitkx.trace.server verbose output panel json-rpc missing completions stale diagnostics crashes formatter issues format-on-save reporting bugs',
+        searchContent: 'debugging guide diagnose fix common issues why did this render whydidyourender renderreason bailout props changed context changed children changed state update first mount rendered event metricsemitted component name inspecting generated code .uitkx .uitkx.g.cs roslyn source generator vs code definition f12 generatedfiles analyzers #line directives breakpoint stack trace ui toolkit debugger lsp server logs trace level uitkx.trace.server verbose output panel json-rpc missing completions stale diagnostics crashes formatter issues format-on-save reporting bugs',
         element: () => <UitkxDebuggingPage />,
       },
     ],
