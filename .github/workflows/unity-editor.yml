@@ -70,6 +70,16 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Ubuntu 22.04's default nodejs package is Node 12, which predates the
+      # nullish-coalescing operator. The check scripts use it, so the container died with
+      # a SyntaxError before Unity was ever asked to do anything. Install a supported Node
+      # instead of writing the scripts down to an EOL runtime, and pin the major so a
+      # future image change cannot move it.
+      #
+      # KEEP PROSE OUT OF THE bash -lc BLOCK BELOW. Inside a single-quoted argument, a "#"
+      # line is not a comment -- it is string content. One apostrophe in it terminates the
+      # quote and the rest of the script runs on the RUNNER instead of in the container;
+      # a backtick in it becomes command substitution. Both happened here once.
       - name: Compile every asmdef in a shell project
         if: steps.check.outputs.skip == 'false'
         env:
@@ -83,16 +93,8 @@ jobs:
             unityci/editor:ubuntu-${UNITY_VERSION}-base-3 \
             bash -lc '
               set -e
-              # The seat is returned whatever happens -- a leaked activation blocks the
-              # next run, and there is only one seat.
               trap "unity-editor -batchmode -nographics -quit -returnlicense -username \"$UNITY_EMAIL\" -password \"$UNITY_PASSWORD\" -logFile - || true" EXIT
 
-              # Ubuntu 22.04's default `nodejs` package is Node 12, which predates the
-              # nullish-coalescing operator. The check scripts use `??`, so the container
-              # died with "SyntaxError: Unexpected token '?'" before Unity was ever asked
-              # to do anything. Install a supported Node instead of writing the scripts
-              # down to an EOL runtime -- and pin the major so a future image change
-              # cannot move it.
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends curl ca-certificates
               curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -145,35 +147,66 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install the Unity editor
+      # game-ci/unity-builder is NOT used here, and that is deliberate. It requires a .ulf
+      # licence file (UNITY_LICENSE) or a Pro serial (UNITY_SERIAL); it cannot do the
+      # named-user email+password activation that a Personal licence needs, and Unity
+      # discontinued manual .ulf activation for Personal. The Linux job already activates
+      # the same way this does, so the licence model is consistent across both.
+      #
+      # The changeset is LOOKED UP, not pinned. Unity Hub needs version AND changeset to
+      # install a specific editor, and a second hardcoded constant is a second thing to
+      # forget when UNITY_VERSION moves. services.api.unity.com reports it as
+      # shortRevision for the version we already name.
+      - name: Install the Unity editor via Hub
         if: steps.check.outputs.skip == 'false'
-        uses: game-ci/unity-builder@v4
-        with:
-          unityVersion: ${{ env.UNITY_VERSION }}
-          targetPlatform: StandaloneOSX
-          allowDirtyBuild: true
+        run: |
+          set -e
+          brew install --cask unity-hub
+
+          CHANGESET=$(curl -fsSL "https://services.api.unity.com/unity/editor/release/v1/releases?version=${UNITY_VERSION}&limit=1" | jq -r ".results[0].shortRevision // empty")
+          if [ -z "$CHANGESET" ]; then
+            echo "::error::Could not resolve a changeset for ${UNITY_VERSION} from the Unity release API."
+            exit 1
+          fi
+          echo "changeset: $CHANGESET"
+
+          HUB="/Applications/Unity Hub.app/Contents/MacOS/Unity Hub"
+          "$HUB" -- --headless install --version "${UNITY_VERSION}" --changeset "$CHANGESET" || true
+
+          # The Hub CLI hands the download to its background process and returns straight
+          # away, so the exit code says nothing about whether the editor arrived. Wait for
+          # the binary instead of trusting it.
+          EDITOR="/Applications/Unity/Hub/Editor/${UNITY_VERSION}/Unity.app/Contents/MacOS/Unity"
+          for i in $(seq 1 120); do
+            if [ -x "$EDITOR" ]; then break; fi
+            sleep 15
+          done
+          if [ ! -x "$EDITOR" ]; then
+            echo "::error::The editor never appeared at $EDITOR after 30 minutes."
+            ls -la "/Applications/Unity/Hub/Editor" || true
+            exit 1
+          fi
+          echo "editor: $EDITOR"
+          echo "RUITK_UNITY_EXE=$EDITOR" >> "$GITHUB_ENV"
+
+      # The whole point of this job: run the SHIPPED locator on macOS and print where it
+      # found the bundled runtime. Exits 0 found, 1 not found, 2 threw -- and "threw" is
+      # how the 0.21.0 regression presented, so a not-found check alone would have missed it.
+      - name: Probe the bundled runtime with the shipped locator
+        if: steps.check.outputs.skip == 'false'
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
-      # Runs the SHIPPED locator through -executeMethod, not a re-implementation of it.
-      # An earlier version walked the same candidate grid in JavaScript, which would have
-      # reported success while the real code threw: the 0.21.0 Path.Combine("<version>")
-      # regression was an illegal-character exception that only Mono raises, on this exact
-      # path, and it killed the Builder on open. Testing a copy of the logic answers a
-      # question nobody asked.
-      - name: Probe the bundled runtime with the shipped locator
-        if: steps.check.outputs.skip == 'false'
         run: |
-          UNITY="$(find /Applications/Unity/Hub/Editor -maxdepth 4 -name Unity -type f -path '*MacOS*' | head -1)"
-          echo "editor: $UNITY"
+          set -e
           mkdir -p /tmp/probe/Assets /tmp/probe/ProjectSettings
           echo "m_EditorVersion: ${UNITY_VERSION}" > /tmp/probe/ProjectSettings/ProjectVersion.txt
-          # ONE run. The log goes to a file rather than a pipe so the method's exit code
-          # reaches the shell -- piping into grep would hand back grep's status instead --
-          # and the probe lines are echoed into the CI output afterwards.
+
+          # One run. The log goes to a file rather than a pipe so the exit code the method
+          # sets reaches the shell; piping into grep would hand back grep's status instead.
           set +e
-          "$UNITY" -batchmode -nographics -quit \
+          "$RUITK_UNITY_EXE" -batchmode -nographics -quit \
+            -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" \
             -projectPath /tmp/probe \
             -executeMethod Ruitk.CICD.BundledRuntimeReport.Run \
             -logFile /tmp/probe/probe.log
@@ -185,3 +218,14 @@ jobs:
       - name: Compile every asmdef on macOS
         if: steps.check.outputs.skip == 'false'
         run: node scripts/unity-editor-compile.mjs --clean
+
+      # A leaked activation blocks the next run, and there is one seat. always() so it is
+      # returned even when the probe above fails, which is the case that matters.
+      - name: Return the licence
+        if: always() && steps.check.outputs.skip == 'false' && env.RUITK_UNITY_EXE != ''
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          "$RUITK_UNITY_EXE" -batchmode -nographics -quit -returnlicense \
+            -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" -logFile - || true
