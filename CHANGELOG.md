@@ -6,6 +6,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
+## [0.21.1] - 2026-09-23
+
+### Fixed
+
+- **A keyed reorder of components or fragments now moves their elements.** A list of
+  keyed `V.Func` children — or keyed fragments — re-rendered in a new order updated
+  the fiber tree and left the screen exactly as it was: the elements stayed in their
+  original order until something forced a remount. A list of bare host elements
+  always reordered correctly, which is what made this read as a data bug rather than
+  a renderer one.
+
+  The commit phase dropped any placement that landed on a fiber with no element of
+  its own, and a function component, a fragment and an error boundary all own no
+  element — so the one effect that would have moved their children was discarded.
+  Placement now resolves its anchor once and then walks the wrapper, moving every
+  element directly beneath it. That is React's `commitPlacement` paired with
+  `insertOrAppendPlacementNode`, which this had half-implemented: the anchor half
+  was there, the walk was not.
+
+  Identity is preserved across a move, so a reordered row keeps its state, focus and
+  inline styles instead of being torn down and rebuilt. A moved element still carries
+  its own subtree, a portal's content still stays under its target, and a first mount
+  costs exactly the same number of attaches it did before.
+
+- **Every update deferred during a render pass now renders, not just the first.**
+  When a render body sets two or more signals — a page switch that also raises a
+  global notice, say — the updates are held back and replayed together once the pass
+  commits. The first replayed update rendered and every one after it was silently
+  lost; the affected components kept their old output until something unrelated
+  re-rendered them.
+
+  An update was marked on only one face of the double-buffered tree: whichever face
+  the caller happened to hold. By replay time the trees have swapped, so the next
+  pass cloned from a fiber that had never been marked, and bailed out. Updates are
+  now marked on both faces, which is what React does in
+  `markUpdateLaneFromFiberToRoot`.
+
 ## [0.21.0] - 2026-09-21
 
 ### Breaking
