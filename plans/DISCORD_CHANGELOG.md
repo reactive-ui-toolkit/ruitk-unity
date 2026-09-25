@@ -1,4 +1,4 @@
-## [0.21.1] - 2026-09-23
+## [0.21.1] - 2026-09-25
 
 ### Two reconciler fixes - keyed reorders, and lost deferred updates
 

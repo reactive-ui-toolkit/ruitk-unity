@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 For IDE extension changelogs (VS Code, Visual Studio 2022), see
 `ide-extensions~/changelog.json` — the single source of truth for extension releases.
 
-## [0.21.1] - 2026-09-23
+## [0.21.1] - 2026-09-25
 
 ### Fixed
 
