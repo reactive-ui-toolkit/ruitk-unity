@@ -1,3 +1,42 @@
+## [0.21.1] - 2026-09-25
+
+### Two reconciler fixes - keyed reorders, and lost deferred updates
+
+**Reordering a keyed list of components did nothing on screen.** Re-render
+`[a, b, c, d]` as `[d, c, b, a]` and the fiber tree reordered while the elements
+stayed exactly where they were. A list of plain host elements always reordered
+fine, which is what made this look like a data bug, not a renderer one.
+
+The commit phase dropped any placement landing on a fiber that owns no element
+of its own - and a function component, a fragment and an error boundary all own
+none, so the single effect that would have moved their children was discarded.
+Placement now resolves its anchor once and then walks the wrapper, moving every
+element directly beneath it. That is React's `commitPlacement` paired with
+`insertOrAppendPlacementNode`; we had the anchor half and not the walk.
+
+Identity survives the move: a reordered row keeps its state, focus and inline
+styles. A moved element still brings its own subtree, a portal's content still
+stays under its target, and a first mount costs exactly the same number of
+attaches as before.
+
+**Fix - every deferred update renders, not just the first.** When a render body
+sets two or more signals (a page switch that also raises a global notice), the
+updates are held back and replayed once the pass commits. The first one rendered
+and every one after it was silently lost, leaving those components on their old
+output until something unrelated re-rendered them.
+
+An update was marked on only one face of the double-buffered tree - whichever the
+caller happened to hold. By replay time the trees have swapped, so the next pass
+cloned from a fiber that was never marked and bailed out. Both faces are marked
+now, as React does in `markUpdateLaneFromFiberToRoot`.
+
+**Tests.** 14 new reconciler tests covering the reorder walk, portal safety,
+mount and reorder operation counts, and coalesced deferred updates.
+
+No API change. IDE extensions unchanged.
+
+---
+
 ## [0.21.0] - 2026-09-21
 
 ### Signals get their own assembly

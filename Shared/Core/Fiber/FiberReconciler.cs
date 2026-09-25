@@ -185,6 +185,27 @@ namespace Ruitk.Core.Fiber
         }
 
         /// <summary>
+        /// Mirrors an update mark onto the other face of the double buffer: the fiber
+        /// itself, and SubtreeHasUpdates along its own ancestor chain, so a bail-out on
+        /// that face cannot skip past the updated component. Over-marking is safe - the
+        /// flags are cleared every commit and a clone overwrites them from its source -
+        /// and costs at most a bail-out that does not happen.
+        /// </summary>
+        private static void MarkPendingUpdateOnAlternate(FiberNode alternate)
+        {
+            if (alternate == null)
+            {
+                return;
+            }
+
+            alternate.HasPendingStateUpdate = true;
+            for (var parent = alternate.Parent; parent != null; parent = parent.Parent)
+            {
+                parent.SubtreeHasUpdates = true;
+            }
+        }
+
+        /// <summary>
         /// Schedule an update on a fiber (triggered by setState, props change, etc.)
         /// </summary>
         public void ScheduleUpdateOnFiber(
@@ -219,10 +240,17 @@ namespace Ruitk.Core.Fiber
             FiberNode rootCurrent = fiber;
             bool isDeleted = false;
 
-            // Mark the target fiber as having an update
+            // Mark the target fiber as having an update - on BOTH faces of the double
+            // buffer. The caller holds whichever face was current when it subscribed,
+            // and the next pass clones from whichever face is live by then; when a
+            // deferred update is replayed after the pass that captured it has already
+            // committed, those differ, and the ancestor walk below only ever reaches
+            // the face we were handed. React marks fiber and fiber.alternate in
+            // markUpdateLaneFromFiberToRoot for exactly this reason.
             if (fiber != null)
             {
                 fiber.HasPendingStateUpdate = true;
+                MarkPendingUpdateOnAlternate(fiber.Alternate);
             }
 
             while (rootCurrent != null)
@@ -1149,7 +1177,14 @@ namespace Ruitk.Core.Fiber
                 return;
             }
 
-            if (fiber.HostElement == null)
+            // A wrapper being mounted for the first time owns nothing that is already
+            // in the tree: every host beneath a fiber with no Alternate was created in
+            // this same pass (reuse never crosses parents) and carries its own Placement
+            // effect, which the post-order effect list commits BEFORE this one. Walking
+            // it here would re-insert each of those hosts at the anchor they already sit
+            // at - React avoids the same work earlier, by not flagging children at all
+            // on a fresh mount (shouldTrackSideEffects).
+            if (fiber.HostElement == null && fiber.Alternate == null)
             {
                 return;
             }
@@ -1161,116 +1196,7 @@ namespace Ruitk.Core.Fiber
                 parentFiber = parentFiber.Parent;
             }
 
-            if (parentFiber?.HostElement != null)
-            {
-                if (_hostConfig.GetParent(fiber.HostElement) != null)
-                {
-                    // Move placement (keyed reorder): the host is already
-                    // parented — reposition it before its stable anchor. Props
-                    // are NOT re-applied here; a changed-props move also
-                    // carries an Update effect, which CommitWork runs right
-                    // after this placement.
-                    var moveAnchor = GetHostSibling(fiber);
-                    _hostConfig.InsertBefore(
-                        parentFiber.HostElement,
-                        fiber.HostElement,
-                        moveAnchor
-                    );
-                }
-                else
-                {
-                    // Apply initial properties before inserting
-                    if (fiber.PendingHostProps != null)
-                    {
-                        // diff gate (§6): EnableDiffTracing OR Verbose — the exact legacy OR.
-                        if (
-                            DiagnosticsConfig.EnableDiffTracing
-                            || DiagnosticsConfig.CurrentTraceLevel
-                                == DiagnosticsConfig.TraceLevel.Verbose
-                        )
-                        {
-                            UnityEngine.Debug.Log(
-                                $"[Fiber] Applying typed props to {fiber.ElementType}"
-                            );
-                        }
-
-                        _hostConfig.ApplyTypedProperties(
-                            fiber.HostElement,
-                            fiber.ElementType,
-                            null, // oldProps
-                            fiber.PendingHostProps
-                        );
-                        fiber.HostProps = fiber.PendingHostProps;
-                        fiber.Props = fiber.PendingProps;
-                    }
-                    else if (fiber.PendingProps != null)
-                    {
-                        // diff gate (§6)
-                        if (
-                            DiagnosticsConfig.EnableDiffTracing
-                            || DiagnosticsConfig.CurrentTraceLevel
-                                == DiagnosticsConfig.TraceLevel.Verbose
-                        )
-                        {
-                            var propsStr = string.Join(", ", fiber.PendingProps.Keys);
-                            UnityEngine.Debug.Log(
-                                $"[Fiber] Applying props to {fiber.ElementType}: [{propsStr}]"
-                            );
-                        }
-
-                        _hostConfig.ApplyProperties(
-                            fiber.HostElement,
-                            fiber.ElementType,
-                            null, // oldProps
-                            fiber.PendingProps
-                        );
-                        fiber.Props = fiber.PendingProps;
-                    }
-                    else
-                    {
-                        // diff gate (§6)
-                        if (
-                            DiagnosticsConfig.EnableDiffTracing
-                            || DiagnosticsConfig.CurrentTraceLevel
-                                == DiagnosticsConfig.TraceLevel.Verbose
-                        )
-                        {
-                            UnityEngine.Debug.LogWarning(
-                                $"[Fiber] NO props for {fiber.ElementType}"
-                            );
-                        }
-                    }
-
-                    // Find the nearest already-placed DOM element that logically
-                    // follows this fiber in tree order.  If one exists, insert
-                    // before it so the element lands at the right visual position.
-                    // Otherwise append to the end (correct when there is no later sibling).
-                    var before = GetHostSibling(fiber);
-                    if (before != null)
-                    {
-                        // structural gate (§6): Basic restores structural events.
-                        if (DiagnosticsConfig.CurrentTraceLevel != DiagnosticsConfig.TraceLevel.None)
-                            UnityEngine.Debug.Log(
-                                $"[Fiber] InsertBefore {fiber.ElementType} before {_hostConfig.GetDebugName(before)}"
-                            );
-                        _hostConfig.InsertBefore(
-                            parentFiber.HostElement,
-                            fiber.HostElement,
-                            before
-                        );
-                    }
-                    else
-                    {
-                        // structural gate (§6)
-                        if (DiagnosticsConfig.CurrentTraceLevel != DiagnosticsConfig.TraceLevel.None)
-                            UnityEngine.Debug.Log(
-                                $"[Fiber] AppendChild {fiber.ElementType} to {parentFiber.ElementType}"
-                            );
-                        _hostConfig.AppendChild(parentFiber.HostElement, fiber.HostElement);
-                    }
-                }
-            }
-            else
+            if (parentFiber?.HostElement == null)
             {
                 // structural gate (§6): the no-host-parent anomaly is a structural event.
                 if (DiagnosticsConfig.CurrentTraceLevel != DiagnosticsConfig.TraceLevel.None)
@@ -1279,6 +1205,140 @@ namespace Ruitk.Core.Fiber
                         $"[Fiber] Could not find host parent for {fiber.ElementType}"
                     );
                 }
+                return;
+            }
+
+            // React's commitPlacement: the anchor is computed ONCE from the placed fiber,
+            // then EVERY top-level host descendant is inserted before it, in fiber order.
+            // A FunctionComponent / Fragment / ErrorBoundary owns no host of its own, so a
+            // keyed reorder of components reaches the screen only through this walk.
+            var before = GetHostSibling(fiber);
+            PlaceHostSubtree(fiber, parentFiber, before);
+        }
+
+        private void PlaceHostSubtree(FiberNode node, FiberNode parentFiber, object before)
+        {
+            // Checked BEFORE HostElement: a HostPortal fiber's HostElement IS the
+            // portal target, so testing the host first would splice the target
+            // itself into this parent. The portal's content lives under that target
+            // and is never reparented by a placement here.
+            if (node.Tag == FiberTag.HostPortal)
+            {
+                return;
+            }
+
+            if (node.HostElement != null)
+            {
+                InsertPlacedHost(node, parentFiber, before);
+                // A host carries its whole subtree when it moves - do not descend.
+                return;
+            }
+
+            // Allow-list, not a deny-list: only host-less WRAPPERS are descended
+            // through, so a tag added later is never silently walked into. A
+            // HostPortal's hosts live under its own target and must not be
+            // reparented here; a HostComponent with no host element has nothing
+            // to place.
+            if (
+                node.Tag != FiberTag.FunctionComponent
+                && node.Tag != FiberTag.Fragment
+                && node.Tag != FiberTag.ErrorBoundary
+            )
+            {
+                return;
+            }
+
+            for (var child = node.Child; child != null; child = child.Sibling)
+            {
+                PlaceHostSubtree(child, parentFiber, before);
+            }
+        }
+
+        private void InsertPlacedHost(FiberNode fiber, FiberNode parentFiber, object before)
+        {
+            if (_hostConfig.GetParent(fiber.HostElement) != null)
+            {
+                // Move placement (keyed reorder): the host is already
+                // parented — reposition it before its stable anchor. Props
+                // are NOT re-applied here; a changed-props move also
+                // carries an Update effect, which CommitWork runs right
+                // after this placement.
+                _hostConfig.InsertBefore(parentFiber.HostElement, fiber.HostElement, before);
+                return;
+            }
+
+            // Apply initial properties before inserting
+            if (fiber.PendingHostProps != null)
+            {
+                // diff gate (§6): EnableDiffTracing OR Verbose — the exact legacy OR.
+                if (
+                    DiagnosticsConfig.EnableDiffTracing
+                    || DiagnosticsConfig.CurrentTraceLevel == DiagnosticsConfig.TraceLevel.Verbose
+                )
+                {
+                    UnityEngine.Debug.Log($"[Fiber] Applying typed props to {fiber.ElementType}");
+                }
+
+                _hostConfig.ApplyTypedProperties(
+                    fiber.HostElement,
+                    fiber.ElementType,
+                    null, // oldProps
+                    fiber.PendingHostProps
+                );
+                fiber.HostProps = fiber.PendingHostProps;
+                fiber.Props = fiber.PendingProps;
+            }
+            else if (fiber.PendingProps != null)
+            {
+                // diff gate (§6)
+                if (
+                    DiagnosticsConfig.EnableDiffTracing
+                    || DiagnosticsConfig.CurrentTraceLevel == DiagnosticsConfig.TraceLevel.Verbose
+                )
+                {
+                    var propsStr = string.Join(", ", fiber.PendingProps.Keys);
+                    UnityEngine.Debug.Log(
+                        $"[Fiber] Applying props to {fiber.ElementType}: [{propsStr}]"
+                    );
+                }
+
+                _hostConfig.ApplyProperties(
+                    fiber.HostElement,
+                    fiber.ElementType,
+                    null, // oldProps
+                    fiber.PendingProps
+                );
+                fiber.Props = fiber.PendingProps;
+            }
+            else
+            {
+                // diff gate (§6)
+                if (
+                    DiagnosticsConfig.EnableDiffTracing
+                    || DiagnosticsConfig.CurrentTraceLevel == DiagnosticsConfig.TraceLevel.Verbose
+                )
+                {
+                    UnityEngine.Debug.LogWarning($"[Fiber] NO props for {fiber.ElementType}");
+                }
+            }
+
+            if (before != null)
+            {
+                // structural gate (§6): Basic restores structural events.
+                if (DiagnosticsConfig.CurrentTraceLevel != DiagnosticsConfig.TraceLevel.None)
+                    UnityEngine.Debug.Log(
+                        $"[Fiber] InsertBefore {fiber.ElementType} before {_hostConfig.GetDebugName(before)}"
+                    );
+                _hostConfig.InsertBefore(parentFiber.HostElement, fiber.HostElement, before);
+            }
+            else
+            {
+                // structural gate (§6)
+                if (DiagnosticsConfig.CurrentTraceLevel != DiagnosticsConfig.TraceLevel.None)
+                    UnityEngine.Debug.Log(
+                        $"[Fiber] AppendChild {fiber.ElementType} to {parentFiber.ElementType}"
+                    );
+                _hostConfig.AppendChild(parentFiber.HostElement, fiber.HostElement);
             }
         }
 

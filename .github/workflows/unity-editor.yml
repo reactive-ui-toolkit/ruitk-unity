@@ -171,7 +171,20 @@ jobs:
           echo "changeset: $CHANGESET"
 
           HUB="/Applications/Unity Hub.app/Contents/MacOS/Unity Hub"
-          "$HUB" -- --headless install --version "${UNITY_VERSION}" --changeset "$CHANGESET" || true
+
+          # --architecture is REQUIRED on Apple Silicon. Without it the Hub asks
+          #   ? Please select preferred architecture:  > Apple silicon / Intel
+          # and --headless does not suppress that prompt, so with no TTY the step waits
+          # forever -- observed sitting at exactly that question for two hours.
+          #
+          # < /dev/null is the belt to that braces: it guarantees a stdin read FAILS
+          # instead of blocking, so any future prompt ends the step in seconds with a
+          # diagnosable error rather than burning a runner until the six-hour cap. No CI
+          # step should ever be able to wait on input.
+          "$HUB" -- --headless install \
+            --version "${UNITY_VERSION}" \
+            --changeset "$CHANGESET" \
+            --architecture arm64 < /dev/null 2>&1 || true
 
           # The Hub CLI hands the download to its background process and returns straight
           # away, so the exit code says nothing about whether the editor arrived. Wait for
@@ -179,6 +192,10 @@ jobs:
           EDITOR="/Applications/Unity/Hub/Editor/${UNITY_VERSION}/Unity.app/Contents/MacOS/Unity"
           for i in $(seq 1 120); do
             if [ -x "$EDITOR" ]; then break; fi
+            if [ $((i % 8)) -eq 0 ]; then
+              echo "waiting for the editor ($((i * 15))s)..."
+              ls "/Applications/Unity/Hub/Editor" 2>/dev/null || true
+            fi
             sleep 15
           done
           if [ ! -x "$EDITOR" ]; then
@@ -188,6 +205,14 @@ jobs:
           fi
           echo "editor: $EDITOR"
           echo "RUITK_UNITY_EXE=$EDITOR" >> "$GITHUB_ENV"
+
+      # Build the shell project FIRST. It is the only project that references the
+      # package, so it is the only one in which -executeMethod can find
+      # Ruitk.CICD.BundledRuntimeReport. Aiming the probe at a bare /tmp project failed
+      # with "executeMethod class could not be found" -- the class was never there.
+      - name: Compile every asmdef on macOS
+        if: steps.check.outputs.skip == 'false'
+        run: node scripts/unity-editor-compile.mjs --clean
 
       # The whole point of this job: run the SHIPPED locator on macOS and print where it
       # found the bundled runtime. Exits 0 found, 1 not found, 2 threw -- and "threw" is
@@ -199,25 +224,21 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         run: |
           set -e
-          mkdir -p /tmp/probe/Assets /tmp/probe/ProjectSettings
-          echo "m_EditorVersion: ${UNITY_VERSION}" > /tmp/probe/ProjectSettings/ProjectVersion.txt
+          PROJECT="$(node scripts/unity-editor-compile.mjs --print-project-path)"
+          echo "project: $PROJECT"
 
           # One run. The log goes to a file rather than a pipe so the exit code the method
           # sets reaches the shell; piping into grep would hand back grep's status instead.
           set +e
           "$RUITK_UNITY_EXE" -batchmode -nographics -quit \
             -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" \
-            -projectPath /tmp/probe \
+            -projectPath "$PROJECT" \
             -executeMethod Ruitk.CICD.BundledRuntimeReport.Run \
-            -logFile /tmp/probe/probe.log
+            -logFile "$PROJECT/probe.log" < /dev/null
           code=$?
           set -e
-          grep -E "RUNTIME-PROBE|error CS" /tmp/probe/probe.log || true
+          grep -E "RUNTIME-PROBE|error CS|executeMethod" "$PROJECT/probe.log" || true
           exit $code
-
-      - name: Compile every asmdef on macOS
-        if: steps.check.outputs.skip == 'false'
-        run: node scripts/unity-editor-compile.mjs --clean
 
       # A leaked activation blocks the next run, and there is one seat. always() so it is
       # returned even when the probe above fails, which is the case that matters.
